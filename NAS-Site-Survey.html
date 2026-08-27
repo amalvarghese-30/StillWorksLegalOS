@@ -1,0 +1,628 @@
+<title>StillWorks NAS Survey</title>
+<style>
+  :root {
+    --bg: #F4F6F8;
+    --surface: #FFFFFF;
+    --surface-2: #EDF1F5;
+    --ink: #18232E;
+    --muted: #54636F;
+    --accent: #0E7490;
+    --accent-soft: #E0F0F4;
+    --amber: #B45309;
+    --amber-soft: #FBEFDC;
+    --good: #15803D;
+    --line: #E2E8EE;
+    --mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Consolas', 'Liberation Mono', monospace;
+    --sans: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --serif: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0E141B;
+      --surface: #151D26;
+      --surface-2: #1C2732;
+      --ink: #E6EDF3;
+      --muted: #94A5B3;
+      --accent: #4FC3E8;
+      --accent-soft: #0E2C38;
+      --amber: #F0B45A;
+      --amber-soft: #33240F;
+      --good: #4ADE80;
+      --line: #26313D;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0E141B;
+    --surface: #151D26;
+    --surface-2: #1C2732;
+    --ink: #E6EDF3;
+    --muted: #94A5B3;
+    --accent: #4FC3E8;
+    --accent-soft: #0E2C38;
+    --amber: #F0B45A;
+    --amber-soft: #33240F;
+    --good: #4ADE80;
+    --line: #26313D;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.6;
+    font-size: 16px;
+  }
+
+  .wrap {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 48px 28px 96px;
+  }
+
+  /* Header */
+  .eyebrow {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 14px;
+  }
+  h1 {
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: 40px;
+    line-height: 1.12;
+    letter-spacing: -0.01em;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+  .lede {
+    font-size: 17px;
+    color: var(--muted);
+    max-width: 34em;
+    margin: 0;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 22px;
+  }
+  .chip {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    padding: 5px 11px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--muted);
+  }
+  .chip.strong {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .rule {
+    height: 1px;
+    background: var(--line);
+    margin: 36px 0;
+    border: 0;
+  }
+
+  /* Prep callout */
+  .callout {
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--amber);
+    background: var(--surface);
+    border-radius: 10px;
+    padding: 20px 22px;
+    margin: 28px 0;
+  }
+  .callout h2 {
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin: 0 0 12px;
+  }
+  .callout ul {
+    margin: 0;
+    padding-left: 20px;
+  }
+  .callout li {
+    margin: 7px 0;
+    color: var(--ink);
+  }
+
+  /* Steps */
+  .step {
+    margin: 44px 0;
+  }
+  .step-head {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    margin-bottom: 16px;
+  }
+  .step-num {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-radius: 8px;
+    padding: 6px 10px;
+    line-height: 1;
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+  .step-head h2 {
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: 24px;
+    line-height: 1.2;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .goal {
+    font-size: 14px;
+    color: var(--muted);
+    margin: 4px 0 0;
+  }
+
+  .fields {
+    list-style: none;
+    margin: 0 0 16px;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .fields li {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--line);
+    font-size: 14.5px;
+  }
+  .fields li:last-child { border-bottom: 0; }
+  .fields .sq {
+    flex-shrink: 0;
+    width: 15px;
+    height: 15px;
+    border: 1.5px solid var(--muted);
+    border-radius: 4px;
+    transform: translateY(1px);
+  }
+  .fields .blank {
+    flex: 1;
+    border-bottom: 1px dotted var(--muted);
+    min-height: 1.2em;
+  }
+  .fields .key {
+    color: var(--muted);
+    font-size: 13px;
+    font-family: var(--mono);
+    white-space: nowrap;
+  }
+
+  .how { margin: 0 0 12px; }
+  .how h3 {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 10px;
+  }
+  .how ol {
+    margin: 0 0 12px;
+    padding-left: 22px;
+  }
+  .how li { margin: 6px 0; }
+
+  .path {
+    display: inline;
+    font-family: var(--mono);
+    font-size: 0.92em;
+    color: var(--accent);
+    background: var(--accent-soft);
+    padding: 1px 6px;
+    border-radius: 5px;
+  }
+
+  pre {
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 13px 16px;
+    overflow-x: auto;
+    margin: 12px 0;
+  }
+  code {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--ink);
+    white-space: pre;
+  }
+  .prompt { color: var(--amber); font-weight: 600; }
+  .cmt { color: var(--muted); }
+
+  .why {
+    font-size: 14px;
+    color: var(--muted);
+    background: var(--surface);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+    padding: 10px 16px;
+    margin: 14px 0 0;
+  }
+  .why b { color: var(--accent); font-weight: 600; }
+
+  /* Summary table */
+  .summary {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    margin: 20px 0 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .summary th {
+    text-align: left;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 700;
+    padding: 10px 12px;
+    border-bottom: 2px solid var(--line);
+  }
+  .summary td {
+    padding: 11px 12px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  .summary td.k {
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .summary td.v {
+    width: 60%;
+    border-bottom: 1px dotted var(--muted);
+  }
+
+  .foot {
+    margin-top: 56px;
+    font-size: 13px;
+    color: var(--muted);
+    border-top: 1px solid var(--line);
+    padding-top: 20px;
+  }
+
+  @media (max-width: 520px) {
+    .wrap { padding: 32px 18px 72px; }
+    h1 { font-size: 32px; }
+    .step-head { flex-direction: column; gap: 10px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+
+  <p class="eyebrow">StillWorks LegalOS · Integration Field Guide</p>
+  <h1>NAS Site Survey</h1>
+  <p class="lede">A step-by-step checklist for collecting every Synology SMB/CIFS detail the app needs. Work top to bottom while you're on site — each step unlocks the next, and the last step verifies the whole thing works before you leave.</p>
+
+  <div class="meta">
+    <span class="chip strong">Access method: SMB / CIFS</span>
+    <span class="chip">Synology DSM</span>
+    <span class="chip">Est. on-site time: 45–60 min</span>
+  </div>
+
+  <hr class="rule">
+
+  <div class="callout">
+    <h2>Before you go</h2>
+    <ul>
+      <li>A laptop you can join to the office Wi-Fi / LAN (or a workstation the firm will let you use).</li>
+      <li>This checklist — printed or open on your phone.</li>
+      <li>A camera / phone for screenshots of DSM screens and the folder tree.</li>
+      <li>Login to the NAS admin console (<span class="path">find.synology.com</span> or the NAS IP in a browser).</li>
+      <li>The office manager or IT contact who can create users and confirm policy.</li>
+    </ul>
+  </div>
+
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">01</span>
+      <div>
+        <h2>Identify the NAS hardware</h2>
+        <p class="goal">Model, DSM version, physical location.</p>
+      </div>
+    </div>
+    <ul class="fields">
+      <li><span class="sq"></span><span class="blank"></span><span class="key">model</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">DSM version</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">serial no.</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">where it sits</span></li>
+    </ul>
+    <div class="how">
+      <h3>How to get it</h3>
+      <ol>
+        <li>Log in to the DSM web console and open <span class="path">Control Panel → Info Center</span>.</li>
+        <li>Note <b>Model Name</b>, <b>DSM version</b>, and <b>Serial Number</b>.</li>
+        <li>Ask where the box physically lives (server room, cabinet) and who has the key.</li>
+      </ol>
+    </div>
+    <p class="why"><b>Why it matters:</b> the model determines which SMB protocol versions and features (encryption, snapshots) are available — this decides what the integration can promise.</p>
+  </section>
+
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">02</span>
+      <div>
+        <h2>Record the network identity</h2>
+        <p class="goal">Hostname, static IP, subnet, gateway — and whether users are on the same LAN.</p>
+      </div>
+    </div>
+    <ul class="fields">
+      <li><span class="sq"></span><span class="blank"></span><span class="key">hostname</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">IP (static?)</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">subnet / gateway</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">same LAN? / VPN?</span></li>
+    </ul>
+    <div class="how">
+      <h3>How to get it</h3>
+      <ol>
+        <li><span class="path">Control Panel → Network → Network Interface</span> → select <b>LAN</b>. Note whether IP is <b>static</b> or <b>DHCP</b>.</li>
+        <li>Hostname: <span class="path">Control Panel → Network → General</span>.</li>
+        <li>On a workstation, confirm the subnet and name resolution:</li>
+      </ol>
+      <pre><code><span class="prompt">&gt;</span> ipconfig /all          <span class="cmt"># subnet, gateway, DNS</span>
+<span class="prompt">&gt;</span> ping DS920             <span class="cmt"># resolves hostname → IP</span>
+<span class="prompt">&gt;</span> nslookup DS920         <span class="cmt"># if ping fails by name</span></code></pre>
+      <ol start="4">
+        <li>Ask whether staff ever work offsite. If yes, note whether a VPN is in place — it changes whether SMB alone is enough.</li>
+      </ol>
+    </div>
+    <p class="why"><b>Why it matters:</b> the app reaches the NAS by a stable hostname or IP. A drifting DHCP address breaks every document read/write, so it must be static or reserved.</p>
+  </section>
+
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">03</span>
+      <div>
+        <h2>Confirm SMB service settings</h2>
+        <p class="goal">SMB on, protocol range, workgroup, port.</p>
+      </div>
+    </div>
+    <ul class="fields">
+      <li><span class="sq"></span><span class="blank"></span><span class="key">SMB enabled</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">min / max SMB</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">workgroup</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">port (445)</span></li>
+    </ul>
+    <div class="how">
+      <h3>How to get it</h3>
+      <ol>
+        <li><span class="path">Control Panel → File Services → SMB</span> tab.</li>
+        <li>Confirm <b>Enable SMB service</b> is ticked.</li>
+        <li>Note the <b>minimum/maximum SMB protocol</b> (want SMB2+; ideally SMB3).</li>
+        <li>Note the <b>Workgroup</b> (default <span class="path">WORKGROUP</span>) and whether SMB3 encryption is offered.</li>
+        <li>Sanity-check reachability from Windows:</li>
+      </ol>
+      <pre><code><span class="prompt">&gt;</span> net view \\DS920        <span class="cmt"># lists shares if SMB is reachable</span></code></pre>
+    </div>
+    <p class="why"><b>Why it matters:</b> this tells us which SMB library and protocol level to use, and whether transport encryption is available for sensitive legal files.</p>
+  </section>
+
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">04</span>
+      <div>
+        <h2>List the shares and pick the working share</h2>
+        <p class="goal">Share name(s), the base path, capacity and quota.</p>
+      </div>
+    </div>
+    <ul class="fields">
+      <li><span class="sq"></span><span class="blank"></span><span class="key">share name</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">base path inside</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">capacity / used</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">quota</span></li>
+    </ul>
+    <div class="how">
+      <h3>How to get it</h3>
+      <ol>
+        <li><span class="path">Control Panel → Shared Folder</span> → note every share name.</li>
+        <li>Pick the share the firm wants for case files (e.g. <span class="path">LegalOS</span>).</li>
+        <li>Open it in File Explorer via <span class="path">\\DS920</span> and note the base path where case folders should sit.</li>
+        <li>Capacity/quota: <span class="path">Shared Folder → select → Edit → Info</span>, or <span class="path">Control Panel → Storage Manager</span>.</li>
+      </ol>
+    </div>
+    <p class="why"><b>Why it matters:</b> the share name + base path map directly to the app's <span class="path">nasPath</span> / <span class="path">nasFolder</span> fields and become the mount point for every upload and download.</p>
+  </section>
+
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">05</span>
+      <div>
+        <h2>Document the folder structure</h2>
+        <p class="goal">Naming convention, a real sample path, existing files to migrate.</p>
+      </div>
+    </div>
+    <ul class="fields">
+      <li><span class="sq"></span><span class="blank"></span><span class="key">organised by</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">sample path</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">case-number scheme</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">existing files?</span></li>
+    </ul>
+    <div class="how">
+      <h3>How to get it</h3>
+      <ol>
+        <li>Browse the share in File Explorer and screenshot the tree.</li>
+        <li>Ask the office manager how folders are organised — by case number, client, or practice area.</li>
+        <li>Ask for one <b>real example</b>, e.g. <span class="path">\LegalOS\Cases\2024-CR-001\</span>.</li>
+        <li>Ask whether there is already a NAS full of files to import, or whether we start clean.</li>
+      </ol>
+    </div>
+    <p class="why"><b>Why it matters:</b> this drives the path-mapping logic (case number → folder) and decides whether the rollout includes a one-time migration of existing files into the database with hashes.</p>
+  </section>
+
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">06</span>
+      <div>
+        <h2>Create the service account</h2>
+        <p class="goal">A dedicated NAS user, least-privilege to the LegalOS share only.</p>
+      </div>
+    </div>
+    <ul class="fields">
+      <li><span class="sq"></span><span class="blank"></span><span class="key">username</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">password</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">domain (if AD/LDAP)</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">read/write scope</span></li>
+    </ul>
+    <div class="how">
+      <h3>How to get it</h3>
+      <ol>
+        <li><span class="path">Control Panel → User &amp; Group → Create</span> → make a service account (e.g. <span class="path">legalos_svc</span>).</li>
+        <li>Set permissions on the share only: <span class="path">Shared Folder → select → Edit → Permissions</span> → grant <b>Read/Write</b> to this account, nothing else.</li>
+        <li>If the NAS is joined to AD/LDAP, note the <b>domain</b> and whether to use a domain account instead.</li>
+        <li>Record the password securely — it goes into the app's config (encrypted).</li>
+      </ol>
+    </div>
+    <p class="why"><b>Why it matters:</b> one service account keeps NAS credentials out of each employee's hands. Least-privilege limits the blast radius if that account is ever compromised — the app's own role-based access control sits on top.</p>
+  </section>
+
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">07</span>
+      <div>
+        <h2>Record file rules and retention</h2>
+        <p class="goal">Allowed types, max size, version count, deletion policy.</p>
+      </div>
+    </div>
+    <ul class="fields">
+      <li><span class="sq"></span><span class="blank"></span><span class="key">allowed types</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">max file size</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">versions kept</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">deletion policy</span></li>
+    </ul>
+    <div class="how">
+      <h3>How to get it</h3>
+      <ol>
+        <li>Ask which file types the firm works with (PDF, DOC/DOCX, XLSX, scans, images, archives).</li>
+        <li>Ask the largest single file they'd ever store.</li>
+        <li>Ask how many prior versions they want to keep.</li>
+        <li>Check recycle bin: <span class="path">Shared Folder → Edit → Recycle Bin</span> — note if deletions should go to a bin first.</li>
+      </ol>
+    </div>
+    <p class="why"><b>Why it matters:</b> these become the upload-validation limits and the version/retention behaviour of the documents feature.</p>
+  </section>
+
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">08</span>
+      <div>
+        <h2>Capture security &amp; compliance</h2>
+        <p class="goal">Encryption, backups, admin access, regulatory constraints.</p>
+      </div>
+    </div>
+    <ul class="fields">
+      <li><span class="sq"></span><span class="blank"></span><span class="key">volume encryption</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">backup (Hyper Backup / snapshot)</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">NAS admins</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">DPDP / retention rules</span></li>
+    </ul>
+    <div class="how">
+      <h3>How to get it</h3>
+      <ol>
+        <li>Encryption: <span class="path">Shared Folder → Edit → Encryption</span> — note on/off.</li>
+        <li>Backups: <span class="path">Control Panel → Hyper Backup</span> / <span class="path">Snapshot Replication</span> — note what's scheduled and who owns it.</li>
+        <li>Ask who holds NAS admin rights outside the app.</li>
+        <li>Ask about any bar-association or data-protection obligations (e.g. India DPDP Act) affecting retention and deletion.</li>
+      </ol>
+    </div>
+    <p class="why"><b>Why it matters:</b> legal files are sensitive personal data. Encryption at rest, a real backup, and clear ownership are non-negotiable before the app goes live.</p>
+  </section>
+
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">09</span>
+      <div>
+        <h2>Verify connectivity before you leave</h2>
+        <p class="goal">Prove the app can reach and write to the share — not just note it down.</p>
+      </div>
+    </div>
+    <ul class="fields">
+      <li><span class="sq"></span><span class="blank"></span><span class="key">ping OK</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">share reachable</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">read/write test</span></li>
+      <li><span class="sq"></span><span class="blank"></span><span class="key">firewall allows 445</span></li>
+    </ul>
+    <div class="how">
+      <h3>How to get it</h3>
+      <ol>
+        <li>Map the share with the service account:</li>
+      </ol>
+      <pre><code><span class="prompt">&gt;</span> net use Z: \\DS920\LegalOS /user:legalos_svc *</code></pre>
+      <ol start="2">
+        <li>Write and read a test file on <span class="path">Z:</span>, then delete it.</li>
+        <li>Check the firewall allows SMB from the office subnet: <span class="path">Control Panel → Security → Firewall</span>.</li>
+        <li>Confirm the port: <span class="path">Control Panel → File Services → SMB</span> shows port <b>445</b>.</li>
+      </ol>
+    </div>
+    <p class="why"><b>Why it matters:</b> the most common integration failures are firewall rules and permissions — catching them on site avoids a second visit.</p>
+  </section>
+
+  <hr class="rule">
+
+  <p class="eyebrow">Hand to the office manager, or fill in yourself</p>
+  <h1 style="font-size:28px;">Summary of collected details</h1>
+
+  <table class="summary">
+    <thead><tr><th>Field</th><th>Value</th></tr></thead>
+    <tbody>
+      <tr><td class="k">model / DSM</td><td class="v"></td></tr>
+      <tr><td class="k">hostname</td><td class="v"></td></tr>
+      <tr><td class="k">IP (static?)</td><td class="v"></td></tr>
+      <tr><td class="k">subnet / gateway</td><td class="v"></td></tr>
+      <tr><td class="k">SMB min–max</td><td class="v"></td></tr>
+      <tr><td class="k">workgroup</td><td class="v"></td></tr>
+      <tr><td class="k">share name</td><td class="v"></td></tr>
+      <tr><td class="k">base path</td><td class="v"></td></tr>
+      <tr><td class="k">service account</td><td class="v"></td></tr>
+      <tr><td class="k">domain (AD?)</td><td class="v"></td></tr>
+      <tr><td class="k">allowed types</td><td class="v"></td></tr>
+      <tr><td class="k">max size</td><td class="v"></td></tr>
+      <tr><td class="k">versions kept</td><td class="v"></td></tr>
+      <tr><td class="k">encryption</td><td class="v"></td></tr>
+      <tr><td class="k">backup</td><td class="v"></td></tr>
+      <tr><td class="k">connectivity verified</td><td class="v"></td></tr>
+    </tbody>
+  </table>
+
+  <p class="foot">Bring this back with every field filled, and NAS integration can be planned and implemented without a second site visit. Store the service-account password somewhere encrypted — never in plain text.</p>
+
+</div>

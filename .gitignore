@@ -1,0 +1,84 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# Playwright MCP auto-generated snapshots
+.playwright-mcp/
+
+# Legacy / old software (not part of this project)
+RMDSOFT/
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+release
+dist
+dist-ssr
+dist-electron
+dist-electron.zip
+.output
+.vinxi
+.tanstack/**
+.nitro
+*.local
+
+# Wrangler / Cloudflare
+.wrangler/
+.dev.vars
+
+# Electron build output & binaries
+electron/*.js
+electron/*.js.map
+electron/node.exe
+electron/*.exe
+electron/*.dll
+release/
+build/
+out/
+
+# Large binary / archive files
+*.exe
+*.dll
+*.zip
+*.tar.gz
+*.7z
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+*.snap
+node.exe
+
+# Server
+server/node_modules
+server/dist
+server/.env
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# OS
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+Thumbs.db
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+
+# Temp / scratch output files
+err.txt
+error.txt
+out.txt
+output.txt
+vite.log

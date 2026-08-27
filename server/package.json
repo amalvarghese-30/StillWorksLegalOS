@@ -1,0 +1,44 @@
+{
+  "name": "stillworks-legalos-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "build:bundle": "esbuild dist/index.js --platform=node --target=node18 --format=cjs --bundle --external:mongoose --external:bcryptjs --external:jsonwebtoken --external:express --external:socket.io --external:zod --external:cors --external:morgan --external:dotenv --outfile=../electron/server.js",
+    "build:exe": "pkg dist/index.js --targets node18-win-x64 --output ../electron/server.exe",
+    "seed": "tsx src/seed.ts",
+    "setup:production": "tsx src/scripts/production-setup.ts",
+    "start": "node dist/index.js",
+    "inject:env": "node -e \"const fs=require('fs'); const env=fs.readFileSync('.env.production','utf8'); const out=env.replace('REPLACE_MONGODB_URI',process.env.MONGODB_URI||'').replace('REPLACE_JWT_SECRET',process.env.JWT_SECRET||'')+'\\nPORT=3001\\nNODE_ENV=production'; fs.writeFileSync('.env.production',out); console.log('Injected env vars into .env.production');\""
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "busboy": "^1.6.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.1",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.9.5",
+    "morgan": "^1.10.0",
+    "socket.io": "^4.8.1",
+    "webdav": "^5.10.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/busboy": "^1.5.4",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/helmet": "^0.0.48",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/morgan": "^1.9.9",
+    "@types/node": "^22.16.5",
+    "esbuild": "^0.28.2",
+    "pkg": "^5.8.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.8.3"
+  }
+}
