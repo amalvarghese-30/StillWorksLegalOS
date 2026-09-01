@@ -1,17 +1,25 @@
 import { useState } from "react";
-import { Bell, Search, Sparkles, Menu, Sun, Moon, Plus } from "lucide-react";
+import { Bell, Dot, Search, Sparkles, Menu, Sun, Moon, Plus, ChevronDown, X, Briefcase, User, FileText, CheckSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { Sidebar } from "./Sidebar";
 import { QuickActionsMenu } from "./QuickActionsMenu";
 import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
 import { useAuth } from "@/lib/auth";
+import { useNotifications } from "@/lib/notifications";
+import { useSearch } from "@/lib/search";
+import { useNavigate } from "@tanstack/react-router";
 
 export function Topbar() {
   const [dark, setDark] = useState(false);
   const [showAddCase, setShowAddCase] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
   const { user } = useAuth();
+  const { notifications, unreadCount, markAsRead, markAllAsRead, refetch } = useNotifications();
+  const { searchResults, isLoading, isError } = useSearch(searchTerm, { limit: 8 });
+  const navigate = useNavigate();
 
   const toggleTheme = () => {
     const next = !dark;
@@ -21,6 +29,7 @@ export function Topbar() {
 
   return (
     <header className="glass sticky top-4 z-30 flex h-18 items-center gap-3 rounded-2xl px-4">
+      {/* Navigation Sheet */}
       <Sheet open={navOpen} onOpenChange={setNavOpen}>
         <SheetTrigger asChild>
           <Button variant="ghost" size="icon" className="rounded-md lg:hidden" aria-label="Open navigation">
@@ -33,19 +42,159 @@ export function Topbar() {
         </SheetContent>
       </Sheet>
 
-      <label className="flex min-w-0 flex-1 items-center gap-3 rounded-pill border border-border/70 bg-card/70 px-4 py-2.5 transition-shadow duration-200 focus-within:shadow-soft focus-within:ring-2 focus-within:ring-ring/40">
-        <Search size={18} strokeWidth={1.75} className="shrink-0 text-muted-foreground" />
+      {/* Search Container */}
+      <div className="relative min-w-0 flex-1">
+        <Search
+          size={18}
+          strokeWidth={1.75}
+          className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground"
+        />
         <input
           type="search"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
           placeholder="Search cases, clients, documents…"
           aria-label="Search"
-          className="min-w-0 flex-1 bg-transparent text-helper outline-none placeholder:text-muted-foreground"
+          className="h-10 w-full rounded-md border border-border/70 bg-card/70 pr-3 pl-10 text-helper outline-none transition-colors focus:border-primary/50"
         />
-        <kbd className="num hidden shrink-0 rounded-sm border border-border bg-muted px-2 py-0.5 text-caption text-muted-foreground sm:block">
-          Ctrl K
-        </kbd>
-      </label>
+        {/* Search Results Dropdown */}
+        {!isLoading && !isError && searchTerm.trim() !== "" ? (
+          <div className="absolute left-0 right-0 mt-2 w-full max-h-96 overflow-auto bg-card border border-border rounded-md shadow-lg z-20">
+            {searchResults.cases.length === 0 &&
+            searchResults.clients.length === 0 &&
+            searchResults.documents.length === 0 &&
+            searchResults.tasks.length === 0 &&
+            searchResults.users.length === 0 ? (
+              <div className="px-4 py-2 text-sm text-muted-foreground">
+                No results found
+              </div>
+            ) : (
+              <>
+                {/* Cases */}
+                {searchResults.cases.map((caseItem) => (
+                  <Button
+                    key={`case-${caseItem._id}`}
+                    variant="ghost"
+                    size="xs"
+                    className="w-full text-left px-3 py-2 border-b border-border/50 hover:bg-muted"
+                    onClick={() => navigate(`/cases/${caseItem._id}`)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Briefcase size={16} strokeWidth={1.75} className="text-primary" />
+                      <div className="min-w-0">
+                        <p className="font-medium">{caseItem.title}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Case #{caseItem.number}
+                        </p>
+                      </div>
+                    </div>
+                  </Button
+                ))}
+                {/* Clients */}
+                {searchResults.clients.map((clientItem) => (
+                  <Button
+                    key={`client-${clientItem._id}`}
+                    variant="ghost"
+                    size="xs"
+                    className="w-full text-left px-3 py-2 border-b border-border/50 hover:bg-muted"
+                    onClick={() => navigate(`/clients/${clientItem._id}`)}
+                  >
+                    <div className="flex items-center gap-3">
+                      {User size={16} strokeWidth={1.75} className="text-primary" />
+                      <div className="min-w-0">
+                        <p className="font-medium">{clientItem.name}</p>
+                        <p className="text-xs text-muted-foreground>
+                          Client
+                        </p>
+                      </div>
+                    </div>
+                  </Button
+                ))}
+                {/* Documents */}
+                {searchResults.documents.map((docItem) => (
+                  <Button
+                    key={`doc-{docItem._id}`}
+                    variant="ghost"
+                    size="xs"
+                    className="w-full text-left px-3 py-2 border-b border-border/50 hover:bg-muted"
+                    onClick={() => navigate(`/documents/${docItem._id}`)}
+                  >
+                    <div className="flex items-center gap-3>
+                      {div className="flex-shrink-0>
+                        {FileText size={16} strokeWidth={1.75} className="text-primary" />
+                      </div>
+                      {div className="min-w-0>
+                        {p className="font-medium>{docItem.name}</p>
+                        {p className="text-xs text-muted-foreground>
+                          Document
+                        </p>
+                      </div>
+                    </div>
+                  </Button
+                ))}
+                {/* Tasks */}
+                {searchResults.tasks.map((taskItem) => (
+                  <Button
+                    key={`task-{taskItem._id}`}
+                    variant="ghost"
+                    size="xs"
+                    className="w-full text-left px-3 py-2 border-b border-border/50 hover:bg-muted"
+                    onClick={() => navigate(`/tasks/${taskItem._id}`)}
+                  >
+                    <div className="flex items-center gap-3>
+                      {div className="flex-shrink-0>
+                        {CheckSquare size={16} strokeWidth={1.75} className="text-primary" />
+                      </div>
+                      {div className="min-w-0>
+                        {p className="font-medium>{taskItem.title}</p>
+                        {p className="text-xs text-muted-foreground>
+                          Task
+                        </p>
+                      </div>
+                    </div>
+                  </Button
+                ))}
+                {/* Users (placeholder) */}
+                {searchResults.users.map((userItem) => (
+                  <Button
+                    key={`user-{userItem._id}`}
+                    variant="ghost"
+                    size="xs"
+                    className="w-full text-left px-3 py-2 border-b border-border/50 hover:bg-muted"
+                    onClick={() => {
+                      // No user profile page yet, just log
+                      console.log("User click:", userItem._id);
+                    }}
+                  >
+                    {div className="flex items-center gap-3>
+                      {div className="flex-shrink-0>
+                        {User size={16} strokeWidth={1.75} className="text-primary" />
+                      </div>
+                      {div className="min-w-0>
+                        {p className="font-medium>{userItem.name}</p>
+                      </div>
+                      {(userItem.name || userItem.role) && (
+                        <>
+                          {userItem.name && (
+                            {p className="font-medium>{userItem.name}</p>
+                          )}
+                          {userItem.role && (
+                            {p className="text-xs text-muted-foreground>
+                              {userItem.role}
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </Button
+                )}
+              </>
+            )}
+          </div>
+        ) : null}
+      </div>
 
+      {/* Right Side Controls */}
       <div className="flex shrink-0 items-center gap-1.5">
         <QuickActionsMenu
           renderTrigger={(toggle) => (
@@ -54,10 +203,88 @@ export function Topbar() {
             </Button>
           )}
         />
-        <Button variant="ghost" size="icon" className="relative rounded-md" aria-label="Notifications">
-          <Bell size={19} strokeWidth={1.75} />
-          <span className="absolute top-2 right-2.5 size-2 rounded-full bg-destructive" />
-        </Button>
+        {/* Notifications Sheet */}
+        <Sheet open={notificationsOpen} onOpenChange={setNotificationsOpen}>
+          <SheetTrigger asChild>
+            <Button variant="ghost" size="icon" className="relative rounded-md" aria-label="Notifications">
+              <Bell size={19} strokeWidth={1.75} />
+              {unreadCount > 0 && (
+                <span className="absolute top-0 right-0 size-2.5 rounded-full bg-destructive text-xs font-medium text-destructive-foreground flex items-center justify-center">
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </span>
+              )}
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="right" className="w-[360px] border-none bg-transparent p-4>
+            <SheetTitle className="text-lg font-semibold mb-4>Notifications</SheetTitle>
+            <div className="space-y-3>
+              {notifications.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8>No notifications</p>
+              ) : (
+                <>
+                  {notifications.map((notification) => (
+                    <div
+                      key={notification._id}
+                      className={`flex flex-col gap-2 p-4 rounded-lg border border-border bg-card ${
+                        !notification.read ? "bg-primary/5" : ""
+                      }`}
+                    >
+                      <div className="flex items-start gap-3>
+                        {Bell size={18} strokeWidth={1.75} className="text-primary" />
+                        {notification.message &&
+                          <p className="text-sm text-muted-foreground line-clamp-2>
+                            {notification.message}
+                          </p>
+                        }
+                        {p className="text-xs text-muted-foreground mt-1>
+                          {new Date(notification.createdAt).toLocaleString(undefined, {
+                            timeStyle: "short",
+                            dateStyle: "short",
+                          })}
+                          </p>
+                        </div>
+                      </div>
+                      {div className="flex items-end gap-2>
+                        {!notification.read && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => markAsRead(notification._id)}
+                            aria-label="Mark as read"
+                          >
+                            {Dot size={12} />
+                          </Button
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            // For now, we just mark as read on close
+                            markAsRead(notification._id);
+                          }}
+                          aria-label="Close"
+                        >
+                          {X size={16} strokeWidth={1.75} />
+                        </Button
+                      </div>
+                    </div>
+                  ))}
+                  <div className="pt-4 border-t border-border>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={markAllAsRead}
+                      className="w-full"
+                    >
+                      Mark all as read
+                    </Button
+                  </div>
+                </>
+              )}
+            </div>
+          </SheetContent>
+        </Sheet>
+        {/* Theme Toggle */}
         <Button
           variant="ghost"
           size="icon"
@@ -67,6 +294,7 @@ export function Topbar() {
         >
           {dark ? <Sun size={19} strokeWidth={1.75} /> : <Moon size={19} strokeWidth={1.75} />}
         </Button>
+        {/* New Case Button */}
         <Button
           className="gradient-primary hidden rounded-md text-primary-foreground shadow-soft transition-transform duration-200 hover:-translate-y-0.5 sm:inline-flex"
           onClick={() => setShowAddCase(true)}
@@ -74,11 +302,13 @@ export function Topbar() {
           <Plus size={17} strokeWidth={2} />
           New Case
         </Button>
+        {/* User Avatar */}
         <span className="grid size-10 place-items-center rounded-full bg-primary/12 font-display text-helper font-semibold text-primary">
           {user?.initials ?? "SW"}
         </span>
       </div>
 
+      {/* Add Case Dialog */}
       {showAddCase && <AddCaseDialog open={showAddCase} onClose={() => setShowAddCase(false)} />}
     </header>
   );

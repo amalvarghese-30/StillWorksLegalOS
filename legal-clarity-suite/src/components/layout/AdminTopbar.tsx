@@ -89,7 +89,7 @@ export function AdminTopbar() {
                         )}
                       </div>
                     </div>
-                  </Button
+                  </Button>
                 ))}
                 {/* Clients */}
                 {searchResults.clients.map((clientItem) => (
@@ -113,7 +113,7 @@ export function AdminTopbar() {
                         )}
                       </div>
                     </div>
-                  </Button
+                  </Button>
                 ))}
                 {/* Documents */}
                 {searchResults.documents.map((docItem) => (
@@ -125,10 +125,10 @@ export function AdminTopbar() {
                     onClick={() => navigate(`/documents/${docItem._id}`)}
                   >
                     <div className="flex items-center gap-3">
-                      {div className="flex-shrink-0">
+                      <div className="flex-shrink-0">
                         <FileText size={16} strokeWidth={1.75} className="text-primary" />
                       </div>
-                      {div className="min-w-0">
+                      <div className="min-w-0">
                         <p className="font-medium">{docItem.name}</p>
                         {docItem.state && (
                           <p className="text-xs text-muted-foreground">
@@ -149,11 +149,11 @@ export function AdminTopbar() {
                     onClick={() => navigate(`/tasks/${taskItem._id}`)}
                   >
                     <div className="flex items-center gap-3">
-                      {div className="flex-shrink-0">
+                      <div className="flex-shrink-0">
                         <CheckSquare size={16} strokeWidth={1.75} className="text-primary" />
                       </div>
-                      {div className="min-w-0">
-                        {p className="font-medium>{taskItem.title}</p>
+                      <div className="min-w-0">
+                        <p className="font-medium">{taskItem.title}</p>
                         {taskItem.status && (
                           <p className="text-xs text-muted-foreground>
                             {taskItem.status}
@@ -176,11 +176,11 @@ export function AdminTopbar() {
                     }}
                   >
                     <div className="flex items-center gap-3">
-                      {div className="flex-shrink-0">
+                      <div className="flex-shrink-0">
                         <User size={16} strokeWidth={1.75} className="text-primary" />
                       </div>
-                      {div className="min-w-0">
-                        {p className="font-medium">{userItem.name}</p>
+                      <div className="min-w-0">
+                        <p className="font-medium">{userItem.name}</p>
                       </div>
                       {(userItem.name || userItem.role) && (
                         <>
@@ -225,11 +225,15 @@ export function AdminTopbar() {
               )}
             </Button>
           </SheetTrigger>
-          <SheetContent side="right" className="w-[360px] border-none bg-transparent p-4>
-            <SheetTitle className="text-lg font-semibold mb-4>Notifications</SheetTitle>
-            <div className="space-y-3>
+          <SheetContent side="right" className="w-[360px] border-none bg-transparent p-4">
+            <SheetTitle className="text-lg font-semibold mb-4">
+              Notifications
+            </SheetTitle>
+            <div className="space-y-3">
               {notifications.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8>No notifications</p>
+                <p className="text-center text-muted-foreground py-8">
+                  No notifications
+                </p>
               ) : (
                 <>
                   {notifications.map((notification) => (
@@ -239,22 +243,24 @@ export function AdminTopbar() {
                         !notification.read ? "bg-primary/5" : ""
                       }`}
                     >
-                      <div className="flex items-start gap-3>
-                        {Bell size={18} strokeWidth={1.75} className="text-primary" />
-                        {notification.message &&
+                      <div className="flex items-start gap-3">
+                        <div className="flex-shrink-0">
+                          <Bell size={18} strokeWidth={1.75} className="text-primary" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium">{notification.title}</p>
                           <p className="text-sm text-muted-foreground line-clamp-2>
                             {notification.message}
                           </p>
-                        }
-                        {p className="text-xs text-muted-foreground mt-1>
-                          {new Date(notification.createdAt).toLocaleString(undefined, {
-                            timeStyle: "short",
-                            dateStyle: "short",
-                          })}
+                          {p className="text-xs text-muted-foreground mt-1>
+                            {new Date(notification.createdAt).toLocaleString(undefined, {
+                              timeStyle: "short",
+                              dateStyle: "short",
+                            })}
                           </p>
                         </div>
                       </div>
-                      {div className="flex items-end gap-2>
+                      <div className="flex items-end gap-2>
                         {!notification.read && (
                           <Button
                             variant="ghost"
@@ -278,8 +284,8 @@ export function AdminTopbar() {
                         </Button
                       </div>
                     </div>
-                  )}
-                  <div className="pt-4 border-t border-border>
+                  ))}
+                  <div className="pt-4 border-t border-border">
                     <Button
                       variant="outline"
                       size="sm"
@@ -287,7 +293,7 @@ export function AdminTopbar() {
                       className="w-full"
                     >
                       Mark all as read
-                    </Button
+                    </Button>
                   </div>
                 </>
               )}

@@ -4,6 +4,8 @@ import { Case } from "../models/Case.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { User } from "../models/User.js";
 import { AppSettings } from "../models/AppSettings.js";
+import { NotificationService } from "../services/notifications.js";
+import { Types } from "mongoose";
 import { requireAuth } from "../middleware/auth.js";
 import { canAccessCase, canAccessTask, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
 
@@ -204,6 +206,23 @@ router.post("/", async (req: Request, res: Response) => {
       createdBy: req.userId,
     });
 
+    // Notify assignee if task is assigned to someone else
+    if (finalAssignedTo && finalAssignedTo.toString() !== req.userId) {
+      await NotificationService.createNotification({
+        userId: finalAssignedTo,
+        type: "TASK_ASSIGNED",
+        title: "New Task Assigned",
+        message: `You have been assigned a new task: "${task.title}"`,
+        relatedId: task._id,
+        relatedModel: "Task",
+        actorId: new Types.ObjectId(req.userId),
+        metadata: {
+          taskTitle: task.title,
+          taskId: task._id.toString(),
+        },
+      }, req.app.get("io")); // Pass the Socket.IO instance for real-time emission
+    }
+
     // Audit log
     await AuditLog.create({
       userId: req.userId,
@@ -270,6 +289,9 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       }
     }
 
+    // Fetch the original task to detect changes
+    const originalTask = await Task.findById(req.params["id"]);
+
     const task = await Task.findByIdAndUpdate(req.params["id"], updates, {
       new: true,
       runValidators: true,
@@ -278,6 +300,63 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
     if (!task) {
       res.status(404).json({ message: "Task not found" });
       return;
+    }
+
+    // Notify assignee if task was reassigned to another user
+    if (
+      updates["assignedTo"] !== undefined &&
+      originalTask &&
+      originalTask.assignedTo &&
+      !originalTask.assignedTo.equals(updates["assignedTo"]) &&
+      updates["assignedTo"] &&
+      !updates["assignedTo"].equals(req.userId) // Not notifying the user who made the change
+    ) {
+      await NotificationService.createNotification({
+        userId: new Types.ObjectId(updates["assignedTo"]),
+        type: "TASK_ASSIGNED",
+        title: "Task Reassigned",
+        message: `You have been assigned a task: "${task.title}"`,
+        relatedId: task._id,
+        relatedModel: "Task",
+        actorId: new Types.ObjectId(req.userId),
+        metadata: {
+          taskTitle: task.title,
+          taskId: task._id.toString(),
+          action: "reassigned",
+        },
+      }, req.app.get("io"));
+    }
+
+    // Notify assignee if task status changed to completed
+    if (
+      updates["status"] !== undefined &&
+      originalTask &&
+      originalTask.status !== updates["status"] &&
+      updates["status"] === "completed"
+    ) {
+      // Notify the assignee (if any) and the creator
+      const notifyUserIds = new Set();
+      if (task.assignedTo) notifyUserIds.add(task.assignedTo.toString());
+      if (task.createdBy) notifyUserIds.add(task.createdBy.toString());
+
+      for (const userId of notifyUserIds) {
+        if (userId && userId !== req.userId) { // Don't notify the user who made the change
+          await NotificationService.createNotification({
+            userId: new Types.ObjectId(userId),
+            type: "TASK_ASSIGNED", // We can use a different type, but let's reuse for now
+            title: "Task Completed",
+            message: `The task "${task.title}" has been marked as completed.`,
+            relatedId: task._id,
+            relatedModel: "Task",
+            actorId: new Types.ObjectId(req.userId),
+            metadata: {
+              taskTitle: task.title,
+              taskId: task._id.toString(),
+              action: "completed",
+            },
+          }, req.app.get("io"));
+        }
+      }
     }
 
     await AuditLog.create({

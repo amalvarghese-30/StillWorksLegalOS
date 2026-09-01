@@ -5,6 +5,8 @@ import { DocumentModel, type IDocument } from "../models/Document.js";
 import { Case } from "../models/Case.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { FileIntegrity } from "../models/FileIntegrity.js";
+import { NotificationService } from "../services/notifications.js";
+import { Types } from "mongoose";
 import { requireAuth } from "../middleware/auth.js";
 import { requireResourceAccess, getAccessibleCaseIds, canAccessCase } from "../middleware/authorization.js";
 import {
@@ -461,6 +463,9 @@ router.patch("/:id", requireResourceAccess("document"), async (req: Request, res
       updates["rejectedReason"] = req.body["rejectedReason"] ?? "";
     }
 
+    // Fetch the original document to detect state changes
+    const originalDocument = await DocumentModel.findById(req.params["id"]);
+
     const document = await DocumentModel.findByIdAndUpdate(req.params["id"], updates, {
       new: true,
       runValidators: true,
@@ -469,6 +474,39 @@ router.patch("/:id", requireResourceAccess("document"), async (req: Request, res
     if (!document) {
       res.status(404).json({ message: "Document not found" });
       return;
+    }
+
+    // Notify uploader if document was approved or rejected
+    if (
+      updates["state"] !== undefined &&
+      originalDocument &&
+      originalDocument.state !== updates["state"] &&
+      (updates["state"] === "Approved" || updates["state"] === "Rejected")
+    ) {
+      // Notify the uploader if they are not the one who made the change
+      if (document.uploadedBy && !document.uploadedBy.equals(req.userId)) {
+        const notificationType = updates["state"] === "Approved" ? "DOCUMENT_SHARED" : "DOCUMENT_SHARED"; // We can use different types, but let's use DOCUMENT_SHARED for both for now
+        const title = updates["state"] === "Approved" ? "Document Approved" : "Document Rejected";
+        const message = updates["state"] === "Approved"
+          ? `Your document "${document.name}" has been approved.`
+          : `Your document "${document.name}" has been rejected.${document.rejectedReason ? " Reason: " + document.rejectedReason : ""}`;
+
+        await NotificationService.createNotification({
+          userId: document.uploadedBy,
+          type: "DOCUMENT_SHARED", // We'll use this type for both approved and rejected for simplicity
+          title,
+          message,
+          relatedId: document._id,
+          relatedModel: "Document",
+          actorId: new Types.ObjectId(req.userId),
+          metadata: {
+            documentName: document.name,
+            documentId: document._id.toString(),
+            state: updates["state"],
+            rejectedReason: updates["state"] === "Rejected" ? document.rejectedReason : undefined,
+          },
+        }, req.app.get("io"));
+      }
     }
 
     await AuditLog.create(createDocumentAuditLog(
@@ -508,6 +546,26 @@ router.post("/:docId/request-access", requireResourceAccess("document", "docId")
     });
 
     await document.save();
+
+    // Notify the document's uploader about the access request (if they are not the requester)
+    if (document.uploadedBy && !document.uploadedBy.equals(req.userId)) {
+      await NotificationService.createNotification({
+        userId: document.uploadedBy,
+        type: "DOCUMENT_SHARED", // We can create a specific type for access request, but let's use DOCUMENT_SHARED for now
+        title: "Access Request Received",
+        message: `User "${req.user?.name ?? "Unknown"}" has requested access to your document "${document.name}".`,
+        relatedId: document._id,
+        relatedModel: "Document",
+        actorId: new Types.ObjectId(req.userId),
+        metadata: {
+          documentName: document.name,
+          documentId: document._id.toString(),
+          requesterId: req.userId,
+          requesterName: req.user?.name ?? "Unknown",
+          reason: reason ?? "",
+        },
+      }, req.app.get("io"));
+    }
 
     await AuditLog.create(createDocumentAuditLog(
       req.userId!,
@@ -561,6 +619,32 @@ router.patch("/:docId/access-requests/:requestId", requireAuth, async (req: Requ
 
     request.status = status;
     await document.save();
+
+    // Notify the requester about the outcome of their access request
+    if (request.userId && !request.userId.equals(req.userId)) { // Not notifying the admin who made the decision
+      const notificationTitle = status === "approved" ? "Access Request Approved" : "Access Request Rejected";
+      const notificationMessage = status === "approved"
+        ? `Your request to access document "${document.name}" has been approved.`
+        : `Your request to access document "${document.name}" has been rejected.${request.reason ? " Reason: " + request.reason : ""}`;
+
+      await NotificationService.createNotification({
+        userId: request.userId,
+        type: "DOCUMENT_SHARED", // We can use a specific type, but let's reuse for now
+        title: notificationTitle,
+        message: notificationMessage,
+        relatedId: document._id,
+        relatedModel: "Document",
+        actorId: new Types.ObjectId(req.userId),
+        metadata: {
+          documentName: document.name,
+          documentId: document._id.toString(),
+          requesterId: request.userId,
+          requesterName: request.userId.toString(), // We don't have the name here, but we can fetch it if needed
+          status: status,
+          reason: request.reason ?? "",
+        },
+      }, req.app.get("io"));
+    }
 
     try {
       await AuditLog.create(createDocumentAuditLog(

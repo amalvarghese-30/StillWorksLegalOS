@@ -1,0 +1,7 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { Link } from "@tanstack/react-router";
+import { ChevronRight } from "lucide-react";
+import { cn } from "@/lib/utils";
+export function PageHeader({ breadcrumb, title, subtitle, actions, className, }) {
+    return (_jsxs("header", { className: cn("mb-8", className), children: [_jsx("nav", { "aria-label": "Breadcrumb", className: "flex flex-wrap items-center gap-1 text-caption", children: breadcrumb.map((crumb, i) => (_jsxs("span", { className: "flex items-center gap-1", children: [i > 0 ? (_jsx(ChevronRight, { size: 14, strokeWidth: 1.75, className: "text-muted-foreground/60" })) : null, crumb.to ? (_jsx(Link, { to: crumb.to, className: "rounded-sm px-1 py-0.5 text-muted-foreground transition-colors duration-150 hover:text-foreground", children: crumb.label })) : (_jsx("span", { className: "px-1 py-0.5 text-muted-foreground/80", children: crumb.label }))] }, crumb.label))) }), _jsxs("div", { className: "mt-3 grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end", children: [_jsxs("div", { className: "min-w-0", children: [_jsx("h1", { className: "text-page font-semibold tracking-tight", children: title }), subtitle ? (_jsx("p", { className: "mt-1.5 max-w-2xl text-body text-muted-foreground", children: subtitle })) : null] }), actions ? _jsx("div", { className: "flex flex-wrap items-center gap-2", children: actions }) : null] })] }));
+}
