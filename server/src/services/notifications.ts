@@ -1,6 +1,6 @@
 import { Types } from "mongoose";
-import { Notification, INotification } from "../models/Notification";
-import { User } from "../models/User";
+import { Notification, INotification } from "../models/Notification.js";
+import { User } from "../models/User.js";
 
 // ---------------------------------------------------------------------------
 // Types
