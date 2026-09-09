@@ -25,7 +25,7 @@ export const Route = createFileRoute("/_admin/admin/approvals")({
   component: ApprovalsPage,
 });
 
-const FILTERS = ["All", "Documents", "Access", "Cases", "Clients"] as const;
+const FILTERS = ["All", "Documents", "Access"] as const;
 type Filter = (typeof FILTERS)[number];
 
 const iconFor = (kind: string) =>

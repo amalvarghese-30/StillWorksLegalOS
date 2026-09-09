@@ -29,7 +29,31 @@ interface SocketContextValue {
   status: ConnectionStatus;
 }
 
-const SOCKET_URL = import.meta.env["VITE_SOCKET_URL"] ?? "http://localhost:3001";
+function getSocketUrl(): string {
+  if (import.meta.env["VITE_SOCKET_URL"]) {
+    return import.meta.env["VITE_SOCKET_URL"];
+  }
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    // Electron desktop app: connect to the hosted production WebSocket
+    if (window.STILLWORKS_ENV?.isElectron) {
+      return "https://legalos.stillworks.in";
+    }
+    // Local dev
+    if (host === "localhost" || host === "127.0.0.1") {
+      return "http://localhost:3001";
+    }
+    // Local LAN IP (testing on same WiFi)
+    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(host)) {
+      return `${window.location.protocol}//${host}:3001`;
+    }
+    // Production domain (e.g. legalos.stillworks.in) behind Nginx reverse proxy
+    return window.location.origin;
+  }
+  return "https://legalos.stillworks.in";
+}
+
+const SOCKET_URL = getSocketUrl();
 
 // ---------------------------------------------------------------------------
 // Context

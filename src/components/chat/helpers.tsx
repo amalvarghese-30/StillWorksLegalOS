@@ -1,5 +1,79 @@
-import { Check, CheckCheck } from "lucide-react";
+import { Check, CheckCheck, Briefcase } from "lucide-react";
 import type { ChatMessage } from "@/services/chat";
+
+const CASE_REGEX =
+  /\b(?:W\.?P\.?(?:\([A-Za-z]+\))?|O\.?S\.?|Crl\.?A\.?|S\.?L\.?P\.?(?:\([A-Za-z]+\))?|C\.?P\.?|Arb\.?P\.?|C\.?S\.?|M\.?C\.?|Mat\.?App\.?|L\.?P\.?A\.?|Review Pet\.?|RFA|RSA|Bail Appl\.?)\s*(?:No\.?)?\s*\d+\s*[\/-]\s*\d{2,4}\b/i;
+
+export function highlightMentions(
+  text: string,
+  searchQuery?: string,
+  onCaseClick?: (caseNum: string) => void,
+): React.ReactNode {
+  if (!text) return null;
+
+  const combinedRegex =
+    /(@\w+|\b(?:W\.?P\.?(?:\([A-Za-z]+\))?|O\.?S\.?|Crl\.?A\.?|S\.?L\.?P\.?(?:\([A-Za-z]+\))?|C\.?P\.?|Arb\.?P\.?|C\.?S\.?|M\.?C\.?|Mat\.?App\.?|L\.?P\.?A\.?|Review Pet\.?|RFA|RSA|Bail Appl\.?)\s*(?:No\.?)?\s*\d+\s*[\/-]\s*\d{2,4}\b)/gi;
+
+  const parts = text.split(combinedRegex);
+
+  const renderTextSegment = (seg: string, keyPrefix: string | number) => {
+    if (!searchQuery || !searchQuery.trim()) return seg;
+    const escaped = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const searchRegex = new RegExp(`(${escaped})`, "gi");
+    const subParts = seg.split(searchRegex);
+    return subParts.map((sub, j) =>
+      sub.toLowerCase() === searchQuery.toLowerCase() ? (
+        <mark
+          key={`${keyPrefix}-search-${j}`}
+          className="rounded bg-amber-300/70 px-0.5 font-semibold text-foreground dark:bg-amber-500/50"
+        >
+          {sub}
+        </mark>
+      ) : (
+        sub
+      ),
+    );
+  };
+
+  return parts.map((part, i) => {
+    if (!part) return null;
+
+    if (part.startsWith("@")) {
+      return (
+        <span
+          key={i}
+          className="rounded bg-primary/15 px-1 font-medium text-primary hover:bg-primary/25 transition-colors"
+        >
+          {part}
+        </span>
+      );
+    }
+
+    if (CASE_REGEX.test(part)) {
+      return (
+        <button
+          key={i}
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onCaseClick) {
+              onCaseClick(part);
+            } else {
+              window.location.href = `/cases?search=${encodeURIComponent(part)}`;
+            }
+          }}
+          className="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[11.5px] font-semibold text-primary transition-all hover:bg-primary/20 hover:shadow-xs active:scale-95 mx-0.5"
+          title={`Click to open Case Workspace for ${part}`}
+        >
+          <Briefcase size={11} strokeWidth={2} className="shrink-0" />
+          <span>{part}</span>
+        </button>
+      );
+    }
+
+    return <span key={i}>{renderTextSegment(part, i)}</span>;
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Shared chat utilities + small presentational pieces
@@ -54,18 +128,6 @@ export function formatLastSeen(iso: string | null | undefined): string {
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
-export function highlightMentions(text: string): React.ReactNode {
-  const parts = text.split(/(@\w+)/g);
-  return parts.map((part, i) =>
-    part.startsWith("@") ? (
-      <span key={i} className="rounded bg-primary/15 px-1 font-medium text-primary">
-        {part}
-      </span>
-    ) : (
-      part
-    ),
-  );
-}
 
 // WhatsApp message bubble tail
 export function MessageTail({ own }: { own: boolean }) {

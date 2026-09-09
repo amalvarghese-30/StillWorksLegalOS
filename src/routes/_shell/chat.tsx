@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, AlertTriangle, Wifi, WifiOff, Lock, MessageSquare, ChevronLeft } from "lucide-react";
@@ -38,6 +38,8 @@ import {
   useToggleMute,
   useToggleArchive,
   useReportMessage,
+  usePinMessage,
+  useUnpinMessage,
   type ChatGroup,
   type ChatMessage,
   type UserForContact,
@@ -75,8 +77,10 @@ function ChatPage() {
   const { socket, status: connStatus } = useSocket();
   const search = Route.useSearch();
 
+  const navigate = useNavigate();
   const [activeGroupId, setActiveGroupId] = useState<string | null>(search["groupId"] ?? null);
   const [searchConv, setSearchConv] = useState("");
+  const [inChatSearch, setInChatSearch] = useState("");
   const [chatInput, setChatInput] = useState("");
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
   const [forwardMessage, setForwardMessage] = useState<ChatMessage | null>(null);
@@ -131,6 +135,8 @@ function ChatPage() {
   const toggleMute = useToggleMute();
   const toggleArchive = useToggleArchive();
   const reportMutation = useReportMessage();
+  const pinMessageMutation = usePinMessage();
+  const unpinMessageMutation = useUnpinMessage();
 
   const activeMembers = activeGroup?.members ?? [];
 
@@ -159,11 +165,12 @@ function ChatPage() {
     };
   }, [socket, activeGroupId, qc]);
 
-  // Reset pagination when switching conversations.
+  // Reset pagination and in-chat search when switching conversations.
   useEffect(() => {
     setOlderPages([]);
     setOlderCursor(undefined);
     setLoadingOlder(false);
+    setInChatSearch("");
   }, [activeGroupId]);
 
   const handleLoadOlder = async () => {
@@ -262,6 +269,16 @@ function ChatPage() {
     qc.invalidateQueries({ queryKey: chatKeys.members(data.groupId) });
   });
 
+  useSocketEvent<{ groupId: string }>("chat:message-pinned", (data) => {
+    qc.invalidateQueries({ queryKey: chatKeys.groups() });
+    qc.invalidateQueries({ queryKey: chatKeys.messages(data.groupId) });
+  });
+
+  useSocketEvent<{ groupId: string }>("chat:message-unpinned", (data) => {
+    qc.invalidateQueries({ queryKey: chatKeys.groups() });
+    qc.invalidateQueries({ queryKey: chatKeys.messages(data.groupId) });
+  });
+
   // ── Socket: reactions ────────────────────────────────────────────────────
   useSocketEvent("chat:reaction", (data: { groupId?: string }) => {
     if (data.groupId) qc.invalidateQueries({ queryKey: chatKeys.messages(data.groupId) });
@@ -348,18 +365,39 @@ function ChatPage() {
   }, [socket, activeGroupId]);
 
   // ── Message actions ──────────────────────────────────────────────────────
-  const handleSend = useCallback(() => {
-    const text = chatInput.trim();
-    if (!text || !activeGroupId) return;
-    sendStopTyping();
-    const replyTo = replyingTo
-      ? { messageId: replyingTo._id, text: replyingTo.text, senderName: replyingTo.sender.name }
-      : undefined;
-    sendMutation.mutate(
-      { groupId: activeGroupId, text, ...(replyTo ? { replyTo } : {}) },
-      { onSuccess: () => { setChatInput(""); setReplyingTo(null); } },
-    );
-  }, [chatInput, activeGroupId, replyingTo, sendMutation, sendStopTyping]);
+  const handleSend = useCallback(
+    (attachments?: { name: string; nasPath: string; size: string }[]) => {
+      const text = chatInput.trim();
+      const hasAttachments = attachments && attachments.length > 0;
+      if ((!text && !hasAttachments) || !activeGroupId) return;
+      sendStopTyping();
+      const replyTo = replyingTo
+        ? { messageId: replyingTo._id, text: replyingTo.text, senderName: replyingTo.sender.name }
+        : undefined;
+
+      // Extract mentions if any member's name is tagged with @
+      const mentionedIds = activeGroup?.members
+        ?.filter((m) => text.includes(`@${m.name}`))
+        ?.map((m) => m._id) ?? [];
+
+      sendMutation.mutate(
+        {
+          groupId: activeGroupId,
+          text,
+          attachments,
+          mentions: mentionedIds.length > 0 ? mentionedIds : undefined,
+          ...(replyTo ? { replyTo } : {}),
+        },
+        {
+          onSuccess: () => {
+            setChatInput("");
+            setReplyingTo(null);
+          },
+        },
+      );
+    },
+    [chatInput, activeGroupId, replyingTo, activeGroup, sendMutation, sendStopTyping],
+  );
 
   const handleReply = (msg: ChatMessage) => {
     setReplyingTo(msg);
@@ -407,6 +445,37 @@ function ChatPage() {
     if (!activeGroupId) return;
     addReactionMutation.mutate({ groupId: activeGroupId, messageId: msg._id, emoji });
   };
+
+  const handlePinNotice = (msg: ChatMessage) => {
+    if (!activeGroupId) return;
+    pinMessageMutation.mutate({ groupId: activeGroupId, messageId: msg._id });
+  };
+
+  const handleUnpinNotice = () => {
+    if (!activeGroupId) return;
+    unpinMessageMutation.mutate({ groupId: activeGroupId });
+  };
+
+  const handleJumpToMessage = (messageId: string) => {
+    const el = document.getElementById(`msg-${messageId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("ring-2", "ring-primary", "rounded-lg", "transition-all", "duration-500");
+      setTimeout(() => {
+        el.classList.remove("ring-2", "ring-primary", "rounded-lg", "transition-all", "duration-500");
+      }, 2000);
+    } else {
+      toast.info("Message is in earlier history. Scroll up to load older messages.");
+    }
+  };
+
+  const handleCaseClick = (caseNum: string) => {
+    navigate({ to: "/cases", search: { search: caseNum } as any });
+  };
+
+  const searchMatchesCount = inChatSearch.trim()
+    ? allMessages.filter((m) => m.text?.toLowerCase().includes(inChatSearch.trim().toLowerCase())).length
+    : 0;
 
   // ── Group actions ────────────────────────────────────────────────────────
   const handleCreateGroup = (name: string, memberIds: string[]) => {
@@ -536,7 +605,7 @@ function ChatPage() {
       )}
 
       {!groupsLoading && !groupsError && (
-        <div className="grid h-[calc(100vh-7.5rem)] min-h-[540px] overflow-hidden rounded-lg border border-border bg-card shadow-soft lg:grid-cols-[340px_minmax(0,1fr)]">
+        <div className="grid h-[calc(100dvh-5.5rem)] min-h-[480px] overflow-hidden rounded-lg border border-border bg-card shadow-soft sm:h-[calc(100vh-7.5rem)] sm:min-h-[540px] lg:grid-cols-[340px_minmax(0,1fr)]">
           <div className={`${activeGroupId ? "hidden lg:block" : "block"} min-h-0 min-w-0`}>
             <ChatSidebar
               groups={groups}
@@ -549,6 +618,9 @@ function ChatPage() {
               onSelect={setActiveGroupId}
               onNewGroup={() => setShowCreateGroup(true)}
               onNewChat={() => setShowNewChat(true)}
+              users={allUsers}
+              onStartDirectChat={handleStartDirectChat}
+              isCreatingDirectChat={createDirectChatMutation.isPending}
             />
           </div>
 
@@ -562,15 +634,6 @@ function ChatPage() {
               </div>
             ) : (
               <>
-                <button
-                  type="button"
-                  onClick={() => setActiveGroupId(null)}
-                  aria-label="Back to conversations"
-                  className="flex w-full items-center gap-1.5 border-b border-border bg-card/70 px-4 py-3 text-left text-helper font-medium lg:hidden"
-                >
-                  <ChevronLeft size={17} strokeWidth={1.75} />
-                  Back to chats
-                </button>
                 <ChatHeader
                   group={activeGroup}
                   currentUserId={user?._id ?? ""}
@@ -582,6 +645,12 @@ function ChatPage() {
                   onToggleArchive={handleToggleArchive}
                   isAdmin={isAdmin}
                   onDeleteGroup={() => setDeleteConfirmOpen(true)}
+                  onBack={() => setActiveGroupId(null)}
+                  searchQuery={inChatSearch}
+                  onSearchChange={setInChatSearch}
+                  matchCount={searchMatchesCount}
+                  onJumpToMessage={handleJumpToMessage}
+                  onUnpinMessage={handleUnpinNotice}
                 />
                 <MessageList
                   messages={allMessages}
@@ -604,8 +673,12 @@ function ChatPage() {
                   onDeleteForEveryone={handleDeleteForEveryone}
                   onReport={handleReport}
                   onToggleReaction={handleToggleReaction}
+                  searchQuery={inChatSearch}
+                  onCaseClick={handleCaseClick}
+                  onPinNotice={handlePinNotice}
                 />
                 <MessageComposer
+                  groupId={activeGroupId ?? ""}
                   value={chatInput}
                   onChange={setChatInput}
                   onSend={handleSend}

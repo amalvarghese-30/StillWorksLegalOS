@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { Plus, CalendarDays, ChevronLeft, ChevronRight, Gavel, PhoneCall, CheckSquare, Users, Building2, User, Loader2, AlertTriangle } from "lucide-react";
+import { Plus, CalendarDays, ChevronLeft, ChevronRight, Gavel, PhoneCall, CheckSquare, Users, Building2, User, Loader2, AlertTriangle, Search } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
@@ -56,6 +56,7 @@ function CalendarPage() {
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
   const [view, setView] = useState("Month");
+  const [search, setSearch] = useState("");
   const [filterEmployee, setFilterEmployee] = useState(isAdmin ? "all" : "me");
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
 
@@ -71,7 +72,16 @@ function CalendarPage() {
   const { data: empData } = useEmployees(undefined, { enabled: isAdmin });
   const apiEmployees = empData?.employees ?? [];
 
-  const events: CalendarEvent[] = eventsData?.events ?? [];
+  const allEvents: CalendarEvent[] = eventsData?.events ?? [];
+  const query = search.trim().toLowerCase();
+  const events = query
+    ? allEvents.filter((e) =>
+        e.title.toLowerCase().includes(query) ||
+        (e.description && e.description.toLowerCase().includes(query)) ||
+        (e.caseName && e.caseName.toLowerCase().includes(query)) ||
+        (e.clientName && e.clientName.toLowerCase().includes(query))
+      )
+    : allEvents;
 
   const monthNames = [
     "January", "February", "March", "April", "May", "June",
@@ -149,7 +159,7 @@ function CalendarPage() {
         }
       />
 
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="inline-flex rounded-pill border border-border bg-card p-1 shadow-soft">
           {["Month", "Week", "Day", "Agenda"].map((v) => (
             <button
@@ -163,6 +173,20 @@ function CalendarPage() {
             </button>
           ))}
         </div>
+
+        {/* Search events */}
+        <label className="flex min-w-0 flex-1 items-center gap-3 rounded-pill border border-border bg-card px-4 py-2.5 shadow-soft sm:max-w-xs">
+          <Search size={18} strokeWidth={1.75} className="shrink-0 text-muted-foreground" />
+          <input
+            type="search"
+            aria-label="Search events"
+            placeholder="Search hearings or cases…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="min-w-0 flex-1 bg-transparent text-helper outline-none"
+          />
+        </label>
+
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="rounded-md" onClick={prevMonth}><ChevronLeft size={16} /></Button>
           <Button variant="outline" size="sm" className="rounded-md" onClick={goToday}>Today</Button>

@@ -1,5 +1,6 @@
-import { Search, Users as UsersIcon, MessageSquare, Plus, Pin, BellOff, Archive, UserPlus } from "lucide-react";
+import { Search, Users as UsersIcon, MessageSquare, Plus, Pin, BellOff, Archive, UserPlus, UserCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -7,7 +8,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { formatTime, computeInitials } from "./helpers";
-import type { ChatGroup } from "@/services/chat";
+import type { ChatGroup, UserForContact } from "@/services/chat";
 
 interface ChatSidebarProps {
   groups: ChatGroup[];
@@ -20,6 +21,9 @@ interface ChatSidebarProps {
   onSelect: (id: string) => void;
   onNewGroup: () => void;
   onNewChat: () => void;
+  users?: UserForContact[];
+  onStartDirectChat?: (userId: string) => void;
+  isCreatingDirectChat?: boolean;
 }
 
 function ChatRow({
@@ -51,7 +55,7 @@ function ChatRow({
     <button
       onClick={() => onSelect(group._id)}
       className={`grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg p-2.5 text-left transition-colors duration-150 ${
-        active ? "bg-primary/8" : "hover:bg-accent"
+        active ? "bg-primary/8 font-medium" : "hover:bg-accent"
       }`}
     >
       <span className="relative grid size-11 shrink-0 place-items-center rounded-full bg-primary/12 text-helper font-semibold text-primary">
@@ -99,12 +103,38 @@ export function ChatSidebar({
   onSelect,
   onNewGroup,
   onNewChat,
+  users = [],
+  onStartDirectChat,
+  isCreatingDirectChat = false,
 }: ChatSidebarProps) {
   const query = search.trim().toLowerCase();
   const filtered = query ? groups.filter((g) => g.name.toLowerCase().includes(query)) : groups;
   const pinned = filtered.filter((g) => g.isPinned && !g.isArchived);
   const main = filtered.filter((g) => !g.isPinned && !g.isArchived);
   const archived = filtered.filter((g) => g.isArchived);
+
+  // Search firm colleagues/employees when typing a query
+  const matchingUsers = query
+    ? users.filter(
+        (u) =>
+          u._id !== currentUserId &&
+          (u.name.toLowerCase().includes(query) || (u.email && u.email.toLowerCase().includes(query))),
+      )
+    : [];
+
+  const handleColleagueClick = (colleagueId: string) => {
+    // Check if direct conversation already exists in groups
+    const existing = groups.find(
+      (g) => g.type === "direct" && g.members.some((m) => m._id === colleagueId),
+    );
+    if (existing) {
+      onSelect(existing._id);
+      onSearchChange("");
+    } else if (onStartDirectChat) {
+      onStartDirectChat(colleagueId);
+      onSearchChange("");
+    }
+  };
 
   const renderRows = (list: ChatGroup[]) =>
     list.length === 0 ? null : (
@@ -130,8 +160,8 @@ export function ChatSidebar({
           <Search size={15} strokeWidth={1.75} className="shrink-0 text-muted-foreground" />
           <input
             type="search"
-            aria-label="Search conversations"
-            placeholder="Search chats"
+            aria-label="Search conversations or colleagues"
+            placeholder="Search chats or colleagues…"
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
             className="min-w-0 flex-1 bg-transparent text-helper outline-none"
@@ -159,6 +189,56 @@ export function ChatSidebar({
       </div>
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 pb-3">
+        {/* If searching and colleagues match, present them prominently */}
+        {query && matchingUsers.length > 0 && (
+          <div>
+            <p className="mb-1 flex items-center justify-between px-2 text-[11px] font-medium uppercase tracking-wide text-primary">
+              <span>Firm Colleagues</span>
+              <span className="text-muted-foreground">Tap to chat</span>
+            </p>
+            <ul className="space-y-0.5">
+              {matchingUsers.map((u) => {
+                const isOnline = onlineIds.has(u._id) || u.status === "online";
+                return (
+                  <li key={u._id}>
+                    <button
+                      type="button"
+                      disabled={isCreatingDirectChat}
+                      onClick={() => handleColleagueClick(u._id)}
+                      className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg p-2.5 text-left transition-colors hover:bg-primary/10 active:bg-primary/20"
+                    >
+                      <span className="relative grid size-10 shrink-0 place-items-center rounded-full bg-primary/15 text-helper font-semibold text-primary">
+                        <Avatar className="size-10">
+                          <AvatarFallback className="bg-primary/15 text-sm font-semibold text-primary">
+                            {computeInitials(u.name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        {isOnline && (
+                          <span className="absolute bottom-0 right-0 size-3 rounded-full border-2 border-card bg-success" />
+                        )}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-helper font-medium text-foreground">{u.name}</p>
+                        <p className="truncate text-caption text-muted-foreground">{u.email}</p>
+                      </div>
+                      <span className="flex items-center gap-1 text-[11px] font-medium text-primary">
+                        <UserCheck size={14} />
+                        <span className="hidden sm:inline">Chat</span>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
+        {query && filtered.length > 0 && matchingUsers.length > 0 && (
+          <p className="px-2 pt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Active Chats
+          </p>
+        )}
+
         {pinned.length > 0 && (
           <div>
             <p className="mb-1 px-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -179,11 +259,11 @@ export function ChatSidebar({
           </div>
         )}
 
-        {filtered.length === 0 && (
+        {filtered.length === 0 && matchingUsers.length === 0 && (
           <div className="flex flex-col items-center gap-2 py-12 text-center">
             <UserPlus size={28} strokeWidth={1.25} className="text-muted-foreground/40" />
             <p className="text-helper text-muted-foreground">
-              {query ? "No chats match your search" : "No conversations yet"}
+              {query ? "No chats or colleagues match your search" : "No conversations yet"}
             </p>
           </div>
         )}

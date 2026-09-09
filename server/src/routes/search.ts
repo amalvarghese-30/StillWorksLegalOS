@@ -6,7 +6,7 @@ import { Client } from "../models/Client.js";
 import { DocumentModel } from "../models/Document.js";
 import { Task } from "../models/Task.js";
 import { User } from "../models/User.js";
-import { canAccessCase, getAccessibleCaseIds } from "../middleware/authorization.js";
+import { canAccessCase, getAccessibleCaseIds, getAccessibleClientIds } from "../middleware/authorization.js";
 
 const router = Router();
 
@@ -75,29 +75,27 @@ router.get("/", async (req: Request, res: Response) => {
         let clientFilter: any = {
           $or: [
             { name: queryRegex },
-            // We could search by other fields like email, phone, etc.
+            { email: queryRegex },
+            { phone: queryRegex },
           ],
         };
 
-        // Non-admins only see clients they have access to?
-        // In the current system, clients are accessible if the user has access to a case that has the client, or if they are assigned?
-        // For simplicity, we'll allow all authenticated users to see all clients?
-        // But that might not be correct. We'll follow the same pattern as clients route.
-        // The clients route already has authorization middleware, but we are not using it here.
-        // We'll do a simplified version: non-admins can only see clients that are in their accessible cases.
         if (req.user!.role !== "admin") {
-          const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
-          // Find clients that are in those cases
-          // We'll need to get the client IDs from the cases
-          // This is getting complex. For now, we'll let admins search all clients, and non-admins see none in the search.
-          // Alternatively, we can skip client search for non-admins for now.
-          // We'll return an empty array for non-admins.
-          return [];
+          const accessibleClientIds = await getAccessibleClientIds(req.userId!, req.user!.role);
+          if (accessibleClientIds.length === 0) {
+            return [];
+          }
+          clientFilter = {
+            $and: [
+              clientFilter,
+              { _id: { $in: accessibleClientIds } },
+            ],
+          };
         }
 
         return await Client.find(clientFilter)
           .limit(limitNum)
-          .select("name _id")
+          .select("name _id kycStatus type")
           .lean();
       })(),
 

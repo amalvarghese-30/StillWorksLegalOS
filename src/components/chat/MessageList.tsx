@@ -21,6 +21,9 @@ interface MessageListProps {
   onDeleteForEveryone: (msg: ChatMessage) => void;
   onReport: (msg: ChatMessage) => void;
   onToggleReaction: (msg: ChatMessage, emoji: string) => void;
+  searchQuery?: string;
+  onCaseClick?: (caseNum: string) => void;
+  onPinNotice?: (msg: ChatMessage) => void;
 }
 
 export function MessageList({
@@ -40,6 +43,9 @@ export function MessageList({
   onDeleteForEveryone,
   onReport,
   onToggleReaction,
+  searchQuery,
+  onCaseClick,
+  onPinNotice,
 }: MessageListProps) {
   const endRef = useRef<HTMLDivElement>(null);
   const isGroup = groupMembers.length > 2;
@@ -130,6 +136,9 @@ const readStateFor = (msg: ChatMessage): ReadState => {
               onDeleteForEveryone={onDeleteForEveryone}
               onReport={onReport}
               onToggleReaction={onToggleReaction}
+              searchQuery={searchQuery}
+              onCaseClick={onCaseClick}
+              onPinNotice={onPinNotice}
             />
           </div>
         );

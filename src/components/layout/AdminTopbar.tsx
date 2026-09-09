@@ -16,8 +16,9 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { AdminSidebar } from "./AdminSidebar";
 import { useAuth } from "@/lib/auth";
-import { useNotifications } from "@/lib/notifications";
+import { useNotifications, type Notification } from "@/lib/notifications";
 import { useSearch } from "@/lib/search";
+import { useCreateDirectChat } from "@/services/chat";
 import { useNavigate } from "@tanstack/react-router";
 
 export function AdminTopbar() {
@@ -28,12 +29,41 @@ export function AdminTopbar() {
   const { user } = useAuth();
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
   const { searchResults, isLoading, isError } = useSearch(searchTerm, { limit: 8 });
+  const createDirectChat = useCreateDirectChat();
   const navigate = useNavigate();
 
   const toggleTheme = () => {
     const next = !dark;
     setDark(next);
     document.documentElement.classList.toggle("dark", next);
+  };
+
+  const handleUserClick = (userId: string) => {
+    setSearchTerm("");
+    createDirectChat.mutate(
+      { userId },
+      {
+        onSuccess: (res) => {
+          navigate({ to: "/chat", search: { groupId: res.group._id } });
+        },
+      }
+    );
+  };
+
+  const handleNotificationClick = (n: Notification) => {
+    markAsRead(n._id);
+    setNotificationsOpen(false);
+    if (n.relatedModel === "Case" && n.relatedId) {
+      navigate({ to: "/cases/$caseId", params: { caseId: n.relatedId } });
+    } else if (n.relatedModel === "Document") {
+      navigate({ to: "/documents" });
+    } else if (n.relatedModel === "Task") {
+      navigate({ to: "/tasks" });
+    } else if (n.relatedModel === "CalendarEvent") {
+      navigate({ to: "/calendar" });
+    } else if (n.type.startsWith("CHAT") || n.relatedModel === "ChatGroup") {
+      navigate({ to: "/chat" });
+    }
   };
 
   return (
@@ -237,8 +267,9 @@ export function AdminTopbar() {
                   {notifications.map((notification) => (
                     <div
                       key={notification._id}
-                      className={`flex flex-col gap-2 p-4 rounded-lg border border-border bg-card ${
-                        !notification.read ? "bg-primary/5" : ""
+                      onClick={() => handleNotificationClick(notification)}
+                      className={`flex flex-col gap-2 p-4 rounded-lg border border-border bg-card cursor-pointer transition-colors hover:border-primary/40 ${
+                        !notification.read ? "bg-primary/5 font-medium" : ""
                       }`}
                     >
                       <div className="flex items-start gap-3">

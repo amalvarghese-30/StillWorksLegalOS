@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   UploadCloud,
   Clock3,
@@ -22,6 +22,14 @@ import { StatusPill, toneForStatus } from "@/components/common/StatusPill";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import { useAuth } from "@/lib/auth";
 import { useDocuments, useNasStructure, useRequestAccess, downloadDocument, type DocumentRecord, type NasFolder } from "@/services/documents";
 import { UploadDocumentDialog } from "@/components/documents/UploadDocumentDialog";
 import { VersionHistoryDialog } from "@/components/documents/VersionHistoryDialog";
@@ -49,46 +57,78 @@ const SHELVES = [
   { key: "favourites", label: "Favourites", icon: Star },
   { key: "cases", label: "Assigned cases", icon: Briefcase },
   { key: "shared", label: "Shared with me", icon: Share2 },
-  { key: "approvals", label: "Pending approval", icon: ShieldCheck },
+  { key: "court", label: "Court filings", icon: ShieldCheck },
 ];
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-IN", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  try {
+    return new Date(iso).toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return iso;
+  }
 }
 
-/** `uploadedBy` may be a populated `{ _id, name }` object (from `.populate`) or a raw id string. */
 function uploadedByName(doc: DocumentRecord): string {
-  const by = doc.uploadedBy;
-  if (!by) return "Unknown";
-  return typeof by === "string" ? by : by.name ?? "Unknown";
+  if (doc.uploadedByName) return doc.uploadedByName;
+  if (typeof doc.uploadedBy === "object" && doc.uploadedBy?.name) return doc.uploadedBy.name;
+  return "Colleague";
 }
 
-function DocumentCard({ doc, active, onClick }: { doc: DocumentRecord; active: boolean; onClick: () => void }) {
+function DocumentCard({
+  doc,
+  active,
+  onClick,
+  isFav,
+  onToggleFav,
+}: {
+  doc: DocumentRecord;
+  active: boolean;
+  onClick: () => void;
+  isFav?: boolean;
+  onToggleFav?: (e: React.MouseEvent) => void;
+}) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={`lift card-hover pressable w-full rounded-lg border bg-card p-5 text-left shadow-soft transition-colors ${
-        active ? "border-primary/50 ring-1 ring-primary/20" : "border-border"
+      className={`group w-full rounded-lg border p-5 text-left transition-all duration-200 ${
+        active
+          ? "border-primary/40 bg-primary/5 ring-1 ring-primary/20 shadow-soft"
+          : "border-border bg-card shadow-soft hover:-translate-y-0.5 hover:border-primary/30"
       }`}
     >
-      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
-        <span className="num grid size-11 shrink-0 place-items-center rounded-sm bg-muted text-caption font-semibold text-muted-foreground">
-          {doc.kind}
-        </span>
-        <div className="min-w-0">
-          <p className="truncate font-medium">{doc.name}</p>
-          <p className="truncate text-caption text-muted-foreground">
-            {doc.caseName || doc.nasFolder || "—"}
-          </p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="grid size-11 place-items-center rounded-sm bg-primary/10 text-primary">
+            <FileText size={22} strokeWidth={1.75} />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-title font-semibold group-hover:text-primary transition-colors">
+              {doc.name}
+            </p>
+            {doc.caseName ? (
+              <p className="truncate text-helper text-muted-foreground">{doc.caseName}</p>
+            ) : null}
+          </div>
         </div>
+        {onToggleFav && (
+          <button
+            type="button"
+            onClick={onToggleFav}
+            className={`p-1 transition-colors ${isFav ? "text-amber-500" : "text-muted-foreground/30 hover:text-muted-foreground"}`}
+            title={isFav ? "Remove from favourites" : "Add to favourites"}
+          >
+            <Star size={16} fill={isFav ? "currentColor" : "none"} strokeWidth={1.75} />
+          </button>
+        )}
       </div>
       <div className="mt-4 flex items-center justify-between gap-3">
         <span className="num text-caption text-muted-foreground">
-          {doc.size} · {uploadedByName(doc)}
+          {doc.sizeFormatted ?? doc.size} · {uploadedByName(doc)}
         </span>
         <StatusPill tone={toneForStatus(doc.state)}>{doc.state}</StatusPill>
       </div>
@@ -97,8 +137,17 @@ function DocumentCard({ doc, active, onClick }: { doc: DocumentRecord; active: b
 }
 
 function DocumentsPage() {
+  const { user } = useAuth();
   const [grid, setGrid] = useState(true);
   const [activeShelf, setActiveShelf] = useState("recent");
+  const [favourites, setFavourites] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem("stillworks_fav_docs");
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
   const [showNasPanel, setShowNasPanel] = useState(false);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [showRequestAccess, setShowRequestAccess] = useState(false);
@@ -108,20 +157,64 @@ function DocumentsPage() {
   const [versionHistoryDocId, setVersionHistoryDocId] = useState("");
   const [versionHistoryDocName, setVersionHistoryDocName] = useState("");
   const [search, setSearch] = useState("");
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+
+  const toggleFav = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setFavourites((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try {
+        localStorage.setItem("stillworks_fav_docs", JSON.stringify(Array.from(next)));
+      } catch {}
+      return next;
+    });
+  };
 
   const requestAccess = useRequestAccess();
   const { data, isLoading, isError, error } = useDocuments();
   const { data: nasData, isLoading: nasLoading, isError: nasError } = useNasStructure();
 
-  const documents = data?.documents ?? [];
-  const filtered = search.trim()
-    ? documents.filter((d) => d.name.toLowerCase().includes(search.toLowerCase()))
-    : documents;
+  const rawDocs = data?.documents ?? [];
+
+  const filtered = useMemo(() => {
+    const shelfDocs = rawDocs.filter((d) => {
+      if (activeShelf === "favourites") return favourites.has(d._id);
+      if (activeShelf === "cases") return Boolean(d.caseId || d.caseName);
+      if (activeShelf === "shared") {
+        const uploaderId = typeof d.uploadedBy === "object" ? d.uploadedBy._id : d.uploadedBy;
+        return user?._id ? uploaderId !== user._id : true;
+      }
+      if (activeShelf === "court") {
+        const n = (d.name || "").toLowerCase();
+        const k = (d.kind || "").toLowerCase();
+        return k === "filing" || n.includes("petition") || n.includes("court") || n.includes("affidavit") || n.includes("order") || n.includes("notice");
+      }
+      return true; // "recent"
+    });
+
+    return search.trim()
+      ? shelfDocs.filter((d) =>
+          d.name.toLowerCase().includes(search.toLowerCase()) ||
+          (d.caseName && d.caseName.toLowerCase().includes(search.toLowerCase()))
+        )
+      : shelfDocs;
+  }, [rawDocs, activeShelf, search, favourites, user]);
+
   const nasFolders: NasFolder[] = nasData?.folders ?? [];
 
   // Select first doc as default preview
   const [selected, setSelected] = useState<DocumentRecord | null>(null);
   const previewDoc = selected ?? filtered[0] ?? null;
+
+  const handleDocSelect = (doc: DocumentRecord) => {
+    setSelected(doc);
+    // On screens < 1280px, open mobile drawer
+    if (typeof window !== "undefined" && window.innerWidth < 1280) {
+      setMobileDrawerOpen(true);
+    }
+  };
 
   // Toast state for stub actions
   const [toast, setToast] = useState<{ message: string; type: "info" | "success" | "warning" | "error" } | null>(null);
@@ -307,7 +400,7 @@ function DocumentsPage() {
         <div className="min-w-0">
           <div className="mb-4 flex items-center justify-between gap-3">
             <p className="text-helper text-muted-foreground">
-              {search.trim() ? `${filtered.length} results` : `${documents.length} files`}
+              {search.trim() ? `${filtered.length} results` : `${rawDocs.length} files`}
             </p>
             <div className="inline-flex rounded-pill border border-border bg-card p-1">
               <button
@@ -385,14 +478,16 @@ function DocumentsPage() {
                   key={d._id}
                   doc={d}
                   active={previewDoc?._id === d._id}
-                  onClick={() => setSelected(d)}
+                  onClick={() => handleDocSelect(d)}
+                  isFav={favourites.has(d._id)}
+                  onToggleFav={(e) => toggleFav(d._id, e)}
                 />
               ))}
             </div>
           )}
         </div>
 
-        {/* Right: Preview panel */}
+        {/* Right: Desktop Preview panel */}
         <aside className="hidden xl:sticky xl:top-28 xl:block xl:self-start">
           <div className="rounded-lg border border-border bg-card p-6 shadow-soft">
             {previewDoc ? (
@@ -437,6 +532,64 @@ function DocumentsPage() {
         </aside>
       </div>
 
+      {/* Mobile/Tablet Document Inspector Sheet */}
+      <Sheet open={mobileDrawerOpen} onOpenChange={setMobileDrawerOpen}>
+        <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto rounded-t-xl p-6 xl:hidden">
+          <SheetHeader className="text-left">
+            <SheetTitle className="truncate text-title font-semibold">
+              {previewDoc?.name ?? "Document Details"}
+            </SheetTitle>
+            {previewDoc?.caseName && (
+              <SheetDescription className="truncate text-helper text-muted-foreground">
+                {previewDoc.caseName}
+              </SheetDescription>
+            )}
+          </SheetHeader>
+          {previewDoc && (
+            <div className="mt-4 space-y-4">
+              <div className="grid h-32 place-items-center rounded-md bg-muted/70">
+                <FileText size={34} strokeWidth={1.5} className="text-muted-foreground" />
+              </div>
+              <dl className="space-y-2.5 text-helper">
+                {[
+                  ["Uploaded by", uploadedByName(previewDoc)],
+                  ["Size", previewDoc.size],
+                  ["Version", previewDoc.version || 1],
+                  ["Folder", previewDoc.nasPath || "—"],
+                  ["Updated", formatDate(previewDoc.updatedAt)],
+                ].map(([k, v]) => (
+                  <div key={k} className="flex justify-between gap-3 border-b border-border/50 py-1.5">
+                    <dt className="text-muted-foreground">{k}</dt>
+                    <dd className="truncate font-medium">{v}</dd>
+                  </div>
+                ))}
+              </dl>
+              <div className="flex gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  className="flex-1 rounded-md"
+                  onClick={() => {
+                    setMobileDrawerOpen(false);
+                    handleVersions(previewDoc);
+                  }}
+                >
+                  Versions
+                </Button>
+                <Button
+                  className="gradient-primary flex-1 rounded-md text-primary-foreground"
+                  onClick={() => {
+                    setMobileDrawerOpen(false);
+                    handleOpen(previewDoc);
+                  }}
+                >
+                  Download / Open
+                </Button>
+              </div>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
+
       {showUploadDialog && (
         <UploadDocumentDialog open={showUploadDialog} onClose={() => setShowUploadDialog(false)} />
       )}
@@ -459,7 +612,7 @@ function DocumentsPage() {
                 className="h-11 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               >
                 <option value="">Select document…</option>
-                {documents.filter((d) => d.state !== "Approved").map((d) => (
+                {rawDocs.filter((d) => d.state !== "Approved").map((d) => (
                   <option key={d._id} value={d._id}>
                     {d.name} ({d.caseName || "General"})
                   </option>

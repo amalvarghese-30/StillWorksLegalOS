@@ -330,12 +330,12 @@ function AuditLogsPage() {
       />
 
       <div className="mb-6 border-b border-border">
-        <nav className="flex gap-1 p-1 bg-muted/50 rounded-lg" role="tablist" aria-label="Audit log views">
+        <nav className="flex gap-1 overflow-x-auto p-1 bg-muted/50 rounded-lg no-scrollbar" role="tablist" aria-label="Audit log views">
           <button
             role="tab"
             aria-selected={activeTab === "logs"}
             onClick={() => setActiveTab("logs")}
-            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+            className={`shrink-0 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
               activeTab === "logs" ? "bg-background shadow-soft text-foreground" : "text-muted-foreground hover:text-foreground"
             }`}
           >

@@ -1,8 +1,14 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import mongoose from "mongoose";
+import fs from "node:fs";
+import path from "node:path";
+import busboy from "busboy";
 import { ChatGroup, ChatMessage } from "../models/Chat.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { User } from "../models/User.js";
+import { NotificationService } from "../services/notifications.js";
+import { uploadStream, downloadStream } from "../services/webdav.js";
+import { formatBytes } from "../services/nas.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
 import rateLimit from "express-rate-limit";
 
@@ -174,6 +180,16 @@ async function serializeGroup(
     isPinned: contains(group.pinnedBy),
     isMuted: contains(group.mutedBy),
     isArchived: contains(group.archivedBy),
+    pinnedMessage: group.pinnedMessage
+      ? {
+          messageId: group.pinnedMessage.messageId?.toString(),
+          text: group.pinnedMessage.text,
+          senderName: group.pinnedMessage.senderName,
+          pinnedBy: group.pinnedMessage.pinnedBy?.toString(),
+          pinnedByName: group.pinnedMessage.pinnedByName,
+          at: toIso(group.pinnedMessage.at),
+        }
+      : null,
     createdAt: toIso(group.createdAt),
   };
 }
@@ -515,12 +531,21 @@ router.post(
   sendMessageLimiter,
   async (req: Request, res: Response) => {
     try {
-      const { text, mentions, replyTo } = req.body;
-      if (typeof text !== "string" || !text.trim()) {
-        res.status(400).json({ message: "Message text is required" });
+      const { text, mentions, replyTo, attachments } = req.body;
+      const cleanText = typeof text === "string" ? text.trim() : "";
+      const validAttachments = (Array.isArray(attachments) ? attachments : [])
+        .filter((a: any) => a && typeof a.name === "string" && typeof a.nasPath === "string")
+        .map((a: any) => ({
+          name: String(a.name).slice(0, 200),
+          nasPath: String(a.nasPath),
+          size: String(a.size || ""),
+        }));
+
+      if (!cleanText && validAttachments.length === 0) {
+        res.status(400).json({ message: "Message text or attachment is required" });
         return;
       }
-      if (text.trim().length > MAX_MESSAGE_LENGTH) {
+      if (cleanText.length > MAX_MESSAGE_LENGTH) {
         res.status(400).json({
           message: `Message too long (max ${MAX_MESSAGE_LENGTH} characters)`,
         });
@@ -555,10 +580,11 @@ router.post(
       const now = new Date();
       const message = await ChatMessage.create({
         groupId,
-        text: text.trim(),
+        text: cleanText,
         sender: req.user!._id,
         senderName,
         senderInitials,
+        attachments: validAttachments,
         mentions: validMentions,
         replyTo: replyPayload,
         readBy: [req.user!._id],
@@ -566,9 +592,15 @@ router.post(
       });
 
       // Update group's last message
+      const lastMessageText = cleanText
+        ? cleanText.slice(0, 100)
+        : validAttachments.length > 0
+          ? `📎 ${validAttachments[0].name}`
+          : "";
+
       await ChatGroup.findByIdAndUpdate(groupId, {
         lastMessage: {
-          text: text.slice(0, 100),
+          text: lastMessageText,
           senderId: req.user!._id,
           senderName,
           at: now,
@@ -598,11 +630,215 @@ router.post(
           groupId: groupId,
           deliveredAt: now,
         });
+
+        // Mention notifications: create notification for each mentioned colleague
+        if (validMentions.length > 0) {
+          for (const mentionOid of validMentions) {
+            if (mentionOid.toString() === req.userId) continue;
+            try {
+              const preview = cleanText || validAttachments[0]?.name || "a file";
+              await NotificationService.createNotification(
+                {
+                  userId: mentionOid,
+                  type: "COMMENT_MENTION",
+                  title: "Mentioned in Chat",
+                  message: `${senderName} mentioned you in ${group.type === "direct" ? "direct chat" : group.name}: "${preview.slice(0, 80)}"`,
+                  relatedId: groupId,
+                  relatedModel: "ChatGroup",
+                  actorId: req.user!._id,
+                  metadata: { groupId: groupId.toString(), messageId: message._id.toString() },
+                },
+                io,
+              );
+            } catch (notifErr) {
+              console.error("[chat] Mention notification error:", notifErr);
+            }
+          }
+        }
       }
 
       res.status(201).json(serialized);
     } catch (err) {
       console.error("[chat] Send message error:", err);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// POST /api/chat/groups/:groupId/upload — upload file attachment for chat
+// ---------------------------------------------------------------------------
+
+const MAX_CHAT_UPLOAD_BYTES = 50 * 1024 * 1024; // 50MB
+
+router.post(
+  "/groups/:groupId/upload",
+  requireChatMembership,
+  async (req: Request, res: Response) => {
+    try {
+      const contentType = req.headers["content-type"] ?? "";
+      if (!contentType.toLowerCase().startsWith("multipart/form-data")) {
+        res.status(400).json({ message: "Expected multipart/form-data" });
+        return;
+      }
+
+      const groupId = String(req.params["groupId"] ?? "");
+      const bb = busboy({
+        headers: req.headers,
+        limits: { fileSize: MAX_CHAT_UPLOAD_BYTES },
+      });
+
+      let fileSeen = false;
+      let settled = false;
+      let uploadTask: Promise<void> = Promise.resolve();
+
+      const respond = (status: number, body: unknown) => {
+        if (settled) return;
+        settled = true;
+        res.status(status).json(body);
+      };
+
+      bb.on("file", (_fieldname, fileStream, info) => {
+        if (fileSeen) {
+          fileStream.resume();
+          return;
+        }
+        fileSeen = true;
+
+        const originalName = info.filename || "file";
+        const mimeType = info.mimeType || "application/octet-stream";
+
+        uploadTask = (async () => {
+          try {
+            const safeBase = originalName
+              .replace(/\.[^.]+$/, "")
+              .replace(/[^a-zA-Z0-9_-]/g, "_")
+              .slice(0, 80);
+            const ext = originalName.includes(".")
+              ? originalName.substring(originalName.lastIndexOf("."))
+              : "";
+            const uniqueName = `${Date.now()}-${safeBase}${ext}`;
+
+            // Local fallback persistence ensures attachments always work regardless of WebDAV status
+            const uploadsDir = path.resolve(process.cwd(), "uploads", "chat", groupId);
+            await fs.promises.mkdir(uploadsDir, { recursive: true });
+            const localFilePath = path.join(uploadsDir, uniqueName);
+
+            const localWriteStream = fs.createWriteStream(localFilePath);
+            let bytesWritten = 0;
+
+            await new Promise<void>((resolve, reject) => {
+              fileStream.on("data", (chunk: Buffer) => {
+                bytesWritten += chunk.length;
+              });
+              fileStream.pipe(localWriteStream);
+              localWriteStream.on("finish", () => resolve());
+              localWriteStream.on("error", reject);
+              fileStream.on("error", reject);
+            });
+
+            const localNasPath = `local:chat/${groupId}/${uniqueName}`;
+            let finalNasPath = localNasPath;
+
+            // Attempt WebDAV replication to Synology NAS if configured
+            try {
+              const webdavPath = `/Chat/${groupId}/${uniqueName}`;
+              const fileReadStream = fs.createReadStream(localFilePath);
+              await uploadStream(webdavPath, fileReadStream);
+              finalNasPath = webdavPath;
+            } catch {
+              // WebDAV not active or failed; local storage remains authoritative
+            }
+
+            respond(200, {
+              attachment: {
+                name: originalName,
+                nasPath: finalNasPath,
+                size: formatBytes(bytesWritten),
+                mimeType,
+              },
+            });
+          } catch (err) {
+            console.error("[chat] Attachment upload processing error:", err);
+            respond(500, { message: "Failed to process chat attachment" });
+          }
+        })();
+      });
+
+      bb.on("error", (err) => {
+        console.error("[chat] Multipart parse error:", err);
+        respond(400, { message: "Malformed upload request" });
+      });
+
+      bb.on("close", async () => {
+        await uploadTask;
+        if (!settled) {
+          respond(fileSeen ? 500 : 400, { message: fileSeen ? "Upload failed" : "No file uploaded" });
+        }
+      });
+
+      req.pipe(bb);
+    } catch (err) {
+      console.error("[chat] Upload endpoint error:", err);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// GET /api/chat/groups/:groupId/attachments/download — download chat attachment
+// ---------------------------------------------------------------------------
+
+router.get(
+  "/groups/:groupId/attachments/download",
+  requireChatMembership,
+  async (req: Request, res: Response) => {
+    try {
+      const nasPath = (req.query["path"] as string) || "";
+      const fileName = (req.query["name"] as string) || "attachment";
+
+      if (!nasPath) {
+        res.status(400).json({ message: "Attachment path is required" });
+        return;
+      }
+
+      if (nasPath.startsWith("local:")) {
+        const localRel = nasPath.replace(/^local:/, "");
+        const safeBase = path.resolve(process.cwd(), "uploads");
+        const fullPath = path.resolve(safeBase, localRel);
+
+        if (!fullPath.startsWith(safeBase)) {
+          res.status(403).json({ message: "Access denied: invalid file path" });
+          return;
+        }
+
+        if (!fs.existsSync(fullPath)) {
+          res.status(404).json({ message: "Attachment file not found on server" });
+          return;
+        }
+
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="${encodeURIComponent(fileName)}"`,
+        );
+        fs.createReadStream(fullPath).pipe(res);
+        return;
+      }
+
+      // Stream from WebDAV NAS
+      try {
+        const stream = await downloadStream(nasPath);
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="${encodeURIComponent(fileName)}"`,
+        );
+        stream.pipe(res);
+      } catch (davErr) {
+        console.error("[chat] WebDAV download error:", davErr);
+        res.status(502).json({ message: "Failed to retrieve attachment from NAS storage" });
+      }
+    } catch (err) {
+      console.error("[chat] Attachment download error:", err);
       res.status(500).json({ message: "Internal server error" });
     }
   },
@@ -1258,5 +1494,88 @@ router.post("/groups/:groupId/mute", requireChatMembership, makePrefHandler("mut
 router.post("/groups/:groupId/unmute", requireChatMembership, makePrefHandler("mutedBy", false));
 router.post("/groups/:groupId/archive", requireChatMembership, makePrefHandler("archivedBy", true));
 router.post("/groups/:groupId/unarchive", requireChatMembership, makePrefHandler("archivedBy", false));
+
+// ---------------------------------------------------------------------------
+// Pin / Unpin a critical notice message to the top of the chat group header
+// ---------------------------------------------------------------------------
+
+router.post(
+  "/groups/:groupId/pin-message",
+  requireChatMembership,
+  async (req: Request, res: Response) => {
+    try {
+      const { messageId } = req.body ?? {};
+      if (!messageId) {
+        res.status(400).json({ message: "messageId is required" });
+        return;
+      }
+
+      const message = await ChatMessage.findById(messageId);
+      const group = (req as any).chatGroup;
+
+      if (!message || message.groupId.toString() !== group._id.toString()) {
+        res.status(404).json({ message: "Message not found in this group" });
+        return;
+      }
+
+      const textSnippet = message.text?.trim()
+        ? message.text.slice(0, 200)
+        : message.attachments?.[0]?.name
+          ? `📎 ${message.attachments[0].name}`
+          : "Pinned notice";
+
+      group.pinnedMessage = {
+        messageId: message._id,
+        text: textSnippet,
+        senderName: message.senderName || "Member",
+        pinnedBy: req.user!._id,
+        pinnedByName: req.user?.name || "Member",
+        at: new Date(),
+      };
+
+      await group.save();
+      const serialized = await serializeGroup(group, req.userId!);
+
+      const io = req.app.get("io");
+      if (io) {
+        io.to(`chat:${group._id}`).emit("chat:message-pinned", {
+          groupId: group._id.toString(),
+          pinnedMessage: (serialized as any).pinnedMessage,
+        });
+      }
+
+      res.json({ group: serialized });
+    } catch (err) {
+      console.error("[chat] Pin message error:", err);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  },
+);
+
+router.post(
+  "/groups/:groupId/unpin-message",
+  requireChatMembership,
+  async (req: Request, res: Response) => {
+    try {
+      const group = (req as any).chatGroup;
+      group.pinnedMessage = undefined;
+      await group.save();
+
+      const serialized = await serializeGroup(group, req.userId!);
+
+      const io = req.app.get("io");
+      if (io) {
+        io.to(`chat:${group._id}`).emit("chat:message-unpinned", {
+          groupId: group._id.toString(),
+        });
+      }
+
+      res.json({ group: serialized });
+    } catch (err) {
+      console.error("[chat] Unpin message error:", err);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  },
+);
 
 export default router;

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSocketEvent } from "@/lib/socket";
 import { useQueryClient } from "@tanstack/react-query";
 import { notificationKeys } from "./query-keys";
+import { apiFetch } from "@/services/api";
 
 // We'll define the notification shape as per our backend
 export interface Notification {
@@ -30,15 +31,13 @@ export function useNotifications() {
   // Fetch notifications on mount and whenever we want to refetch
   const fetchNotifications = useCallback(async () => {
     try {
-      const res = await fetch("/api/notifications", {
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to fetch notifications");
-      const data = await res.json();
+      const data = await apiFetch<{ notifications: Notification[]; total?: number; unreadCount?: number }>(
+        "/notifications"
+      );
       setNotifications(data.notifications ?? []);
 
       // Calculate unread count
-      const count = data.notifications?.filter((n: Notification) => !n.read).length ?? 0;
+      const count = data.unreadCount ?? data.notifications?.filter((n: Notification) => !n.read).length ?? 0;
       setUnreadCount(count);
     } catch (err) {
       console.error("[useNotifications] Failed to fetch notifications:", err);
@@ -81,11 +80,9 @@ export function useNotifications() {
   const markAsRead = useCallback(
     async (notificationId: string) => {
       try {
-        const res = await fetch(`/api/notifications/${notificationId}/read`, {
+        await apiFetch(`/notifications/${notificationId}/read`, {
           method: "PATCH",
-          credentials: "include",
         });
-        if (!res.ok) throw new Error("Failed to mark as read");
         // Optimistically update the state
         setNotifications((prev) =>
           prev.map((n) =>
@@ -103,11 +100,9 @@ export function useNotifications() {
   // Mark all notifications as read
   const markAllAsRead = useCallback(async () => {
     try {
-      const res = await fetch(`/api/notifications/read-all`, {
+      await apiFetch("/notifications/read-all", {
         method: "PATCH",
-        credentials: "include",
       });
-      if (!res.ok) throw new Error("Failed to mark all as read");
       // Optimistically update all to read
       setNotifications((prev) =>
         prev.map((n) => ({ ...n, read: true }))
@@ -122,11 +117,9 @@ export function useNotifications() {
   const deleteNotification = useCallback(
     async (notificationId: string) => {
       try {
-        const res = await fetch(`/api/notifications/${notificationId}`, {
+        await apiFetch(`/notifications/${notificationId}`, {
           method: "DELETE",
-          credentials: "include",
         });
-        if (!res.ok) throw new Error("Failed to delete notification");
         // Optimistically remove from state
         setNotifications((prev) => prev.filter((n) => n._id !== notificationId));
         // We don't know if it was read or unread, so we'll refetch the count to be safe

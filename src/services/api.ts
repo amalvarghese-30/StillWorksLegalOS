@@ -7,7 +7,31 @@
 // (web) or from the OS-level safeStorage vault (Electron desktop).
 // ---------------------------------------------------------------------------
 
-const API_BASE = import.meta.env["VITE_API_URL"] ?? "http://localhost:3001/api";
+function getApiBase(): string {
+  if (import.meta.env["VITE_API_URL"]) {
+    return import.meta.env["VITE_API_URL"];
+  }
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    // Electron desktop app: connect to the hosted production API
+    if (window.STILLWORKS_ENV?.isElectron) {
+      return "https://legalos.stillworks.in/api";
+    }
+    // Local dev
+    if (host === "localhost" || host === "127.0.0.1") {
+      return "http://localhost:3001/api";
+    }
+    // Local LAN IP (testing on same WiFi)
+    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(host)) {
+      return `${window.location.protocol}//${host}:3001/api`;
+    }
+    // Production domain (e.g. legalos.stillworks.in) behind Nginx reverse proxy
+    return `${window.location.origin}/api`;
+  }
+  return "https://legalos.stillworks.in/api";
+}
+
+const API_BASE = getApiBase();
 
 // ---------------------------------------------------------------------------
 // Client-type detection

@@ -52,7 +52,7 @@ const MONGODB_URI = process.env["MONGODB_URI"] ?? "mongodb://localhost:27017/sti
 // CORS origins — Recommendation #3: allow both Vite dev & Electron
 // ---------------------------------------------------------------------------
 
-const rawOrigins = process.env["CORS_ORIGINS"] ?? "http://localhost:5173,app://.";
+const rawOrigins = process.env["CORS_ORIGINS"] ?? "http://localhost:5173,app://.,https://legalos.stillworks.in";
 const ALLOWED_ORIGINS = rawOrigins
   .split(",")
   .map((s) => s.trim())

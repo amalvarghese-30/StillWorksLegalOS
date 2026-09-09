@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
-import { Plus, PhoneCall, ListTodo, LayoutGrid, CalendarDays, CheckCircle2, Circle, Clock, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, PhoneCall, ListTodo, LayoutGrid, CalendarDays, CheckCircle2, Circle, Clock, Loader2, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
 import { StatusPill, toneForStatus } from "@/components/common/StatusPill";
@@ -142,12 +142,22 @@ function TaskCard({ task }: { task: TaskRecord }) {
 
 function TasksPage() {
   const [view, setView] = useState("list");
+  const [search, setSearch] = useState("");
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showQuickCall, setShowQuickCall] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const { data, isLoading, isError, error } = useTasks();
 
-  const tasks = data?.tasks ?? [];
+  const allTasks = data?.tasks ?? [];
+  const query = search.trim().toLowerCase();
+  const tasks = useMemo(() => {
+    if (!query) return allTasks;
+    return allTasks.filter((t) =>
+      t.title.toLowerCase().includes(query) ||
+      (t.category && t.category.toLowerCase().includes(query)) ||
+      (t.assignedTo && typeof t.assignedTo === "object" && "name" in t.assignedTo && (t.assignedTo as { name: string }).name.toLowerCase().includes(query))
+    );
+  }, [allTasks, query]);
 
   // Calendar helpers
   const calendarDays = useMemo(() => {
@@ -211,21 +221,36 @@ function TasksPage() {
         }
       />
 
-      <div className="mb-6 inline-flex rounded-pill border border-border bg-card p-1 shadow-soft">
-        {VIEWS.map((v) => (
-          <button
-            key={v.id}
-            onClick={() => setView(v.id)}
-            className={`flex min-h-11 items-center gap-2 rounded-pill px-4 text-helper font-medium transition-all duration-200 ${
-              view === v.id
-                ? "gradient-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <v.icon size={17} strokeWidth={1.75} />
-            {v.label}
-          </button>
-        ))}
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="inline-flex rounded-pill border border-border bg-card p-1 shadow-soft">
+          {VIEWS.map((v) => (
+            <button
+              key={v.id}
+              onClick={() => setView(v.id)}
+              className={`flex min-h-11 items-center gap-2 rounded-pill px-4 text-helper font-medium transition-all duration-200 ${
+                view === v.id
+                  ? "gradient-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <v.icon size={17} strokeWidth={1.75} />
+              {v.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Universal search input for tasks */}
+        <label className="flex min-w-0 flex-1 items-center gap-3 rounded-pill border border-border bg-card px-4 py-2.5 shadow-soft sm:max-w-xs">
+          <Search size={18} strokeWidth={1.75} className="shrink-0 text-muted-foreground" />
+          <input
+            type="search"
+            aria-label="Search tasks"
+            placeholder="Search tasks or assignee…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="min-w-0 flex-1 bg-transparent text-helper outline-none"
+          />
+        </label>
       </div>
 
       {/* Loading */}
@@ -265,11 +290,11 @@ function TasksPage() {
 
       {/* Data */}
       {!isLoading && !isError && tasks.length > 0 && view === "kanban" ? (
-        <div className="grid gap-4 lg:grid-cols-4">
+        <div className="flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-4">
           {BUCKETS.map((b) => {
             const bucketTasks = tasks.filter((t) => getBucket(t) === b);
             return (
-              <div key={b} className="rounded-lg border border-border bg-card/70 p-4">
+              <div key={b} className="w-[85vw] shrink-0 snap-center rounded-lg border border-border bg-card/70 p-4 sm:w-auto">
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="text-helper font-semibold">{b}</h2>
                   <StatusPill tone={toneForStatus(b)}>{bucketTasks.length}</StatusPill>
@@ -306,65 +331,67 @@ function TasksPage() {
             </div>
           </div>
 
-          {/* Calendar grid */}
-          <div className="rounded-lg border border-border bg-card overflow-hidden">
-            {/* Weekday headers */}
-            <div className="grid grid-cols-7 border-b border-border bg-muted/50">
-              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, i) => (
-                <div key={day} className="px-2 py-3 text-center text-caption font-medium text-muted-foreground">
-                  {day}
-                </div>
-              ))}
-            </div>
-
-            {/* Days */}
-            <div className="grid grid-cols-7">
-              {calendarDays.map((day, i) => {
-                if (!day) {
-                  return <div key={"empty-" + i} className="min-h-[100px] p-2" />;
-                }
-                const dayTasks = getTasksForDay(day);
-                const isToday = day.toDateString() === new Date().toDateString();
-                return (
-                  <div
-                    key={day.toISOString()}
-                    className={`min-h-[100px] p-2 border-r border-b border-border ${
-                      isToday ? "bg-primary/5" : ""
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span
-                        className={`num text-caption font-medium ${
-                          isToday ? "text-primary" : "text-foreground"
-                        }`}
-                      >
-                        {day.getDate()}
-                      </span>
-                      {dayTasks.length > 0 && (
-                        <StatusPill tone="primary" className="text-caption">
-                          {dayTasks.length}
-                        </StatusPill>
-                      )}
-                    </div>
-                    <div className="space-y-1">
-                      {dayTasks.slice(0, 3).map((t) => (
-                        <div
-                          key={t._id}
-                          className="truncate text-caption px-1 py-0.5 rounded text-white bg-primary/80 hover:bg-primary"
-                          title={t.title}
-                        >
-                          {t.title}
-                        </div>
-                      ))}
-                      {dayTasks.length > 3 && (
-                        <div className="text-caption text-muted-foreground px-1">
-                          +{dayTasks.length - 3} more
-                        </div>
-                      )}
-                    </div>
+          {/* Calendar grid wrapper for mobile responsiveness */}
+          <div className="overflow-x-auto rounded-lg border border-border bg-card shadow-soft">
+            <div className="min-w-[620px]">
+              {/* Weekday headers */}
+              <div className="grid grid-cols-7 border-b border-border bg-muted/50">
+                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+                  <div key={day} className="px-2 py-3 text-center text-caption font-medium text-muted-foreground">
+                    {day}
                   </div>
-                );
-              })}
+                ))}
+              </div>
+
+              {/* Days */}
+              <div className="grid grid-cols-7">
+                {calendarDays.map((day, i) => {
+                  if (!day) {
+                    return <div key={"empty-" + i} className="min-h-[100px] border-r border-b border-border p-2" />;
+                  }
+                  const dayTasks = getTasksForDay(day);
+                  const isToday = day.toDateString() === new Date().toDateString();
+                  return (
+                    <div
+                      key={day.toISOString()}
+                      className={`min-h-[100px] p-2 border-r border-b border-border ${
+                        isToday ? "bg-primary/5" : ""
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span
+                          className={`num text-caption font-medium ${
+                            isToday ? "text-primary font-semibold" : "text-foreground"
+                          }`}
+                        >
+                          {day.getDate()}
+                        </span>
+                        {dayTasks.length > 0 && (
+                          <StatusPill tone="primary" className="text-caption">
+                            {dayTasks.length}
+                          </StatusPill>
+                        )}
+                      </div>
+                      <div className="space-y-1">
+                        {dayTasks.slice(0, 3).map((t) => (
+                          <div
+                            key={t._id}
+                            className="truncate text-caption px-1.5 py-0.5 rounded text-white bg-primary/80 hover:bg-primary"
+                            title={t.title}
+                          >
+                            {t.title}
+                          </div>
+                        ))}
+                        {dayTasks.length > 3 && (
+                          <div className="text-caption text-muted-foreground px-1">
+                            +{dayTasks.length - 3} more
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>

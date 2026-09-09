@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Synology NAS On-Site Onboarding Field Guide — StillWorks LegalOS</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+    :root {
+      --primary: #0f172a;
+      --primary-light: #1e293b;
+      --accent: #2563eb;
+      --accent-soft: #eff6ff;
+      --border: #e2e8f0;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --success: #15803d;
+      --success-bg: #f0fdf4;
+      --warning: #b45309;
+      --warning-bg: #fffbeb;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: var(--text);
+      background-color: var(--bg);
+      line-height: 1.6;
+      padding: 40px 20px;
+    }
+
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      background: var(--card);
+      padding: 50px 60px;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+      border: 1px solid var(--border);
+    }
+
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 24px;
+      margin-bottom: 32px;
+    }
+
+    .brand-title {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--primary);
+      letter-spacing: -0.02em;
+    }
+
+    .brand-subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 4px;
+    }
+
+    .print-btn {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: background 0.2s;
+    }
+
+    .print-btn:hover {
+      background: var(--accent);
+    }
+
+    h1 {
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 12px;
+    }
+
+    .doc-meta {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 28px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h2 {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--primary);
+      margin-top: 36px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    h2 .badge {
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--primary-light);
+      margin-top: 20px;
+      margin-bottom: 8px;
+    }
+
+    p, li {
+      font-size: 14px;
+      color: #334155;
+    }
+
+    ul, ol {
+      padding-left: 24px;
+      margin-bottom: 16px;
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
+    .alert {
+      padding: 14px 18px;
+      border-radius: 8px;
+      margin: 18px 0;
+      font-size: 13px;
+      border-left: 4px solid;
+    }
+
+    .alert-warning {
+      background: var(--warning-bg);
+      border-color: var(--warning);
+      color: #92400e;
+    }
+
+    .alert-info {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      color: #1e40af;
+    }
+
+    .alert-success {
+      background: var(--success-bg);
+      border-color: var(--success);
+      color: #166534;
+    }
+
+    code {
+      font-family: 'JetBrains Mono', monospace;
+      background: #f1f5f9;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 13px;
+      color: #0f172a;
+    }
+
+    .code-block {
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 14px 18px;
+      border-radius: 8px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      margin: 12px 0 16px;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      font-size: 13.5px;
+    }
+
+    th, td {
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      text-align: left;
+    }
+
+    th {
+      background: #f8fafc;
+      font-weight: 600;
+      color: var(--primary);
+    }
+
+    .fill-box {
+      border-bottom: 1px dashed #94a3b8;
+      min-height: 24px;
+      display: inline-block;
+      width: 100%;
+    }
+
+    .checklist {
+      list-style: none;
+      padding-left: 0;
+    }
+
+    .checklist li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .checklist input[type="checkbox"] {
+      margin-top: 3px;
+      transform: scale(1.15);
+      accent-color: var(--accent);
+    }
+
+    @media print {
+      body {
+        background: #fff;
+        padding: 0;
+      }
+      .container {
+        box-shadow: none;
+        border: none;
+        padding: 0;
+        max-width: 100%;
+      }
+      .print-btn {
+        display: none;
+      }
+      .page-break {
+        page-break-before: always;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header-bar">
+    <div>
+      <div class="brand-title">StillWorks LegalOS</div>
+      <div class="brand-subtitle">Enterprise Legal Practice Management</div>
+    </div>
+    <button class="print-btn" onclick="window.print()">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2m-4 0h-4v4h4v-4z"/></svg>
+      Print / Save as PDF
+    </button>
+  </div>
+
+  <h1>Synology NAS On-Site Configuration & Field Guide</h1>
+  <div class="doc-meta">
+    Target System: StillWorks LegalOS Enterprise Storage &bull; Protocol: Synology WebDAV Server &bull; Author: Implementation Team
+  </div>
+
+  <p>
+    This field guide provides an exact, step-by-step walkthrough for setting up an office Synology NAS as the secure document repository for StillWorks LegalOS during an on-site visit.
+  </p>
+
+  <h2><span class="badge">Phase 1</span> Pre-Visit Preparation</h2>
+  <ul class="checklist">
+    <li>
+      <input type="checkbox">
+      <span><strong>Master Credentials:</strong> Ask the managing partner or office manager who has the administrator password for the Synology NAS and office Wi-Fi router.</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span><strong>Diagnostic Laptop:</strong> Your laptop with StillWorks LegalOS installed and web browser ready.</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span><strong>Network Cable:</strong> Standard Cat6 Ethernet cable in case Wi-Fi is restricted.</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span><strong>Utility Tool:</strong> Download free <a href="https://www.synology.com/en-global/support/download" target="_blank">Synology Assistant</a> on your laptop.</span>
+    </li>
+  </ul>
+
+  <h2><span class="badge">Phase 2</span> Discover the NAS on the Office Network</h2>
+  <ol>
+    <li>Connect your laptop to the <strong>office Wi-Fi or office network switch</strong>.</li>
+    <li>Open your browser and navigate to:
+      <div class="code-block">http://find.synology.com</div>
+      <em>(Or open Synology Assistant and click "Search".)</em>
+    </li>
+    <li>Look for the entry showing:
+      <ul>
+        <li><strong>Model:</strong> (e.g. <code>DS220+</code>, <code>DS920+</code>, <code>DS423+</code>)</li>
+        <li><strong>IP Address:</strong> (e.g. <code>192.168.1.50</code> or <code>192.168.0.120</code>)</li>
+        <li><strong>Status:</strong> Ready</li>
+      </ul>
+    </li>
+    <li>Click <strong>Connect</strong> or navigate to <code>http://&lt;NAS_IP&gt;:5000</code>.</li>
+  </ol>
+
+  <h2><span class="badge">Phase 3</span> Set a Static (Permanent) IP</h2>
+  <div class="alert alert-warning">
+    <strong>Important:</strong> If the router restarts, dynamic DHCP could assign a new IP address, breaking the document link. Setting a static IP prevents this.
+  </div>
+  <ol>
+    <li>Log into DSM (DiskStation Manager) using the master administrator credentials.</li>
+    <li>Open <strong>Control Panel &rarr; Network &rarr; Network Interface</strong>.</li>
+    <li>Select <strong>LAN 1</strong> and click <strong>Edit</strong>.</li>
+    <li>Select <strong>"Use manual configuration"</strong>.</li>
+    <li>Keep the current IP Address, Subnet Mask, and Gateway. Set DNS Server to <code>1.1.1.1</code>.</li>
+    <li>Click <strong>OK</strong>.</li>
+  </ol>
+
+  <h2><span class="badge">Phase 4</span> Install and Enable WebDAV Server</h2>
+  <ol>
+    <li>Open <strong>Package Center</strong> from the DSM desktop.</li>
+    <li>Search for <strong>"WebDAV Server"</strong>.</li>
+    <li>If not installed, click <strong>Install</strong>. If already installed, click <strong>Open</strong>.</li>
+    <li>In the configuration dialog:
+      <ul>
+        <li>Check <strong>Enable HTTP</strong> (Port: <code>5005</code>)</li>
+        <li>Check <strong>Enable HTTPS</strong> (Port: <code>5006</code>)</li>
+      </ul>
+    </li>
+    <li>Click <strong>Apply</strong>.</li>
+  </ol>
+
+  <div class="page-break"></div>
+
+  <h2><span class="badge">Phase 5</span> Create the Shared Folder for LegalOS</h2>
+  <ol>
+    <li>Open <strong>Control Panel &rarr; Shared Folder</strong>.</li>
+    <li>Click <strong>Create &rarr; Create Shared Folder</strong>.</li>
+    <li>Configure the folder:
+      <ul>
+        <li><strong>Name:</strong> <code>LegalOS</code></li>
+        <li><strong>Description:</strong> <code>StillWorks LegalOS Document Repository</code></li>
+        <li><strong>Location:</strong> Volume 1 (or the primary storage pool)</li>
+      </ul>
+    </li>
+    <li>Click <strong>Next</strong> through the wizard and click <strong>Apply</strong>.</li>
+  </ol>
+
+  <h2><span class="badge">Phase 6</span> Create the Dedicated Service Account</h2>
+  <div class="alert alert-info">
+    <strong>Security Best Practice:</strong> Never use the master admin account inside the application. A dedicated service user isolates application access.
+  </div>
+  <ol>
+    <li>Open <strong>Control Panel &rarr; User &amp; Group</strong>.</li>
+    <li>Click <strong>Create &rarr; Create User</strong>.</li>
+    <li>Set account details:
+      <ul>
+        <li><strong>Name:</strong> <code>legalos_svc</code></li>
+        <li><strong>Password:</strong> <em>(Create a strong 16+ character password and record it below)</em></li>
+      </ul>
+    </li>
+    <li>Advance to <strong>Shared Folder Permissions</strong>:
+      <ul>
+        <li>Find the <code>LegalOS</code> folder and check <strong>Read/Write</strong>.</li>
+      </ul>
+    </li>
+    <li>Advance to <strong>Applications</strong>:
+      <ul>
+        <li>Find <strong>WebDAV Server</strong> and check <strong>Allow</strong>.</li>
+      </ul>
+    </li>
+    <li>Click <strong>Done</strong> to save.</li>
+  </ol>
+
+  <h2><span class="badge">Phase 7</span> Deployment Architecture</h2>
+  
+  <h3>Scenario A: Local Office Deployment (Server inside office)</h3>
+  <p>If the LegalOS server runs on an office computer or local mini-server on the same Wi-Fi/LAN:</p>
+  <ul>
+    <li><strong>WebDAV URL:</strong> <code>http://&lt;LOCAL_NAS_IP&gt;:5005</code> (e.g. <code>http://192.168.1.50:5005</code>)</li>
+    <li><strong>Port Forwarding:</strong> Not needed.</li>
+  </ul>
+
+  <h3>Scenario B: Cloud VPS Deployment (Server on DigitalOcean / AWS / Hetzner)</h3>
+  <p>If the LegalOS server is hosted on a cloud VPS, it must reach the office NAS over the internet:</p>
+  <ol>
+    <li><strong>Enable Free Synology DDNS:</strong>
+      <ul>
+        <li>In DSM, go to <strong>Control Panel &rarr; External Access &rarr; DDNS &rarr; Add</strong>.</li>
+        <li>Service Provider: <code>Synology</code> &bull; Hostname: <code>[firmname].synology.me</code></li>
+        <li>Check <em>"Request Let's Encrypt SSL certificate"</em> and save.</li>
+      </ul>
+    </li>
+    <li><strong>Forward Port on Office Router:</strong>
+      <ul>
+        <li>Log into the office router (e.g. <code>192.168.1.1</code>).</li>
+        <li>In Port Forwarding, forward external port <code>5006</code> (TCP) to internal NAS IP <code>5006</code>.</li>
+      </ul>
+    </li>
+    <li><strong>WebDAV URL:</strong> <code>https://[firmname].synology.me:5006</code></li>
+  </ol>
+
+  <h2><span class="badge">Phase 8</span> Live Handshake &amp; Verification Test</h2>
+  <ol>
+    <li>Open <strong>StillWorks LegalOS</strong> on your laptop and log in as <strong>Admin</strong>.</li>
+    <li>Go to <strong>Admin Settings &rarr; Storage</strong>.</li>
+    <li>Enter:
+      <ul>
+        <li><strong>WebDAV URL:</strong> <code>http://192.168.1.50:5005</code> (or <code>https://[firmname].synology.me:5006</code>)</li>
+        <li><strong>Username:</strong> <code>legalos_svc</code></li>
+        <li><strong>Password:</strong> <code>[Password created in Phase 6]</code></li>
+        <li><strong>Root folder:</strong> <code>/LegalOS</code></li>
+      </ul>
+    </li>
+    <li>Click <strong>"Test Connection"</strong>. Confirm the green checkmark appears.</li>
+    <li>Click <strong>"Save changes"</strong>.</li>
+    <li><strong>Live Upload Test:</strong> Upload any PDF under <strong>Cases</strong> or <strong>Documents</strong>. Open Synology <strong>File Station</strong>, navigate into <code>/LegalOS</code>, and verify the file is stored.</li>
+  </ol>
+
+  <div class="page-break"></div>
+
+  <h2><span class="badge">Record</span> Client Information &amp; Handover Sheet</h2>
+  <p>Complete this section on-site and save it securely in a password manager:</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 35%;">Parameter</th>
+        <th>Recorded Client Value</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Client / Law Firm Name</strong></td>
+        <td><div class="fill-box"></div></td>
+      </tr>
+      <tr>
+        <td><strong>Synology Model</strong></td>
+        <td><div class="fill-box"></div></td>
+      </tr>
+      <tr>
+        <td><strong>NAS Local Static IP</strong></td>
+        <td><div class="fill-box"></div></td>
+      </tr>
+      <tr>
+        <td><strong>External DDNS / Domain</strong></td>
+        <td><div class="fill-box"></div></td>
+      </tr>
+      <tr>
+        <td><strong>Service Username</strong></td>
+        <td><code>legalos_svc</code></td>
+      </tr>
+      <tr>
+        <td><strong>Service Password</strong></td>
+        <td><div class="fill-box"></div></td>
+      </tr>
+      <tr>
+        <td><strong>Root Shared Folder</strong></td>
+        <td><code>/LegalOS</code></td>
+      </tr>
+      <tr>
+        <td><strong>WebDAV Port</strong></td>
+        <td>HTTP: <code>5005</code> / HTTPS: <code>5006</code></td>
+      </tr>
+      <tr>
+        <td><strong>Office Router Admin IP &amp; Login</strong></td>
+        <td><div class="fill-box"></div></td>
+      </tr>
+      <tr>
+        <td><strong>ISP / Connection Type</strong></td>
+        <td><div class="fill-box"></div></td>
+      </tr>
+      <tr>
+        <td><strong>Date Configured</strong></td>
+        <td><div class="fill-box"></div></td>
+      </tr>
+      <tr>
+        <td><strong>Engineer Name &amp; Signature</strong></td>
+        <td><div class="fill-box"></div></td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+</body>
+</html>

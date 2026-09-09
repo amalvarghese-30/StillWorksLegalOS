@@ -27,6 +27,14 @@ export interface IChatGroup extends Document {
   pinnedBy: mongoose.Types.ObjectId[];
   mutedBy: mongoose.Types.ObjectId[];
   archivedBy: mongoose.Types.ObjectId[];
+  pinnedMessage?: {
+    messageId: mongoose.Types.ObjectId;
+    text: string;
+    senderName: string;
+    pinnedBy: mongoose.Types.ObjectId;
+    pinnedByName: string;
+    at: Date;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -94,6 +102,20 @@ const ChatGroupSchema = new Schema<IChatGroup>(
     pinnedBy: { type: [Schema.Types.ObjectId], ref: "User", default: [] },
     mutedBy: { type: [Schema.Types.ObjectId], ref: "User", default: [] },
     archivedBy: { type: [Schema.Types.ObjectId], ref: "User", default: [] },
+    pinnedMessage: {
+      type: new Schema(
+        {
+          messageId: { type: Schema.Types.ObjectId, ref: "ChatMessage" },
+          text: String,
+          senderName: String,
+          pinnedBy: { type: Schema.Types.ObjectId, ref: "User" },
+          pinnedByName: String,
+          at: Date,
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
   },
   {
     timestamps: true,
@@ -112,7 +134,7 @@ ChatGroupSchema.index({ "members.userId": 1 });
 const ChatMessageSchema = new Schema<IChatMessage>(
   {
     groupId: { type: Schema.Types.ObjectId, ref: "ChatGroup", required: true, index: true },
-    text: { type: String, required: true },
+    text: { type: String, default: "" },
     sender: { type: Schema.Types.ObjectId, ref: "User", required: true },
     senderName: { type: String, default: "" },
     senderInitials: { type: String, default: "" },

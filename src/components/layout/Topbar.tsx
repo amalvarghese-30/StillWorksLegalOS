@@ -20,8 +20,9 @@ import { Sidebar } from "./Sidebar";
 import { QuickActionsMenu } from "./QuickActionsMenu";
 import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
 import { useAuth } from "@/lib/auth";
-import { useNotifications } from "@/lib/notifications";
+import { useNotifications, type Notification } from "@/lib/notifications";
 import { useSearch } from "@/lib/search";
+import { useCreateDirectChat } from "@/services/chat";
 import { useNavigate } from "@tanstack/react-router";
 
 export function Topbar() {
@@ -33,12 +34,41 @@ export function Topbar() {
   const { user } = useAuth();
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
   const { searchResults, isLoading, isError } = useSearch(searchTerm, { limit: 8 });
+  const createDirectChat = useCreateDirectChat();
   const navigate = useNavigate();
 
   const toggleTheme = () => {
     const next = !dark;
     setDark(next);
     document.documentElement.classList.toggle("dark", next);
+  };
+
+  const handleUserClick = (userId: string) => {
+    setSearchTerm("");
+    createDirectChat.mutate(
+      { userId },
+      {
+        onSuccess: (res) => {
+          navigate({ to: "/chat", search: { groupId: res.group._id } });
+        },
+      }
+    );
+  };
+
+  const handleNotificationClick = (n: Notification) => {
+    markAsRead(n._id);
+    setNotificationsOpen(false);
+    if (n.relatedModel === "Case" && n.relatedId) {
+      navigate({ to: "/cases/$caseId", params: { caseId: n.relatedId } });
+    } else if (n.relatedModel === "Document") {
+      navigate({ to: "/documents" });
+    } else if (n.relatedModel === "Task") {
+      navigate({ to: "/tasks" });
+    } else if (n.relatedModel === "CalendarEvent") {
+      navigate({ to: "/calendar" });
+    } else if (n.type.startsWith("CHAT") || n.relatedModel === "ChatGroup") {
+      navigate({ to: "/chat" });
+    }
   };
 
   return (
@@ -187,9 +217,7 @@ export function Topbar() {
                     variant="ghost"
                     size="sm"
                     className="w-full text-left px-3 py-2 border-b border-border/50 hover:bg-muted"
-                    onClick={() => {
-                      console.log("User click:", userItem._id);
-                    }}
+                    onClick={() => handleUserClick(userItem._id)}
                   >
                     <div className="flex items-center gap-3">
                       <div className="shrink-0">
@@ -243,8 +271,9 @@ export function Topbar() {
                   {notifications.map((notification) => (
                     <div
                       key={notification._id}
-                      className={`flex flex-col gap-2 p-4 rounded-lg border border-border bg-card ${
-                        !notification.read ? "bg-primary/5" : ""
+                      onClick={() => handleNotificationClick(notification)}
+                      className={`flex flex-col gap-2 p-4 rounded-lg border border-border bg-card cursor-pointer transition-colors hover:border-primary/40 ${
+                        !notification.read ? "bg-primary/5 font-medium" : ""
                       }`}
                     >
                       <div className="flex items-start gap-3">

@@ -1,4 +1,4 @@
-import { Reply, Copy, Forward, Trash2, Flag } from "lucide-react";
+import { Reply, Copy, Forward, Trash2, Flag, Pin } from "lucide-react";
 import {
   ContextMenuContent,
   ContextMenuItem,
@@ -16,6 +16,7 @@ interface MessageContextMenuContentProps {
   onDeleteForMe: (msg: ChatMessage) => void;
   onDeleteForEveryone: (msg: ChatMessage) => void;
   onReport: (msg: ChatMessage) => void;
+  onPinNotice?: (msg: ChatMessage) => void;
 }
 
 export function MessageContextMenuContent({
@@ -28,6 +29,7 @@ export function MessageContextMenuContent({
   onDeleteForMe,
   onDeleteForEveryone,
   onReport,
+  onPinNotice,
 }: MessageContextMenuContentProps) {
   return (
     <ContextMenuContent className="w-56">
@@ -43,6 +45,12 @@ export function MessageContextMenuContent({
         <Forward size={15} strokeWidth={1.75} className="mr-2" />
         Forward
       </ContextMenuItem>
+      {onPinNotice && (
+        <ContextMenuItem onSelect={() => onPinNotice(message)}>
+          <Pin size={15} strokeWidth={1.75} className="mr-2" />
+          Pin notice to group
+        </ContextMenuItem>
+      )}
       <ContextMenuSeparator />
       <ContextMenuItem onSelect={() => onDeleteForMe(message)}>
         <Trash2 size={15} strokeWidth={1.75} className="mr-2" />

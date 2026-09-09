@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "./api";
+import { api, uploadStream, downloadBlob } from "./api";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -43,6 +43,14 @@ export interface ChatGroup {
   isPinned: boolean;
   isMuted: boolean;
   isArchived: boolean;
+  pinnedMessage?: {
+    messageId: string;
+    text: string;
+    senderName: string;
+    pinnedBy: string;
+    pinnedByName: string;
+    at: string | null;
+  } | null;
   unread?: number;
   createdAt: string | null;
 }
@@ -133,21 +141,60 @@ export function useGroupMembers(groupId: string | undefined) {
     enabled: !!groupId,
   });
 }
-
+ 
 export function useSendMessage() {
   const qc = useQueryClient();
   return useMutation<
     ChatMessage,
     Error,
-    { groupId: string; text: string; mentions?: string[]; replyTo?: ReplyPayload }
+    {
+      groupId: string;
+      text?: string;
+      mentions?: string[];
+      replyTo?: ReplyPayload;
+      attachments?: { name: string; nasPath: string; size: string }[];
+    }
   >({
-    mutationFn: ({ groupId, text, mentions, replyTo }) =>
-      api.post(`/chat/groups/${groupId}/messages`, { text, mentions, replyTo }),
+    mutationFn: ({ groupId, text = "", mentions, replyTo, attachments }) =>
+      api.post(`/chat/groups/${groupId}/messages`, { text, mentions, replyTo, attachments }),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: chatKeys.messages(vars.groupId) });
       qc.invalidateQueries({ queryKey: chatKeys.groups() });
     },
   });
+}
+
+export function uploadChatAttachment(
+  groupId: string,
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<{ attachment: { name: string; nasPath: string; size: string; mimeType?: string } }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return uploadStream<{ attachment: { name: string; nasPath: string; size: string; mimeType?: string } }>({
+    path: `/chat/groups/${groupId}/upload`,
+    formData,
+    ...(onProgress ? { onProgress } : {}),
+  });
+}
+
+export async function downloadChatAttachment(
+  groupId: string,
+  nasPath: string,
+  fileName: string,
+): Promise<void> {
+  const query = new URLSearchParams({ path: nasPath, name: fileName }).toString();
+  const { blob, fileName: serverName } = await downloadBlob(
+    `/chat/groups/${groupId}/attachments/download?${query}`,
+  );
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = serverName || fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }
 
 export function useCreateGroup() {
@@ -330,5 +377,29 @@ export function useReportMessage() {
   >({
     mutationFn: ({ groupId, messageId, reason }) =>
       api.post(`/chat/groups/${groupId}/messages/${messageId}/report`, { reason }),
+  });
+}
+
+export function usePinMessage() {
+  const qc = useQueryClient();
+  return useMutation<{ group: ChatGroup }, Error, { groupId: string; messageId: string }>({
+    mutationFn: ({ groupId, messageId }) =>
+      api.post(`/chat/groups/${groupId}/pin-message`, { messageId }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: chatKeys.groups() });
+      qc.invalidateQueries({ queryKey: chatKeys.messages(vars.groupId) });
+    },
+  });
+}
+
+export function useUnpinMessage() {
+  const qc = useQueryClient();
+  return useMutation<{ group: ChatGroup }, Error, { groupId: string }>({
+    mutationFn: ({ groupId }) =>
+      api.post(`/chat/groups/${groupId}/unpin-message`, {}),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: chatKeys.groups() });
+      qc.invalidateQueries({ queryKey: chatKeys.messages(vars.groupId) });
+    },
   });
 }
