@@ -68,7 +68,6 @@ const NotificationSchema = new Schema<INotification>(
 // Compound indexes for common queries
 NotificationSchema.index({ userId: 1, read: 1 });
 NotificationSchema.index({ userId: 1, createdAt: -1 }); // For fetching latest notifications
-NotificationSchema.index({ dedupeKey: 1 }, { sparse: true, unique: true }); // For deduplication
 
 // ---------------------------------------------------------------------------
 // Model
