@@ -63,10 +63,10 @@ const corsOptions: cors.CorsOptions = {
       // Allow all origins when CORS_ORIGINS=* (local testing only)
       if (ALLOWED_ORIGINS.includes("*")) return callback(null, true);
       // Same logic as Express CORS - allow dev + Electron origins
-      if (!origin) return callback(null, true);
+      if (!origin || origin === "null" || origin === "app://." || origin.startsWith("file://")) {
+        return callback(null, true);
+      }
       if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
-      // Allow file:// protocol for Electron production (loadFile)
-      if (origin.startsWith("file://")) return callback(null, true);
       if (
         process.env["NODE_ENV"] === "development" &&
         (origin.startsWith("http://localhost:") ||

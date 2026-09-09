@@ -84,8 +84,6 @@ if (!isDev) {
   app.commandLine.appendSwitch("use-gl", "swiftshader");
   app.commandLine.appendSwitch("disable-webgl");
   app.commandLine.appendSwitch("disable-gl-extensions");
-  app.commandLine.appendSwitch("disable-features", "VizDisplayCompositor,UseSkiaRenderer,GpuRasterization,NetworkService,OutOfBlinkCors");
-  app.commandLine.appendSwitch("enable-features", "NetworkServiceInProcess");
 }
 
 // ---------------------------------------------------------------------------
@@ -116,7 +114,7 @@ function createWindow(): BrowserWindow {
     minWidth: 960,
     minHeight: 640,
     title: "StillWorks LegalOS",
-    icon: path.join(__dirname, "..", "public", "favicon.ico"),
+    icon: path.join(__dirname, "..", "public", "icon.png"),
     webPreferences: {
       // Preload script (CommonJS for Electron compatibility)
       preload: fs.existsSync(path.join(__dirname, "preload.cjs"))
@@ -138,6 +136,16 @@ function createWindow(): BrowserWindow {
     titleBarStyle: "default",
     backgroundColor: "#F7F9FC",
     show: false, // show after ready-to-show
+  });
+
+  // -------------------------------------------------------------------------
+  // Cloud Origin: Attach remote origin for seamless VPS connectivity
+  // -------------------------------------------------------------------------
+  win.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
+    if (details.url.includes("stillworks.in")) {
+      details.requestHeaders["Origin"] = "https://legalos.stillworks.in";
+    }
+    callback({ requestHeaders: details.requestHeaders });
   });
 
   // -------------------------------------------------------------------------
@@ -165,14 +173,7 @@ function createWindow(): BrowserWindow {
   win.webContents.on("will-navigate", handleRedirect);
   win.webContents.on("will-redirect", handleRedirect);
 
-  // -------------------------------------------------------------------------
-  // Security: Disable devtools in production
-  // -------------------------------------------------------------------------
-  if (!isDev) {
-    win.webContents.on("devtools-opened", () => {
-      win.webContents.closeDevTools();
-    });
-  }
+  // DevTools can be toggled via Ctrl+Shift+I if needed for debugging
 
   // -------------------------------------------------------------------------
   // Security: Handle new window creation (block popups)

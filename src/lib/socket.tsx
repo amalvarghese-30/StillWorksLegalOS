@@ -35,11 +35,7 @@ function getSocketUrl(): string {
   }
   if (typeof window !== "undefined") {
     const host = window.location.hostname;
-    // Electron desktop app: connect to the hosted production WebSocket
-    if (window.STILLWORKS_ENV?.isElectron) {
-      return "https://legalos.stillworks.in";
-    }
-    // Local dev
+    // Local dev ONLY
     if (host === "localhost" || host === "127.0.0.1") {
       return "http://localhost:3001";
     }
@@ -47,9 +43,12 @@ function getSocketUrl(): string {
     if (/^(\d{1,3}\.){3}\d{1,3}$/.test(host)) {
       return `${window.location.protocol}//${host}:3001`;
     }
-    // Production domain (e.g. legalos.stillworks.in) behind Nginx reverse proxy
-    return window.location.origin;
+    // Web browser domain
+    if (host.includes("stillworks.in")) {
+      return window.location.origin;
+    }
   }
+  // Electron (file:// or custom protocol) or production remote default:
   return "https://legalos.stillworks.in";
 }
 
