@@ -1,5 +1,19 @@
 import { useState } from "react";
-import { Bell, Dot, Search, Sparkles, Menu, Sun, Moon, Plus, ChevronDown, X, Briefcase, User, FileText, CheckSquare } from "lucide-react";
+import {
+  Bell,
+  Dot,
+  Search,
+  Sparkles,
+  Menu,
+  Sun,
+  Moon,
+  Plus,
+  X,
+  Briefcase,
+  User,
+  FileText,
+  CheckSquare,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { Sidebar } from "./Sidebar";
@@ -17,7 +31,7 @@ export function Topbar() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const { user } = useAuth();
-  const { notifications, unreadCount, markAsRead, markAllAsRead, refetch } = useNotifications();
+  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
   const { searchResults, isLoading, isError } = useSearch(searchTerm, { limit: 8 });
   const navigate = useNavigate();
 
@@ -75,119 +89,123 @@ export function Topbar() {
                   <Button
                     key={`case-${caseItem._id}`}
                     variant="ghost"
-                    size="xs"
+                    size="sm"
                     className="w-full text-left px-3 py-2 border-b border-border/50 hover:bg-muted"
-                    onClick={() => navigate(`/cases/${caseItem._id}`)}
+                    onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: caseItem._id } })}
                   >
                     <div className="flex items-center gap-3">
-                      <Briefcase size={16} strokeWidth={1.75} className="text-primary" />
+                      <div className="shrink-0">
+                        <Briefcase size={16} strokeWidth={1.75} className="text-primary" />
+                      </div>
                       <div className="min-w-0">
                         <p className="font-medium">{caseItem.title}</p>
-                        <p className="text-xs text-muted-foreground">
-                          Case #{caseItem.number}
-                        </p>
+                        {caseItem.number && (
+                          <p className="text-xs text-muted-foreground">
+                            Case #{caseItem.number}
+                          </p>
+                        )}
                       </div>
                     </div>
-                  </Button
+                  </Button>
                 ))}
                 {/* Clients */}
                 {searchResults.clients.map((clientItem) => (
                   <Button
                     key={`client-${clientItem._id}`}
                     variant="ghost"
-                    size="xs"
+                    size="sm"
                     className="w-full text-left px-3 py-2 border-b border-border/50 hover:bg-muted"
-                    onClick={() => navigate(`/clients/${clientItem._id}`)}
+                    onClick={() => navigate({ to: "/clients/$clientId", params: { clientId: clientItem._id } })}
                   >
                     <div className="flex items-center gap-3">
-                      {User size={16} strokeWidth={1.75} className="text-primary" />
+                      <div className="shrink-0">
+                        <User size={16} strokeWidth={1.75} className="text-primary" />
+                      </div>
                       <div className="min-w-0">
                         <p className="font-medium">{clientItem.name}</p>
-                        <p className="text-xs text-muted-foreground>
-                          Client
-                        </p>
+                        {clientItem.kycStatus && (
+                          <p className="text-xs text-muted-foreground">
+                            {clientItem.kycStatus}
+                          </p>
+                        )}
                       </div>
                     </div>
-                  </Button
+                  </Button>
                 ))}
                 {/* Documents */}
                 {searchResults.documents.map((docItem) => (
                   <Button
-                    key={`doc-{docItem._id}`}
+                    key={`doc-${docItem._id}`}
                     variant="ghost"
-                    size="xs"
+                    size="sm"
                     className="w-full text-left px-3 py-2 border-b border-border/50 hover:bg-muted"
-                    onClick={() => navigate(`/documents/${docItem._id}`)}
+                    onClick={() => navigate({ to: "/documents" })}
                   >
-                    <div className="flex items-center gap-3>
-                      {div className="flex-shrink-0>
-                        {FileText size={16} strokeWidth={1.75} className="text-primary" />
+                    <div className="flex items-center gap-3">
+                      <div className="shrink-0">
+                        <FileText size={16} strokeWidth={1.75} className="text-primary" />
                       </div>
-                      {div className="min-w-0>
-                        {p className="font-medium>{docItem.name}</p>
-                        {p className="text-xs text-muted-foreground>
-                          Document
-                        </p>
+                      <div className="min-w-0">
+                        <p className="font-medium">{docItem.name}</p>
+                        {docItem.state && (
+                          <p className="text-xs text-muted-foreground">
+                            {docItem.state}
+                          </p>
+                        )}
                       </div>
                     </div>
-                  </Button
+                  </Button>
                 ))}
                 {/* Tasks */}
                 {searchResults.tasks.map((taskItem) => (
                   <Button
-                    key={`task-{taskItem._id}`}
+                    key={`task-${taskItem._id}`}
                     variant="ghost"
-                    size="xs"
+                    size="sm"
                     className="w-full text-left px-3 py-2 border-b border-border/50 hover:bg-muted"
-                    onClick={() => navigate(`/tasks/${taskItem._id}`)}
+                    onClick={() => navigate({ to: "/tasks" })}
                   >
-                    <div className="flex items-center gap-3>
-                      {div className="flex-shrink-0>
-                        {CheckSquare size={16} strokeWidth={1.75} className="text-primary" />
+                    <div className="flex items-center gap-3">
+                      <div className="shrink-0">
+                        <CheckSquare size={16} strokeWidth={1.75} className="text-primary" />
                       </div>
-                      {div className="min-w-0>
-                        {p className="font-medium>{taskItem.title}</p>
-                        {p className="text-xs text-muted-foreground>
-                          Task
-                        </p>
+                      <div className="min-w-0">
+                        <p className="font-medium">{taskItem.title}</p>
+                        {taskItem.status && (
+                          <p className="text-xs text-muted-foreground">
+                            {taskItem.status}
+                          </p>
+                        )}
                       </div>
                     </div>
-                  </Button
+                  </Button>
                 ))}
-                {/* Users (placeholder) */}
+                {/* Users */}
                 {searchResults.users.map((userItem) => (
                   <Button
-                    key={`user-{userItem._id}`}
+                    key={`user-${userItem._id}`}
                     variant="ghost"
-                    size="xs"
+                    size="sm"
                     className="w-full text-left px-3 py-2 border-b border-border/50 hover:bg-muted"
                     onClick={() => {
-                      // No user profile page yet, just log
                       console.log("User click:", userItem._id);
                     }}
                   >
-                    {div className="flex items-center gap-3>
-                      {div className="flex-shrink-0>
-                        {User size={16} strokeWidth={1.75} className="text-primary" />
+                    <div className="flex items-center gap-3">
+                      <div className="shrink-0">
+                        <User size={16} strokeWidth={1.75} className="text-primary" />
                       </div>
-                      {div className="min-w-0>
-                        {p className="font-medium>{userItem.name}</p>
+                      <div className="min-w-0">
+                        <p className="font-medium">{userItem.name}</p>
+                        {userItem.role && (
+                          <p className="text-xs text-muted-foreground">
+                            {userItem.role}
+                          </p>
+                        )}
                       </div>
-                      {(userItem.name || userItem.role) && (
-                        <>
-                          {userItem.name && (
-                            {p className="font-medium>{userItem.name}</p>
-                          )}
-                          {userItem.role && (
-                            {p className="text-xs text-muted-foreground>
-                              {userItem.role}
-                            </p>
-                          )}
-                        </>
-                      )}
                     </div>
-                  </Button
-                )}
+                  </Button>
+                ))}
               </>
             )}
           </div>
@@ -215,11 +233,11 @@ export function Topbar() {
               )}
             </Button>
           </SheetTrigger>
-          <SheetContent side="right" className="w-[360px] border-none bg-transparent p-4>
-            <SheetTitle className="text-lg font-semibold mb-4>Notifications</SheetTitle>
-            <div className="space-y-3>
+          <SheetContent side="right" className="w-[360px] border-none bg-transparent p-4">
+            <SheetTitle className="text-lg font-semibold mb-4">Notifications</SheetTitle>
+            <div className="space-y-3">
               {notifications.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8>No notifications</p>
+                <p className="text-center text-muted-foreground py-8">No notifications</p>
               ) : (
                 <>
                   {notifications.map((notification) => (
@@ -229,22 +247,24 @@ export function Topbar() {
                         !notification.read ? "bg-primary/5" : ""
                       }`}
                     >
-                      <div className="flex items-start gap-3>
-                        {Bell size={18} strokeWidth={1.75} className="text-primary" />
-                        {notification.message &&
-                          <p className="text-sm text-muted-foreground line-clamp-2>
-                            {notification.message}
-                          </p>
-                        }
-                        {p className="text-xs text-muted-foreground mt-1>
-                          {new Date(notification.createdAt).toLocaleString(undefined, {
-                            timeStyle: "short",
-                            dateStyle: "short",
-                          })}
+                      <div className="flex items-start gap-3">
+                        <Bell size={18} strokeWidth={1.75} className="text-primary mt-0.5 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-sm">{notification.title}</p>
+                          {notification.message && (
+                            <p className="text-sm text-muted-foreground line-clamp-2">
+                              {notification.message}
+                            </p>
+                          )}
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {new Date(notification.createdAt).toLocaleString(undefined, {
+                              timeStyle: "short",
+                              dateStyle: "short",
+                            })}
                           </p>
                         </div>
                       </div>
-                      {div className="flex items-end gap-2>
+                      <div className="flex items-end gap-2 justify-end">
                         {!notification.read && (
                           <Button
                             variant="ghost"
@@ -252,24 +272,21 @@ export function Topbar() {
                             onClick={() => markAsRead(notification._id)}
                             aria-label="Mark as read"
                           >
-                            {Dot size={12} />
-                          </Button
+                            <Dot size={12} />
+                          </Button>
                         )}
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => {
-                            // For now, we just mark as read on close
-                            markAsRead(notification._id);
-                          }}
+                          onClick={() => markAsRead(notification._id)}
                           aria-label="Close"
                         >
-                          {X size={16} strokeWidth={1.75} />
-                        </Button
+                          <X size={16} strokeWidth={1.75} />
+                        </Button>
                       </div>
                     </div>
                   ))}
-                  <div className="pt-4 border-t border-border>
+                  <div className="pt-4 border-t border-border">
                     <Button
                       variant="outline"
                       size="sm"
@@ -277,7 +294,7 @@ export function Topbar() {
                       className="w-full"
                     >
                       Mark all as read
-                    </Button
+                    </Button>
                   </div>
                 </>
               )}

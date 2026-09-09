@@ -303,16 +303,17 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
     }
 
     // Notify assignee if task was reassigned to another user
+    const newAssignedTo = updates["assignedTo"] ? String(updates["assignedTo"]) : null;
     if (
       updates["assignedTo"] !== undefined &&
       originalTask &&
       originalTask.assignedTo &&
-      !originalTask.assignedTo.equals(updates["assignedTo"]) &&
-      updates["assignedTo"] &&
-      !updates["assignedTo"].equals(req.userId) // Not notifying the user who made the change
+      newAssignedTo &&
+      originalTask.assignedTo.toString() !== newAssignedTo &&
+      newAssignedTo !== req.userId // Not notifying the user who made the change
     ) {
       await NotificationService.createNotification({
-        userId: new Types.ObjectId(updates["assignedTo"]),
+        userId: new Types.ObjectId(newAssignedTo),
         type: "TASK_ASSIGNED",
         title: "Task Reassigned",
         message: `You have been assigned a task: "${task.title}"`,
@@ -335,7 +336,7 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       updates["status"] === "completed"
     ) {
       // Notify the assignee (if any) and the creator
-      const notifyUserIds = new Set();
+      const notifyUserIds = new Set<string>();
       if (task.assignedTo) notifyUserIds.add(task.assignedTo.toString());
       if (task.createdBy) notifyUserIds.add(task.createdBy.toString());
 

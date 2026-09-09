@@ -4,17 +4,20 @@ import mongoose, { Document, Schema } from "mongoose";
 // Types
 // ---------------------------------------------------------------------------
 
-export type NotificationType =
-  | "HEARING_REMINDER"
-  | "APPROVAL_REQUEST"
-  | "DOCUMENT_SHARED"
-  | "TASK_ASSIGNED"
-  | "TASK_DUE"
-  | "OVERDUE_TASK"
-  | "CASE_UPDATE"
-  | "COMMENT_MENTION"
-  | "SYSTEM_ALERT"
-  | "CUSTOM";
+export const NOTIFICATION_TYPES = [
+  "HEARING_REMINDER",
+  "APPROVAL_REQUEST",
+  "DOCUMENT_SHARED",
+  "TASK_ASSIGNED",
+  "TASK_DUE",
+  "OVERDUE_TASK",
+  "CASE_UPDATE",
+  "COMMENT_MENTION",
+  "SYSTEM_ALERT",
+  "CUSTOM",
+] as const;
+
+export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
 export interface INotification extends Document {
   userId: mongoose.Types.ObjectId; // The user to notify
@@ -34,10 +37,10 @@ export interface INotification extends Document {
 // Schema
 // ---------------------------------------------------------------------------
 
-const NotificationSchema = new Schema<INotation>(
+const NotificationSchema = new Schema<INotification>(
   {
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    type: { type: String, required: true, enum: Object.values(NotificationType) },
+    type: { type: String, required: true, enum: NOTIFICATION_TYPES },
     title: { type: String, required: true, trim: true },
     message: { type: String, required: true },
     read: { type: Boolean, default: false, index: true },
@@ -71,4 +74,4 @@ NotificationSchema.index({ dedupeKey: 1 }, { sparse: true, unique: true }); // F
 // Model
 // ---------------------------------------------------------------------------
 
-export const Notification = mongoose.model<INotation>("Notification", NotificationSchema);
+export const Notification = mongoose.model<INotification>("Notification", NotificationSchema);

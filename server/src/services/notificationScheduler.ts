@@ -2,8 +2,6 @@ import { NotificationService } from "./notifications.js";
 import { CalendarEvent } from "../models/CalendarEvent.js";
 import { Task } from "../models/Task.js";
 import { User } from "../models/User.js";
-import { Types } from "mongoose";
-import { io } from "../index.js"; // We'll need to get the io instance from the server
 
 // We'll get the io instance from the server's app
 // Alternatively, we can pass it in, but for simplicity, we'll import from index
@@ -85,7 +83,7 @@ export class NotificationScheduler {
   /**
    * Check for upcoming hearings and create notifications for users who have hearing reminders enabled.
    */
-  private async checkForUpcomingHearings(): void {
+  private async checkForUpcomingHearings(): Promise<void> {
     try {
       // Define "upcoming" as starting within the next 30 minutes
       const now = new Date();
@@ -141,7 +139,7 @@ export class NotificationScheduler {
   /**
    * Check for overdue tasks and create notifications for users who have task notifications enabled.
    */
-  private async checkForOverdueTasks(): void {
+  private async checkForOverdueTasks(): Promise<void> {
     try {
       const now = new Date();
       // Find tasks with deadline passed and status not completed
@@ -181,7 +179,7 @@ export class NotificationScheduler {
   /**
    * Check for tasks due today and create notifications.
    */
-  private async checkForTodayTasks(): void {
+  private async checkForTodayTasks(): Promise<void> {
     try {
       const now = new Date();
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());

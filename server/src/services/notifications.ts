@@ -49,7 +49,7 @@ export class NotificationService {
   static async createNotification(
     data: NotificationData,
     io?: any
-  ): Promise<INotation | null> {
+  ): Promise<INotification | null> {
     try {
       // Check for dedupeKey to avoid duplicates
       if (data.dedupeKey) {
@@ -144,7 +144,7 @@ export class NotificationService {
   static async markAsRead(
     notificationId: Types.ObjectId,
     userId: Types.ObjectId
-  ): Promise<INotation | null> {
+  ): Promise<INotification | null> {
     try {
       const notification = await Notification.findOneAndUpdate(
         { _id: notificationId, userId },
@@ -247,7 +247,7 @@ export class NotificationService {
         Notification.countDocuments(filter),
       ]);
 
-      return { notifications, total };
+      return { notifications: notifications as unknown as INotification[], total };
     } catch (err) {
       console.error("[NotificationService] Failed to get notifications:", err);
       return { notifications: [], total: 0 };

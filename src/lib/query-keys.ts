@@ -35,5 +35,14 @@ export const queryKeys = {
   search: (term: string, limit: number) => ["search", term, limit],
 } as const;
 
+export const notificationKeys = {
+  all: () => queryKeys.notifications(),
+  detail: (id: string) => queryKeys.notification(id),
+};
+
+export const searchKeys = {
+  global: (term: string, limit: number) => queryKeys.search(term, limit),
+};
+
 // Helper types
 export type QueryKey = typeof queryKeys;
