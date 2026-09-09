@@ -118,8 +118,10 @@ function createWindow(): BrowserWindow {
     title: "StillWorks LegalOS",
     icon: path.join(__dirname, "..", "public", "favicon.ico"),
     webPreferences: {
-      // Preload is CommonJS (.cjs) for Electron compatibility (built from preload.ts)
-      preload: path.join(__dirname, "preload.cjs"),
+      // Preload script (CommonJS for Electron compatibility)
+      preload: fs.existsSync(path.join(__dirname, "preload.cjs"))
+        ? path.join(__dirname, "preload.cjs")
+        : path.join(__dirname, "preload.js"),
       contextIsolation: true, // REQUIRED for security
       nodeIntegration: false, // REQUIRED for security
       sandbox: isDev, // Disable sandbox in production for GPU compatibility

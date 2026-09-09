@@ -13,17 +13,19 @@
     "dev:server": "cd server && npm run dev",
     "dev:all": "concurrently -k -n vite,electron,server -c cyan,green,yellow \"vite dev\" \"npm run electron:wait\" \"cd server && npm run dev\"",
     "electron:wait": "npm run electron:build && electron .",
-    "electron:build": "tsc -p electron/tsconfig.json",
+    "electron:build": "tsc -p electron/tsconfig.json && node -e \"const fs=require('fs'); if(fs.existsSync('electron/preload.cjs')) fs.copyFileSync('electron/preload.cjs','dist-electron/preload.cjs');\"",
     "electron:start": "electron .",
     "build": "vite build",
-    "build:all": "vite build && npm run electron:build && cd server && npm run build && npm run inject:env",
+    "build:client": "vite build && npm run electron:build",
+    "build:all": "vite build && npm run electron:build && cd server && npm run build",
     "preview": "vite preview",
-    "dist": "npm run build:all && electron-builder --config electron-builder.json",
+    "dist": "npm run build:client && electron-builder --config electron-builder.json",
     "lint": "eslint .",
     "format": "prettier --write .",
     "postinstall": "cd server && npm install"
   },
-  "dependencies": {
+  "dependencies": {},
+  "devDependencies": {
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -76,9 +78,7 @@
     "tw-animate-css": "^1.3.4",
     "vaul": "^1.1.2",
     "vite-tsconfig-paths": "^6.0.2",
-    "zod": "^3.24.2"
-  },
-  "devDependencies": {
+    "zod": "^3.24.2",
     "@eslint/js": "^9.32.0",
     "@types/busboy": "^1.5.4",
     "@types/node": "^22.16.5",

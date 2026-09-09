@@ -1,78 +1,27 @@
 {
   "appId": "legal.stillworks.os",
   "productName": "StillWorks LegalOS",
-  "copyright": "Copyright © 2026 StillWorks",
   "directories": {
     "buildResources": "public",
     "output": "release"
   },
   "asar": true,
-  "asarUnpack": [],
+  "npmRebuild": false,
+  "nodeGypRebuild": false,
   "files": [
     "dist/**/*",
-    "dist-electron/**/*",
-    "server/dist/**/*",
-    "server/package.json",
-    "package.json",
-    "!.env",
-    "!**/.env*",
-    "!**/node_modules/**"
-  ],
-  "extraResources": [
-    {
-      "from": "server/dist",
-      "to": "server",
-      "filter": ["**/*"]
-    },
-    {
-      "from": "server/node_modules",
-      "to": "server/node_modules",
-      "filter": ["**/*"]
-    },
-    {
-      "from": "node.exe",
-      "to": ".",
-      "filter": ["node.exe"]
-    }
+    "dist-electron/**/*"
   ],
   "win": {
-    "target": [
-      {
-        "target": "nsis",
-        "arch": ["x64"]
-      },
-      {
-        "target": "dir",
-        "arch": ["x64"]
-      }
-    ],
-    "icon": "public/favicon.ico",
-    "sign": false,
-    "forceCodeSigning": false,
-    "executableName": "StillWorks LegalOS",
-    "signAndEditExecutable": false,
-    "verifyUpdateCodeSignature": false
+    "target": "nsis",
+    "icon": "build/icon.png",
+    "executableName": "StillWorks LegalOS"
   },
   "nsis": {
     "oneClick": false,
     "allowToChangeInstallationDirectory": true,
-    "installerIcon": "public/favicon.ico",
-    "uninstallerIcon": "public/favicon.ico",
-    "installerHeaderIcon": "public/favicon.ico",
-    "perMachine": true,
-    "runAfterFinish": true,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "StillWorks LegalOS",
-    "license": "LICENSE.txt",
-    "include": "installer.nsh"
-  },
-  "publish": {
-    "provider": "generic",
-    "url": "https://updates.stillworks.legal"
-  },
-  "npmRebuild": false,
-  "nodeGypRebuild": false,
-  "compression": "maximum",
-  "generateUpdatesFilesForAllChannels": true
+    "shortcutName": "StillWorks LegalOS"
+  }
 }
