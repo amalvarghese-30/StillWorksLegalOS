@@ -16,7 +16,7 @@ interface MessageContextMenuContentProps {
   onDeleteForMe: (msg: ChatMessage) => void;
   onDeleteForEveryone: (msg: ChatMessage) => void;
   onReport: (msg: ChatMessage) => void;
-  onPinNotice?: (msg: ChatMessage) => void;
+  onPinNotice?: ((msg: ChatMessage) => void) | undefined;
 }
 
 export function MessageContextMenuContent({

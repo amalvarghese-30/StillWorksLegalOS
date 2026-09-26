@@ -35,33 +35,33 @@ function handleRedirect(event: Event<{ url: string }>, url: string): void {
 // ---------------------------------------------------------------------------
 const CSP_HEADER = [
   "default-src 'self'",
-  "script-src 'self'", // No 'unsafe-inline' or 'unsafe-eval' - production build doesn't need it
-  "style-src 'self' 'unsafe-inline'", // Tailwind needs unsafe-inline for JIT in dev; production uses pre-built CSS
-  "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  "connect-src 'self' http://localhost:3001 ws://localhost:3001 https: wss:", // API + Socket.io + HTTPS/WSS remote backends
+  "script-src 'self' 'sha256-IoxEYENdKH6o0Ay7Mpa5AqWJBfgNF1LnVUOx/uc2bMI='",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data: https://fonts.gstatic.com",
+  "connect-src 'self' https: wss: https://legalos.stillworks.in wss://legalos.stillworks.in http://localhost:3001 ws://localhost:3001",
   "frame-src 'none'",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
   "frame-ancestors 'none'",
-  "upgrade-insecure-requests",
 ].join("; ");
 
-// Connect-src for production (no localhost references)
+// Connect-src for production
 const CSP_HEADER_PROD = [
   "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  "connect-src 'self' https: wss:", // Allow secure HTTPS and WSS connections (thin client)
+  "script-src 'self' 'sha256-IoxEYENdKH6o0Ay7Mpa5AqWJBfgNF1LnVUOx/uc2bMI='",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data: https://fonts.gstatic.com",
+  "connect-src 'self' https: wss: https://legalos.stillworks.in wss://legalos.stillworks.in",
   "frame-src 'none'",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
   "frame-ancestors 'none'",
-  "upgrade-insecure-requests",
 ].join("; ");
 
 // ---------------------------------------------------------------------------
@@ -73,17 +73,19 @@ const RETRY_INTERVAL_MS = 500;
 const RETRY_TIMEOUT_MS = 30_000; // 30 s total before showing error page
 const SERVER_PORT = process.env.SERVER_PORT ?? "3001";
 
-// Disable GPU acceleration and sandbox for stability in production
+// Disable GPU acceleration for stability in production (performance trade-off,
+// not a security concern). GPU rasterization causes crashes on some headless
+// and VM environments. webSecurity and sandbox are handled in webPreferences.
 if (!isDev) {
   app.disableHardwareAcceleration();
   app.commandLine.appendSwitch("disable-gpu");
-  app.commandLine.appendSwitch("disable-gpu-sandbox");
-  app.commandLine.appendSwitch("no-sandbox");
   app.commandLine.appendSwitch("disable-gpu-rasterization");
   app.commandLine.appendSwitch("disable-software-rasterizer");
   app.commandLine.appendSwitch("use-gl", "swiftshader");
   app.commandLine.appendSwitch("disable-webgl");
   app.commandLine.appendSwitch("disable-gl-extensions");
+  // NOTE: --no-sandbox and --disable-gpu-sandbox were intentionally removed.
+  // These are security-relevant flags. Process-level sandbox must not be disabled.
 }
 
 // ---------------------------------------------------------------------------
@@ -122,15 +124,16 @@ function createWindow(): BrowserWindow {
         : path.join(__dirname, "preload.js"),
       contextIsolation: true, // REQUIRED for security
       nodeIntegration: false, // REQUIRED for security
-      sandbox: isDev, // Disable sandbox in production for GPU compatibility
-      // Security headers
+      sandbox: true,
+      // webSecurity: true — all API calls go to HTTPS (legalos.stillworks.in)
+      // via the webRequest Origin interceptor below. Loading from file://
+      // is fine with webSecurity enabled.
       webSecurity: true,
       allowRunningInsecureContent: false,
       experimentalFeatures: false,
       // Disable dangerous features
       webviewTag: false,
       plugins: false,
-      // CSP will be set via session
     },
     // Premium window chrome
     titleBarStyle: "default",
@@ -149,18 +152,17 @@ function createWindow(): BrowserWindow {
   });
 
   // -------------------------------------------------------------------------
-  // Security: Set CSP on the session
+  // Security: Set CSP on local file documents only
   // -------------------------------------------------------------------------
   win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    if (!details.url.startsWith("file:")) {
+      return callback({ responseHeaders: details.responseHeaders });
+    }
     const csp = isDev ? CSP_HEADER : CSP_HEADER_PROD;
     const responseHeaders: Record<string, string[]> = {
       ...details.responseHeaders,
       "Content-Security-Policy": [csp],
       "X-Content-Type-Options": ["nosniff"],
-      "X-Frame-Options": ["DENY"],
-      "X-XSS-Protection": ["1; mode=block"],
-      "Referrer-Policy": ["strict-origin-when-cross-origin"],
-      "Permissions-Policy": ["geolocation=(), microphone=(), camera=()"],
     };
     callback({
       responseHeaders,
@@ -409,11 +411,15 @@ const sessionFilePath = path.join(app.getPath("userData"), "session.dat");
 ipcMain.handle("auth:saveRefreshToken", async (_event: Electron.IpcMainInvokeEvent, token: string) => {
   try {
     if (!safeStorage.isEncryptionAvailable()) {
-      fs.writeFileSync(sessionFilePath, Buffer.from(token, "utf-8"));
-      return;
+      // OS-level secure storage is unavailable (e.g., running in headless CI).
+      // Do NOT store the token in plaintext — silently skip persistence.
+      // The user will need to re-authenticate on next launch.
+      console.warn("[IPC auth:saveRefreshToken] OS safeStorage unavailable — token not persisted (security policy)");
+      return { encrypted: false };
     }
     const encrypted = safeStorage.encryptString(token);
     fs.writeFileSync(sessionFilePath, encrypted);
+    return { encrypted: true };
   } catch (err) {
     console.error("[IPC auth:saveRefreshToken] Encryption failed:", err);
     throw err;
@@ -423,10 +429,13 @@ ipcMain.handle("auth:saveRefreshToken", async (_event: Electron.IpcMainInvokeEve
 ipcMain.handle("auth:getRefreshToken", async () => {
   try {
     if (!fs.existsSync(sessionFilePath)) return null;
-    const encrypted = fs.readFileSync(sessionFilePath);
     if (!safeStorage.isEncryptionAvailable()) {
-      return encrypted.toString("utf-8");
+      // Encryption not available — cannot decrypt any stored token.
+      // Delete any stale file (which may have been written unencrypted previously).
+      try { fs.unlinkSync(sessionFilePath); } catch {}
+      return null;
     }
+    const encrypted = fs.readFileSync(sessionFilePath);
     return safeStorage.decryptString(encrypted);
   } catch (err) {
     console.error("[IPC auth:getRefreshToken] Decryption failed:", err);

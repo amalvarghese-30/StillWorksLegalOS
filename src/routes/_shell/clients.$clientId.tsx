@@ -1,9 +1,9 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useRef } from "react";
 import {
   LayoutDashboard, FileBadge, Home, Users,
   Phone, Mail, MapPin, Loader2, Edit3, ChevronDown,
-  Send, Check, X, UserPlus, Building2, FileText,
+  Send, Check, X, UserPlus, Building2, FileText, Trash2,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
@@ -12,9 +12,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  useClient, useUpdateClient,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  useClient, useUpdateClient, useDeleteClient,
   type ClientRecord,
 } from "@/services/clients";
+import { EditClientDialog } from "@/components/clients/EditClientDialog";
 
 export const Route = createFileRoute("/_shell/clients/$clientId")({
   head: () => ({
@@ -131,6 +142,23 @@ function ClientProfile() {
     );
   }
 
+  const navigate = useNavigate();
+  const deleteClient = useDeleteClient();
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteClient = async () => {
+    setIsDeleting(true);
+    try {
+      await deleteClient.mutateAsync(clientId);
+      navigate({ to: "/clients" });
+    } catch (err) {
+      console.error("Failed to delete client:", err);
+      setIsDeleting(false);
+    }
+  };
+
   if (isError || !data) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
@@ -156,7 +184,20 @@ function ClientProfile() {
         title={record.name}
         subtitle={`${record.type} · ${record.tag} · KYC ${record.kyc}`}
         actions={
-          <QuickEditDropdown record={record} />
+          <div className="flex items-center gap-2">
+            <Button variant="outline" className="rounded-md" onClick={() => setShowEditDialog(true)}>
+              <Edit3 size={15} strokeWidth={1.75} />
+              Edit Client
+            </Button>
+            <Button
+              variant="outline"
+              className="rounded-md text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
+              onClick={() => setShowDeleteConfirm(true)}
+            >
+              <Trash2 size={15} strokeWidth={1.75} />
+              Delete Client
+            </Button>
+          </div>
         }
       />
 
@@ -368,6 +409,37 @@ function ClientProfile() {
           )}
         </div>
       </div>
+
+      <EditClientDialog
+        open={showEditDialog}
+        onClose={() => setShowEditDialog(false)}
+        record={record}
+      />
+
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-title font-semibold text-destructive flex items-center gap-2">
+              <Trash2 size={18} />
+              Delete Client
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-helper text-muted-foreground mt-2">
+              Are you sure you want to delete client <span className="font-semibold text-foreground">"{record.name}"</span>?
+              This will permanently remove the client and their associated records.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-5 flex justify-end gap-2">
+            <AlertDialogCancel className="rounded-md" disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleDeleteClient}
+              disabled={isDeleting}
+            >
+              {isDeleting ? "Deleting…" : "Delete Client"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

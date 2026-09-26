@@ -7,6 +7,8 @@ import {
 } from "@tanstack/react-router";
 import { AuthProvider } from "../lib/auth";
 import { ThemeProvider } from "../lib/theme";
+import { SocketProvider } from "../lib/socket";
+import { Toaster } from "sonner";
 
 function NotFoundComponent() {
   return (
@@ -78,7 +80,10 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <AuthProvider>
-          <Outlet />
+          <SocketProvider>
+            <Outlet />
+            <Toaster position="top-right" richColors closeButton />
+          </SocketProvider>
         </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>

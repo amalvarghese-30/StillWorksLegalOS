@@ -258,9 +258,9 @@ interface MessageBubbleProps {
   onDeleteForEveryone: (msg: ChatMessage) => void;
   onReport: (msg: ChatMessage) => void;
   onToggleReaction: (msg: ChatMessage, emoji: string) => void;
-  searchQuery?: string;
-  onCaseClick?: (caseNum: string) => void;
-  onPinNotice?: (msg: ChatMessage) => void;
+  searchQuery?: string | undefined;
+  onCaseClick?: ((caseNum: string) => void) | undefined;
+  onPinNotice?: ((msg: ChatMessage) => void) | undefined;
 }
 
 export function MessageBubble({

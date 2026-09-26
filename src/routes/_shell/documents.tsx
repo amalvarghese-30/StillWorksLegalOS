@@ -11,11 +11,13 @@ import {
   List,
   FileText,
   FolderOpen,
-  HardDrive,
   Lock,
   AlertTriangle,
   Loader2,
   Search,
+  Eye,
+  Trash2,
+  Download,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StatusPill, toneForStatus } from "@/components/common/StatusPill";
@@ -29,8 +31,27 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useAuth } from "@/lib/auth";
-import { useDocuments, useNasStructure, useRequestAccess, downloadDocument, type DocumentRecord, type NasFolder } from "@/services/documents";
+import {
+  useDocuments,
+  useNasStructure,
+  useRequestAccess,
+  downloadDocument,
+  viewDocument,
+  useDeleteDocument,
+  type DocumentRecord,
+  type NasFolder,
+} from "@/services/documents";
 import { UploadDocumentDialog } from "@/components/documents/UploadDocumentDialog";
 import { VersionHistoryDialog } from "@/components/documents/VersionHistoryDialog";
 
@@ -92,47 +113,71 @@ function DocumentCard({
   onToggleFav?: (e: React.MouseEvent) => void;
 }) {
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className={`group w-full rounded-lg border p-5 text-left transition-all duration-200 ${
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      className={`group flex flex-col justify-between h-[126px] w-full cursor-pointer rounded-xl border p-4 text-left transition-all duration-200 select-none ${
         active
-          ? "border-primary/40 bg-primary/5 ring-1 ring-primary/20 shadow-soft"
-          : "border-border bg-card shadow-soft hover:-translate-y-0.5 hover:border-primary/30"
+          ? "border-primary bg-primary/5 ring-1 ring-primary/30 shadow-md"
+          : "border-border bg-card shadow-soft hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
       }`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <span className="grid size-11 place-items-center rounded-sm bg-primary/10 text-primary">
-            <FileText size={22} strokeWidth={1.75} />
+      <div className="flex items-start justify-between gap-2 min-w-0">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+            <FileText size={20} strokeWidth={1.75} />
           </span>
-          <div className="min-w-0">
-            <p className="truncate text-title font-semibold group-hover:text-primary transition-colors">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-foreground group-hover:text-primary transition-colors" title={doc.name}>
               {doc.name}
             </p>
             {doc.caseName ? (
-              <p className="truncate text-helper text-muted-foreground">{doc.caseName}</p>
+              <p className="truncate text-caption text-muted-foreground" title={doc.caseName}>
+                {doc.caseName}
+              </p>
             ) : null}
           </div>
         </div>
         {onToggleFav && (
-          <button
-            type="button"
-            onClick={onToggleFav}
-            className={`p-1 transition-colors ${isFav ? "text-amber-500" : "text-muted-foreground/30 hover:text-muted-foreground"}`}
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleFav(e);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.stopPropagation();
+                onToggleFav(e as any);
+              }
+            }}
+            className={`shrink-0 p-1 rounded-sm transition-colors ${
+              isFav ? "text-amber-500" : "text-muted-foreground/30 hover:text-muted-foreground hover:bg-muted/50"
+            }`}
             title={isFav ? "Remove from favourites" : "Add to favourites"}
           >
             <Star size={16} fill={isFav ? "currentColor" : "none"} strokeWidth={1.75} />
-          </button>
+          </span>
         )}
       </div>
-      <div className="mt-4 flex items-center justify-between gap-3">
-        <span className="num text-caption text-muted-foreground">
+
+      <div className="mt-3 flex items-center justify-between gap-2 border-t border-border/40 pt-2.5 min-w-0">
+        <span className="truncate text-caption text-muted-foreground" title={`${doc.sizeFormatted ?? doc.size} · ${uploadedByName(doc)}`}>
           {doc.sizeFormatted ?? doc.size} · {uploadedByName(doc)}
         </span>
-        <StatusPill tone={toneForStatus(doc.state)}>{doc.state}</StatusPill>
+        <span className="shrink-0">
+          <StatusPill tone={toneForStatus(doc.state)}>{doc.state}</StatusPill>
+        </span>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -148,7 +193,6 @@ function DocumentsPage() {
       return new Set();
     }
   });
-  const [showNasPanel, setShowNasPanel] = useState(false);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [showRequestAccess, setShowRequestAccess] = useState(false);
   const [requestAccessDocId, setRequestAccessDocId] = useState("");
@@ -223,6 +267,9 @@ function DocumentsPage() {
     setTimeout(() => setToast(null), 3000);
   };
 
+  const deleteMutation = useDeleteDocument();
+  const [docToDelete, setDocToDelete] = useState<DocumentRecord | null>(null);
+
   const handleVersions = (doc: DocumentRecord) => {
     setVersionHistoryDocId(doc._id);
     setVersionHistoryDocName(doc.name);
@@ -240,88 +287,47 @@ function DocumentsPage() {
     }
   };
 
+  const handleView = async (doc: DocumentRecord) => {
+    try {
+      await viewDocument(doc._id);
+    } catch (err) {
+      showToast(
+        err instanceof Error ? `Preview failed: ${err.message}` : `Failed to preview "${doc.name}"`,
+        "error",
+      );
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!docToDelete) return;
+    try {
+      await deleteMutation.mutateAsync(docToDelete._id);
+      showToast(`Document "${docToDelete.name}" deleted successfully`, "success");
+      setDocToDelete(null);
+      if (selected?._id === docToDelete._id) setSelected(null);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to delete document", "error");
+    }
+  };
+
   return (
     <div>
       <PageHeader
         breadcrumb={[{ label: "StillWorks", to: "/" }, { label: "Documents" }]}
         title="Documents"
-        subtitle={`${data?.total ?? "—"} files — securely stored on Synology NAS.`}
+        subtitle={`${data?.total ?? "—"} files — securely stored in LegalOS VPS storage.`}
         actions={
           <div className="flex gap-2">
             <Button
-              variant="outline"
-              className="rounded-md"
-              onClick={() => setShowNasPanel(!showNasPanel)}
+              className="gradient-primary rounded-md text-primary-foreground shadow-soft transition-transform duration-200 hover:-translate-y-0.5"
+              onClick={() => setShowUploadDialog(true)}
             >
-              <HardDrive size={17} strokeWidth={1.75} />
-              NAS
-            </Button>
-            <Button className="gradient-primary rounded-md text-primary-foreground shadow-soft transition-transform duration-200 hover:-translate-y-0.5" onClick={() => setShowUploadDialog(true)}>
               <UploadCloud size={17} strokeWidth={2} />
               Upload
             </Button>
           </div>
         }
       />
-
-      {/* NAS folder browser panel */}
-      {showNasPanel && (
-        <div className="mb-6 rounded-lg border border-border bg-card p-5 shadow-soft">
-          <div className="flex items-center gap-2 mb-4">
-            <HardDrive size={18} strokeWidth={1.75} className="text-primary" />
-            <h3 className="font-semibold">Synology NAS — Folder Browser</h3>
-            <span className="text-caption text-muted-foreground">\\DS920\LegalOS</span>
-          </div>
-          {nasLoading && (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="rounded-md border border-border bg-muted/30 p-3 animate-pulse">
-                  <div className="h-5 w-3/4 bg-muted rounded mb-2" />
-                  <div className="h-4 w-1/2 bg-muted rounded" />
-                  <div className="h-4 w-1/2 bg-muted rounded" />
-                </div>
-              ))}
-            </div>
-          )}
-          {nasError && !nasLoading && (
-            <div className="text-center py-4 text-destructive text-caption">
-              Failed to load NAS structure. Please try again.
-            </div>
-          )}
-          {!nasLoading && !nasError && (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {nasFolders.length === 0 ? (
-                <div className="col-span-full text-center py-8 text-muted-foreground text-caption">
-                  No NAS folders found
-                </div>
-              ) : (
-                nasFolders.map((folder) => (
-                  <div key={folder.path} className="rounded-md border border-border bg-muted/30 p-3">
-                    <div className="flex items-center gap-2">
-                      <FolderOpen size={16} className="shrink-0 text-warning" />
-                      <span className="truncate text-helper font-medium">{folder.name}</span>
-                    </div>
-                    {folder.children && folder.children.length > 0 && (
-                      <ul className="mt-2 ml-6 space-y-1">
-                        {folder.children.map((child) => (
-                          <li key={child.path} className="flex items-center gap-1.5">
-                            <FolderOpen size={13} className="shrink-0 text-muted-foreground" />
-                            <span className="truncate text-caption text-muted-foreground">{child.name}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    <p className="num mt-2 text-caption text-muted-foreground">{folder.path}</p>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-          <p className="mt-3 flex items-center gap-1.5 text-caption text-muted-foreground">
-            <Lock size={12} /> NAS files are accessed via Electron IPC bridge for local network security.
-          </p>
-        </div>
-      )}
 
       {/* Search */}
       <label className="mb-6 flex items-center gap-3 rounded-pill border border-border bg-card px-4 py-2.5 shadow-soft">
@@ -365,7 +371,7 @@ function DocumentsPage() {
             <ol className="mt-2 space-y-2 text-caption text-muted-foreground">
               <li className="flex gap-2">
                 <span className="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full bg-muted text-[10px] font-semibold">1</span>
-                Upload to NAS folder
+                Upload document
               </li>
               <li className="flex gap-2">
                 <span className="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full bg-muted text-[10px] font-semibold">2</span>
@@ -425,17 +431,20 @@ function DocumentsPage() {
           </div>
 
           {/* Upload drop zone */}
-          <div className="mb-6 rounded-lg border border-dashed border-primary/40 bg-primary/5 px-6 py-10 text-center transition-colors hover:border-primary/60">
-            <UploadCloud size={26} strokeWidth={1.75} className="mx-auto text-primary" />
-            <p className="mt-3 font-medium">Drop files here to upload</p>
-            <p className="text-helper text-muted-foreground">
-              PDF, DOC, XLSX, images and archives · up to 100 MB per file · Stored on Synology NAS
+          <div
+            onClick={() => setShowUploadDialog(true)}
+            className="mb-6 cursor-pointer rounded-xl border border-dashed border-primary/40 bg-primary/5 px-6 py-8 text-center transition-all duration-200 hover:border-primary hover:bg-primary/10"
+          >
+            <UploadCloud size={28} strokeWidth={1.75} className="mx-auto text-primary" />
+            <p className="mt-2.5 font-medium text-foreground">Drop files here to upload</p>
+            <p className="mt-1 text-helper text-muted-foreground">
+              PDF, DOC, XLSX, images and archives · up to 100 MB per file · Stored securely on LegalOS VPS storage
             </p>
           </div>
 
           {/* Loading */}
           {isLoading && (
-            <div className={grid ? "grid gap-4 sm:grid-cols-2 2xl:grid-cols-3" : "space-y-3"}>
+            <div className={grid ? "grid gap-4 sm:grid-cols-2" : "space-y-3"}>
               {Array.from({ length: 6 }).map((_, i) => (
                 <div key={i} className="rounded-lg border border-border bg-card p-5">
                   <div className="flex items-center gap-3">
@@ -472,7 +481,7 @@ function DocumentsPage() {
 
           {/* Data */}
           {!isLoading && !isError && filtered.length > 0 && (
-            <div className={`${grid ? "grid gap-4 sm:grid-cols-2 2xl:grid-cols-3" : "space-y-3"} stagger-children`}>
+            <div className={`${grid ? "grid gap-4 sm:grid-cols-2" : "space-y-3"} stagger-children`}>
               {filtered.map((d) => (
                 <DocumentCard
                   key={d._id}
@@ -513,13 +522,31 @@ function DocumentsPage() {
                     </div>
                   ))}
                 </dl>
-                <div className="mt-5 flex gap-2">
-                  <Button variant="outline" className="flex-1 rounded-md" onClick={() => handleVersions(previewDoc)}>
-                    Versions
-                  </Button>
-                  <Button className="gradient-primary flex-1 rounded-md text-primary-foreground" onClick={() => handleOpen(previewDoc)}>
-                    Open
-                  </Button>
+                <div className="mt-5 flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <Button variant="outline" className="flex-1 rounded-md" onClick={() => handleView(previewDoc)}>
+                      <Eye size={15} className="mr-1.5" />
+                      Preview
+                    </Button>
+                    <Button className="gradient-primary flex-1 rounded-md text-primary-foreground" onClick={() => handleOpen(previewDoc)}>
+                      <Download size={15} className="mr-1.5" />
+                      Download
+                    </Button>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" className="flex-1 rounded-md" onClick={() => handleVersions(previewDoc)}>
+                      Versions
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="rounded-md text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => setDocToDelete(previewDoc)}
+                    >
+                      <Trash2 size={15} className="mr-1" />
+                      Delete
+                    </Button>
+                  </div>
                 </div>
               </>
             ) : (
@@ -564,26 +591,55 @@ function DocumentsPage() {
                   </div>
                 ))}
               </dl>
-              <div className="flex gap-2 pt-2">
-                <Button
-                  variant="outline"
-                  className="flex-1 rounded-md"
-                  onClick={() => {
-                    setMobileDrawerOpen(false);
-                    handleVersions(previewDoc);
-                  }}
-                >
-                  Versions
-                </Button>
-                <Button
-                  className="gradient-primary flex-1 rounded-md text-primary-foreground"
-                  onClick={() => {
-                    setMobileDrawerOpen(false);
-                    handleOpen(previewDoc);
-                  }}
-                >
-                  Download / Open
-                </Button>
+              <div className="flex flex-col gap-2 pt-2">
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    className="flex-1 rounded-md"
+                    onClick={() => {
+                      setMobileDrawerOpen(false);
+                      handleView(previewDoc);
+                    }}
+                  >
+                    <Eye size={15} className="mr-1.5" />
+                    Preview
+                  </Button>
+                  <Button
+                    className="gradient-primary flex-1 rounded-md text-primary-foreground"
+                    onClick={() => {
+                      setMobileDrawerOpen(false);
+                      handleOpen(previewDoc);
+                    }}
+                  >
+                    <Download size={15} className="mr-1.5" />
+                    Download
+                  </Button>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 rounded-md"
+                    onClick={() => {
+                      setMobileDrawerOpen(false);
+                      handleVersions(previewDoc);
+                    }}
+                  >
+                    Versions
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="rounded-md text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => {
+                      setMobileDrawerOpen(false);
+                      setDocToDelete(previewDoc);
+                    }}
+                  >
+                    <Trash2 size={15} className="mr-1" />
+                    Delete
+                  </Button>
+                </div>
               </div>
             </div>
           )}
@@ -674,6 +730,32 @@ function DocumentsPage() {
           </div>
         </div>
       )}
+
+      {/* Delete document confirmation */}
+      <AlertDialog open={!!docToDelete} onOpenChange={(open) => !open && setDocToDelete(null)}>
+        <AlertDialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-title font-semibold text-destructive flex items-center gap-2">
+              <Trash2 size={18} />
+              Delete Document
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-helper text-muted-foreground mt-2">
+              Are you sure you want to delete <span className="font-semibold text-foreground">"{docToDelete?.name}"</span>?
+              This action permanently deletes the file from VPS disk storage.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-5 flex justify-end gap-2">
+            <AlertDialogCancel className="rounded-md">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={confirmDelete}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? "Deleting…" : "Delete Document"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

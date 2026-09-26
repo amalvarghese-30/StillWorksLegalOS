@@ -3,6 +3,7 @@ import type { Readable } from "node:stream";
 import busboy from "busboy";
 import { DocumentModel, type IDocument } from "../models/Document.js";
 import { Case } from "../models/Case.js";
+import { User } from "../models/User.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { FileIntegrity } from "../models/FileIntegrity.js";
 import { NotificationService } from "../services/notifications.js";
@@ -108,7 +109,7 @@ router.get("/nas/structure", async (req: Request, res: Response) => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /api/documents/:id/download — stream the file from the NAS (WebDAV)
+// GET /api/documents/:id/download — stream the file from VPS disk for download
 // ---------------------------------------------------------------------------
 
 router.get("/:id/download", requireResourceAccess("document"), async (req: Request, res: Response) => {
@@ -120,7 +121,7 @@ router.get("/:id/download", requireResourceAccess("document"), async (req: Reque
     }
 
     if (!document.nasPath) {
-      res.status(400).json({ message: "Document has no NAS path" });
+      res.status(400).json({ message: "Document has no file path" });
       return;
     }
 
@@ -148,7 +149,7 @@ router.get("/:id/download", requireResourceAccess("document"), async (req: Reque
     stream.on("error", (err) => {
       console.error("[documents] Download stream error:", err);
       if (!res.headersSent) {
-        res.status(502).json({ message: "Failed to stream file from NAS" });
+        res.status(502).json({ message: "Failed to stream file from storage" });
       } else {
         res.destroy();
       }
@@ -158,7 +159,56 @@ router.get("/:id/download", requireResourceAccess("document"), async (req: Reque
   } catch (err) {
     console.error("[documents] Download error:", err);
     if (!res.headersSent) {
-      res.status(502).json({ message: "Failed to stream file from NAS" });
+      res.status(502).json({ message: "Failed to stream file from storage" });
+    } else {
+      res.destroy();
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/documents/:id/view — stream file inline for preview in browser
+// ---------------------------------------------------------------------------
+
+router.get("/:id/view", requireResourceAccess("document"), async (req: Request, res: Response) => {
+  try {
+    const document = await DocumentModel.findById(req.params["id"]);
+    if (!document) {
+      res.status(404).json({ message: "Document not found" });
+      return;
+    }
+
+    if (!document.nasPath) {
+      res.status(400).json({ message: "Document has no file path" });
+      return;
+    }
+
+    const stream = await downloadStream(document.nasPath);
+    const fileName = document.originalName || document.name || "document";
+    const safeName = fileName.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "_");
+
+    res.setHeader("Content-Type", document.mimeType || "application/octet-stream");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+    );
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    if (document.size > 0) res.setHeader("Content-Length", String(document.size));
+
+    stream.on("error", (err) => {
+      console.error("[documents] View stream error:", err);
+      if (!res.headersSent) {
+        res.status(502).json({ message: "Failed to stream file for preview" });
+      } else {
+        res.destroy();
+      }
+    });
+
+    stream.pipe(res);
+  } catch (err) {
+    console.error("[documents] View error:", err);
+    if (!res.headersSent) {
+      res.status(502).json({ message: "Failed to stream file for preview" });
     } else {
       res.destroy();
     }
@@ -420,6 +470,30 @@ router.post("/upload", async (req: Request, res: Response) => {
         req,
       ));
 
+      // Notify admins of pending document approval
+      const io = req.app.get("io");
+      const adminUsers = await User.find({
+        $or: [{ role: "admin" }, { "permissions.approvals": true }],
+      }).select("_id");
+
+      for (const adminUser of adminUsers) {
+        if (adminUser._id.toString() !== req.userId) {
+          await NotificationService.createNotification({
+            userId: adminUser._id,
+            type: "APPROVAL_REQUEST",
+            title: "Document Awaiting Approval",
+            message: `${req.user?.name ?? "Employee"} uploaded "${meta.displayName}" for review`,
+            relatedId: doc._id,
+            relatedModel: "Document",
+            actorId: new Types.ObjectId(req.userId),
+            metadata: {
+              documentId: doc._id.toString(),
+              documentName: meta.displayName,
+            },
+          }, io);
+        }
+      }
+
       respond(201, { document: doc });
     } catch (err) {
       if (doc) {
@@ -673,11 +747,20 @@ router.patch("/:docId/access-requests/:requestId", requireAuth, async (req: Requ
 
 router.delete("/:id", requireResourceAccess("document"), async (req: Request, res: Response) => {
   try {
-    const document = await DocumentModel.findByIdAndDelete(req.params["id"]);
+    const document = await DocumentModel.findById(req.params["id"]);
     if (!document) {
       res.status(404).json({ message: "Document not found" });
       return;
     }
+
+    if (document.nasPath) {
+      await deletePath(document.nasPath).catch((err) => {
+        console.warn("[documents] Could not delete file from disk:", err);
+      });
+    }
+
+    await FileIntegrity.deleteMany({ documentId: document._id }).catch(() => {});
+    await DocumentModel.findByIdAndDelete(document._id);
 
     await AuditLog.create(createDocumentAuditLog(
       req.userId!,

@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { Link } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 
 export function SectionCard({
@@ -53,17 +54,20 @@ export function StatCard({
   hint,
   icon: Icon,
   accent = false,
+  to,
 }: {
   label: string;
   value: string | number;
   hint?: string;
   icon: LucideIcon;
   accent?: boolean;
+  to?: string;
 }) {
-  return (
+  const content = (
     <article
       className={cn(
-        "lift rounded-lg border p-6",
+        "lift rounded-lg border p-6 transition-all duration-200",
+        to && "cursor-pointer group hover:border-primary/50 hover:shadow-lift",
         accent
           ? "gradient-primary border-transparent text-primary-foreground shadow-lift"
           : "border-border bg-card shadow-soft",
@@ -72,15 +76,15 @@ export function StatCard({
       <div className="flex items-center justify-between gap-3">
         <p
           className={cn(
-            "text-helper font-medium",
-            accent ? "opacity-90" : "text-muted-foreground",
+            "text-helper font-medium transition-colors",
+            accent ? "opacity-90" : "text-muted-foreground group-hover:text-foreground",
           )}
         >
           {label}
         </p>
         <span
           className={cn(
-            "grid size-9 shrink-0 place-items-center rounded-md",
+            "grid size-9 shrink-0 place-items-center rounded-md transition-transform group-hover:scale-105",
             accent ? "bg-white/20" : "bg-primary/10 text-primary",
           )}
         >
@@ -95,6 +99,16 @@ export function StatCard({
       ) : null}
     </article>
   );
+
+  if (to) {
+    return (
+      <Link to={to} className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+        {content}
+      </Link>
+    );
+  }
+
+  return content;
 }
 
 export function EmptyState({

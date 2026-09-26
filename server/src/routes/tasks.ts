@@ -32,35 +32,41 @@ router.get("/", async (req: Request, res: Response) => {
 
     const filter: Record<string, unknown> = {};
 
-    if (status && status !== "all") filter["status"] = status;
+    if (status && status !== "all") {
+      if (status.includes(",")) {
+        filter["status"] = { $in: status.split(",").map((s) => s.trim()) };
+      } else {
+        filter["status"] = status;
+      }
+    }
     if (priority && priority !== "all") filter["priority"] = priority;
     if (category && category !== "all") filter["category"] = category;
     if (assignedTo) filter["assignedTo"] = assignedTo;
     if (caseId) filter["caseId"] = caseId;
 
+    const andConditions: Record<string, unknown>[] = [];
+
     // Non-admins only see their tasks
     if (req.user!.role !== "admin") {
       const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
-
-      // Build filter for tasks user can access:
-      // - assigned to them
-      // - created by them
-      // - in their accessible cases
-      const taskFilter: Record<string, unknown> = {
+      andConditions.push({
         $or: [
           { assignedTo: req.userId },
           { createdBy: req.userId },
-          { caseId: { $in: accessibleCaseIds } },
+          ...(accessibleCaseIds.length > 0 ? [{ caseId: { $in: accessibleCaseIds } }] : []),
         ],
-      };
-
-      // Merge with existing filter
-      Object.assign(filter, taskFilter);
+      });
     }
 
     if (search && search.trim()) {
       const regex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-      filter["$or"] = [{ title: regex }, { description: regex }];
+      andConditions.push({
+        $or: [{ title: regex }, { description: regex }],
+      });
+    }
+
+    if (andConditions.length > 0) {
+      filter["$and"] = andConditions;
     }
 
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
@@ -208,17 +214,19 @@ router.post("/", async (req: Request, res: Response) => {
 
     // Notify assignee if task is assigned to someone else
     if (finalAssignedTo && finalAssignedTo.toString() !== req.userId) {
+      const isUrgent = task.priority === "High";
       await NotificationService.createNotification({
         userId: finalAssignedTo,
         type: "TASK_ASSIGNED",
-        title: "New Task Assigned",
-        message: `You have been assigned a new task: "${task.title}"`,
+        title: isUrgent ? "🚨 Urgent Task Assigned" : "New Task Assigned",
+        message: `${req.user?.name ?? "Admin"} assigned you ${isUrgent ? "an urgent" : "a"} task: "${task.title}"`,
         relatedId: task._id,
         relatedModel: "Task",
         actorId: new Types.ObjectId(req.userId),
         metadata: {
           taskTitle: task.title,
           taskId: task._id.toString(),
+          priority: task.priority,
         },
       }, req.app.get("io")); // Pass the Socket.IO instance for real-time emission
     }
@@ -302,28 +310,29 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       return;
     }
 
-    // Notify assignee if task was reassigned to another user
+    // Notify assignee if task was assigned or reassigned to another user
     const newAssignedTo = updates["assignedTo"] ? String(updates["assignedTo"]) : null;
+    const oldAssignedTo = originalTask?.assignedTo ? originalTask.assignedTo.toString() : null;
     if (
       updates["assignedTo"] !== undefined &&
-      originalTask &&
-      originalTask.assignedTo &&
       newAssignedTo &&
-      originalTask.assignedTo.toString() !== newAssignedTo &&
-      newAssignedTo !== req.userId // Not notifying the user who made the change
+      newAssignedTo !== oldAssignedTo &&
+      newAssignedTo !== req.userId
     ) {
+      const isUrgent = task.priority === "High";
       await NotificationService.createNotification({
         userId: new Types.ObjectId(newAssignedTo),
         type: "TASK_ASSIGNED",
-        title: "Task Reassigned",
-        message: `You have been assigned a task: "${task.title}"`,
+        title: isUrgent ? "🚨 Urgent Task Assigned" : "Task Assigned",
+        message: `${req.user?.name ?? "Admin"} assigned you task: "${task.title}"`,
         relatedId: task._id,
         relatedModel: "Task",
         actorId: new Types.ObjectId(req.userId),
         metadata: {
           taskTitle: task.title,
           taskId: task._id.toString(),
-          action: "reassigned",
+          priority: task.priority,
+          action: "assigned",
         },
       }, req.app.get("io"));
     }

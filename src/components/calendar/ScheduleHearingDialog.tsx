@@ -22,6 +22,7 @@ import {
 interface ScheduleHearingDialogProps {
   open: boolean;
   onClose: () => void;
+  initialDate?: string | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -37,7 +38,7 @@ const EVENT_TYPES: { value: string; label: string }[] = [
   { value: "personal", label: "Personal" },
 ];
 
-export function ScheduleHearingDialog({ open, onClose }: ScheduleHearingDialogProps) {
+export function ScheduleHearingDialog({ open, onClose, initialDate }: ScheduleHearingDialogProps) {
   const createEvent = useCreateEvent();
 
   const { data: casesData } = useCases({ page: "1", limit: "50" });
@@ -46,12 +47,20 @@ export function ScheduleHearingDialog({ open, onClose }: ScheduleHearingDialogPr
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [type, setType] = useState("hearing");
-  const [startDate, setStartDate] = useState("");
+  const [startDate, setStartDate] = useState(initialDate || "");
   const [startTime, setStartTime] = useState("10:30");
-  const [endDate, setEndDate] = useState("");
+  const [endDate, setEndDate] = useState(initialDate || "");
   const [endTime, setEndTime] = useState("11:30");
   const [allDay, setAllDay] = useState(false);
   const [caseId, setCaseId] = useState("");
+
+  // Update date if initialDate changes
+  useState(() => {
+    if (initialDate) {
+      setStartDate(initialDate);
+      setEndDate(initialDate);
+    }
+  });
 
   if (!open) return null;
 

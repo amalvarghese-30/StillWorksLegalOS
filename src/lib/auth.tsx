@@ -12,6 +12,22 @@ import {
 
 export type Role = "admin" | "employee";
 
+export interface UserPermissions {
+  employees?: boolean;
+  approvals?: boolean;
+  auditLogs?: boolean;
+  settings?: boolean;
+  dashboard?: boolean;
+  cases?: boolean;
+  clients?: boolean;
+  tasks?: boolean;
+  documents?: boolean;
+  calendar?: boolean;
+  chat?: boolean;
+  reports?: boolean;
+  [key: string]: boolean | undefined;
+}
+
 export interface SessionUser {
   _id: string;
   name: string;
@@ -22,7 +38,7 @@ export interface SessionUser {
   avatarUrl?: string;
   phone?: string;
   status?: string;
-  permissions?: Record<string, boolean>;
+  permissions?: UserPermissions;
   // Firm details
   firmName?: string;
   firmBarRegistration?: string;

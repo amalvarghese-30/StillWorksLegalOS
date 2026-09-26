@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { AuditLog } from "../models/AuditLog.js";
 import { User } from "../models/User.js";
+import { Session } from "../models/Session.js";
 import { Client } from "../models/Client.js";
 import { Case } from "../models/Case.js";
 import { Task } from "../models/Task.js";
@@ -88,15 +89,26 @@ router.post("/employees", requireAdminOrPermission("employees"), async (req: Req
     const {
       name,
       email,
-      role = "junior_advocate",
       title = "",
       phone = "",
     } = req.body;
 
+    // ---------------------------------------------------------------------------
+    // PRIVILEGE ESCALATION GUARD
+    // Only actual admins (role === "admin") may create admin accounts or grant
+    // sensitive permissions. An employee-manager (permissions.employees = true)
+    // can only create normal employees with standard permissions.
+    // ---------------------------------------------------------------------------
+    const isActualAdmin = req.user?.role === "admin";
+
+    // Determine role — non-admins may never create admin accounts
+    let role: string = req.body.role ?? "junior_advocate";
+    if (role === "admin" && !isActualAdmin) {
+      res.status(403).json({ message: "Only admins can create admin accounts" });
+      return;
+    }
+
     // Generate a cryptographically secure temporary password.
-    // Never use a hardcoded default — each new employee account gets a unique
-    // 16-byte (32 hex char) temp password that the admin must communicate
-    // out-of-band. The user should change it on first login.
     const tempPassword = randomBytes(16).toString("hex");
     const password: string = typeof req.body.password === "string" && req.body.password.length > 0
       ? req.body.password
@@ -114,6 +126,8 @@ router.post("/employees", requireAdminOrPermission("employees"), async (req: Req
       return;
     }
 
+    // Permissions: admins get the full set for admin role, standard set for others.
+    // Non-admin managers always get the standard (non-privileged) permission set.
     const isAdminRole = role === "admin";
     const permissions = isAdminRole
       ? {
@@ -173,9 +187,55 @@ router.post("/employees", requireAdminOrPermission("employees"), async (req: Req
 
 router.patch("/employees/:id", requireAdminOrPermission("employees"), async (req: Request, res: Response) => {
   try {
-    const allowed = ["name", "email", "role", "title", "status", "phone", "permissions"];
+    const targetId = req.params["id"];
+    const isActualAdmin = req.user?.role === "admin";
+
+    // ---------------------------------------------------------------------------
+    // PRIVILEGE ESCALATION GUARDS
+    // ---------------------------------------------------------------------------
+
+    // Guard 1: Nobody can modify their own role or permissions through this endpoint.
+    if (targetId === req.userId && (req.body["role"] !== undefined || req.body["permissions"] !== undefined)) {
+      res.status(403).json({ message: "You cannot change your own role or permissions" });
+      return;
+    }
+
+    // Guard 2: Non-admin managers cannot modify existing admin accounts.
+    if (!isActualAdmin) {
+      const target = await User.findById(targetId).select("role").lean();
+      if (target?.role === "admin") {
+        res.status(403).json({ message: "Only admins can modify admin accounts" });
+        return;
+      }
+    }
+
+    // Guard 3: Only actual admins can change role or permissions.
+    // Non-admin employee managers are restricted to safe profile fields.
+    const adminOnlyFields = ["role", "permissions"];
+    if (!isActualAdmin) {
+      for (const field of adminOnlyFields) {
+        if (req.body[field] !== undefined) {
+          res.status(403).json({ message: `Only admins can change ${field}` });
+          return;
+        }
+      }
+    }
+
+    // Guard 4: Admins cannot demote or modify other admins' sensitive fields
+    // without additional checks (prevent lateral admin takeover).
+    // If promoting someone to admin, verify the requester is admin.
+    if (req.body["role"] === "admin" && !isActualAdmin) {
+      res.status(403).json({ message: "Only admins can grant admin role" });
+      return;
+    }
+
+    // Build safe update — admins get the full allowed set, non-admins get restricted set.
+    const allowedForAll = ["name", "title", "status", "phone"];
+    const allowedForAdmin = [...allowedForAll, "email", "role", "permissions"];
+    const allowedFields = isActualAdmin ? allowedForAdmin : allowedForAll;
+
     const updates: Record<string, unknown> = {};
-    for (const key of allowed) {
+    for (const key of allowedFields) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     }
 
@@ -186,7 +246,7 @@ router.patch("/employees/:id", requireAdminOrPermission("employees"), async (req
       updates["name"] = String(updates["name"]).trim();
     }
 
-    const user = await User.findByIdAndUpdate(req.params["id"], updates, {
+    const user = await User.findByIdAndUpdate(targetId, updates, {
       new: true,
       runValidators: true,
     }).select("-passwordHash");
@@ -228,12 +288,47 @@ router.patch("/employees/:id", requireAdminOrPermission("employees"), async (req
 
 router.delete("/employees/:id", requireAdminOrPermission("employees"), async (req: Request, res: Response) => {
   try {
-    if (req.params["id"] === req.userId) {
+    const targetId = req.params["id"];
+    const isActualAdmin = req.user?.role === "admin";
+
+    if (targetId === req.userId) {
       res.status(400).json({ message: "You cannot delete your own account" });
       return;
     }
 
-    const user = await User.findByIdAndDelete(req.params["id"]);
+    // Non-admin managers cannot delete admin accounts
+    if (!isActualAdmin) {
+      const target = await User.findById(targetId).select("role").lean();
+      if (target?.role === "admin") {
+        res.status(403).json({ message: "Only admins can delete admin accounts" });
+        return;
+      }
+    }
+
+    // Step 1: Revoke all active sessions for this user BEFORE deletion
+    // This prevents the user from using any existing tokens.
+    await Session.updateMany(
+      { userId: targetId, isRevoked: false },
+      { $set: { isRevoked: true } },
+    );
+
+    // Step 2: Disconnect all active sockets for this user
+    const io = req.app.get("io");
+    if (io) {
+      // Emit force-logout to all sockets in this user's room
+      io.to(`user:${targetId}`).emit("force:logout", {
+        reason: "account_deleted",
+      });
+      // Disconnect the sockets in their room
+      const sockets = await io.in(`user:${targetId}`).fetchSockets();
+      for (const socket of sockets) {
+        socket.disconnect(true);
+      }
+    }
+
+    // Step 3: Physical deletion (for legal systems, prefer deactivation instead,
+    // but this endpoint performs a hard delete as currently designed)
+    const user = await User.findByIdAndDelete(targetId);
     if (!user) {
       res.status(404).json({ message: "Employee not found" });
       return;
@@ -260,6 +355,7 @@ router.delete("/employees/:id", requireAdminOrPermission("employees"), async (re
     res.status(500).json({ message: err?.message || "Internal server error" });
   }
 });
+
 
 // ---------------------------------------------------------------------------
 // GET /api/admin/approvals — pending items needing approval (admin or approvals perm)

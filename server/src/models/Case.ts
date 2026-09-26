@@ -4,9 +4,22 @@ import mongoose, { Document, Schema } from "mongoose";
 // Types
 // ---------------------------------------------------------------------------
 
-export type CaseStatus = "Active" | "On Hold" | "Closed" | "Urgent";
+export type CaseStatus = "Active" | "On Hold" | "Closed" | "Urgent" | "Archived";
 export type CasePriority = "High" | "Medium" | "Low";
 export type CasePractice =
+  | "Civil Litigation"
+  | "Criminal Law"
+  | "Family Law"
+  | "Property Law"
+  | "Corporate Law"
+  | "Tax Law"
+  | "Labour Law"
+  | "Consumer Protection"
+  | "Intellectual Property"
+  | "Constitutional Law"
+  | "Arbitration"
+  | "RERA"
+  | "NCLT / Insolvency"
   | "Property"
   | "Corporate"
   | "Family"
@@ -14,7 +27,8 @@ export type CasePractice =
   | "Taxation"
   | "Heirship"
   | "CIDCO Transfer"
-  | "Other";
+  | "Other"
+  | (string & {});
 
 /** A linked party on the case (client, sub-client, opposing party, counsel) */
 export interface CaseParty {
@@ -56,6 +70,8 @@ export interface ICase extends Document {
   nasPath: string;                       // NAS folder path for this case
   progress: number;                      // 0-100
   tags: string[];
+  archivedAt?: Date;                     // Set when case is archived
+  archivedBy?: mongoose.Types.ObjectId; // Who archived it
   createdAt: Date;
   updatedAt: Date;
 }
@@ -115,14 +131,14 @@ const CaseSchema = new Schema<ICase>(
     description: { type: String, default: "" },
     practice: {
       type: String,
-      enum: ["Property", "Corporate", "Family", "Criminal", "Taxation", "Heirship", "CIDCO Transfer", "Other"],
+      trim: true,
       default: "Property",
     },
     court: { type: String, default: "" },
     judge: { type: String, default: "" },
     status: {
       type: String,
-      enum: ["Active", "On Hold", "Closed", "Urgent"],
+      enum: ["Active", "On Hold", "Closed", "Urgent", "Archived"],
       default: "Active",
       index: true,
     },
@@ -140,6 +156,8 @@ const CaseSchema = new Schema<ICase>(
     nasPath: { type: String, default: "" },
     progress: { type: Number, default: 0, min: 0, max: 100 },
     tags: { type: [String], default: [] },
+    archivedAt: { type: Date },
+    archivedBy: { type: Schema.Types.ObjectId, ref: "User" },
   },
   {
     timestamps: true,
@@ -165,16 +183,26 @@ CaseSchema.index({
 });
 
 // ---------------------------------------------------------------------------
-// Auto-generate case number on save
+// Auto-generate case number on save — uses atomic Counter to prevent races
 // ---------------------------------------------------------------------------
 
 CaseSchema.pre("validate", async function (next) {
-  if (this.isNew && !this.number) {
-    const year = new Date().getFullYear();
-    const count = await mongoose.model("Case").countDocuments();
-    this.number = `SW-${year}-${String(count + 1).padStart(4, "0")}`;
+  try {
+    if (this.isNew && !this.number) {
+      const year = new Date().getFullYear();
+      const counterKey = `case-number-${year}`;
+
+      // nextSequence is a single atomic findOneAndUpdate($inc) — safe under
+      // concurrent requests. No application-level locking needed.
+      const { nextSequence } = await import("./Counter.js");
+      const seq = await nextSequence(counterKey);
+
+      this.number = `SW-${year}-${String(seq).padStart(4, "0")}`;
+    }
+    next();
+  } catch (err) {
+    next(err as any);
   }
-  next();
 });
 
 // ---------------------------------------------------------------------------

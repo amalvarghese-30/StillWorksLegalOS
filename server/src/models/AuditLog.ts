@@ -197,10 +197,17 @@ AuditLogSchema.pre("validate", async function (next) {
       if (!this.createdAt) this.createdAt = new Date();
 
       if (this.sequence == null) {
-        const Model = this.constructor as IAuditLogModel;
-        const lastLog = await Model.findOne().sort({ sequence: -1 }).lean();
-        this.sequence = (lastLog?.sequence ?? 0) + 1;
-        if (this.prevHash == null) this.prevHash = lastLog?.hash;
+        // Use atomic counter to prevent duplicate sequences under concurrency.
+        // The old findOne({sort:{sequence:-1}}) approach had a race window.
+        const { nextSequence } = await import("./Counter.js");
+        this.sequence = await nextSequence("audit-log-sequence");
+
+        // prevHash: find the entry with sequence-1 to maintain the chain.
+        if (this.prevHash == null && this.sequence > 1) {
+          const Model = this.constructor as IAuditLogModel;
+          const prev = await Model.findOne({ sequence: this.sequence - 1 }).lean();
+          this.prevHash = prev?.hash;
+        }
       }
 
       if (this.hash == null) {

@@ -110,6 +110,8 @@ export interface FileIntegrityResponse {
 }
 
 export interface UpdateEmployeePayload {
+  name?: string;
+  email?: string;
   role?: string;
   title?: string;
   status?: string;
@@ -174,8 +176,16 @@ export function useUpdateEmployee() {
   const qc = useQueryClient();
   return useMutation<{ user: EmployeeRecord }, Error, { id: string; data: UpdateEmployeePayload }>({
     mutationFn: ({ id, data }) => api.patch(`/admin/employees/${id}`, data),
-    onSuccess: () => {
+    onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: adminKeys.all });
+      qc.setQueriesData<EmployeesResponse>({ queryKey: ["admin", "employees"] }, (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          employees: old.employees.map((emp) => (emp._id === result.user._id ? { ...emp, ...result.user } : emp)),
+        };
+      });
+      qc.invalidateQueries({ queryKey: ["chat", "users"] });
     },
   });
 }
@@ -186,6 +196,25 @@ export function useCreateEmployee() {
     mutationFn: (data) => api.post("/admin/employees", data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: adminKeys.all });
+    },
+  });
+}
+
+export function useDeleteEmployee() {
+  const qc = useQueryClient();
+  return useMutation<{ message: string }, Error, string>({
+    mutationFn: (id) => api.delete(`/admin/employees/${id}`),
+    onSuccess: (_, deletedId) => {
+      qc.invalidateQueries({ queryKey: adminKeys.all });
+      qc.setQueriesData<EmployeesResponse>({ queryKey: ["admin", "employees"] }, (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          employees: old.employees.filter((emp) => emp._id !== deletedId),
+          total: Math.max(0, old.total - 1),
+        };
+      });
+      qc.invalidateQueries({ queryKey: ["chat", "users"] });
     },
   });
 }

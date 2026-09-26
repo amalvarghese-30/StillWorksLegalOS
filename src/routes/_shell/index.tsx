@@ -19,6 +19,8 @@ import { useDocuments, useUpdateDocument, useReviewAccessRequest } from "@/servi
 import { useEmployeeWorkload } from "@/services/reports";
 import { useApprovals } from "@/services/admin";
 import { useAuditLogs } from "@/services/admin";
+import { useTasks, type TaskRecord } from "@/services/tasks";
+import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import { QuickActionsMenu } from "@/components/layout/QuickActionsMenu";
 
 export const Route = createFileRoute("/_shell/")({
@@ -32,12 +34,6 @@ export const Route = createFileRoute("/_shell/")({
   }),
   component: Dashboard,
 });
-
-const toneRing: Record<string, string> = {
-  primary: "bg-primary",
-  indigo: "bg-indigo",
-  violet: "bg-violet",
-};
 
 /** Resolve an approval `_id` back into the document + (optional) access-request ids. */
 function approvalTarget(a: { kind: string; _id: string }): { docId: string; requestId?: string } {
@@ -53,20 +49,25 @@ function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const isAdmin = user?.role === "admin";
+  const hasApprovalsAccess = isAdmin || user?.permissions?.approvals === true;
+  const hasAuditAccess = isAdmin || user?.permissions?.auditLogs === true;
   const updateDocument = useUpdateDocument();
   const reviewAccessRequest = useReviewAccessRequest();
   const [actingOn, setActingOn] = useState<string | null>(null);
+  const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
+
   const today = new Date();
-  const todayStr = today.toISOString().slice(0, 10);
-  const todayEnd = `${todayStr}T23:59:59`;
+  const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0).toISOString();
+  const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999).toISOString();
 
   const { data: summary, isLoading: summaryLoading } = useReportsSummary();
-  const { data: eventsData, isLoading: hearingsLoading, isError: hearingsError, refetch: refetchHearings } = useCalendarEvents({ start: todayStr, end: todayEnd });
+  const { data: eventsData, isLoading: hearingsLoading, isError: hearingsError, refetch: refetchHearings } = useCalendarEvents({ start: startOfDay, end: endOfDay });
   const { data: casesData, isLoading: casesLoading, isError: casesError, refetch: refetchCases } = useCases({ page: "1", limit: "4" });
   const { data: docsData, isLoading: docsLoading, isError: docsError, refetch: refetchDocs } = useDocuments({ page: "1", limit: "4" });
   const { data: workloadData, isError: workloadError, refetch: refetchWorkload } = useEmployeeWorkload();
-  const { data: approvalsData, isError: approvalsError, refetch: refetchApprovals } = useApprovals({ enabled: isAdmin });
-  const { data: auditData, isLoading: auditLoading, isError: auditError, refetch: refetchAudit } = useAuditLogs({ limit: "8" }, { enabled: isAdmin });
+  const { data: approvalsData, isError: approvalsError, refetch: refetchApprovals } = useApprovals({ enabled: hasApprovalsAccess });
+  const { data: auditData, isLoading: auditLoading, isError: auditError, refetch: refetchAudit } = useAuditLogs({ limit: "8" }, { enabled: hasAuditAccess });
+  const { data: tasksData, isLoading: tasksLoading, isError: tasksError, refetch: refetchTasks } = useTasks({ limit: "50" });
 
   const hearings: CalendarEvent[] = (eventsData?.events ?? []).filter((e) => e.type === "hearing");
   const cases = casesData?.cases ?? [];
@@ -74,6 +75,30 @@ function Dashboard() {
   const approvals = approvalsData?.approvals ?? [];
   const activity = auditData?.logs ?? [];
   const team = workloadData?.workloads ?? [];
+  const allTasks = tasksData?.tasks ?? [];
+
+  // Filter urgent / priority tasks for attention
+  const attentionTasks = allTasks.filter((t) => {
+    if (t.status === "completed") return false;
+    const assignedId = typeof t.assignedTo === "object" && t.assignedTo ? (t.assignedTo as any)._id : t.assignedTo;
+    const isAssignedToMe = assignedId?.toString() === user?._id?.toString();
+    const isCreatedByMe = (typeof t.createdBy === "object" && t.createdBy ? (t.createdBy as any)._id : t.createdBy)?.toString() === user?._id?.toString();
+    const isUrgentOrHigh = t.priority === "High" || (t.priority as string) === "Urgent";
+    const isOverdue = t.status === "overdue" || (t.deadline ? new Date(t.deadline).getTime() < today.getTime() : false);
+    const isDueToday = t.deadline ? new Date(t.deadline).toDateString() === today.toDateString() : false;
+
+    if (isAdmin) {
+      return isUrgentOrHigh || isOverdue || (isAssignedToMe && isDueToday);
+    } else {
+      if (isAssignedToMe || isCreatedByMe) {
+        return isUrgentOrHigh || isOverdue || isDueToday;
+      }
+      if (!assignedId && isUrgentOrHigh) {
+        return true;
+      }
+      return false;
+    }
+  });
 
   const dateStr = today.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" });
 
@@ -99,7 +124,7 @@ function Dashboard() {
       <PageHeader
         breadcrumb={[{ label: "StillWorks", to: "/" }, { label: "Dashboard" }]}
         title="What should I work on today?"
-        subtitle={`${dateStr} · ${hearings.length} hearings, ${approvals.length} approvals waiting.`}
+        subtitle={`${dateStr} · ${hearings.length} hearings, ${attentionTasks.length} urgent tasks, ${approvals.length} approvals waiting.`}
         actions={
           <>
             <Button variant="outline" className="rounded-md" onClick={() => navigate({ to: "/calendar" })}>
@@ -126,39 +151,45 @@ function Dashboard() {
         <StatCard
           label="Today's hearings"
           value={hearingsLoading ? "…" : hearings.length}
-          hint="Next at 10:30 AM"
+          hint="Court appearances"
           icon={Gavel}
           accent
+          to="/calendar"
         />
         <StatCard
           label="Active cases"
           value={summaryLoading ? "…" : summary?.activeCases ?? 0}
           hint="Firm-wide"
           icon={Briefcase}
+          to="/cases"
         />
         <StatCard
           label="Clients"
           value={summaryLoading ? "…" : summary?.totalClients ?? 0}
           hint={summary?.period ?? ""}
           icon={Users}
+          to="/clients"
         />
         <StatCard
           label="Tasks done"
           value={summaryLoading ? "…" : summary?.tasksCompleted ?? 0}
           hint={summary?.period ?? ""}
           icon={CheckSquare}
+          to="/tasks"
         />
         <StatCard
           label="Pending approval"
           value={approvals.length}
           hint="Needs review"
           icon={ShieldCheck}
+          to="/admin/approvals"
         />
         <StatCard
           label="Team on duty"
           value={team.length}
           hint={`${team.filter((t) => t.status === "active").length} active`}
           icon={UserCog}
+          to="/admin/employees"
         />
       </div>
 
@@ -167,18 +198,66 @@ function Dashboard() {
         <div className="space-y-6">
           {/* Needs attention */}
           <SectionCard title="Needs your attention" description="Priority items that require immediate action." icon={AlertTriangle}>
-            {hearingsError || approvalsError ? (
+            {hearingsError || approvalsError || tasksError ? (
               <ErrorState
                 title="Couldn't load your attention items"
-                onRetry={() => { refetchHearings(); refetchApprovals(); }}
+                onRetry={() => { refetchHearings(); refetchApprovals(); refetchTasks(); }}
               />
             ) : (
               <ul className="space-y-3">
-                {hearings.length === 0 && approvals.length === 0 && (
+                {attentionTasks.length === 0 && hearings.length === 0 && approvals.length === 0 && (
                   <li className="py-8 text-center text-helper text-muted-foreground">All caught up! Nothing needs attention right now.</li>
                 )}
+                {/* Urgent & High-Priority Tasks */}
+                {attentionTasks.slice(0, 4).map((t) => (
+                  <li
+                    key={t._id}
+                    onClick={() => setSelectedTask(t)}
+                    className="lift grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-4 rounded-md border border-destructive/25 bg-destructive/5 p-4 transition-all hover:border-destructive/40"
+                  >
+                    <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-md bg-destructive/15 text-destructive">
+                      <AlertTriangle size={17} strokeWidth={2} />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate font-medium text-foreground">{t.title}</p>
+                        <span className="shrink-0 rounded-pill bg-destructive/15 px-2 py-0.5 text-[11px] font-semibold text-destructive">
+                          {t.priority === "High" ? "High Priority" : t.priority}
+                        </span>
+                        {(t.status === "overdue" || (t.deadline && new Date(t.deadline).getTime() < today.getTime())) && (
+                          <span className="shrink-0 rounded-pill bg-destructive text-destructive-foreground px-2 py-0.5 text-[10px] font-bold">
+                            OVERDUE
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-0.5 truncate text-helper text-muted-foreground">
+                        {t.caseName ? `Case: ${t.caseName}` : t.clientName ? `Client: ${t.clientName}` : t.category || "Task"}
+                        {t.description ? ` · ${t.description}` : ""}
+                      </p>
+                      <p className="mt-1 text-caption text-muted-foreground">
+                        {t.deadline ? `Due: ${new Date(t.deadline).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` : "Urgent action required"}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="rounded-sm border-destructive/30 text-destructive hover:bg-destructive/10 shrink-0"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedTask(t);
+                      }}
+                    >
+                      View task
+                    </Button>
+                  </li>
+                ))}
+                {/* Today's Hearings */}
                 {hearings.slice(0, 2).map((h) => (
-                  <li key={h._id} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-4 rounded-md border border-border bg-card p-4">
+                  <li
+                    key={h._id}
+                    onClick={() => navigate({ to: "/calendar" })}
+                    className="lift cursor-pointer grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-4 rounded-md border border-border bg-card p-4 hover:border-primary/40 transition-colors"
+                  >
                     <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-md bg-primary/10 text-primary"><Gavel size={17} strokeWidth={1.75} /></span>
                     <div className="min-w-0">
                       <p className="truncate font-medium">Hearing</p>
@@ -188,6 +267,7 @@ function Dashboard() {
                     <StatusPill tone="primary">Hearing</StatusPill>
                   </li>
                 ))}
+                {/* Pending Approvals */}
                 {approvals.slice(0, 1).map((a) => (
                   <li key={a._id} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-4 rounded-md border border-border bg-card p-4">
                     <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-md bg-warning/10 text-warning"><ShieldCheck size={17} strokeWidth={1.75} /></span>
@@ -225,7 +305,10 @@ function Dashboard() {
                 {hearings.map((h) => (
                   <li key={h._id} className="relative">
                     <span className="absolute top-2 -left-[1.9rem] size-2.5 rounded-full ring-4 ring-card bg-primary" />
-                    <div className="lift grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-md border border-border bg-card p-4">
+                    <div
+                      onClick={() => navigate({ to: "/calendar" })}
+                      className="lift cursor-pointer grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-md border border-border bg-card p-4 hover:border-primary/40 transition-colors"
+                    >
                       <div className="min-w-0">
                         <p className="truncate font-medium">{h.title}</p>
                       </div>
@@ -290,7 +373,16 @@ function Dashboard() {
           )}
 
           {/* Recent cases */}
-          <SectionCard title="Recent cases" description="Latest movement in your matters." icon={Briefcase}>
+          <SectionCard
+            title="Recent cases"
+            description="Latest movement in your matters."
+            icon={Briefcase}
+            action={
+              <Button variant="ghost" size="sm" className="rounded-sm" onClick={() => navigate({ to: "/cases" })}>
+                View all <ArrowRight size={15} strokeWidth={1.75} />
+              </Button>
+            }
+          >
             {casesLoading ? (
               <div className="flex items-center justify-center py-8"><Loader2 className="animate-spin text-muted-foreground" size={20} /></div>
             ) : casesError ? (
@@ -302,7 +394,7 @@ function Dashboard() {
                 {cases.slice(0, 4).map((c) => (
                   <li key={c._id}>
                     <Link to="/cases/$caseId" params={{ caseId: c._id }}
-                      className="lift grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-md border border-border p-4">
+                      className="lift grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-md border border-border p-4 hover:border-primary/40 transition-colors">
                       <div className="min-w-0">
                         <p className="truncate font-medium">{c.title}</p>
                         <p className="num mt-0.5 truncate text-caption text-muted-foreground">
@@ -321,7 +413,7 @@ function Dashboard() {
         {/* ── Right column ── */}
         <div className="space-y-6">
           {/* Live activity */}
-          {isAdmin && (
+          {hasAuditAccess && (
             <SectionCard title="Live activity" description="What the team just did." icon={ActivityIcon}>
               {auditLoading ? (
                 <div className="flex items-center justify-center py-8"><Loader2 className="animate-spin text-muted-foreground" size={20} /></div>
@@ -411,25 +503,14 @@ function Dashboard() {
               </ul>
             )}
           </SectionCard>
-
-          {/* Work completed */}
-          <SectionCard title="Firm overview" description="Key metrics." icon={Clock3}>
-            <dl className="grid grid-cols-2 gap-4">
-              {[
-                ["Active Cases", String(summary?.activeCases ?? "—")],
-                ["Total Clients", String(summary?.totalClients ?? "—")],
-                ["Tasks Completed", String(summary?.tasksCompleted ?? "—")],
-                ["Docs Approved", String(summary?.docsApproved ?? "—")],
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-md bg-muted/60 p-4">
-                  <dt className="text-caption text-muted-foreground">{label}</dt>
-                  <dd className="num mt-1 text-section font-semibold">{value}</dd>
-                </div>
-              ))}
-            </dl>
-          </SectionCard>
         </div>
       </div>
+
+      <TaskDetailDialog
+        open={Boolean(selectedTask)}
+        onClose={() => setSelectedTask(null)}
+        task={selectedTask}
+      />
     </div>
   );
 }

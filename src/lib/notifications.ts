@@ -1,12 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSocketEvent } from "@/lib/socket";
-import { useQueryClient } from "@tanstack/react-query";
-import { notificationKeys } from "./query-keys";
 import { apiFetch } from "@/services/api";
+import { toast } from "sonner";
+import {
+  playNotificationSound,
+  isNotificationSoundEnabled,
+  setNotificationSoundEnabled,
+} from "@/lib/sound";
 
-// We'll define the notification shape as per our backend
+// Standard notification record shape
 export interface Notification {
   _id: string;
+  id?: string;
   userId: string;
   type: string;
   title: string;
@@ -21,12 +26,21 @@ export interface Notification {
 
 /**
  * Hook to manage notifications state.
- * Provides notifications, unread count, and functions to mark as read, delete, etc.
+ * Provides notifications, unread count, sound controls, and socket-driven live alerts.
  */
 export function useNotifications() {
-  const queryClient = useQueryClient();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [soundEnabled, setSoundEnabledState] = useState(() => isNotificationSoundEnabled());
+
+  const toggleSound = useCallback(() => {
+    const next = !soundEnabled;
+    setSoundEnabledState(next);
+    setNotificationSoundEnabled(next);
+    if (next) {
+      playNotificationSound();
+    }
+  }, [soundEnabled]);
 
   // Fetch notifications on mount and whenever we want to refetch
   const fetchNotifications = useCallback(async () => {
@@ -34,10 +48,14 @@ export function useNotifications() {
       const data = await apiFetch<{ notifications: Notification[]; total?: number; unreadCount?: number }>(
         "/notifications"
       );
-      setNotifications(data.notifications ?? []);
+      const list = (data.notifications ?? []).map((n) => ({
+        ...n,
+        _id: n._id || n.id || "",
+      }));
+      setNotifications(list);
 
       // Calculate unread count
-      const count = data.unreadCount ?? data.notifications?.filter((n: Notification) => !n.read).length ?? 0;
+      const count = data.unreadCount ?? list.filter((n) => !n.read).length;
       setUnreadCount(count);
     } catch (err) {
       console.error("[useNotifications] Failed to fetch notifications:", err);
@@ -45,57 +63,71 @@ export function useNotifications() {
   }, []);
 
   // Listen for new notifications via socket
-  useSocketEvent("notification:new", (notification: Notification) => {
+  useSocketEvent("notification:new", (notification: any) => {
+    if (!notification) return;
+    const normId = notification._id || notification.id || String(Date.now());
+    const norm: Notification = {
+      ...notification,
+      _id: normId,
+      read: false,
+    };
+
     setNotifications((prev) => {
-      // Avoid duplicates (in case we get a notification we already have)
-      if (prev.some((n) => n._id === notification._id)) return prev;
-      return [notification, ...prev];
+      if (prev.some((n) => n._id === normId)) return prev;
+      return [norm, ...prev];
     });
-    setUnreadCount((prev) => prev + 1); // New notification is unread by default
+    setUnreadCount((prev) => prev + 1);
+
+    // 1. Play auditory chime pop
+    playNotificationSound();
+
+    // 2. Trigger rich live toast popup
+    toast(norm.title, {
+      description: norm.message,
+      action: {
+        label: "Open",
+        onClick: () => {
+          window.dispatchEvent(
+            new CustomEvent("stillworks:navigate-notification", { detail: norm })
+          );
+        },
+      },
+      duration: 6000,
+    });
   });
 
   // Listen for notification updates (e.g., marked as read)
-  useSocketEvent("notification:updated", (updated: Notification) => {
+  useSocketEvent("notification:updated", (updated: any) => {
+    if (!updated) return;
+    const normId = updated._id || updated.id;
     setNotifications((prev) =>
-      prev.map((n) => (n._id === updated._id ? updated : n))
+      prev.map((n) => (n._id === normId ? { ...n, ...updated, _id: normId } : n))
     );
-    setUnreadCount((prev) => {
-      // If the updated notification was unread and now is read, decrement
-      if (!updated.read) return prev;
-      // If it was read and now is unread, increment (shouldn't happen, but just in case)
-      if (updated.read) return prev;
-      return prev;
-    });
+    if (updated.read) {
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+    }
   });
 
   // Listen for notification deletion
   useSocketEvent("notification:deleted", (deletedId: string) => {
     setNotifications((prev) => prev.filter((n) => n._id !== deletedId));
-    // We don't know if the deleted notification was read or unread, so we'll refetch to be safe
-    // Alternatively, we could track it, but for simplicity we refetch.
     fetchNotifications();
   });
 
   // Mark a notification as read
-  const markAsRead = useCallback(
-    async (notificationId: string) => {
-      try {
-        await apiFetch(`/notifications/${notificationId}/read`, {
-          method: "PATCH",
-        });
-        // Optimistically update the state
-        setNotifications((prev) =>
-          prev.map((n) =>
-            n._id === notificationId ? { ...n, read: true } : n
-          )
-        );
-        setUnreadCount((prev) => Math.max(0, prev - 1));
-      } catch (err) {
-        console.error("[useNotifications] Failed to mark notification as read:", err);
-      }
-    },
-    []
-  );
+  const markAsRead = useCallback(async (notificationId: string) => {
+    try {
+      await apiFetch(`/notifications/${notificationId}/read`, {
+        method: "PATCH",
+      });
+      setNotifications((prev) =>
+        prev.map((n) => (n._id === notificationId ? { ...n, read: true } : n))
+      );
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+    } catch (err) {
+      console.error("[useNotifications] Failed to mark notification as read:", err);
+    }
+  }, []);
 
   // Mark all notifications as read
   const markAllAsRead = useCallback(async () => {
@@ -103,10 +135,7 @@ export function useNotifications() {
       await apiFetch("/notifications/read-all", {
         method: "PATCH",
       });
-      // Optimistically update all to read
-      setNotifications((prev) =>
-        prev.map((n) => ({ ...n, read: true }))
-      );
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
       setUnreadCount(0);
     } catch (err) {
       console.error("[useNotifications] Failed to mark all notifications as read:", err);
@@ -120,23 +149,17 @@ export function useNotifications() {
         await apiFetch(`/notifications/${notificationId}`, {
           method: "DELETE",
         });
-        // Optimistically remove from state
         setNotifications((prev) => prev.filter((n) => n._id !== notificationId));
-        // We don't know if it was read or unread, so we'll refetch the count to be safe
-        // Alternatively, we could track it, but for simplicity we refetch the count.
-        const unread = notifications.filter((n) => !n.read && n._id !== notificationId);
-        setUnreadCount(unread.length);
+        setUnreadCount((prev) => {
+          const target = notifications.find((n) => n._id === notificationId);
+          return target && !target.read ? Math.max(0, prev - 1) : prev;
+        });
       } catch (err) {
         console.error("[useNotifications] Failed to delete notification:", err);
       }
     },
     [notifications]
   );
-
-  // Refetch notifications (e.g., when we want to refresh)
-  const refetch = useCallback(() => {
-    fetchNotifications();
-  }, [fetchNotifications]);
 
   // Initial fetch
   useEffect(() => {
@@ -149,6 +172,8 @@ export function useNotifications() {
     markAsRead,
     markAllAsRead,
     deleteNotification,
-    refetch,
+    refetch: fetchNotifications,
+    soundEnabled,
+    toggleSound,
   };
 }

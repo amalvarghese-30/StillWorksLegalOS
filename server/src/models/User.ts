@@ -51,6 +51,9 @@ export interface IUser extends Document {
   securityTwoFactor?: boolean;
   securitySessionTimeout?: boolean;
   securityLoginAlerts?: boolean;
+  resetOtpHash?: string;
+  resetOtpExpires?: Date;
+  resetOtpAttempts?: number;
   lastActiveAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -138,6 +141,9 @@ const UserSchema = new Schema<IUser>(
     securityTwoFactor: { type: Boolean, default: true },
     securitySessionTimeout: { type: Boolean, default: true },
     securityLoginAlerts: { type: Boolean, default: true },
+    resetOtpHash: { type: String, select: false },
+    resetOtpExpires: { type: Date, select: false },
+    resetOtpAttempts: { type: Number, default: 0, select: false },
     lastActiveAt: { type: Date, default: Date.now },
   },
   {
@@ -145,6 +151,9 @@ const UserSchema = new Schema<IUser>(
     toJSON: {
       transform(_doc, ret: Record<string, unknown>) {
         delete (ret as any).passwordHash;
+        delete (ret as any).resetOtpHash;
+        delete (ret as any).resetOtpExpires;
+        delete (ret as any).resetOtpAttempts;
         delete (ret as any).__v;
         return ret;
       },

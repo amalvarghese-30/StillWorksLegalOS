@@ -19,26 +19,38 @@ import { useAuth } from "@/lib/auth";
 
 const adminNav = [
   { to: "/admin", label: "Admin Dashboard", icon: Gauge, exact: true },
-  { to: "/admin/employees", label: "Employees", icon: UserCog },
-  { to: "/admin/approvals", label: "Approvals", icon: ShieldCheck },
-  { to: "/admin/audit-logs", label: "Audit Logs", icon: ScrollText },
-  { to: "/admin/settings", label: "Firm Settings", icon: Settings },
-  { to: "/chat", label: "Chat", icon: MessageCircle },
+  { to: "/admin/employees", label: "Employees", icon: UserCog, permission: "employees" },
+  { to: "/admin/approvals", label: "Approvals", icon: ShieldCheck, permission: "approvals" },
+  { to: "/admin/audit-logs", label: "Audit Logs", icon: ScrollText, permission: "auditLogs" },
+  { to: "/admin/settings", label: "Firm Settings", icon: Settings, permission: "settings" },
+  { to: "/chat", label: "Chat", icon: MessageCircle, permission: "chat" },
 ];
 
 const firmNav = [
-  { to: "/", label: "Dashboard", icon: Gauge },
-  { to: "/cases", label: "Cases", icon: Briefcase },
-  { to: "/clients", label: "Clients", icon: Users },
-  { to: "/tasks", label: "Tasks", icon: CheckSquare },
-  { to: "/documents", label: "Documents", icon: FolderClosed },
-  { to: "/calendar", label: "Calendar", icon: CalendarDays },
+  { to: "/", label: "Dashboard", icon: Gauge, permission: "dashboard" },
+  { to: "/cases", label: "Cases", icon: Briefcase, permission: "cases" },
+  { to: "/clients", label: "Clients", icon: Users, permission: "clients" },
+  { to: "/tasks", label: "Tasks", icon: CheckSquare, permission: "tasks" },
+  { to: "/documents", label: "Documents", icon: FolderClosed, permission: "documents" },
+  { to: "/calendar", label: "Calendar", icon: CalendarDays, permission: "calendar" },
 ];
 
 export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+
+  const visibleAdminNav = adminNav.filter((item) => {
+    if (user?.role === "admin") return true;
+    if (!item.permission) return true;
+    return (user?.permissions as any)?.[item.permission] !== false;
+  });
+
+  const visibleFirmNav = firmNav.filter((item) => {
+    if (user?.role === "admin") return true;
+    if (!item.permission) return true;
+    return (user?.permissions as any)?.[item.permission] !== false;
+  });
 
   return (
     <div className="glass flex h-full w-[290px] flex-col rounded-2xl p-4">
@@ -54,7 +66,7 @@ export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
 
       <nav className="mt-3 flex-1 overflow-y-auto pr-1" aria-label="Admin">
         <ul className="space-y-1">
-          {adminNav.map((item) => {
+          {visibleAdminNav.map((item) => {
             const active = item.exact ? pathname === item.to : pathname.startsWith(item.to);
             return (
               <li key={item.to}>
@@ -81,7 +93,7 @@ export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
           Firm workspace
         </p>
         <ul className="space-y-1">
-          {firmNav.map((item) => {
+          {visibleFirmNav.map((item) => {
             const active = pathname === item.to || pathname.startsWith(item.to);
             return (
               <li key={item.to}>

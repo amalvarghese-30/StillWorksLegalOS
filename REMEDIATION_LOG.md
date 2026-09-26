@@ -1,0 +1,27 @@
+# STILLWORKS LEGALOS — PRODUCTION REMEDIATION LOG
+
+## Remediation Matrix
+
+| ID | Priority | Finding / Issue | Module | Target File(s) | Root Cause | Planned Fix | Status |
+|---|---|---|---|---|---|---|---|
+| **P0-01** | P0 | Password reset OTP leaked in JSON response & console | Auth | `server/src/routes/auth.ts` | Debug fields (`devOtp`, `email`, `phone`) returned; `console.log` exposed OTP | Remove debug fields; return masked destination only; secure `randomInt` OTP; no console logging | IN PROGRESS |
+| **P0-02** | P0 | Path traversal in local storage service | Storage | `server/src/services/webdav.ts` | Single-pass regex `replace(/\.\.[\/\\]/g, "")` bypassed by `....//` | Canonical path resolution via `path.resolve` + strict `path.relative` containment check | PENDING |
+| **P0-03** | P0 | NoSQL injection / Type confusion 500 crash on auth | Auth | `server/src/routes/auth.ts` | `email.toLowerCase()` called directly on unvalidated `req.body.email` | Strict string type and length validation before string operations | PENDING |
+| **P0-04** | P0 | Rate limiting bypass via `X-Forwarded-For` spoofing | Security | `server/src/index.ts` | `trust proxy: 1` blindly trusts any incoming client IP header | Restrict trust proxy to configured proxy subnets; composite rate limit key (IP + email) | PENDING |
+| **P0-05** | P0 | Unrestricted private LAN CORS permitted in production | Security | `server/src/index.ts` | Subnet regex evaluated without checking `NODE_ENV === "development"` | Wrap LAN regex in `NODE_ENV !== "production"` check | PENDING |
+| **P0-06** | P0 | Production startup crash on default `JWT_SECRET` | Config | `server/src/middleware/auth.ts`, `.env.example` | Default dev secret causes `process.exit(1)` in production | Provide clean `.env.example`, clear validation and failure message | PENDING |
+| **P0-07** | P0 | Unchecked calendar API and route permission | Authz | `server/src/routes/calendar.ts`, `src/routes/_shell/calendar.tsx` | Missing `requireAdminOrPermission("calendar")` on backend and route guard on frontend | Add authorization middleware and frontend UX guard | PENDING |
+| **P0-08** | P0 | Unchecked firm reports exposure | Authz / Reports | `server/src/routes/admin.ts`, `src/routes/_shell/reports.tsx` | Firm analytics routes lack permission check | Require admin or `reports` permission for firm analytics; personal reports scoped to `req.userId` | PENDING |
+| **P0-09** | P0 | Insecure refresh token storage in browser `localStorage` | Auth / Security | `src/services/api.ts` | Refresh token stored in `localStorage` fallback | Remove `localStorage` fallback for refresh tokens; rely strictly on httpOnly cookies in web and safeStorage in Electron | PENDING |
+| **P1-10** | P1 | Concurrency race condition on case numbers | Cases | `server/src/models/Case.ts` | Non-atomic `find` + `maxSeq + 1` pre-validate hook | Atomic Counter collection (`findOneAndUpdate` with `$inc`) | PENDING |
+| **P1-11** | P1 | Concurrency race condition on audit log sequence | AuditLog | `server/src/models/AuditLog.ts` | Non-atomic `findOne({ sort: -1 })` causes duplicate sequence collision | Atomic sequence counter preserving SHA-256 chain | PENDING |
+| **P1-12** | P1 | Orphaned child records on case and client deletion | Data Integrity | `server/src/routes/cases.ts`, `server/src/routes/clients.ts` | Direct `findByIdAndDelete` without cleaning linked records | Clean cascade / detachment of references within transactions | PENDING |
+| **P1-13** | P1 | Deleted employee retains active sessions & sockets | Admin / Auth | `server/src/routes/admin.ts` | `User.findByIdAndDelete` does not revoke sessions or disconnect sockets | Call `Session.revokeAllForUser`, disconnect sockets, reassign open work | PENDING |
+| **P1-14** | P1 | Stubbed notification scheduler | Notifications | `server/src/services/notificationScheduler.ts` | Hearing & task checks are empty placeholder comments | Full query & deduplicated notification generation loop | PENDING |
+| **P1-15** | P1 | Chat message mutation lacks group context check | Chat | `server/src/routes/chat.ts` | Message ID manipulated across groups | Verify `message.groupId.toString() === requestedGroupId` | PENDING |
+| **P1-16** | P1 | Inconsistent password length requirements | Auth | `server/src/routes/auth.ts`, `server/src/routes/admin.ts` | Separate 6-char vs 8-char checks | Centralized `validatePasswordStrength` helper | PENDING |
+| **P2-17** | P2 | Stubbed `verify-all` file integrity scan | Integrity | `server/src/routes/admin.ts` | Endpoint returns placeholder message | Stream-based on-disk SHA-256 file verification | PENDING |
+| **P2-18** | P2 | Missing route guards on employee subroutes | Frontend | `src/routes/_shell.tsx` | Subroutes rely solely on sidebar hiding | Route-level permission checks with "Access Restricted" view | PENDING |
+| **P3-19** | P3 | Large 1.86MB monolithic frontend bundle | Performance | `vite.config.ts` | No manual code splitting configured | Configure Rollup `manualChunks` for vendor & route splitting | PENDING |
+| **P3-20** | P3 | Dead code in `src/lib/mock-data.ts` | Code Quality | `src/lib/mock-data.ts` | 530 lines of unimported prototype mock data | Safely remove unreferenced file | PENDING |
+| **P3-21** | P3 | Dialog accessibility labels missing | a11y | Dialog components | Inputs lack matching `id` attributes for `<Label>` | Add matching `id` and `htmlFor` | PENDING |

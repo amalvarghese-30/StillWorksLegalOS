@@ -1,11 +1,12 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Scale, ArrowRight, ShieldAlert, UserCog, Loader2 } from "lucide-react";
+import { Scale, ArrowRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/lib/auth";
+import { ForgotPasswordDialog } from "@/components/auth/ForgotPasswordDialog";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -28,6 +29,7 @@ function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   useEffect(() => {
     if (ready && user) navigate({ to: user.role === "admin" ? "/admin" : "/", replace: true });
@@ -51,12 +53,6 @@ function LoginPage() {
     }
   };
 
-  const fill = (role: "admin" | "employee") => {
-    setEmail(`${role}@stillworks.legal`);
-    setPassword(`${role}123`);
-    setError(null);
-  };
-
   return (
     <div className="app-canvas grid min-h-screen lg:grid-cols-2">
       <div className="page-enter flex items-center justify-center px-6 py-16">
@@ -72,12 +68,12 @@ function LoginPage() {
           <form className="mt-8 space-y-5" onSubmit={submit}>
             <div className="space-y-2">
               <Label htmlFor="email" className="text-helper">
-                Email address
+                Email address or username
               </Label>
               <Input
                 id="email"
-                type="email"
-                autoComplete="email"
+                type="text"
+                autoComplete="username"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@firm.legal"
@@ -109,7 +105,11 @@ function LoginPage() {
               <label className="flex items-center gap-2 text-helper text-muted-foreground">
                 <Checkbox id="remember" defaultChecked /> Remember me
               </label>
-              <button type="button" className="text-helper text-primary hover:underline">
+              <button
+                type="button"
+                onClick={() => setShowForgotPassword(true)}
+                className="text-helper text-primary hover:underline"
+              >
                 Forgot password?
               </button>
             </div>
@@ -123,30 +123,14 @@ function LoginPage() {
             </Button>
           </form>
 
-          <div className="mt-6 rounded-md border border-border/70 bg-card/70 p-3">
-            <p className="text-caption font-medium tracking-wide text-muted-foreground uppercase">
-              Demo access
-            </p>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => fill("admin")}
-                className="flex items-center gap-2 rounded-sm border border-border/70 px-3 py-2 text-helper transition-colors hover:bg-accent"
-              >
-                <ShieldAlert size={16} strokeWidth={1.75} /> Admin
-              </button>
-              <button
-                type="button"
-                onClick={() => fill("employee")}
-                className="flex items-center gap-2 rounded-sm border border-border/70 px-3 py-2 text-helper transition-colors hover:bg-accent"
-              >
-                <UserCog size={16} strokeWidth={1.75} /> Employee
-              </button>
-            </div>
-            <p className="mt-3 text-caption text-muted-foreground">
-              admin@stillworks.legal / admin123 · employee@stillworks.legal / employee123
-            </p>
-          </div>
+          <ForgotPasswordDialog
+            open={showForgotPassword}
+            onClose={() => setShowForgotPassword(false)}
+            onPasswordResetSuccess={(id) => {
+              setEmail(id);
+              setPassword("");
+            }}
+          />
         </div>
       </div>
 

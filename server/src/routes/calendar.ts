@@ -1,11 +1,15 @@
 import { Router, type Request, type Response } from "express";
+import { Types } from "mongoose";
 import { CalendarEvent } from "../models/CalendarEvent.js";
 import { AuditLog } from "../models/AuditLog.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireAdminOrPermission } from "../middleware/auth.js";
 import { canAccessCalendarEvent, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
 
 const router = Router();
 router.use(requireAuth);
+// All calendar operations require the calendar module permission.
+// Admins bypass this check via requireAdminOrPermission.
+router.use(requireAdminOrPermission("calendar"));
 
 // ---------------------------------------------------------------------------
 // GET /api/calendar/events — list by date range, employee filter
@@ -43,10 +47,15 @@ router.get("/events", async (req: Request, res: Response) => {
         filter["assignedTo"] = req.userId;
       }
     } else if (req.user!.role !== "admin") {
-      // Non-admins see events assigned to them or created by them
+      const { getAccessibleCaseIds } = await import("../middleware/authorization.js");
+      const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
+
       filter["$or"] = [
         { assignedTo: { $in: [req.userId] } },
         { createdBy: req.userId },
+        { type: "hearing" },
+        { type: "firm_event" },
+        ...(accessibleCaseIds.length > 0 ? [{ caseId: { $in: accessibleCaseIds } }] : []),
       ];
     }
 
@@ -58,8 +67,8 @@ router.get("/events", async (req: Request, res: Response) => {
       filter["type"] = type;
     }
 
-    // If caseId provided and user is non-admin, verify case access
-    if (caseId && req.user!.role !== "admin") {
+    // If caseId provided and user is non-admin without cases permission, verify case access
+    if (caseId && req.user!.role !== "admin" && !req.user?.permissions?.cases) {
       const hasAccess = await getAccessibleCaseIds(req.userId!, req.user!.role);
       if (!hasAccess.includes(caseId)) {
         res.json({ events: [] });
@@ -169,6 +178,25 @@ router.post("/events", async (req: Request, res: Response) => {
       ip: req.ip,
       userAgent: req.headers["user-agent"],
     });
+
+    // Notify assigned staff
+    const io = req.app.get("io");
+    if (finalAssignedTo && finalAssignedTo.length > 0) {
+      const { NotificationService } = await import("../services/notifications.js");
+      for (const staffId of finalAssignedTo) {
+        if (staffId && staffId.toString() !== req.userId) {
+          await NotificationService.createNotification({
+            userId: staffId,
+            type: "HEARING_REMINDER",
+            title: event.type === "hearing" ? "⚖️ Hearing Scheduled" : "Event Scheduled",
+            message: `${req.user?.name ?? "Admin"} scheduled ${event.title} on ${new Date(event.start).toLocaleDateString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+            relatedId: event._id,
+            relatedModel: "CalendarEvent",
+            actorId: new Types.ObjectId(req.userId),
+          }, io);
+        }
+      }
+    }
 
     res.status(201).json({ event });
   } catch (err: any) {

@@ -26,14 +26,16 @@ export function isAdmin(user: IUser | undefined): boolean {
 /**
  * Authorization check for cases
  * Admins: full access
- * Employees: can access cases they created OR are assigned to
+ * Employees: can access if they have cases permission OR they created OR are assigned to it
  */
 export async function canAccessCase(
   userId: string,
   userRole: string,
-  caseId: string
+  caseId: string,
+  userPermissions?: Record<string, boolean>
 ): Promise<boolean> {
   if (userRole === "admin") return true;
+  if (userPermissions?.cases === true) return true;
 
   const c = await Case.findById(caseId).select("assignedTo createdBy").lean();
   if (!c) return false;
@@ -47,14 +49,16 @@ export async function canAccessCase(
 /**
  * Authorization check for clients
  * Admins: full access
- * Employees: can access clients they created OR clients linked to their cases
+ * Employees: can access if they have clients permission OR created OR linked to their cases
  */
 export async function canAccessClient(
   userId: string,
   userRole: string,
-  clientId: string
+  clientId: string,
+  userPermissions?: Record<string, boolean>
 ): Promise<boolean> {
   if (userRole === "admin") return true;
+  if (userPermissions?.clients === true) return true;
 
   const c = await Client.findById(clientId).select("createdBy").lean();
   if (!c) return false;
@@ -104,22 +108,28 @@ export async function canAccessTask(
 /**
  * Authorization check for calendar events
  * Admins: full access
- * Employees: can access events they created OR are assigned to
+ * Employees: can access events they created, are assigned to, or firm hearings/events
  */
 export async function canAccessCalendarEvent(
   userId: string,
   userRole: string,
-  eventId: string
+  eventId: string,
+  userPermissions?: Record<string, boolean>
 ): Promise<boolean> {
   if (userRole === "admin") return true;
 
   const event = await CalendarEvent.findById(eventId)
-    .select("createdBy assignedTo")
+    .select("createdBy assignedTo type caseId")
     .lean();
   if (!event) return false;
 
   if (event.createdBy?.toString() === userId) return true;
   if (event.assignedTo?.some((id) => id.toString() === userId)) return true;
+  if (event.type === "hearing" || event.type === "firm_event") return true;
+
+  if (event.caseId) {
+    return canAccessCase(userId, userRole, event.caseId.toString(), userPermissions);
+  }
 
   return false;
 }
@@ -127,14 +137,16 @@ export async function canAccessCalendarEvent(
 /**
  * Authorization check for documents
  * Admins: full access
- * Employees: can access documents they uploaded OR in their cases
+ * Employees: can access documents they uploaded, in their cases, or if they have documents permission
  */
 export async function canAccessDocument(
   userId: string,
   userRole: string,
-  documentId: string
+  documentId: string,
+  userPermissions?: Record<string, boolean>
 ): Promise<boolean> {
   if (userRole === "admin") return true;
+  if (userPermissions?.documents === true) return true;
 
   const doc = await DocumentModel.findById(documentId)
     .select("uploadedBy caseId")
@@ -144,7 +156,7 @@ export async function canAccessDocument(
   if (doc.uploadedBy?.toString() === userId) return true;
 
   if (doc.caseId) {
-    return canAccessCase(userId, userRole, doc.caseId.toString());
+    return canAccessCase(userId, userRole, doc.caseId.toString(), userPermissions);
   }
 
   return false;
@@ -167,24 +179,25 @@ export function requireResourceAccess(
 
       const userId = req.userId!;
       const userRole = req.user?.role ?? "employee";
+      const permissions = req.user?.permissions as Record<string, boolean> | undefined;
 
       let hasAccess = false;
 
       switch (resourceType) {
         case "case":
-          hasAccess = await canAccessCase(userId, userRole, resourceId);
+          hasAccess = await canAccessCase(userId, userRole, resourceId, permissions);
           break;
         case "client":
-          hasAccess = await canAccessClient(userId, userRole, resourceId);
+          hasAccess = await canAccessClient(userId, userRole, resourceId, permissions);
           break;
         case "task":
           hasAccess = await canAccessTask(userId, userRole, resourceId);
           break;
         case "calendarEvent":
-          hasAccess = await canAccessCalendarEvent(userId, userRole, resourceId);
+          hasAccess = await canAccessCalendarEvent(userId, userRole, resourceId, permissions);
           break;
         case "document":
-          hasAccess = await canAccessDocument(userId, userRole, resourceId);
+          hasAccess = await canAccessDocument(userId, userRole, resourceId, permissions);
           break;
       }
 

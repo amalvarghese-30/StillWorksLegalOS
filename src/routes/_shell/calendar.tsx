@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Plus, CalendarDays, ChevronLeft, ChevronRight, Gavel, PhoneCall, CheckSquare, Users, Building2, User, Loader2, AlertTriangle, Search } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { useCalendarEvents, type CalendarEvent } from "@/services/calendar";
 import { useEmployees } from "@/services/admin";
 import { ScheduleHearingDialog } from "@/components/calendar/ScheduleHearingDialog";
+import { DayDetailsDialog } from "@/components/calendar/DayDetailsDialog";
 
 export const Route = createFileRoute("/_shell/calendar")({
   head: () => ({
@@ -59,6 +60,13 @@ function CalendarPage() {
   const [search, setSearch] = useState("");
   const [filterEmployee, setFilterEmployee] = useState(isAdmin ? "all" : "me");
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [initialScheduleDate, setInitialScheduleDate] = useState<string | undefined>(undefined);
+
+  const handleScheduleForDate = (dateStr: string) => {
+    setInitialScheduleDate(dateStr);
+    setShowScheduleDialog(true);
+  };
 
   const monthStart = new Date(currentYear, currentMonth, 1).toISOString();
   const monthEnd = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59).toISOString();
@@ -82,6 +90,11 @@ function CalendarPage() {
         (e.clientName && e.clientName.toLowerCase().includes(query))
       )
     : allEvents;
+
+  const selectedDateEvents = useMemo(() => {
+    if (!selectedDate) return [];
+    return allEvents.filter((e) => e.start.slice(0, 10) === selectedDate);
+  }, [selectedDate, allEvents]);
 
   const monthNames = [
     "January", "February", "March", "April", "May", "June",
@@ -269,8 +282,9 @@ function CalendarPage() {
                   return (
                     <div
                       key={i}
-                      className={`min-h-24 rounded-md border p-2 transition-colors duration-150 sm:min-h-28 ${
-                        inMonth ? "border-border bg-card hover:bg-accent/50" : "border-transparent bg-muted/40"
+                      onClick={() => inMonth && setSelectedDate(dateStr)}
+                      className={`min-h-24 rounded-md border p-2 transition-all duration-150 sm:min-h-28 ${
+                        inMonth ? "border-border bg-card hover:bg-accent/60 hover:border-primary/50 cursor-pointer shadow-soft" : "border-transparent bg-muted/40 cursor-default"
                       }`}
                     >
                       <span className={`num inline-flex size-6 items-center justify-center rounded-full text-caption ${
@@ -305,8 +319,23 @@ function CalendarPage() {
       </p>
 
       {showScheduleDialog && (
-        <ScheduleHearingDialog open={showScheduleDialog} onClose={() => setShowScheduleDialog(false)} />
+        <ScheduleHearingDialog
+          open={showScheduleDialog}
+          onClose={() => {
+            setShowScheduleDialog(false);
+            setInitialScheduleDate(undefined);
+          }}
+          initialDate={initialScheduleDate}
+        />
       )}
+
+      <DayDetailsDialog
+        open={!!selectedDate}
+        onClose={() => setSelectedDate(null)}
+        dateStr={selectedDate || ""}
+        events={selectedDateEvents}
+        onScheduleEvent={handleScheduleForDate}
+      />
     </div>
   );
 }

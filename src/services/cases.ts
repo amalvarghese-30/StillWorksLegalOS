@@ -75,6 +75,7 @@ export interface CreateCasePayload {
   assignedTo?: string;
   nasPath?: string;
   tags?: string[];
+  progress?: number;
 }
 
 // ---------------------------------------------------------------------------

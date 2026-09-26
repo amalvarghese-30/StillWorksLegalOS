@@ -27,8 +27,8 @@ router.get("/", async (req: Request, res: Response) => {
 
     const filter: Record<string, unknown> = {};
 
-    // Non-admins only see their clients
-    if (req.user!.role !== "admin") {
+    // Non-admins without clients permission only see their clients
+    if (req.user!.role !== "admin" && !req.user?.permissions?.clients) {
       const accessibleClientIds = await getAccessibleClientIds(req.userId!, req.user!.role);
       if (accessibleClientIds.length === 0) {
         res.json({
@@ -58,8 +58,8 @@ router.get("/", async (req: Request, res: Response) => {
         .lean();
 
       if (textResults.length > 0) {
-        // Filter text results by accessible clients for non-admins
-        if (req.user!.role !== "admin") {
+        // Filter text results by accessible clients for non-admins without clients permission
+        if (req.user!.role !== "admin" && !req.user?.permissions?.clients) {
           const accessibleIds = await getAccessibleClientIds(req.userId!, req.user!.role);
           const filtered = textResults.filter((c) => accessibleIds.includes(c._id.toString()));
           res.json({
@@ -204,7 +204,19 @@ router.post("/", async (req: Request, res: Response) => {
 
 router.patch("/:id", requireResourceAccess("client"), async (req: Request, res: Response) => {
   try {
-    const updates = { ...req.body, updatedBy: req.userId };
+    // Explicit whitelist — never spread req.body into DB updates.
+    // _id, createdBy, createdAt, updatedAt are server-controlled.
+    const ALLOWED_FIELDS = [
+      "name", "type", "tag", "phone", "email", "address",
+      "aadhar", "pan", "propertyDetails", "subClients",
+    ] as const;
+
+    const updates: Record<string, unknown> = {};
+    for (const key of ALLOWED_FIELDS) {
+      if (req.body[key] !== undefined) updates[key] = req.body[key];
+    }
+    // updatedBy is always the current authenticated user — never from client input.
+    updates["updatedBy"] = req.userId;
 
     // Re-evaluate KYC if Aadhar/PAN change
     const existing = await Client.findById(req.params["id"]);
@@ -213,8 +225,8 @@ router.patch("/:id", requireResourceAccess("client"), async (req: Request, res: 
       return;
     }
 
-    const aadhar = updates["aadhar"] ?? existing.aadhar;
-    const pan = updates["pan"] ?? existing.pan;
+    const aadhar = (updates["aadhar"] ?? existing.aadhar) as string;
+    const pan = (updates["pan"] ?? existing.pan) as string;
     updates["kyc"] = aadhar && pan ? "Verified" : existing.kyc;
 
     const client = await Client.findByIdAndUpdate(req.params["id"], updates, {
@@ -246,12 +258,20 @@ router.patch("/:id", requireResourceAccess("client"), async (req: Request, res: 
 });
 
 // ---------------------------------------------------------------------------
-// DELETE /api/clients/:id (with authorization)
+// DELETE /api/clients/:id — archive client (preserve historical case data)
+// Hard-delete is prohibited: historical case parties reference client records.
 // ---------------------------------------------------------------------------
 
 router.delete("/:id", requireResourceAccess("client"), async (req: Request, res: Response) => {
   try {
-    const client = await Client.findByIdAndDelete(req.params["id"]);
+    // Archive semantics: set tag to "Archived". The client record is retained
+    // so that existing case parties and audit logs continue to resolve correctly.
+    const client = await Client.findByIdAndUpdate(
+      req.params["id"],
+      { $set: { tag: "Archived", updatedBy: req.userId } },
+      { new: true }
+    );
+
     if (!client) {
       res.status(404).json({ message: "Client not found" });
       return;
@@ -264,13 +284,14 @@ router.delete("/:id", requireResourceAccess("client"), async (req: Request, res:
       resource: "client",
       resourceId: client._id.toString(),
       resourceName: client.name,
+      details: "Client archived (soft-delete)",
       ip: req.ip,
       userAgent: req.headers["user-agent"],
     });
 
-    res.json({ message: "Client deleted" });
+    res.json({ message: "Client archived", client });
   } catch (err) {
-    console.error("[clients] Delete error:", err);
+    console.error("[clients] Archive error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 });

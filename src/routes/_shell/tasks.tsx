@@ -9,6 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { useTasks, useToggleChecklistItem, type TaskRecord } from "@/services/tasks";
 import { AddTaskDialog } from "@/components/tasks/AddTaskDialog";
 import { QuickCallDialog } from "@/components/tasks/QuickCallDialog";
+import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 
 export const Route = createFileRoute("/_shell/tasks")({
   head: () => ({
@@ -60,7 +61,7 @@ function formatDeadline(iso: string | null): string {
   return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 }
 
-function TaskCard({ task }: { task: TaskRecord }) {
+function TaskCard({ task, onSelect }: { task: TaskRecord; onSelect?: (task: TaskRecord) => void }) {
   const toggleChecklist = useToggleChecklistItem();
   const total = task.checklist?.length ?? 0;
   const done = task.checklist?.filter((c) => c.done).length ?? 0;
@@ -68,7 +69,8 @@ function TaskCard({ task }: { task: TaskRecord }) {
 
   return (
     <article
-      className={`lift card-hover pressable rounded-md border p-4 ${
+      onClick={() => onSelect?.(task)}
+      className={`lift card-hover pressable rounded-md border p-4 cursor-pointer transition-all duration-150 hover:border-primary/40 ${
         task.isCall ? "border-violet-500/30 bg-violet-500/5" : "border-border bg-card"
       }`}
     >
@@ -87,12 +89,14 @@ function TaskCard({ task }: { task: TaskRecord }) {
         <div className="mt-3 space-y-1">
           {task.checklist.slice(0, 3).map((item) => {
             const toggle = item._id
-              ? () =>
+              ? (e: React.MouseEvent) => {
+                  e.stopPropagation();
                   toggleChecklist.mutate({
                     taskId: task._id,
                     itemId: item._id!,
                     done: !item.done,
-                  })
+                  });
+                }
               : undefined;
             return (
               <button
@@ -100,7 +104,7 @@ function TaskCard({ task }: { task: TaskRecord }) {
                 key={item._id ?? item.text}
                 onClick={toggle}
                 disabled={!toggle || toggleChecklist.isPending}
-                className="flex w-full items-center gap-2 rounded text-helper transition-colors hover:bg-muted/50 disabled:cursor-default disabled:opacity-60"
+                className="flex w-full items-center gap-2 rounded text-helper transition-colors hover:bg-muted/50 disabled:cursor-default disabled:opacity-60 text-left"
               >
                 {item.done ? (
                   <CheckCircle2 size={15} className="shrink-0 text-success" />
@@ -114,7 +118,15 @@ function TaskCard({ task }: { task: TaskRecord }) {
             );
           })}
           {total > 3 && (
-            <p className="pl-7 text-caption text-muted-foreground">+{total - 3} more items</p>
+            <p
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelect?.(task);
+              }}
+              className="pl-7 text-caption text-muted-foreground hover:text-primary transition-colors cursor-pointer font-medium"
+            >
+              +{total - 3} more items — click to view
+            </p>
           )}
         </div>
       )}
@@ -145,6 +157,7 @@ function TasksPage() {
   const [search, setSearch] = useState("");
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showQuickCall, setShowQuickCall] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const { data, isLoading, isError, error } = useTasks();
 
@@ -301,7 +314,7 @@ function TasksPage() {
                 </div>
                 <div className="space-y-3 stagger-children">
                   {bucketTasks.map((t) => (
-                    <TaskCard key={t._id} task={t} />
+                    <TaskCard key={t._id} task={t} onSelect={setSelectedTask} />
                   ))}
                   {bucketTasks.length === 0 && (
                     <p className="py-4 text-center text-caption text-muted-foreground">No tasks</p>
@@ -376,7 +389,8 @@ function TasksPage() {
                         {dayTasks.slice(0, 3).map((t) => (
                           <div
                             key={t._id}
-                            className="truncate text-caption px-1.5 py-0.5 rounded text-white bg-primary/80 hover:bg-primary"
+                            onClick={() => setSelectedTask(t)}
+                            className="truncate text-caption px-1.5 py-0.5 rounded text-white bg-primary/80 hover:bg-primary cursor-pointer transition-colors"
                             title={t.title}
                           >
                             {t.title}
@@ -410,7 +424,7 @@ function TasksPage() {
                   bodyClassName="grid gap-3 sm:grid-cols-2 stagger-children"
                 >
                   {bucketTasks.map((t) => (
-                    <TaskCard key={t._id} task={t} />
+                    <TaskCard key={t._id} task={t} onSelect={setSelectedTask} />
                   ))}
                 </SectionCard>
               );
@@ -462,6 +476,11 @@ function TasksPage() {
 
       <AddTaskDialog open={showAddDialog} onClose={() => setShowAddDialog(false)} />
       <QuickCallDialog open={showQuickCall} onClose={() => setShowQuickCall(false)} />
+      <TaskDetailDialog
+        open={!!selectedTask}
+        onClose={() => setSelectedTask(null)}
+        task={selectedTask}
+      />
     </div>
   );
 }

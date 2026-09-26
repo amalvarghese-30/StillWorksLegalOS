@@ -23,8 +23,8 @@ export const Route = createFileRoute("/_shell/cases/")({
       },
     ],
   }),
-  validateSearch: (search: Record<string, unknown>) => ({
-    search: typeof search["search"] === "string" ? search["search"] : undefined,
+  validateSearch: (search: Record<string, unknown>): { search?: string } => ({
+    ...(typeof search["search"] === "string" ? { search: search["search"] } : {}),
   }),
   component: CasesPage,
 });

@@ -21,14 +21,20 @@ router.get("/", async (req: Request, res: Response) => {
       status,
       priority,
       assignedTo,
+      includeArchived,
       page = "1",
       limit = "24",
     } = req.query as Record<string, string>;
 
     const filter: Record<string, unknown> = {};
 
-    // Non-admins only see their cases
-    if (req.user!.role !== "admin") {
+    // Exclude archived cases by default (only show if explicitly requested)
+    if (!includeArchived || includeArchived === "false") {
+      filter["status"] = { $ne: "Archived" };
+    }
+
+    // Non-admins without cases permission only see their assigned cases
+    if (req.user!.role !== "admin" && !req.user?.permissions?.cases) {
       const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
       if (accessibleCaseIds.length === 0) {
         res.json({ cases: [], total: 0, page: 1, totalPages: 1 });
@@ -52,8 +58,8 @@ router.get("/", async (req: Request, res: Response) => {
         .lean();
 
       if (textResults.length > 0) {
-        // Filter text results by accessible cases for non-admins
-        if (req.user!.role !== "admin") {
+        // Filter text results by accessible cases for non-admins without cases permission
+        if (req.user!.role !== "admin" && !req.user?.permissions?.cases) {
           const accessibleIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
           const filtered = textResults.filter((c) => accessibleIds.includes(c._id.toString()));
           res.json({ cases: filtered, total: filtered.length, page: 1, totalPages: 1 });
@@ -146,8 +152,32 @@ router.post("/", async (req: Request, res: Response) => {
       return;
     }
 
-    // Non-admins can only assign to themselves
-    const finalAssignedTo = req.user?.role === "admin" ? (assignedTo ?? req.userId) : req.userId;
+    // Non-admins can only assign to themselves. Ensure valid ObjectId if specified.
+    const finalAssignedTo =
+      req.user?.role === "admin" && assignedTo && mongoose.Types.ObjectId.isValid(assignedTo)
+        ? assignedTo
+        : req.userId;
+
+    let parsedNextHearing: Date | null = null;
+    if (nextHearing) {
+      const d = new Date(nextHearing);
+      if (!isNaN(d.getTime())) {
+        parsedNextHearing = d;
+      }
+    }
+
+    const sanitizedParties = Array.isArray(parties)
+      ? parties.map((p: any) => ({
+          name: p.name?.trim() || "",
+          role: p.role?.trim() || "Party",
+          type: ["client", "sub_client", "opposing_party", "counsel", "other"].includes(p.type)
+            ? p.type
+            : "client",
+          ...(p.clientId && mongoose.Types.ObjectId.isValid(p.clientId)
+            ? { clientId: new mongoose.Types.ObjectId(p.clientId) }
+            : {}),
+        }))
+      : [];
 
     const timelineEntry = {
       event: "Case created",
@@ -158,13 +188,13 @@ router.post("/", async (req: Request, res: Response) => {
     const record = await Case.create({
       title: title.trim(),
       description: description ?? "",
-      practice: practice ?? "Property",
+      practice: practice?.trim() || "Property",
       court: court ?? "",
       judge: judge ?? "",
       status: status ?? "Active",
       priority: priority ?? "Medium",
-      nextHearing: nextHearing ? new Date(nextHearing) : null,
-      parties: parties ?? [],
+      nextHearing: parsedNextHearing,
+      parties: sanitizedParties,
       assignedTo: finalAssignedTo,
       createdBy: req.userId,
       nasPath: nasPath ?? "",
@@ -189,9 +219,22 @@ router.post("/", async (req: Request, res: Response) => {
     );
 
     res.status(201).json({ case: record });
-  } catch (err) {
+  } catch (err: any) {
     console.error("[cases] Create error:", err);
-    res.status(500).json({ message: "Internal server error" });
+    if (err.name === "ValidationError") {
+      const messages = Object.values(err.errors || {}).map((e: any) => e.message);
+      res.status(400).json({ message: messages.length > 0 ? messages.join(", ") : err.message });
+      return;
+    }
+    if (err.code === 11000) {
+      res.status(409).json({ message: "A case with this number already exists" });
+      return;
+    }
+    if (err.name === "CastError") {
+      res.status(400).json({ message: `Invalid ID format for ${err.path}` });
+      return;
+    }
+    res.status(500).json({ message: err?.message || "Internal server error" });
   }
 });
 
@@ -201,17 +244,38 @@ router.post("/", async (req: Request, res: Response) => {
 
 router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Response) => {
   try {
-    const updates = { ...req.body };
+    // ---------------------------------------------------------------------------
+    // Explicit field whitelist — never spread req.body directly into DB updates.
+    // Internal fields: _id, number, createdBy, createdAt, updatedAt, nasPath
+    // are server-controlled and must not be modifiable via this endpoint.
+    // ---------------------------------------------------------------------------
+    const ALLOWED_FIELDS = [
+      "title", "description", "practice", "court", "judge", "courtCaseId",
+      "status", "priority", "nextHearing", "parties", "tags", "progress",
+    ] as const;
 
-    // Non-admins cannot reassign to others
-    if (req.user?.role !== "admin" && updates["assignedTo"] && updates["assignedTo"] !== req.userId) {
-      res.status(403).json({ message: "Cannot assign case to another user" });
-      return;
+    const updates: Record<string, unknown> = {};
+    for (const key of ALLOWED_FIELDS) {
+      if (req.body[key] !== undefined) updates[key] = req.body[key];
+    }
+
+    // assignedTo: only admins may reassign to other users.
+    if (req.body["assignedTo"] !== undefined) {
+      if (req.user?.role === "admin") {
+        updates["assignedTo"] = req.body["assignedTo"];
+      } else if (req.body["assignedTo"] === req.userId) {
+        // Non-admins may assign to themselves only.
+        updates["assignedTo"] = req.userId;
+      } else {
+        res.status(403).json({ message: "Cannot assign case to another user" });
+        return;
+      }
     }
 
     // Convert nextHearing string to Date if provided
     if (updates["nextHearing"]) {
-      updates["nextHearing"] = new Date(updates["nextHearing"]);
+      const d = new Date(updates["nextHearing"] as string);
+      updates["nextHearing"] = !isNaN(d.getTime()) ? d : null;
     }
 
     // Add timeline entry if status is changing
@@ -254,19 +318,51 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
     );
 
     res.json({ case: record });
-  } catch (err) {
+  } catch (err: any) {
     console.error("[cases] Update error:", err);
-    res.status(500).json({ message: "Internal server error" });
+    if (err.name === "ValidationError") {
+      const messages = Object.values(err.errors || {}).map((e: any) => e.message);
+      res.status(400).json({ message: messages.length > 0 ? messages.join(", ") : err.message });
+      return;
+    }
+    if (err.code === 11000) {
+      res.status(409).json({ message: "Duplicate record exists" });
+      return;
+    }
+    if (err.name === "CastError") {
+      res.status(400).json({ message: `Invalid ID format for ${err.path}` });
+      return;
+    }
+    res.status(500).json({ message: err?.message || "Internal server error" });
   }
 });
 
 // ---------------------------------------------------------------------------
-// DELETE /api/cases/:id (with authorization)
+// DELETE /api/cases/:id — archive case (preserve all related data)
+// Legal records must not be destroyed; use archive semantics instead.
 // ---------------------------------------------------------------------------
 
 router.delete("/:id", requireResourceAccess("case"), async (req: Request, res: Response) => {
   try {
-    const record = await Case.findByIdAndDelete(req.params["id"]);
+    const record = await Case.findByIdAndUpdate(
+      req.params["id"],
+      {
+        $set: {
+          status: "Archived",
+          archivedAt: new Date(),
+          archivedBy: new mongoose.Types.ObjectId(req.userId!),
+        },
+        $push: {
+          timeline: {
+            event: "Case archived",
+            by: req.user?.name ?? "Unknown",
+            when: new Date(),
+          },
+        },
+      },
+      { new: true }
+    );
+
     if (!record) {
       res.status(404).json({ message: "Case not found" });
       return;
@@ -280,15 +376,16 @@ router.delete("/:id", requireResourceAccess("case"), async (req: Request, res: R
         resource: "case",
         resourceId: record._id.toString(),
         resourceName: record.title,
+        details: "Case archived (soft-delete)",
         ip: req.ip,
         userAgent: req.headers["user-agent"],
       },
       req.app.get("io")
     );
 
-    res.json({ message: "Case deleted" });
+    res.json({ message: "Case archived", case: record });
   } catch (err) {
-    console.error("[cases] Delete error:", err);
+    console.error("[cases] Archive error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 });

@@ -1,10 +1,10 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useRef } from "react";
 import {
   Gavel, FileText, CheckSquare, StickyNote, History, Users,
   LayoutDashboard, Plus, Loader2, ChevronDown, Clock,
   Send, Check, X, UserPlus, Activity as ActivityIcon,
-  CalendarDays, Edit3,
+  CalendarDays, Edit3, Trash2,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
@@ -14,12 +14,23 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import {
-  useCase, useUpdateCase, useAddCaseNote, useAddCaseParty,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  useCase, useUpdateCase, useDeleteCase, useAddCaseNote, useAddCaseParty,
   type CaseRecord, type CaseParty,
 } from "@/services/cases";
 import { useTasks } from "@/services/tasks";
 import { useDocuments } from "@/services/documents";
 import { useCalendarEvents } from "@/services/calendar";
+import { EditCaseDialog } from "@/components/cases/EditCaseDialog";
 
 export const Route = createFileRoute("/_shell/cases/$caseId")({
   head: () => ({
@@ -233,7 +244,22 @@ function CaseWorkspace() {
     end: "2099-12-31",
     caseId,
   });
-  const { data: auditData } = { data: null };  // activity tab replaced with note/timeline recap
+  const navigate = useNavigate();
+  const deleteCase = useDeleteCase();
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteCase = async () => {
+    setIsDeleting(true);
+    try {
+      await deleteCase.mutateAsync(caseId);
+      navigate({ to: "/cases" });
+    } catch (err) {
+      console.error("Failed to delete case:", err);
+      setIsDeleting(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -273,12 +299,23 @@ function CaseWorkspace() {
         title={record.title}
         subtitle={`${record.parties?.[0]?.name ?? "No client"} · ${record.court || "No court"}`}
         actions={
-          <>
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" className="rounded-md" asChild>
               <Link to="/calendar"><CalendarDays size={17} strokeWidth={1.75} /> View calendar</Link>
             </Button>
-            <QuickEditDropdown record={record} caseId={caseId} />
-          </>
+            <Button variant="outline" className="rounded-md" onClick={() => setShowEditDialog(true)}>
+              <Edit3 size={15} strokeWidth={1.75} />
+              Edit Case
+            </Button>
+            <Button
+              variant="outline"
+              className="rounded-md text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
+              onClick={() => setShowDeleteConfirm(true)}
+            >
+              <Trash2 size={15} strokeWidth={1.75} />
+              Delete Case
+            </Button>
+          </div>
         }
       />
 
@@ -592,6 +629,38 @@ function CaseWorkspace() {
           )}
         </div>
       </div>
+
+      <EditCaseDialog
+        open={showEditDialog}
+        onClose={() => setShowEditDialog(false)}
+        record={record}
+        caseId={caseId}
+      />
+
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-title font-semibold text-destructive flex items-center gap-2">
+              <Trash2 size={18} />
+              Delete Case
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-helper text-muted-foreground mt-2">
+              Are you sure you want to delete case <span className="font-semibold text-foreground">"{record.number} — {record.title}"</span>?
+              This will permanently delete the matter and its associated records.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-5 flex justify-end gap-2">
+            <AlertDialogCancel className="rounded-md" disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleDeleteCase}
+              disabled={isDeleting}
+            >
+              {isDeleting ? "Deleting…" : "Delete Case"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

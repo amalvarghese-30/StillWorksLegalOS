@@ -129,6 +129,26 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction): v
 }
 
 // ---------------------------------------------------------------------------
+// requireAdminOrPermission(module) — allows admin OR employee with specific permission
+// ---------------------------------------------------------------------------
+
+export function requireAdminOrPermission(module: keyof IUser["permissions"]) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.user) {
+      res.status(401).json({ message: "Authentication required" });
+      return;
+    }
+
+    if (req.user.role === "admin" || (req.user.permissions && req.user.permissions[module] === true)) {
+      next();
+      return;
+    }
+
+    res.status(403).json({ message: `Admin access or '${module}' permission required` });
+  };
+}
+
+// ---------------------------------------------------------------------------
 // requirePermission(module) — checks user permissions map
 // ---------------------------------------------------------------------------
 

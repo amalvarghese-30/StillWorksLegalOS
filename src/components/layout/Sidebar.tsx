@@ -9,6 +9,9 @@ import {
   MessageCircle,
   BarChart3,
   ShieldCheck,
+  ShieldAlert,
+  UserCog,
+  ScrollText,
   Settings,
   Scale,
   LogOut,
@@ -17,24 +20,48 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 
 const primary = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { to: "/cases", label: "Cases", icon: Briefcase },
-  { to: "/clients", label: "Clients", icon: Users },
-  { to: "/tasks", label: "Tasks", icon: CheckSquare },
-  { to: "/documents", label: "Documents", icon: FolderClosed },
-  { to: "/calendar", label: "Calendar", icon: CalendarDays },
-  { to: "/chat", label: "Chat", icon: MessageCircle },
-  { to: "/reports", label: "Reports", icon: BarChart3 },
+  { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true, permission: "dashboard" as const },
+  { to: "/cases", label: "Cases", icon: Briefcase, permission: "cases" as const },
+  { to: "/clients", label: "Clients", icon: Users, permission: "clients" as const },
+  { to: "/tasks", label: "Tasks", icon: CheckSquare, permission: "tasks" as const },
+  { to: "/documents", label: "Documents", icon: FolderClosed, permission: "documents" as const },
+  { to: "/calendar", label: "Calendar", icon: CalendarDays, permission: "calendar" as const },
+  { to: "/chat", label: "Chat", icon: MessageCircle, permission: "chat" as const },
+  { to: "/reports", label: "Reports", icon: BarChart3, permission: "reports" as const },
 ];
-
-
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
 
-  const renderItem = (item: (typeof primary)[number]) => {
+  const visiblePrimary = primary.filter((item) => {
+    if (user?.role === "admin") return true;
+    if (!user?.permissions) return true;
+    return (user.permissions as any)[item.permission] !== false;
+  });
+
+  const hasAnyAdminPerm =
+    user?.role === "admin" ||
+    !!(
+      user?.permissions?.employees ||
+      user?.permissions?.approvals ||
+      user?.permissions?.auditLogs ||
+      user?.permissions?.settings
+    );
+
+  const canEmployees = user?.role === "admin" || user?.permissions?.employees === true;
+  const canApprovals = user?.role === "admin" || user?.permissions?.approvals === true;
+  const canAudit = user?.role === "admin" || user?.permissions?.auditLogs === true;
+  const canSettings = user?.role === "admin" || user?.permissions?.settings === true;
+
+  const renderItem = (item: {
+    to: string;
+    label: string;
+    icon: React.ComponentType<{ size?: number | string; strokeWidth?: number | string; className?: string }>;
+    exact?: boolean;
+    permission?: string;
+  }) => {
     const active = item.exact ? pathname === item.to : pathname.startsWith(item.to);
     return (
       <li key={item.to}>
@@ -69,14 +96,18 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </div>
 
       <nav className="mt-3 flex-1 overflow-y-auto pr-1" aria-label="Main">
-        <ul className="space-y-1">{primary.map(renderItem)}</ul>
-        {user?.role === "admin" ? (
+        <ul className="space-y-1">{visiblePrimary.map(renderItem)}</ul>
+        {hasAnyAdminPerm ? (
           <>
             <p className="px-3.5 pt-6 pb-2 text-caption font-medium tracking-wide text-muted-foreground/70 uppercase">
               Administration
             </p>
             <ul className="space-y-1">
-              {renderItem({ to: "/admin", label: "Admin Console", icon: ShieldCheck })}
+              {renderItem({ to: "/admin", label: "Admin Console", icon: ShieldCheck, exact: true })}
+              {canEmployees && renderItem({ to: "/admin/employees", label: "Employees", icon: UserCog })}
+              {canApprovals && renderItem({ to: "/admin/approvals", label: "Approvals", icon: ShieldAlert })}
+              {canAudit && renderItem({ to: "/admin/audit-logs", label: "Audit Logs", icon: ScrollText })}
+              {canSettings && renderItem({ to: "/admin/settings", label: "Firm Settings", icon: Settings })}
             </ul>
           </>
         ) : null}

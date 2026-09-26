@@ -95,28 +95,30 @@ router.get("/", async (req: Request, res: Response) => {
 
         return await Client.find(clientFilter)
           .limit(limitNum)
-          .select("name _id kycStatus type")
+          .select("name _id kyc type")
           .lean();
       })(),
 
       // Search documents
       (async () => {
-        let docFilter: any = {
-          name: queryRegex,
-        };
+        const nameFilter = { name: queryRegex };
 
         // Non-admins only see documents they have access to
         if (req.user!.role !== "admin") {
           const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
-          docFilter = {
+          const accessFilter = {
             $or: [
               { uploadedBy: req.userId }, // Documents they uploaded
               { caseId: { $in: accessibleCaseIds } }, // Documents in their accessible cases
             ],
           };
+          return await DocumentModel.find({ $and: [nameFilter, accessFilter] })
+            .limit(limitNum)
+            .select("name _id")
+            .lean();
         }
 
-        return await DocumentModel.find(docFilter)
+        return await DocumentModel.find(nameFilter)
           .limit(limitNum)
           .select("name _id")
           .lean();

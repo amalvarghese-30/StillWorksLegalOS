@@ -102,17 +102,18 @@ export class NotificationService {
 
       // Prepare the notification payload for the client
       const payload = {
-        id: notification._id,
-        userId: notification.userId,
+        _id: notification._id.toString(),
+        id: notification._id.toString(),
+        userId: notification.userId.toString(),
         type: notification.type,
         title: notification.title,
         message: notification.message,
         read: notification.read,
-        createdAt: notification.createdAt,
-        relatedId: notification.relatedId,
+        createdAt: notification.createdAt instanceof Date ? notification.createdAt.toISOString() : new Date().toISOString(),
+        relatedId: notification.relatedId ? notification.relatedId.toString() : undefined,
         relatedModel: notification.relatedModel,
-        actorId: notification.actorId,
-        metadata: notification.metadata,
+        actorId: notification.actorId ? notification.actorId.toString() : undefined,
+        metadata: notification.metadata ?? {},
         userName, // Include the user's name for convenience
       };
 

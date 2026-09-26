@@ -126,6 +126,12 @@ export async function downloadDocument(documentId: string): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
+export async function viewDocument(documentId: string): Promise<void> {
+  const { blob } = await downloadBlob(`/documents/${documentId}/view`);
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank");
+}
+
 export function useVerifyDocument() {
   return useMutation<{ documentId: string; expectedHash: string; algorithm: string }, Error, string>({
     mutationFn: (documentId) => api.get(`/documents/${documentId}/verify`),

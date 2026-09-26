@@ -54,12 +54,12 @@ function AdminDashboard() {
       />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-        <StatCard label="Pending approvals" value={approvalsLoading ? "…" : approvals.length} hint="Needs your sign-off" icon={ShieldCheck} accent />
-        <StatCard label="Team members" value={workloadLoading ? "…" : workloads.length} hint="Roles & permissions" icon={UserCog} />
-        <StatCard label="Active cases" value={summaryLoading ? "…" : summary?.activeCases ?? 0} hint="Firm-wide" icon={Briefcase} />
-        <StatCard label="Clients" value={summaryLoading ? "…" : summary?.totalClients ?? 0} hint="On record" icon={Users} />
-        <StatCard label="Docs approved" value={summaryLoading ? "…" : summary?.docsApproved ?? 0} hint={summary?.period ?? ""} icon={FileText} />
-        <StatCard label="Audit events" value={auditLoading ? "…" : logs.length} hint="Recent" icon={ScrollText} />
+        <StatCard label="Pending approvals" value={approvalsLoading ? "…" : approvals.length} hint="Needs your sign-off" icon={ShieldCheck} accent to="/admin/approvals" />
+        <StatCard label="Team members" value={workloadLoading ? "…" : workloads.length} hint="Roles & permissions" icon={UserCog} to="/admin/employees" />
+        <StatCard label="Active cases" value={summaryLoading ? "…" : summary?.activeCases ?? 0} hint="Firm-wide" icon={Briefcase} to="/cases" />
+        <StatCard label="Clients" value={summaryLoading ? "…" : summary?.totalClients ?? 0} hint="On record" icon={Users} to="/clients" />
+        <StatCard label="Docs approved" value={summaryLoading ? "…" : summary?.docsApproved ?? 0} hint={summary?.period ?? ""} icon={FileText} to="/documents" />
+        <StatCard label="Audit events" value={auditLoading ? "…" : logs.length} hint="Recent" icon={ScrollText} to="/admin/audit-logs" />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">

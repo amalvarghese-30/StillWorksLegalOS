@@ -1,0 +1,4 @@
+# Location of the Android SDK.
+# Replace the path below with your actual Android SDK installation path.
+# Windows default path:
+sdk.dir=C:\\Users\\Amal Varghese\\AppData\\Local\\Android\\Sdk

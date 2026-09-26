@@ -458,7 +458,9 @@ export function AddCaseDialog({ open, onClose }: AddCaseDialogProps) {
           </DialogFooter>
 
           {isError && (
-            <p className="text-caption text-destructive">Failed to create case. Please try again.</p>
+            <p className="text-caption text-destructive">
+              {(createCase.error as any)?.body?.message || (createCase.error as any)?.message || "Failed to create case. Please try again."}
+            </p>
           )}
         </form>
       </DialogContent>
