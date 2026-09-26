@@ -1,148 +1,104 @@
-import { Readable, Transform, Writable } from "node:stream";
+import fs from "node:fs";
+import fsp from "node:fs/promises";
+import path from "node:path";
+import { Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { createHash } from "node:crypto";
-import { createClient, type WebDAVClient, type FileStat } from "webdav";
-import { AppSettings, type SynologyConfig } from "../models/AppSettings.js";
-import { decryptSecret } from "./encryption.js";
+import type { FileStat } from "webdav";
 
 // ---------------------------------------------------------------------------
-// Unified WebDAV service wrapper for the on-premise Synology NAS.
-//
-// The client is instantiated dynamically from the active SynologyConfig in
-// MongoDB (set via Admin Settings → Storage). All paths are resolved relative
-// to the configured LegalOS root folder on the NAS, so callers work with
-// logical paths (e.g. "/Cases/Case-01") rather than absolute NAS paths.
+// Local VPS Disk Storage Provider.
+// All files are stored directly on the VPS disk in the configured STORAGE_DIR
+// (defaults to "./uploads" relative to process.cwd()).
 // ---------------------------------------------------------------------------
+
+const STORAGE_ROOT = process.env["STORAGE_DIR"]
+  ? path.resolve(process.env["STORAGE_DIR"])
+  : path.resolve(process.cwd(), "uploads");
+
+// Ensure base upload directory exists synchronously on load
+try {
+  if (!fs.existsSync(STORAGE_ROOT)) {
+    fs.mkdirSync(STORAGE_ROOT, { recursive: true });
+  }
+} catch (err) {
+  console.error("[storage] Failed to ensure STORAGE_ROOT directory:", STORAGE_ROOT, err);
+}
+
+const canonicalRoot = fs.existsSync(STORAGE_ROOT)
+  ? fs.realpathSync(STORAGE_ROOT)
+  : path.resolve(STORAGE_ROOT);
+
+/** Resolves a logical path to a safe absolute VPS disk path with canonical containment & symlink checks */
+export function getLocalPath(logicalPath: string, allowRoot = false): string {
+  if (typeof logicalPath !== "string") {
+    throw new Error("Invalid storage path: path must be a string");
+  }
+
+  // Remove null bytes
+  let decoded = logicalPath.replace(/\0/g, "");
+
+  // Decode nested URL encoded segments to prevent double-encoding evasion (%252e%252e)
+  for (let i = 0; i < 3; i++) {
+    try {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) break;
+      decoded = next;
+    } catch {
+      break;
+    }
+  }
+
+  // Normalize separators and strip Windows drive letters
+  decoded = decoded.replace(/\\+/g, "/").replace(/^[a-zA-Z]:/, "");
+
+  // Strip leading slashes to make relative to STORAGE_ROOT
+  const relPath = decoded.replace(/^\/+/, "");
+
+  const resolved = path.resolve(canonicalRoot, relPath);
+  const relative = path.relative(canonicalRoot, resolved);
+
+  // Strict containment check: cannot traverse outside canonical root
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error("Access denied: Invalid storage path traversal attempt");
+  }
+
+  if (relative === "" && !allowRoot) {
+    throw new Error("Access denied: Target cannot be the storage root directory");
+  }
+
+  // Check symlinks if the target already exists
+  if (fs.existsSync(resolved)) {
+    const realTarget = fs.realpathSync(resolved);
+    const realRel = path.relative(canonicalRoot, realTarget);
+    if (realRel.startsWith("..") || path.isAbsolute(realRel)) {
+      throw new Error("Access denied: Symlink escapes storage root boundary");
+    }
+    return realTarget;
+  } else {
+    // For pending uploads / new files, verify existing parent directory doesn't escape via symlink
+    let ancestor = path.dirname(resolved);
+    while (ancestor.length >= canonicalRoot.length && fs.existsSync(ancestor)) {
+      const realAncestor = fs.realpathSync(ancestor);
+      const realRel = path.relative(canonicalRoot, realAncestor);
+      if (realRel.startsWith("..") || path.isAbsolute(realRel)) {
+        throw new Error("Access denied: Symlink parent directory escapes storage root boundary");
+      }
+      break;
+    }
+  }
+
+  return resolved;
+}
 
 export interface WebDavContext {
-  client: WebDAVClient;
-  config: SynologyConfig;
-}
-
-function joinPath(root: string, path: string): string {
-  const base = root.replace(/\/+$/, "");
-  const rel = path.startsWith("/") ? path : `/${path}`;
-  const joined = `${base}${rel}`.replace(/\/{2,}/g, "/");
-  return joined || "/";
-}
-
-/** Returns the parent logical path of a file path (e.g. "/a/b/c.pdf" → "/a/b"). */
-function parentPath(path: string): string {
-  const normalized = path.replace(/\/+$/, "");
-  const idx = normalized.lastIndexOf("/");
-  return idx <= 0 ? "/" : normalized.slice(0, idx);
-}
-
-function createClientFromConfig(config: SynologyConfig): WebDAVClient {
-  const password = config.passwordEncrypted ? decryptSecret(config.passwordEncrypted) : "";
-  return createClient(config.url, {
-    username: config.username || undefined,
-    password: password || undefined,
-  });
-}
-
-/** Loads the active config from the DB and returns a ready-to-use client. */
-export async function getWebDavClient(): Promise<WebDavContext> {
-  const config = await AppSettings.getSynologyConfig();
-  if (!config || !config.url) {
-    throw new Error("Synology WebDAV is not configured. Set it in Admin Settings → Storage.");
-  }
-  return { client: createClientFromConfig(config), config };
-}
-
-/** Lists entries in a directory relative to the LegalOS root. */
-export async function listDirectory(path: string): Promise<FileStat[]> {
-  const { client, config } = await getWebDavClient();
-  return client.getDirectoryContents(joinPath(config.rootPath, path));
-}
-
-/** Checks whether a file or directory exists. */
-export async function pathExists(path: string): Promise<boolean> {
-  const { client, config } = await getWebDavClient();
-  return client.exists(joinPath(config.rootPath, path));
-}
-
-/** Creates a directory (optionally creating missing parents). */
-export async function createDirectory(path: string, recursive = false): Promise<void> {
-  const { client, config } = await getWebDavClient();
-  await client.createDirectory(joinPath(config.rootPath, path), { recursive });
-}
-
-/** Deletes a file or directory. */
-export async function deletePath(path: string): Promise<void> {
-  const { client, config } = await getWebDavClient();
-  await client.deleteFile(joinPath(config.rootPath, path));
-}
-
-/** Moves/renames a file or directory. */
-export async function movePath(from: string, to: string): Promise<void> {
-  const { client, config } = await getWebDavClient();
-  await client.moveFile(joinPath(config.rootPath, from), joinPath(config.rootPath, to));
+  client: any;
+  config: { url: string; rootPath: string; username?: string };
 }
 
 export interface UploadResult {
   size: number;
   sha256: string;
-}
-
-/**
- * Streams a readable source to the NAS while hashing the bytes as they pass
- * through. The file is never buffered in memory — chunks are forwarded
- * directly into the WebDAV PUT stream, so this scales to large files.
- */
-export async function uploadStream(path: string, source: Readable): Promise<UploadResult> {
-  const { client, config } = await getWebDavClient();
-  const fullPath = joinPath(config.rootPath, path);
-
-  // Ensure the parent folder exists (recursively) before writing.
-  await client.createDirectory(joinPath(config.rootPath, parentPath(path)), { recursive: true });
-
-  const hash = createHash("sha256");
-  let size = 0;
-  const hasher = new Transform({
-    transform(chunk, _encoding, callback) {
-      size += chunk.length;
-      hash.update(chunk);
-      callback(null, chunk);
-    },
-  });
-
-  await new Promise<void>((resolve, reject) => {
-    let settled = false;
-    let writeStream: Writable | null = null;
-
-    const done = () => {
-      if (!settled) {
-        settled = true;
-        resolve();
-      }
-    };
-    const fail = (err: unknown) => {
-      if (!settled) {
-        settled = true;
-        hasher.destroy();
-        // Abort the in-flight PUT so the NAS discards the partial file.
-        writeStream?.destroy();
-        reject(err instanceof Error ? err : new Error(String(err)));
-      }
-    };
-
-    // The write stream's callback fires only after the PUT response is received
-    // and validated (non-2xx responses are surfaced as `error` events).
-    writeStream = client.createWriteStream(fullPath, { overwrite: true }, () => done());
-    writeStream.on("error", fail);
-    hasher.on("error", fail);
-    source.on("error", fail);
-
-    source.pipe(hasher).pipe(writeStream);
-  });
-
-  return { size, sha256: hash.digest("hex") };
-}
-
-/** Opens a read stream for a file on the NAS (relative to the LegalOS root). */
-export async function downloadStream(path: string): Promise<Readable> {
-  const { client, config } = await getWebDavClient();
-  return client.createReadStream(joinPath(config.rootPath, path));
 }
 
 export interface TestConnectionResult {
@@ -155,61 +111,128 @@ export interface TestConnectionResult {
 }
 
 export interface TestConnectionInput {
-  url: string;
-  username: string;
-  password: string;
-  rootPath: string;
+  url?: string;
+  username?: string;
+  password?: string;
+  rootPath?: string;
+}
+
+/** Compatible context helper */
+export async function getWebDavClient(): Promise<WebDavContext> {
+  return {
+    client: {} as any,
+    config: { url: "local", rootPath: STORAGE_ROOT },
+  };
+}
+
+/** Lists entries in a directory relative to the LegalOS root on VPS disk. */
+export async function listDirectory(logicalPath: string): Promise<FileStat[]> {
+  const fullPath = getLocalPath(logicalPath, true);
+  if (!fs.existsSync(fullPath)) return [];
+
+  const entries = await fsp.readdir(fullPath, { withFileTypes: true });
+  const results = await Promise.all(
+    entries.map(async (ent) => {
+      const entPath = path.join(fullPath, ent.name);
+      const stat = await fsp.stat(entPath).catch(() => null);
+      return {
+        filename: path.posix.join(logicalPath.startsWith("/") ? logicalPath : `/${logicalPath}`, ent.name),
+        basename: ent.name,
+        lastmod: stat ? stat.mtime.toUTCString() : new Date().toUTCString(),
+        size: stat ? stat.size : 0,
+        type: (ent.isDirectory() ? "directory" : "file") as "directory" | "file",
+        etag: null,
+      };
+    })
+  );
+  return results;
+}
+
+/** Checks whether a file or directory exists on VPS disk. */
+export async function pathExists(logicalPath: string): Promise<boolean> {
+  return fs.existsSync(getLocalPath(logicalPath, true));
+}
+
+/** Creates a directory (optionally creating missing parents). */
+export async function createDirectory(logicalPath: string, recursive = false): Promise<void> {
+  await fsp.mkdir(getLocalPath(logicalPath, true), { recursive });
+}
+
+/** Deletes a file or directory from VPS disk. */
+export async function deletePath(logicalPath: string): Promise<void> {
+  const fullPath = getLocalPath(logicalPath);
+  if (fs.existsSync(fullPath)) {
+    const stat = await fsp.stat(fullPath);
+    if (stat.isDirectory()) {
+      await fsp.rm(fullPath, { recursive: true, force: true });
+    } else {
+      await fsp.unlink(fullPath);
+    }
+  }
+}
+
+/** Moves/renames a file or directory on VPS disk. */
+export async function movePath(from: string, to: string): Promise<void> {
+  const src = getLocalPath(from);
+  const dst = getLocalPath(to);
+  await fsp.mkdir(path.dirname(dst), { recursive: true });
+  await fsp.rename(src, dst);
 }
 
 /**
- * Verifies a WebDAV endpoint is reachable, speaking DAV, and that the
- * configured LegalOS root folder exists.
- *
- * Pass an override to test unsaved values (the admin settings form); otherwise
- * the saved config is loaded from the DB and its password decrypted.
+ * Streams a readable source directly to VPS local disk while hashing bytes in transit.
  */
-export async function testConnection(override?: TestConnectionInput): Promise<TestConnectionResult> {
-  let url = "";
+export async function uploadStream(logicalPath: string, source: Readable): Promise<UploadResult> {
+  const fullPath = getLocalPath(logicalPath);
+  await fsp.mkdir(path.dirname(fullPath), { recursive: true });
+
+  const hash = createHash("sha256");
+  let size = 0;
+  const hasher = new Transform({
+    transform(chunk, _encoding, callback) {
+      size += chunk.length;
+      hash.update(chunk);
+      callback(null, chunk);
+    },
+  });
+
+  const writeStream = fs.createWriteStream(fullPath);
+
+  await pipeline(source, hasher, writeStream);
+
+  return { size, sha256: hash.digest("hex") };
+}
+
+/** Opens a read stream for a file on the VPS local disk. */
+export async function downloadStream(logicalPath: string): Promise<Readable> {
+  const fullPath = getLocalPath(logicalPath);
+  if (!fs.existsSync(fullPath)) {
+    throw new Error(`File not found: ${logicalPath}`);
+  }
+  return fs.createReadStream(fullPath);
+}
+
+/**
+ * Verifies VPS local storage is writable and healthy.
+ */
+export async function testConnection(_override?: TestConnectionInput): Promise<TestConnectionResult> {
   try {
-    let client: WebDAVClient;
-    let rootPath = "";
-
-    if (override?.url) {
-      url = override.url;
-      rootPath = override.rootPath || "";
-      let password = override.password || "";
-      // Fall back to the saved (decrypted) password when testing with a blank
-      // one, so "Test connection" works without re-entering credentials.
-      if (!password) {
-        const saved = await AppSettings.getSynologyConfig();
-        if (saved?.passwordEncrypted) password = decryptSecret(saved.passwordEncrypted);
-      }
-      client = createClient(url, {
-        username: override.username || undefined,
-        password: password || undefined,
-      });
-    } else {
-      const config = await AppSettings.getSynologyConfig();
-      url = config?.url ?? "";
-      if (!config || !url) {
-        return { ok: false, url, error: "Synology WebDAV is not configured." };
-      }
-      rootPath = config.rootPath || "";
-      client = createClientFromConfig(config);
+    if (!fs.existsSync(STORAGE_ROOT)) {
+      await fsp.mkdir(STORAGE_ROOT, { recursive: true });
     }
-
-    const compliance = await client.getDAVCompliance("/");
-    const rootExists = rootPath ? await client.exists(rootPath) : undefined;
+    const testFile = path.join(STORAGE_ROOT, `.test-write-${Date.now()}`);
+    await fsp.writeFile(testFile, "ok");
+    await fsp.unlink(testFile);
 
     return {
       ok: true,
-      url,
-      server: compliance.server,
-      compliance: compliance.compliance,
-      rootExists,
+      url: STORAGE_ROOT,
+      server: `VPS Local Storage (${STORAGE_ROOT})`,
+      compliance: ["1", "2"],
+      rootExists: true,
     };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    return { ok: false, url, error: message };
+    return { ok: false, url: STORAGE_ROOT, error: message };
   }
 }

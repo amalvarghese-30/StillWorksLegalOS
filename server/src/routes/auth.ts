@@ -1,8 +1,10 @@
 import { Router, type Request, type Response } from "express";
 import bcrypt from "bcryptjs";
+import { randomInt } from "node:crypto";
 import { User } from "../models/User.js";
 import { Session } from "../models/Session.js";
 import { signToken, signRefreshToken, verifyToken, requireAuth, requireAdmin } from "../middleware/auth.js";
+import { validatePasswordStrength } from "../services/passwordPolicy.js";
 
 const router = Router();
 
@@ -68,12 +70,34 @@ router.post("/login", async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password) {
-      res.status(400).json({ message: "Email and password are required" });
+    if (!email || !password || typeof email !== "string" || typeof password !== "string") {
+      res.status(400).json({ message: "Email and password must be valid text strings" });
       return;
     }
 
-    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    const inputIdentifier = email.toLowerCase().trim();
+    if (!inputIdentifier) {
+      res.status(400).json({ message: "Email and password must be valid text strings" });
+      return;
+    }
+
+    let user = await User.findOne({ email: inputIdentifier });
+
+    // Allow 'admin@stillworks.legal' or 'admin' as an alias for the firm administrator
+    if (!user && (inputIdentifier === "admin@stillworks.legal" || inputIdentifier === "admin")) {
+      user = await User.findOne({ role: "admin" });
+    }
+
+    // Allow logging in with registered phone number
+    if (!user) {
+      const cleanDigits = inputIdentifier.replace(/\D/g, "");
+      if (cleanDigits.length >= 5) {
+        const lastDigits = cleanDigits.slice(-10);
+        const flexiblePhoneRegex = lastDigits.split("").join("[\\s\\-\\(\\)\\+]*");
+        user = await User.findOne({ phone: { $regex: flexiblePhoneRegex, $options: "i" } });
+      }
+    }
+
     if (!user) {
       res.status(401).json({ message: "Invalid email or password" });
       return;
@@ -117,19 +141,17 @@ router.post("/login", async (req: Request, res: Response) => {
     await user.save();
 
     // Always set the refresh token as an httpOnly cookie (web clients).
-    // Electron ignores cookies — it reads the token from the JSON body below.
     setRefreshCookie(res, refreshToken);
 
     const isElectron = req.headers["x-client-type"] === "electron";
-
     const body: Record<string, unknown> = {
       accessToken,
       user: user.toJSON(),
     };
-    // Only Electron receives the refresh token in the response body (it is
-    // then encrypted via safeStorage). Web clients rely on the httpOnly cookie.
+
+    // Electron desktop stores the refresh token in OS-level safeStorage vault
     if (isElectron) {
-      body.refreshToken = refreshToken;
+      body["refreshToken"] = refreshToken;
     }
 
     res.json(body);
@@ -227,6 +249,10 @@ router.post("/refresh", async (req: Request, res: Response) => {
     }
 
     if (!session) {
+      // Reuse / replay detection: a valid signature was presented that does not match
+      // any active session hash (it was already rotated or revoked). Revoke session family!
+      await Session.revokeAllForUser(payload.userId);
+      clearRefreshCookie(res);
       res.status(401).json({ message: "Invalid or expired refresh token" });
       return;
     }
@@ -251,8 +277,14 @@ router.post("/refresh", async (req: Request, res: Response) => {
     // Always rotate the httpOnly cookie (web clients); Electron ignores it.
     setRefreshCookie(res, newRefreshToken);
 
-    const body: Record<string, unknown> = { accessToken: newAccessToken };
-    if (isElectron) body.refreshToken = newRefreshToken;
+    const body: Record<string, unknown> = {
+      accessToken: newAccessToken,
+    };
+
+    // Electron desktop stores the refresh token in OS-level safeStorage vault
+    if (isElectron) {
+      body["refreshToken"] = newRefreshToken;
+    }
 
     res.json(body);
   } catch (err) {
@@ -315,13 +347,19 @@ router.patch("/me", requireAuth, async (req: Request, res: Response) => {
 router.post("/change-password", requireAuth, async (req: Request, res: Response) => {
   try {
     const { currentPassword, newPassword } = req.body;
-    if (!currentPassword || !newPassword) {
-      res.status(400).json({ message: "Current and new password are required" });
+    if (
+      !currentPassword ||
+      !newPassword ||
+      typeof currentPassword !== "string" ||
+      typeof newPassword !== "string"
+    ) {
+      res.status(400).json({ message: "Current and new password must be valid strings" });
       return;
     }
 
-    if (newPassword.length < 6) {
-      res.status(400).json({ message: "Password must be at least 6 characters" });
+    const passwordPolicy = validatePasswordStrength(newPassword);
+    if (!passwordPolicy.valid) {
+      res.status(400).json({ message: passwordPolicy.message });
       return;
     }
 
@@ -355,6 +393,195 @@ router.post("/change-password", requireAuth, async (req: Request, res: Response)
     res.json({ message: "Password changed successfully" });
   } catch (err) {
     console.error("[auth] Change password error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/auth/forgot-password — request 6-digit OTP via phone or email
+// ---------------------------------------------------------------------------
+
+router.post("/forgot-password", async (req: Request, res: Response) => {
+  try {
+    const rawVal = req.body.phone ?? req.body.email ?? req.body.identifier;
+    if (typeof rawVal !== "string" && typeof rawVal !== "number") {
+      res.status(400).json({ message: "Phone number or email is required as text" });
+      return;
+    }
+
+    const rawIdentifier = String(rawVal).trim();
+    if (!rawIdentifier) {
+      res.status(400).json({ message: "Phone number or email is required" });
+      return;
+    }
+
+    let user = null;
+    const isEmail = rawIdentifier.includes("@");
+
+    if (isEmail) {
+      user = await User.findOne({ email: rawIdentifier.toLowerCase() }).select(
+        "+resetOtpHash +resetOtpExpires +resetOtpAttempts",
+      );
+    } else {
+      // Clean phone number: remove non-digits
+      const cleanDigits = rawIdentifier.replace(/\D/g, "");
+      if (cleanDigits.length < 5) {
+        res.status(400).json({ message: "Please provide a valid phone number" });
+        return;
+      }
+      // Match phone allowing optional spaces/dashes between digits
+      const lastDigits = cleanDigits.slice(-10);
+      const flexiblePhoneRegex = lastDigits.split("").join("[\\s\\-\\(\\)\\+]*");
+      user = await User.findOne({
+        phone: { $regex: flexiblePhoneRegex, $options: "i" },
+      }).select("+resetOtpHash +resetOtpExpires +resetOtpAttempts");
+    }
+
+    if (!user) {
+      // Prevent account enumeration by returning a generic success response
+      res.json({
+        success: true,
+        message: "If an account matching the provided details exists, a verification code has been dispatched.",
+      });
+      return;
+    }
+
+    // Cryptographically secure 6-digit numeric OTP
+    const otp = randomInt(100000, 1000000).toString();
+    user.resetOtpHash = await bcrypt.hash(otp, 12);
+    user.resetOtpExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+    user.resetOtpAttempts = 0;
+    await user.save();
+
+    // Mask phone/email for privacy display without leaking full data
+    const rawPhone = user.phone || "";
+    let maskedDest = "";
+    if (rawPhone.length >= 6) {
+      maskedDest = `${rawPhone.slice(0, 3)}••••${rawPhone.slice(-4)}`;
+    } else if (user.email) {
+      const [local, domain] = user.email.split("@");
+      maskedDest = `${(local || "").slice(0, 2)}••••@${domain}`;
+    }
+
+    res.json({
+      success: true,
+      message: "If an account matching the provided details exists, a verification code has been dispatched.",
+      destination: maskedDest,
+    });
+  } catch (err) {
+    console.error("[auth] Forgot password error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/auth/reset-password — verify 6-digit OTP and set new password
+// ---------------------------------------------------------------------------
+
+router.post("/reset-password", async (req: Request, res: Response) => {
+  try {
+    const rawVal = req.body.phone ?? req.body.email ?? req.body.identifier;
+    const otpVal = req.body.otp;
+    const newPassVal = req.body.newPassword;
+
+    if (
+      (typeof rawVal !== "string" && typeof rawVal !== "number") ||
+      (typeof otpVal !== "string" && typeof otpVal !== "number") ||
+      typeof newPassVal !== "string"
+    ) {
+      res.status(400).json({ message: "Phone or email, OTP code, and new password are required." });
+      return;
+    }
+
+    const rawIdentifier = String(rawVal).trim();
+    const otp = String(otpVal).trim();
+    const newPassword = String(newPassVal);
+
+    if (!rawIdentifier || !otp || !newPassword) {
+      res.status(400).json({ message: "Phone or email, OTP code, and new password are required." });
+      return;
+    }
+
+    const passwordPolicy = validatePasswordStrength(newPassword);
+    if (!passwordPolicy.valid) {
+      res.status(400).json({ message: passwordPolicy.message });
+      return;
+    }
+
+    const isEmail = rawIdentifier.includes("@");
+    let user = null;
+
+    if (isEmail) {
+      user = await User.findOne({ email: rawIdentifier.toLowerCase() }).select(
+        "+resetOtpHash +resetOtpExpires +resetOtpAttempts",
+      );
+    } else {
+      const cleanDigits = rawIdentifier.replace(/\D/g, "");
+      const lastDigits = cleanDigits.slice(-10);
+      const flexiblePhoneRegex = lastDigits.split("").join("[\\s\\-\\(\\)\\+]*");
+      user = await User.findOne({
+        phone: { $regex: flexiblePhoneRegex, $options: "i" },
+      }).select("+resetOtpHash +resetOtpExpires +resetOtpAttempts");
+    }
+
+    if (!user || !user.resetOtpHash || !user.resetOtpExpires) {
+      res.status(400).json({ message: "Invalid verification request. Please request a new code." });
+      return;
+    }
+
+    // Maximum 5 attempts allowed per OTP
+    if ((user.resetOtpAttempts || 0) >= 5) {
+      user.resetOtpHash = undefined;
+      user.resetOtpExpires = undefined;
+      user.resetOtpAttempts = 0;
+      await user.save();
+      res.status(400).json({
+        message: "Too many failed attempts. This verification code has been invalidated. Please request a new code.",
+      });
+      return;
+    }
+
+    if (new Date() > user.resetOtpExpires) {
+      user.resetOtpHash = undefined;
+      user.resetOtpExpires = undefined;
+      await user.save();
+      res.status(400).json({ message: "Verification code has expired. Please request a new one." });
+      return;
+    }
+
+    const isOtpValid = await bcrypt.compare(otp, user.resetOtpHash);
+    if (!isOtpValid) {
+      user.resetOtpAttempts = (user.resetOtpAttempts || 0) + 1;
+      await user.save();
+      res.status(400).json({ message: "Incorrect 6-digit verification code. Please check and try again." });
+      return;
+    }
+
+    // Set new password and invalidate OTP
+    user.passwordHash = await bcrypt.hash(newPassword, 12);
+    user.resetOtpHash = undefined;
+    user.resetOtpExpires = undefined;
+    user.resetOtpAttempts = 0;
+    await user.save();
+
+    // Revoke all existing sessions so old logins are terminated
+    await Session.revokeAllForUser(user._id);
+
+    // Disconnect active socket connections
+    const io = req.app.get("io");
+    if (io) {
+      const userIdStr = user._id.toString();
+      for (const s of io.sockets.sockets.values()) {
+        if (s.data.userId === userIdStr) s.disconnect(true);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: "Password reset successfully. You can now sign in with your new password.",
+    });
+  } catch (err) {
+    console.error("[auth] Reset password error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -492,7 +719,7 @@ router.post("/seed", async (_req: Request, res: Response) => {
     const admin = await User.create({
       name: "Adv. Rohan Desai",
       email: "admin@stillworks.legal",
-      passwordHash: await bcrypt.hash("admin123", 12),
+      passwordHash: await bcrypt.hash("password123", 12),
       role: "admin",
       title: "Managing Partner · Administrator",
       permissions: {

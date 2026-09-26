@@ -631,28 +631,46 @@ router.post(
           deliveredAt: now,
         });
 
-        // Mention notifications: create notification for each mentioned colleague
-        if (validMentions.length > 0) {
-          for (const mentionOid of validMentions) {
-            if (mentionOid.toString() === req.userId) continue;
-            try {
-              const preview = cleanText || validAttachments[0]?.name || "a file";
-              await NotificationService.createNotification(
-                {
-                  userId: mentionOid,
-                  type: "COMMENT_MENTION",
-                  title: "Mentioned in Chat",
-                  message: `${senderName} mentioned you in ${group.type === "direct" ? "direct chat" : group.name}: "${preview.slice(0, 80)}"`,
-                  relatedId: groupId,
-                  relatedModel: "ChatGroup",
-                  actorId: req.user!._id,
-                  metadata: { groupId: groupId.toString(), messageId: message._id.toString() },
+        // Notifications for mentions and chat members
+        const preview = cleanText || (validAttachments[0] ? `📎 ${validAttachments[0].name}` : "Sent a message");
+        const mentionedSet = new Set(validMentions.map((m) => m.toString()));
+
+        for (const member of group.members) {
+          const mUserId = member.userId.toString();
+          if (mUserId === req.userId) continue; // Do not notify the sender
+
+          const isMentioned = mentionedSet.has(mUserId);
+          const title = isMentioned
+            ? `Mentioned by ${senderName}`
+            : group.type === "direct"
+              ? `💬 Message from ${senderName}`
+              : `💬 ${senderName} in #${group.name}`;
+
+          const messageText = isMentioned
+            ? `${senderName} mentioned you: "${preview.slice(0, 100)}"`
+            : preview.slice(0, 100);
+
+          try {
+            await NotificationService.createNotification(
+              {
+                userId: member.userId,
+                type: isMentioned ? "COMMENT_MENTION" : "CUSTOM",
+                title,
+                message: messageText,
+                relatedId: groupId,
+                relatedModel: "ChatGroup",
+                actorId: req.user!._id,
+                metadata: {
+                  groupId: groupId.toString(),
+                  messageId: message._id.toString(),
+                  groupType: group.type,
+                  senderName,
                 },
-                io,
-              );
-            } catch (notifErr) {
-              console.error("[chat] Mention notification error:", notifErr);
-            }
+              },
+              io,
+            );
+          } catch (notifErr) {
+            console.error("[chat] Member notification error:", notifErr);
           }
         }
       }
@@ -981,29 +999,6 @@ router.post(
   },
 );
 
-// ---------------------------------------------------------------------------
-// POST /api/chat/groups/:groupId/read — mark all messages as read (member only)
-// ---------------------------------------------------------------------------
-
-router.post(
-  "/groups/:groupId/read",
-  requireChatMembership,
-  async (req: Request, res: Response) => {
-    try {
-      const groupId = req.params["groupId"];
-
-      await ChatMessage.updateMany(
-        { groupId, readBy: { $nin: [req.userId] } },
-        { $addToSet: { readBy: req.userId } },
-      );
-
-      res.json({ message: "Marked as read" });
-    } catch (err) {
-      console.error("[chat] Read error:", err);
-      res.status(500).json({ message: "Internal server error" });
-    }
-  },
-);
 
 // ---------------------------------------------------------------------------
 // DELETE /api/chat/groups/:groupId/messages/:messageId — delete for everyone

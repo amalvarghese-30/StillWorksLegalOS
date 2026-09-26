@@ -63,16 +63,18 @@ SessionSchema.index({ userId: 1, isRevoked: 1 });
 // ---------------------------------------------------------------------------
 
 interface SessionModel extends mongoose.Model<ISession> {
-  revokeAllForUser(userId: mongoose.Types.ObjectId): Promise<mongoose.UpdateWriteOpResult>;
-  findActiveByUser(userId: mongoose.Types.ObjectId): Promise<ISession[]>;
+  revokeAllForUser(userId: mongoose.Types.ObjectId | string): Promise<mongoose.UpdateWriteOpResult>;
+  findActiveByUser(userId: mongoose.Types.ObjectId | string): Promise<ISession[]>;
 }
 
-SessionSchema.statics.revokeAllForUser = async function (userId: mongoose.Types.ObjectId) {
-  return this.updateMany({ userId, isRevoked: false }, { $set: { isRevoked: true } });
+SessionSchema.statics.revokeAllForUser = async function (userId: mongoose.Types.ObjectId | string) {
+  const uid = typeof userId === "string" ? new mongoose.Types.ObjectId(userId) : userId;
+  return this.updateMany({ userId: uid, isRevoked: false }, { $set: { isRevoked: true } });
 };
 
-SessionSchema.statics.findActiveByUser = async function (userId: mongoose.Types.ObjectId) {
-  return this.find({ userId, isRevoked: false, expiresAt: { $gt: new Date() } });
+SessionSchema.statics.findActiveByUser = async function (userId: mongoose.Types.ObjectId | string) {
+  const uid = typeof userId === "string" ? new mongoose.Types.ObjectId(userId) : userId;
+  return this.find({ userId: uid, isRevoked: false, expiresAt: { $gt: new Date() } });
 };
 
 // ---------------------------------------------------------------------------

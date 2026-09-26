@@ -52,38 +52,74 @@ const MONGODB_URI = process.env["MONGODB_URI"] ?? "mongodb://localhost:27017/sti
 // CORS origins — Recommendation #3: allow both Vite dev & Electron
 // ---------------------------------------------------------------------------
 
-const rawOrigins = process.env["CORS_ORIGINS"] ?? "http://localhost:5173,app://.,https://legalos.stillworks.in";
+const rawOrigins = process.env["CORS_ORIGINS"] ?? "http://localhost:5173,http://localhost:5174,app://.,https://legalos.stillworks.in";
 const ALLOWED_ORIGINS = rawOrigins
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
 
+const isOriginAllowed = (origin?: string): boolean => {
+  const isProd = process.env["NODE_ENV"] === "production";
+
+  if (!origin) {
+    // Non-browser or internal requests (like Electron direct IPC/fetch, curl, health checks)
+    return true;
+  }
+
+  // Exact allowlist match from configuration
+  if (ALLOWED_ORIGINS.includes("*") || ALLOWED_ORIGINS.includes(origin)) {
+    return true;
+  }
+
+  // Desktop custom schemes
+  if (origin === "app://." || origin === "file://" || origin.startsWith("capacitor://")) {
+    return true;
+  }
+
+  // Production allowlist: HTTPS only on stillworks.in domain
+  if (/^https:\/\/([a-zA-Z0-9-]+\.)*stillworks\.in$/.test(origin)) {
+    return true;
+  }
+
+  // Local development only: permit loopback and private LAN addresses
+  if (!isProd) {
+    if (
+      origin.startsWith("http://localhost:") ||
+      origin.startsWith("http://127.0.0.1:") ||
+      origin.startsWith("http://192.168.") ||
+      origin.startsWith("http://10.") ||
+      origin.startsWith("http://172.16.") ||
+      origin.startsWith("http://[::1]:") ||
+      origin === "null"
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 const corsOptions: cors.CorsOptions = {
-    origin: (origin, callback) => {
-      // Allow all origins when CORS_ORIGINS=* (local testing only)
-      if (ALLOWED_ORIGINS.includes("*")) return callback(null, true);
-      // Same logic as Express CORS - allow dev + Electron origins
-      if (!origin || origin === "null" || origin === "app://." || origin.startsWith("file://")) {
-        return callback(null, true);
-      }
-      if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
-      if (
-        process.env["NODE_ENV"] === "development" &&
-        (origin.startsWith("http://localhost:") ||
-         origin.startsWith("http://127.0.0.1:") ||
-         origin.startsWith("http://192.168.") ||
-         origin.startsWith("http://10.") ||
-         origin.startsWith("http://172.16.") ||
-         origin.startsWith("[::1]:") ||
-         origin.startsWith("http://[::1]:"))
-      ) {
-        return callback(null, true);
-      }
-      callback(new Error("Socket.io origin not allowed"));
-    },
+  origin: (origin, callback) => {
+    if (isOriginAllowed(origin)) {
+      return callback(null, true);
+    }
+    // Return null, false for standard rejection instead of throwing an unhandled exception
+    callback(null, false);
+  },
   credentials: true,
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "x-client-type"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "x-client-type",
+    "x-requested-with",
+    "Accept",
+    "Origin",
+    "Range",
+    "baggage",
+    "sentry-trace",
+  ],
 };
 
 // ---------------------------------------------------------------------------
@@ -112,8 +148,12 @@ app.use(
   }),
 );
 
-// Trust proxy for accurate IP detection behind reverse proxy
-app.set("trust proxy", 1);
+// Trust proxy configuration: in production, trust configured reverse proxy / loopback only
+const trustProxyEnv = process.env["TRUST_PROXY"];
+const trustProxyConfig = trustProxyEnv
+  ? (trustProxyEnv === "true" ? true : trustProxyEnv === "false" ? false : trustProxyEnv)
+  : (process.env["NODE_ENV"] === "production" ? "loopback" : 1);
+app.set("trust proxy", trustProxyConfig);
 
 // ---------------------------------------------------------------------------
 // CORS must run BEFORE rate limiters so that rate-limited/preflight responses
@@ -142,15 +182,21 @@ const globalLimiter = rateLimit({
 });
 app.use(globalLimiter);
 
-// Auth endpoints: 30 attempts per 15 minutes (still blocks brute force,
-// but allows normal retries after a typo or password manager hiccup).
+// Auth endpoints: 30 attempts per 15 minutes.
+// Uses a composite key (trusted client IP + normalized account identifier) to prevent
+// both credential stuffing across multiple IPs and brute-force targeting of single accounts.
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
   message: { message: "Too many login attempts, please try again later" },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.ip ?? "unknown",
+  keyGenerator: (req) => {
+    const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
+    const bodyIdent = req.body?.email || req.body?.phone || req.body?.identifier || "";
+    const ident = typeof bodyIdent === "string" ? bodyIdent.toLowerCase().trim() : "";
+    return ident ? `${ip}:${ident}` : ip;
+  },
 });
 app.use("/api/auth", authLimiter);
 

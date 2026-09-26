@@ -5,14 +5,16 @@ import mongoose from "mongoose";
  * Mongoose 8+ handles buffering, but explicit retry gives better startup logs.
  */
 export async function connectDB(uri: string, maxRetries = 5, retryDelayMs = 3000): Promise<void> {
+  const dbName = process.env["MONGODB_DB_NAME"] || "stillworks_legalos";
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       await mongoose.connect(uri, {
+        dbName,
         // Mongoose 8 defaults are fine; explicit for clarity
         serverSelectionTimeoutMS: 5000,
         heartbeatFrequencyMS: 10000,
       });
-      console.log(`[db] Connected to MongoDB: ${mongoose.connection.host}`);
+      console.log(`[db] Connected to MongoDB database: ${mongoose.connection.name} on host: ${mongoose.connection.host}`);
       return;
     } catch (err) {
       console.error(`[db] Connection attempt ${attempt}/${maxRetries} failed:`, (err as Error).message);

@@ -7,13 +7,20 @@
 // (web) or from the OS-level safeStorage vault (Electron desktop).
 // ---------------------------------------------------------------------------
 
+export function isElectron(): boolean {
+  if (typeof window === "undefined") return false;
+  return (
+    window.STILLWORKS_ENV?.isElectron === true ||
+    window.location.protocol === "file:" ||
+    window.location.protocol === "app:" ||
+    (typeof navigator !== "undefined" && navigator.userAgent.includes("Electron"))
+  );
+}
+
 function getApiBase(): string {
-  if (import.meta.env["VITE_API_URL"]) {
-    return import.meta.env["VITE_API_URL"];
-  }
   if (typeof window !== "undefined") {
     const host = window.location.hostname;
-    // Local dev ONLY
+    // Local dev: any port on localhost or 127.0.0.1
     if (host === "localhost" || host === "127.0.0.1") {
       return "http://localhost:3001/api";
     }
@@ -26,19 +33,18 @@ function getApiBase(): string {
       return `${window.location.origin}/api`;
     }
   }
-  // Electron (file:// or custom protocol) or production remote default:
+  // Electron desktop app: ALWAYS connect directly to the production VPS API
+  if (isElectron()) {
+    return "https://legalos.stillworks.in/api";
+  }
+  if (import.meta.env["VITE_API_URL"]) {
+    return import.meta.env["VITE_API_URL"];
+  }
+  // Production remote default:
   return "https://legalos.stillworks.in/api";
 }
 
 const API_BASE = getApiBase();
-
-// ---------------------------------------------------------------------------
-// Client-type detection
-// ---------------------------------------------------------------------------
-
-function isElectron(): boolean {
-  return typeof window !== "undefined" && window.STILLWORKS_ENV?.isElectron === true;
-}
 
 function electronApi() {
   return typeof window !== "undefined" ? (window.electronAPI ?? null) : null;
@@ -63,10 +69,11 @@ export function setAccessToken(token: string | null): void {
   accessToken = token;
 }
 
+const REFRESH_STORAGE_KEY = "stillworks.refresh_token";
+
 // Persist tokens after login/refresh.
 // - access token: in-memory only.
-// - refresh token: Electron → safeStorage vault; web → httpOnly cookie (managed
-//   entirely by the server, never handled here).
+// - refresh token: Electron -> safeStorage OS vault; web -> httpOnly cookie (never exposed to JS).
 export async function persistTokens(
   newAccessToken: string,
   newRefreshToken?: string
@@ -75,12 +82,27 @@ export async function persistTokens(
   if (isElectron() && newRefreshToken) {
     await electronApi()?.saveRefreshToken(newRefreshToken);
   }
+  // Security hardening: remove any residual refresh tokens from browser localStorage
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.removeItem(REFRESH_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 export async function clearTokens(): Promise<void> {
   accessToken = null;
   if (isElectron()) {
     await electronApi()?.clearRefreshToken();
+  }
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.removeItem(REFRESH_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -124,7 +146,7 @@ export async function refreshAccessToken(): Promise<string | null> {
         return data.accessToken;
       }
 
-      // Web: refresh token lives in an httpOnly cookie — sent automatically.
+      // Web: authenticate purely via HttpOnly cookie (credentials: "include")
       const res = await fetch(`${API_BASE}/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -137,7 +159,7 @@ export async function refreshAccessToken(): Promise<string | null> {
       }
 
       const data = await res.json();
-      accessToken = data.accessToken;
+      await persistTokens(data.accessToken);
       return data.accessToken;
     } catch {
       await clearTokens();
