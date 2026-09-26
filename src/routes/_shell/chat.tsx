@@ -380,14 +380,22 @@ function ChatPage() {
         ?.filter((m) => text.includes(`@${m.name}`))
         ?.map((m) => m._id) ?? [];
 
+      const sendPayload: {
+        groupId: string;
+        text?: string;
+        mentions?: string[];
+        replyTo?: { messageId: string; text: string; senderName: string };
+        attachments?: { name: string; nasPath: string; size: string }[];
+      } = {
+        groupId: activeGroupId,
+        text,
+      };
+      if (attachments && attachments.length > 0) sendPayload.attachments = attachments;
+      if (mentionedIds.length > 0) sendPayload.mentions = mentionedIds;
+      if (replyTo) sendPayload.replyTo = replyTo;
+
       sendMutation.mutate(
-        {
-          groupId: activeGroupId,
-          text,
-          attachments,
-          mentions: mentionedIds.length > 0 ? mentionedIds : undefined,
-          ...(replyTo ? { replyTo } : {}),
-        },
+        sendPayload,
         {
           onSuccess: () => {
             setChatInput("");
@@ -688,6 +696,7 @@ function ChatPage() {
                   typingNames={Array.from(typingUsers.values())}
                   onTyping={sendTyping}
                   inputRef={inputRef}
+                  members={activeMembers}
                 />
               </>
             )}

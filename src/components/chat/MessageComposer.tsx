@@ -1,9 +1,9 @@
-import { useState, useRef, type RefObject } from "react";
-import { Send, Paperclip, Smile, X, Reply, Loader2, FileText, Mic, Trash2 } from "lucide-react";
+import { useState, useRef, useEffect, type RefObject } from "react";
+import { Send, Paperclip, Smile, X, Reply, Loader2, FileText, Mic, Trash2, AtSign } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { EMOJI_PICKER_EMOJIS } from "./helpers";
-import { uploadChatAttachment, type ChatMessage } from "@/services/chat";
+import { uploadChatAttachment, type ChatMessage, type ChatMember } from "@/services/chat";
 import { toast } from "sonner";
 
 interface MessageComposerProps {
@@ -17,6 +17,8 @@ interface MessageComposerProps {
   typingNames: string[];
   onTyping: () => void;
   inputRef: RefObject<HTMLInputElement | null>;
+  /** Pass the current group's members for @mention suggestions */
+  members?: ChatMember[];
 }
 
 export function MessageComposer({
@@ -30,6 +32,7 @@ export function MessageComposer({
   typingNames,
   onTyping,
   inputRef,
+  members = [],
 }: MessageComposerProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [attachment, setAttachment] = useState<{ name: string; nasPath: string; size: string } | null>(null);
@@ -42,6 +45,91 @@ export function MessageComposer({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<any>(null);
+
+  // @mention autocomplete state
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionStart, setMentionStart] = useState<number>(-1);
+  const [activeSuggestion, setActiveSuggestion] = useState(0);
+  const suggestionsRef = useRef<HTMLDivElement | null>(null);
+
+  // Detect @mention in the input
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const text = e.target.value;
+    onChange(text);
+    onTyping();
+
+    const cursor = e.target.selectionStart ?? text.length;
+    // Find the @ that precedes the cursor
+    const before = text.slice(0, cursor);
+    const match = before.match(/(?:^|\s)@([a-zA-Z0-9._\s]*)$/);
+
+    if (match) {
+      const query = match[1] ?? ""; // text after @
+      setMentionQuery(query);
+      setMentionStart(before.lastIndexOf("@"));
+      setActiveSuggestion(0);
+    } else {
+      setMentionQuery(null);
+      setMentionStart(-1);
+    }
+  };
+
+  // Filtered suggestions
+  const suggestions = mentionQuery !== null
+    ? members.filter((m) =>
+        m.name.toLowerCase().includes(mentionQuery.toLowerCase())
+      ).slice(0, 6)
+    : [];
+
+  // Insert the selected mention into the text
+  const selectMention = (member: ChatMember) => {
+    const before = value.slice(0, mentionStart);
+    const after = value.slice(mentionStart + 1 + (mentionQuery?.length ?? 0));
+    const newText = `${before}@${member.name} ${after}`;
+    onChange(newText);
+    setMentionQuery(null);
+    setMentionStart(-1);
+    // Refocus the input
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  // Keyboard navigation for @mention suggestions
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (mentionQuery === null || suggestions.length === 0) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        handleSubmit(e as unknown as React.FormEvent);
+      }
+      return;
+    }
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveSuggestion((prev) => (prev + 1) % suggestions.length);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveSuggestion((prev) => (prev - 1 + suggestions.length) % suggestions.length);
+    } else if (e.key === "Enter" || e.key === "Tab") {
+      e.preventDefault();
+      const member = suggestions[activeSuggestion];
+      if (member) selectMention(member);
+    } else if (e.key === "Escape") {
+      setMentionQuery(null);
+      setMentionStart(-1);
+    }
+  };
+
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (suggestionsRef.current && !suggestionsRef.current.contains(e.target as Node)) {
+        setMentionQuery(null);
+        setMentionStart(-1);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const startRecording = async () => {
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -164,6 +252,8 @@ export function MessageComposer({
     if ((!value.trim() && !attachment) || isSending || isUploading) return;
     onSend(attachment ? [attachment] : undefined);
     setAttachment(null);
+    setMentionQuery(null);
+    setMentionStart(-1);
   };
 
   return (
@@ -265,99 +355,167 @@ export function MessageComposer({
             </div>
           </div>
         ) : (
-          <form className="flex items-center gap-1.5" onSubmit={handleSubmit}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  disabled={isUploading}
-                  onClick={() => fileInputRef.current?.click()}
-                  aria-label="Attach file"
-                  className="grid size-11 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground disabled:opacity-50"
-                >
-                  <Paperclip size={19} strokeWidth={1.75} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>Attach file or document (up to 50MB)</TooltipContent>
-            </Tooltip>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              className="hidden"
-              onChange={handleFileSelect}
-            />
-
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  aria-label="Emoji"
-                  className="grid size-11 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground"
-                >
-                  <Smile size={19} strokeWidth={1.75} />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-64 p-2" sideOffset={8}>
-                <div className="grid grid-cols-8 gap-1">
-                  {EMOJI_PICKER_EMOJIS.map((emoji) => (
+          <div className="relative">
+            {/* @mention suggestions dropdown */}
+            {mentionQuery !== null && suggestions.length > 0 && (
+              <div
+                ref={suggestionsRef}
+                className="absolute bottom-full left-0 mb-2 w-72 rounded-xl border border-border bg-card shadow-xl ring-1 ring-border/50 overflow-hidden z-50 animate-in fade-in slide-in-from-bottom-2 duration-150"
+              >
+                <div className="flex items-center gap-2 border-b border-border/60 bg-muted/40 px-3 py-2">
+                  <AtSign size={13} strokeWidth={2} className="text-primary shrink-0" />
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Mention a team member
+                  </span>
+                </div>
+                <div className="max-h-60 overflow-y-auto py-1">
+                  {suggestions.map((member, idx) => (
                     <button
-                      key={emoji}
+                      key={member._id ?? member.name}
                       type="button"
-                      onClick={() => {
-                        onChange(value + emoji);
-                        inputRef.current?.focus();
+                      onMouseDown={(e) => {
+                        // Use mousedown (not click) to prevent blur-first losing mention state
+                        e.preventDefault();
+                        selectMention(member);
                       }}
-                      className="rounded p-1 text-2xl transition-transform hover:scale-125"
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${
+                        idx === activeSuggestion
+                          ? "bg-primary/10 text-primary"
+                          : "hover:bg-muted/70 text-foreground"
+                      }`}
                     >
-                      {emoji}
+                      {/* Avatar initials circle */}
+                      <div
+                        className={`grid size-8 shrink-0 place-items-center rounded-full text-xs font-bold ${
+                          idx === activeSuggestion
+                            ? "bg-primary/20 text-primary"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {(member.initials || member.name.slice(0, 2)).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold leading-tight">
+                          {member.name}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground capitalize leading-tight">
+                          {member.role === "admin" ? "Admin" : "Member"}
+                          {member.online && (
+                            <span className="ml-1.5 inline-flex items-center gap-1">
+                              <span className="size-1.5 rounded-full bg-emerald-500 inline-block" />
+                              Online
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      {idx === activeSuggestion && (
+                        <span className="shrink-0 text-[10px] font-medium text-primary/70 bg-primary/10 rounded px-1.5 py-0.5">
+                          ↵
+                        </span>
+                      )}
                     </button>
                   ))}
                 </div>
-              </PopoverContent>
-            </Popover>
+                <div className="border-t border-border/50 bg-muted/20 px-3 py-1.5">
+                  <p className="text-[10px] text-muted-foreground">
+                    ↑↓ navigate · ↵ select · Esc dismiss
+                  </p>
+                </div>
+              </div>
+            )}
 
-            <input
-              ref={inputRef}
-              aria-label="Message"
-              placeholder="Write a message or mention @colleague…"
-              value={value}
-              onChange={(e) => {
-                onChange(e.target.value);
-                onTyping();
-              }}
-              className="min-w-0 flex-1 rounded-full border border-border bg-muted/50 px-4 py-3 text-helper outline-none transition-shadow focus:ring-2 focus:ring-ring/40"
-            />
-
-            {value.trim() || attachment ? (
-              <button
-                type="submit"
-                aria-label="Send message"
-                disabled={isSending || isUploading}
-                className="gradient-primary grid size-11 shrink-0 place-items-center rounded-full text-primary-foreground shadow-soft transition-transform duration-200 hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0"
-              >
-                {isSending || isUploading ? (
-                  <Loader2 size={18} className="animate-spin" />
-                ) : (
-                  <Send size={18} strokeWidth={1.75} />
-                )}
-              </button>
-            ) : (
+            <form className="flex items-center gap-1.5" onSubmit={handleSubmit}>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-                    onClick={startRecording}
-                    aria-label="Record voice note"
-                    className="grid size-11 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground"
+                    disabled={isUploading}
+                    onClick={() => fileInputRef.current?.click()}
+                    aria-label="Attach file"
+                    className="grid size-11 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground disabled:opacity-50"
                   >
-                    <Mic size={19} strokeWidth={1.75} />
+                    <Paperclip size={19} strokeWidth={1.75} />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent>Record voice note</TooltipContent>
+                <TooltipContent>Attach file or document (up to 50MB)</TooltipContent>
               </Tooltip>
-            )}
-          </form>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={handleFileSelect}
+              />
+
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Emoji"
+                    className="grid size-11 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground"
+                  >
+                    <Smile size={19} strokeWidth={1.75} />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-64 p-2" sideOffset={8}>
+                  <div className="grid grid-cols-8 gap-1">
+                    {EMOJI_PICKER_EMOJIS.map((emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() => {
+                          onChange(value + emoji);
+                          inputRef.current?.focus();
+                        }}
+                        className="rounded p-1 text-2xl transition-transform hover:scale-125"
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              <input
+                ref={inputRef}
+                aria-label="Message"
+                placeholder="Write a message or type @ to mention someone…"
+                value={value}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                className="min-w-0 flex-1 rounded-full border border-border bg-muted/50 px-4 py-3 text-helper outline-none transition-shadow focus:ring-2 focus:ring-ring/40"
+              />
+
+              {value.trim() || attachment ? (
+                <button
+                  type="submit"
+                  aria-label="Send message"
+                  disabled={isSending || isUploading}
+                  className="gradient-primary grid size-11 shrink-0 place-items-center rounded-full text-primary-foreground shadow-soft transition-transform duration-200 hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0"
+                >
+                  {isSending || isUploading ? (
+                    <Loader2 size={18} className="animate-spin" />
+                  ) : (
+                    <Send size={18} strokeWidth={1.75} />
+                  )}
+                </button>
+              ) : (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={startRecording}
+                      aria-label="Record voice note"
+                      className="grid size-11 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground"
+                    >
+                      <Mic size={19} strokeWidth={1.75} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>Record voice note</TooltipContent>
+                </Tooltip>
+              )}
+            </form>
+          </div>
         )}
       </div>
     </TooltipProvider>
