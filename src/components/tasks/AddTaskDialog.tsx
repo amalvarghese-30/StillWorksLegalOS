@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { Plus, Trash2, CheckSquare, PhoneCall, Loader2, ListChecks, UserRound, BadgeCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,6 +69,8 @@ const EMPTY_FORM: FormState = {
 interface AddTaskDialogProps {
   open: boolean;
   onClose: () => void;
+  initialCaseId?: string;
+  initialClientId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -80,13 +82,25 @@ function nextId() {
   return `cl_${++checklistCounter}_${Date.now()}`;
 }
 
-export function AddTaskDialog({ open, onClose }: AddTaskDialogProps) {
+export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }: AddTaskDialogProps) {
   const { user } = useAuth();
   const { data: options } = useTaskOptions();
   const { data: casesData } = useCases({ limit: "100" });
   const { data: clientsData } = useClients({ limit: "100" });
 
-  const [form, setForm] = useState<FormState>({ ...EMPTY_FORM, assignedTo: user?._id ?? "" });
+  const [form, setForm] = useState<FormState>({
+    ...EMPTY_FORM,
+    assignedTo: user?._id ?? "",
+    caseId: initialCaseId ?? "",
+    clientId: initialClientId ?? "",
+  });
+
+  useEffect(() => {
+    if (open) {
+      if (initialCaseId) setForm((prev) => ({ ...prev, caseId: initialCaseId }));
+      if (initialClientId) setForm((prev) => ({ ...prev, clientId: initialClientId }));
+    }
+  }, [open, initialCaseId, initialClientId]);
   const [checklist, setChecklist] = useState<ChecklistLine[]>([]);
   const [addCallReminder, setAddCallReminder] = useState(false);
   const [agentSelect, setAgentSelect] = useState("");
@@ -142,7 +156,12 @@ export function AddTaskDialog({ open, onClose }: AddTaskDialogProps) {
   };
 
   const reset = () => {
-    setForm({ ...EMPTY_FORM, assignedTo: user?._id ?? "" });
+    setForm({
+      ...EMPTY_FORM,
+      assignedTo: user?._id ?? "",
+      caseId: initialCaseId ?? "",
+      clientId: initialClientId ?? "",
+    });
     setChecklist([]);
     setAddCallReminder(false);
     setAgentSelect("");

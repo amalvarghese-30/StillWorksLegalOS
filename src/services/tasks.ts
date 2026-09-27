@@ -50,9 +50,9 @@ export interface TaskRecord {
   status: "pending" | "in_progress" | "pending_approval" | "completed" | "overdue";
   deadline: string | null;
   assignedTo?: { _id: string; name: string };
-  caseId?: string;
+  caseId?: string | { _id: string; title: string; number?: string } | null;
   caseName?: string;
-  clientId?: string;
+  clientId?: string | { _id: string; name: string; phone?: string } | null;
   clientName?: string;
   checklist: ChecklistItem[];
   callReminder?: CallReminder;
@@ -78,8 +78,8 @@ export interface CreateTaskPayload {
   status?: "pending" | "in_progress" | "pending_approval" | "completed" | "overdue";
   deadline?: string;
   assignedTo?: string;
-  caseId?: string;
-  clientId?: string;
+  caseId?: string | null;
+  clientId?: string | null;
   checklist?: { text: string; done: boolean }[];
   callReminder?: {
     clientName: string;

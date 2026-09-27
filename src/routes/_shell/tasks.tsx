@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
-import { Plus, PhoneCall, ListTodo, LayoutGrid, CalendarDays, CheckCircle2, Circle, Clock, Loader2, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { Plus, PhoneCall, ListTodo, LayoutGrid, CalendarDays, CheckCircle2, Circle, Clock, Loader2, ChevronLeft, ChevronRight, Search, Briefcase } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
 import { StatusPill, toneForStatus } from "@/components/common/StatusPill";
@@ -64,11 +64,21 @@ function formatDeadline(iso: string | null): string {
   return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 }
 
+function getTaskCaseDisplay(task: TaskRecord): string | null {
+  if (task.caseId && typeof task.caseId === "object") {
+    const c = task.caseId as { _id?: string; title?: string; number?: string };
+    const text = c.number ? `${c.number} — ${c.title}` : c.title;
+    return text || null;
+  }
+  return task.caseName ?? null;
+}
+
 function TaskCard({ task, onSelect }: { task: TaskRecord; onSelect?: (task: TaskRecord) => void }) {
   const toggleChecklist = useToggleChecklistItem();
   const total = task.checklist?.length ?? 0;
   const done = task.checklist?.filter((c) => c.done).length ?? 0;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  const caseTitle = getTaskCaseDisplay(task);
 
   return (
     <article
@@ -92,9 +102,16 @@ function TaskCard({ task, onSelect }: { task: TaskRecord; onSelect?: (task: Task
               </span>
             )}
           </div>
-          <p className="truncate text-caption text-muted-foreground">
-            {task.caseName || task.description || "No case linked"}
-          </p>
+          <div className="truncate text-caption text-muted-foreground flex items-center gap-1.5 mt-0.5">
+            {caseTitle ? (
+              <>
+                <Briefcase size={12} className="shrink-0 text-primary/80" />
+                <span className="truncate font-medium text-foreground/80">{caseTitle}</span>
+              </>
+            ) : (
+              <span className="truncate">{task.description || "No case linked"}</span>
+            )}
+          </div>
         </div>
         <StatusPill tone={toneForStatus(task.priority)}>{task.priority}</StatusPill>
       </div>

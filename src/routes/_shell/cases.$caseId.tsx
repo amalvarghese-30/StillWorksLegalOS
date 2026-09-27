@@ -27,10 +27,12 @@ import {
   useCase, useUpdateCase, useDeleteCase, useAddCaseNote, useAddCaseParty,
   type CaseRecord, type CaseParty,
 } from "@/services/cases";
-import { useTasks } from "@/services/tasks";
+import { useTasks, type TaskRecord } from "@/services/tasks";
 import { useDocuments } from "@/services/documents";
 import { useCalendarEvents } from "@/services/calendar";
 import { EditCaseDialog } from "@/components/cases/EditCaseDialog";
+import { AddTaskDialog } from "@/components/tasks/AddTaskDialog";
+import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 
 export const Route = createFileRoute("/_shell/cases/$caseId")({
   head: () => ({
@@ -248,6 +250,8 @@ function CaseWorkspace() {
   const deleteCase = useDeleteCase();
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showAddTaskDialog, setShowAddTaskDialog] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const handleDeleteCase = async () => {
@@ -478,24 +482,49 @@ function CaseWorkspace() {
 
           {/* ── Tasks ── */}
           {active === "tasks" && (
-            <SectionCard title="Tasks" description="Work assigned on this matter." icon={CheckSquare}>
+            <SectionCard
+              title="Tasks"
+              description="Work assigned on this matter."
+              icon={CheckSquare}
+              action={
+                <Button
+                  size="sm"
+                  onClick={() => setShowAddTaskDialog(true)}
+                  className="gap-1.5 rounded-md"
+                >
+                  <Plus size={14} /> Add Task
+                </Button>
+              }
+            >
               {tasks.length === 0 ? (
                 <div className="rounded-lg border border-dashed p-12 text-center">
                   <CheckSquare size={32} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
                   <p className="mt-4 font-medium">No tasks yet</p>
                   <p className="mt-1 text-helper text-muted-foreground">
-                    Create tasks and link them to this case from the Tasks module.
+                    Create a task directly for this case or link existing tasks from the Tasks module.
                   </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowAddTaskDialog(true)}
+                    className="mt-4 gap-1.5 rounded-md"
+                  >
+                    <Plus size={14} /> Create first task
+                  </Button>
                 </div>
               ) : (
                 <ul className="divide-y divide-border/60">
                   {tasks.map((t) => (
-                    <li key={t._id} className="flex items-center gap-3 py-3">
-                      <span className="grid size-9 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
+                    <li
+                      key={t._id}
+                      onClick={() => setSelectedTask(t)}
+                      className="flex items-center gap-3 py-3 px-2 rounded-md cursor-pointer hover:bg-muted/50 transition-colors group"
+                    >
+                      <span className="grid size-9 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary transition-colors">
                         <CheckSquare size={17} strokeWidth={1.75} />
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-helper font-medium">{t.title}</p>
+                        <p className="truncate text-helper font-medium text-foreground group-hover:text-primary transition-colors">{t.title}</p>
                         <p className="truncate text-caption text-muted-foreground">
                           {t.category?.replace(/_/g, " ")} · Due {formatDate(t.deadline)}
                         </p>
@@ -661,6 +690,18 @@ function CaseWorkspace() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AddTaskDialog
+        open={showAddTaskDialog}
+        onClose={() => setShowAddTaskDialog(false)}
+        initialCaseId={caseId}
+      />
+
+      <TaskDetailDialog
+        open={!!selectedTask}
+        onClose={() => setSelectedTask(null)}
+        task={selectedTask}
+      />
     </div>
   );
 }

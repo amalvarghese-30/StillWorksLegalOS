@@ -373,7 +373,10 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
     const task = await Task.findByIdAndUpdate(req.params["id"], updates, {
       new: true,
       runValidators: true,
-    });
+    })
+      .populate("assignedTo", "name email")
+      .populate("caseId", "title number")
+      .populate("clientId", "name");
 
     if (!task) {
       res.status(404).json({ message: "Task not found" });
@@ -444,8 +447,11 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       const isApproval = originalTask.status === "pending_approval";
       // Notify the assignee (if any) and the creator
       const notifyUserIds = new Set<string>();
-      if (task.assignedTo) notifyUserIds.add(task.assignedTo.toString());
-      if (task.createdBy) notifyUserIds.add(task.createdBy.toString());
+      const assignedId = (task.assignedTo as any)?._id?.toString?.() ?? task.assignedTo?.toString();
+      if (assignedId && assignedId !== "[object Object]") notifyUserIds.add(assignedId);
+
+      const createdId = (task.createdBy as any)?._id?.toString?.() ?? task.createdBy?.toString();
+      if (createdId && createdId !== "[object Object]") notifyUserIds.add(createdId);
 
       for (const userId of notifyUserIds) {
         if (userId && userId !== req.userId) { // Don't notify the user who made the change
@@ -477,9 +483,10 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       updates["status"] !== "completed" &&
       updates["status"] !== "pending_approval"
     ) {
-      if (task.assignedTo && task.assignedTo.toString() !== req.userId) {
+      const assigneeTargetId = (task.assignedTo as any)?._id?.toString?.() ?? task.assignedTo?.toString();
+      if (assigneeTargetId && assigneeTargetId !== req.userId && assigneeTargetId !== "[object Object]") {
         await NotificationService.createNotification({
-          userId: task.assignedTo as Types.ObjectId,
+          userId: new Types.ObjectId(assigneeTargetId),
           type: "TASK_ASSIGNED",
           title: "Task Changes Requested",
           message: `${req.user?.name ?? "Admin"} reviewed task "${task.title}" and requested changes.`,
@@ -510,8 +517,8 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
     if (io) {
       io.emit("task:updated", {
         task,
-        assignedTo: task.assignedTo ? task.assignedTo.toString() : null,
-        createdBy: task.createdBy ? task.createdBy.toString() : null,
+        assignedTo: (task.assignedTo as any)?._id?.toString?.() ?? (task.assignedTo ? task.assignedTo.toString() : null),
+        createdBy: (task.createdBy as any)?._id?.toString?.() ?? (task.createdBy ? task.createdBy.toString() : null),
       });
     }
 

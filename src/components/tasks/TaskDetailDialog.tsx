@@ -44,6 +44,8 @@ import {
   type ChecklistItem,
   type CreateTaskPayload,
 } from "@/services/tasks";
+import { useCases } from "@/services/cases";
+import { useClients } from "@/services/clients";
 import { useEmployees } from "@/services/admin";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
@@ -66,6 +68,10 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
     task.deadline ? new Date(task.deadline).toISOString().slice(0, 16) : ""
   );
   const [assignedTo, setAssignedTo] = useState(task.assignedTo?._id || "");
+  const [caseId, setCaseId] = useState("");
+  const [clientId, setClientId] = useState("");
+  const [manualCase, setManualCase] = useState(false);
+  const [manualClient, setManualClient] = useState(false);
   const [newChecklistText, setNewChecklistText] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
@@ -73,6 +79,10 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
   const isAdmin = user?.role === "admin";
   const { data: empData } = useEmployees(undefined, { enabled: isAdmin });
   const employees = empData?.employees ?? [];
+  const { data: casesData } = useCases({ limit: "100" });
+  const { data: clientsData } = useClients({ limit: "100" });
+  const cases = casesData?.cases ?? [];
+  const clients = clientsData?.clients ?? [];
 
   const updateTask = useUpdateTask();
   const deleteTask = useDeleteTask();
@@ -86,10 +96,35 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
       setPriority(task.priority || "Medium");
       setDeadline(task.deadline ? new Date(task.deadline).toISOString().slice(0, 16) : "");
       setAssignedTo(task.assignedTo?._id || "");
+
+      const initialCaseId =
+        task.caseId && typeof task.caseId === "object"
+          ? (task.caseId as any)._id
+          : task.caseId || "";
+      setCaseId(initialCaseId || "");
+
+      const initialClientId =
+        task.clientId && typeof task.clientId === "object"
+          ? (task.clientId as any)._id
+          : task.clientId || "";
+      setClientId(initialClientId || "");
+
+      setManualCase(false);
+      setManualClient(false);
       setIsEditing(false);
       setNewChecklistText("");
     }
   }, [task]);
+
+  const caseDisplay =
+    task.caseId && typeof task.caseId === "object"
+      ? (task.caseId.number ? `${task.caseId.number} — ${task.caseId.title}` : task.caseId.title)
+      : task.caseName || null;
+
+  const clientDisplay =
+    task.clientId && typeof task.clientId === "object"
+      ? task.clientId.name
+      : task.clientName || null;
 
   const checklist: ChecklistItem[] = task.checklist ?? [];
   const total = checklist.length;
@@ -151,6 +186,8 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
         description: description.trim(),
         category: category.trim(),
         priority,
+        caseId: caseId.trim() ? caseId.trim() : null,
+        clientId: clientId.trim() ? clientId.trim() : null,
       };
       if (deadline) payload.deadline = new Date(deadline).toISOString();
       if (assignedTo) payload.assignedTo = assignedTo;
@@ -238,10 +275,10 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
                 <DialogTitle className="text-title font-semibold text-foreground pt-1">
                   {task.title}
                 </DialogTitle>
-                {task.caseName && (
+                {caseDisplay && (
                   <DialogDescription className="text-helper text-muted-foreground flex items-center gap-1.5">
                     <Briefcase size={13} />
-                    {task.caseName}
+                    {caseDisplay}
                   </DialogDescription>
                 )}
               </div>
@@ -431,6 +468,103 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
                 </div>
               </div>
 
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="task-edit-case" className="text-helper font-medium">Linked Case</Label>
+                    <button
+                      type="button"
+                      onClick={() => setManualCase((prev) => !prev)}
+                      className="text-xs text-primary hover:underline font-normal"
+                    >
+                      {manualCase ? "Select from list" : "Enter manually"}
+                    </button>
+                  </div>
+                  {manualCase ? (
+                    <Input
+                      id="task-edit-case"
+                      value={caseId}
+                      onChange={(e) => setCaseId(e.target.value)}
+                      placeholder="Case number or ID (e.g. SW-2026-0001)"
+                      className="h-10 rounded-md"
+                    />
+                  ) : (
+                    <select
+                      id="task-edit-case"
+                      value={caseId || ""}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === "__manual__") {
+                          setManualCase(true);
+                        } else {
+                          setCaseId(val);
+                          if (val && !clientId) {
+                            const matchedCase = cases.find((c) => c._id === val);
+                            const primaryParty = matchedCase?.parties?.find((p) => p.clientId);
+                            if (primaryParty?.clientId) {
+                              setClientId(primaryParty.clientId);
+                            }
+                          }
+                        }
+                      }}
+                      className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    >
+                      <option value="">None (No case linked)</option>
+                      {cases.map((c) => (
+                        <option key={c._id} value={c._id}>
+                          {c.number ? `${c.number} — ` : ""}{c.title}
+                        </option>
+                      ))}
+                      <option value="__manual__">+ Enter Case Number / ID manually...</option>
+                    </select>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="task-edit-client" className="text-helper font-medium">Linked Client</Label>
+                    <button
+                      type="button"
+                      onClick={() => setManualClient((prev) => !prev)}
+                      className="text-xs text-primary hover:underline font-normal"
+                    >
+                      {manualClient ? "Select from list" : "Enter manually"}
+                    </button>
+                  </div>
+                  {manualClient ? (
+                    <Input
+                      id="task-edit-client"
+                      value={clientId}
+                      onChange={(e) => setClientId(e.target.value)}
+                      placeholder="Client name or ID"
+                      className="h-10 rounded-md"
+                    />
+                  ) : (
+                    <select
+                      id="task-edit-client"
+                      value={clientId || ""}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === "__manual__") {
+                          setManualClient(true);
+                        } else {
+                          setClientId(val);
+                        }
+                      }}
+                      className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    >
+                      <option value="">None (No client linked)</option>
+                      {clients.map((cl) => (
+                        <option key={cl._id} value={cl._id}>
+                          {cl.name} {cl.phone ? `(${cl.phone})` : ""}
+                        </option>
+                      ))}
+                      <option value="__manual__">+ Enter Client manually...</option>
+                    </select>
+                  )}
+                </div>
+              </div>
+
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="outline" size="sm" onClick={() => setIsEditing(false)} className="rounded-md">
                   Cancel
@@ -477,6 +611,24 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
                     </strong>
                   </span>
                 </div>
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Briefcase size={15} />
+                  <span>
+                    Linked Case:{" "}
+                    <strong className="text-foreground">
+                      {caseDisplay || "None (General Task)"}
+                    </strong>
+                  </span>
+                </div>
+                {clientDisplay && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <User size={15} />
+                    <span>
+                      Linked Client:{" "}
+                      <strong className="text-foreground">{clientDisplay}</strong>
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           )}
