@@ -129,8 +129,8 @@ export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
           <button
             type="button"
             aria-label="Sign out"
-            onClick={() => {
-              signOut();
+            onClick={async () => {
+              await signOut();
               navigate({ to: "/login", replace: true });
             }}
             className="grid size-9 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground"

@@ -181,17 +181,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       },
       signOut: async () => {
+        // 1. Clear local session immediately so React components unmount & stop querying
+        setUser(null);
+        window.localStorage.removeItem(STORAGE_KEY);
+        await clearTokens();
+
+        // 2. Cancel all pending in-flight queries and clear cache
+        queryClient.cancelQueries();
+        queryClient.clear();
+
+        // 3. Notify the server to revoke the session in DB & clear the refresh cookie
         try {
           await apiFetch("/auth/logout", { method: "POST" });
         } catch {
-          /* Ignore — clear state regardless */
+          /* Ignore — local session is already cleared */
         }
-        await clearTokens();
-        setUser(null);
-        window.localStorage.removeItem(STORAGE_KEY);
-        // Clear all cached server data so the next login can't see another
-        // user's chats/cases/documents (prevents cross-account leakage + 403s).
-        queryClient.clear();
       },
     }),
     [user, ready, queryClient],

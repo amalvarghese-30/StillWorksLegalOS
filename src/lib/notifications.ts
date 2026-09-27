@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSocketEvent } from "@/lib/socket";
 import { apiFetch } from "@/services/api";
+import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import {
   playNotificationSound,
@@ -29,6 +30,7 @@ export interface Notification {
  * Provides notifications, unread count, sound controls, and socket-driven live alerts.
  */
 export function useNotifications() {
+  const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [soundEnabled, setSoundEnabledState] = useState(() => isNotificationSoundEnabled());
@@ -44,6 +46,11 @@ export function useNotifications() {
 
   // Fetch notifications on mount and whenever we want to refetch
   const fetchNotifications = useCallback(async () => {
+    if (!user) {
+      setNotifications([]);
+      setUnreadCount(0);
+      return;
+    }
     try {
       const data = await apiFetch<{ notifications: Notification[]; total?: number; unreadCount?: number }>(
         "/notifications"
@@ -60,7 +67,7 @@ export function useNotifications() {
     } catch (err) {
       console.error("[useNotifications] Failed to fetch notifications:", err);
     }
-  }, []);
+  }, [user]);
 
   // Listen for new notifications via socket
   useSocketEvent("notification:new", (notification: any) => {
@@ -161,10 +168,15 @@ export function useNotifications() {
     [notifications]
   );
 
-  // Initial fetch
+  // Initial fetch when user is authenticated
   useEffect(() => {
-    fetchNotifications();
-  }, [fetchNotifications]);
+    if (user) {
+      fetchNotifications();
+    } else {
+      setNotifications([]);
+      setUnreadCount(0);
+    }
+  }, [user, fetchNotifications]);
 
   return {
     notifications,

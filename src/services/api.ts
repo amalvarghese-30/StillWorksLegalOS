@@ -114,6 +114,15 @@ let refreshPromise: Promise<string | null> | null = null;
 // ---------------------------------------------------------------------------
 
 export async function refreshAccessToken(): Promise<string | null> {
+  // If in web browser and no session hint exists, don't attempt network refresh
+  if (
+    !isElectron() &&
+    typeof window !== "undefined" &&
+    !window.localStorage.getItem("stillworks_session")
+  ) {
+    return null;
+  }
+
   // Prevent multiple simultaneous refresh attempts
   if (isRefreshing && refreshPromise) {
     return refreshPromise;
@@ -216,8 +225,8 @@ export async function apiFetch<T = unknown>(
 
   const res = await fetch(`${API_BASE}${path}`, init);
 
-  // If 401 Unauthorized, try to refresh token once
-  if (res.status === 401 && retryCount === 0) {
+  // If 401 Unauthorized on a protected resource, try to refresh token once
+  if (res.status === 401 && retryCount === 0 && !path.startsWith("/auth/")) {
     const newToken = await refreshAccessToken();
     if (newToken) {
       // Retry with new token
