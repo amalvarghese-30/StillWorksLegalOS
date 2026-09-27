@@ -10,9 +10,7 @@
     "seed": "tsx src/seed.ts",
     "setup:production": "tsx src/scripts/production-setup.ts",
     "start": "node dist/index.js",
-    "test": "vitest run --config vitest.config.ts",
-    "test:watch": "vitest --config vitest.config.ts",
-    "test:coverage": "vitest run --config vitest.config.ts --coverage",
+    "test": "tsx src/tests/run-tests.ts",
     "inject:env": "node -e \"const fs=require('fs'); const env=fs.readFileSync('.env.production','utf8'); const out=env.replace('REPLACE_MONGODB_URI',process.env.MONGODB_URI||'').replace('REPLACE_JWT_SECRET',process.env.JWT_SECRET||'')+'\\nPORT=3001\\nNODE_ENV=production'; fs.writeFileSync('.env.production',out); console.log('Injected env vars into .env.production');\""
   },
   "dependencies": {
@@ -39,14 +37,14 @@
     "@types/jsonwebtoken": "^9.0.7",
     "@types/morgan": "^1.9.9",
     "@types/node": "^22.16.5",
-    "@types/supertest": "^6.0.2",
-    "@vitest/coverage-v8": "^2.1.8",
+    "@types/supertest": "^7.2.1",
+    "@vitest/coverage-v8": "^5.0.2",
     "esbuild": "^0.28.2",
-    "mongodb-memory-server": "^10.1.2",
+    "mongodb-memory-server": "^11.3.0",
     "pkg": "^5.8.1",
-    "supertest": "^7.0.0",
+    "supertest": "^7.3.0",
     "tsx": "^4.19.2",
     "typescript": "^5.8.3",
-    "vitest": "^2.1.8"
+    "vitest": "^5.0.2"
   }
 }
