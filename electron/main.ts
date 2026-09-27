@@ -115,7 +115,7 @@ function createWindow(): BrowserWindow {
     height: 900,
     minWidth: 960,
     minHeight: 640,
-    title: "StillWorks LegalOS",
+    title: "S & S Legal-Tech LLP",
     icon: path.join(__dirname, "..", "public", "icon.png"),
     webPreferences: {
       // Preload script (CommonJS for Electron compatibility)
