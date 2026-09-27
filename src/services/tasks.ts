@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
+import { reportKeys } from "./reports";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -126,6 +127,8 @@ export function useCreateTask() {
     mutationFn: (payload) => api.post("/tasks", payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: taskKeys.all });
+      qc.invalidateQueries({ queryKey: reportKeys.all });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
     },
   });
 }
@@ -137,6 +140,8 @@ export function useUpdateTask() {
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: taskKeys.detail(vars.id) });
       qc.invalidateQueries({ queryKey: taskKeys.all });
+      qc.invalidateQueries({ queryKey: reportKeys.all });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
     },
   });
 }
@@ -147,6 +152,8 @@ export function useDeleteTask() {
     mutationFn: (id) => api.delete(`/tasks/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: taskKeys.all });
+      qc.invalidateQueries({ queryKey: reportKeys.all });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
     },
   });
 }
@@ -159,6 +166,7 @@ export function useToggleChecklistItem() {
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
       qc.invalidateQueries({ queryKey: taskKeys.all });
+      qc.invalidateQueries({ queryKey: reportKeys.all });
     },
   });
 }

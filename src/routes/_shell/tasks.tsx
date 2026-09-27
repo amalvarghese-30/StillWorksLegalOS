@@ -6,7 +6,9 @@ import { SectionCard } from "@/components/common/Surface";
 import { StatusPill, toneForStatus } from "@/components/common/StatusPill";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { useTasks, useToggleChecklistItem, type TaskRecord } from "@/services/tasks";
+import { useQueryClient } from "@tanstack/react-query";
+import { useSocketEvent } from "@/lib/socket";
+import { useTasks, useToggleChecklistItem, taskKeys, type TaskRecord } from "@/services/tasks";
 import { AddTaskDialog } from "@/components/tasks/AddTaskDialog";
 import { QuickCallDialog } from "@/components/tasks/QuickCallDialog";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
@@ -159,7 +161,21 @@ function TasksPage() {
   const [showQuickCall, setShowQuickCall] = useState(false);
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
   const [calendarMonth, setCalendarMonth] = useState(new Date());
+  const queryClient = useQueryClient();
   const { data, isLoading, isError, error } = useTasks();
+
+  useSocketEvent("task:created", () => {
+    queryClient.invalidateQueries({ queryKey: taskKeys.all });
+  });
+  useSocketEvent("task:updated", () => {
+    queryClient.invalidateQueries({ queryKey: taskKeys.all });
+  });
+  useSocketEvent<{ taskId: string }>("task:deleted", (payload) => {
+    queryClient.invalidateQueries({ queryKey: taskKeys.all });
+    if (payload?.taskId && selectedTask?._id === payload.taskId) {
+      setSelectedTask(null);
+    }
+  });
 
   const allTasks = data?.tasks ?? [];
   const query = search.trim().toLowerCase();

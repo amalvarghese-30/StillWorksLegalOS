@@ -11,15 +11,16 @@ import { StatusPill, toneForStatus } from "@/components/common/StatusPill";
 import { ErrorState } from "@/components/common/ErrorState";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
-import { useReportsSummary } from "@/services/reports";
+import { useSocketEvent } from "@/lib/socket";
+import { useReportsSummary, useEmployeeWorkload, reportKeys } from "@/services/reports";
 import { useCalendarEvents, type CalendarEvent } from "@/services/calendar";
 import { useCases } from "@/services/cases";
 import { useDocuments, useUpdateDocument, useReviewAccessRequest } from "@/services/documents";
-import { useEmployeeWorkload } from "@/services/reports";
 import { useApprovals } from "@/services/admin";
 import { useAuditLogs } from "@/services/admin";
-import { useTasks, type TaskRecord } from "@/services/tasks";
+import { useTasks, taskKeys, type TaskRecord } from "@/services/tasks";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import { QuickActionsMenu } from "@/components/layout/QuickActionsMenu";
 
@@ -55,6 +56,24 @@ function Dashboard() {
   const reviewAccessRequest = useReviewAccessRequest();
   const [actingOn, setActingOn] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
+  const queryClient = useQueryClient();
+
+  // Listen for real-time task mutations across all connected clients
+  useSocketEvent("task:created", () => {
+    queryClient.invalidateQueries({ queryKey: taskKeys.all });
+    queryClient.invalidateQueries({ queryKey: reportKeys.all });
+  });
+  useSocketEvent("task:updated", () => {
+    queryClient.invalidateQueries({ queryKey: taskKeys.all });
+    queryClient.invalidateQueries({ queryKey: reportKeys.all });
+  });
+  useSocketEvent<{ taskId: string }>("task:deleted", (payload) => {
+    queryClient.invalidateQueries({ queryKey: taskKeys.all });
+    queryClient.invalidateQueries({ queryKey: reportKeys.all });
+    if (payload?.taskId && selectedTask?._id === payload.taskId) {
+      setSelectedTask(null);
+    }
+  });
 
   const today = new Date();
   const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0).toISOString();

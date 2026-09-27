@@ -45,6 +45,8 @@ import {
   type CreateTaskPayload,
 } from "@/services/tasks";
 import { useEmployees } from "@/services/admin";
+import { useAuth } from "@/lib/auth";
+import { toast } from "sonner";
 
 interface TaskDetailDialogProps {
   open: boolean;
@@ -67,7 +69,9 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
   const [newChecklistText, setNewChecklistText] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const { data: empData } = useEmployees();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const { data: empData } = useEmployees(undefined, { enabled: isAdmin });
   const employees = empData?.employees ?? [];
 
   const updateTask = useUpdateTask();
@@ -155,19 +159,24 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
         id: task._id,
         data: payload,
       });
+      toast.success("Task details saved");
       setIsEditing(false);
     } catch (err) {
       console.error("Failed to update task details:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to update task");
     }
   };
 
-  const handleDeleteTask = async () => {
+  const handleDeleteTask = async (e?: React.MouseEvent) => {
+    e?.preventDefault();
     try {
       await deleteTask.mutateAsync(task._id);
+      toast.success(`Task "${task.title}" deleted`);
       setShowDeleteConfirm(false);
       onClose();
     } catch (err) {
       console.error("Failed to delete task:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to delete task");
     }
   };
 
@@ -422,16 +431,20 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
           </div>
 
           <DialogFooter className="mt-6 flex items-center justify-between border-t border-border/60 pt-4">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowDeleteConfirm(true)}
-              className="text-destructive hover:bg-destructive/10 hover:text-destructive rounded-md"
-            >
-              <Trash2 size={15} className="mr-1.5" />
-              Delete Task
-            </Button>
+            {isAdmin || (task.createdBy && (typeof task.createdBy === "object" ? (task.createdBy as any)._id : task.createdBy)?.toString() === user?._id?.toString()) ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowDeleteConfirm(true)}
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive rounded-md"
+              >
+                <Trash2 size={15} className="mr-1.5" />
+                Delete Task
+              </Button>
+            ) : (
+              <div />
+            )}
             <Button type="button" variant="outline" size="sm" onClick={onClose} className="rounded-md">
               Done
             </Button>

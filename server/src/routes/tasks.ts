@@ -243,6 +243,15 @@ router.post("/", async (req: Request, res: Response) => {
       userAgent: req.headers["user-agent"],
     });
 
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("task:created", {
+        task,
+        assignedTo: task.assignedTo ? task.assignedTo.toString() : null,
+        createdBy: task.createdBy ? task.createdBy.toString() : null,
+      });
+    }
+
     res.status(201).json({ task });
   } catch (err: any) {
     console.error("[tasks] Create error:", err);
@@ -380,6 +389,15 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       userAgent: req.headers["user-agent"],
     });
 
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("task:updated", {
+        task,
+        assignedTo: task.assignedTo ? task.assignedTo.toString() : null,
+        createdBy: task.createdBy ? task.createdBy.toString() : null,
+      });
+    }
+
     res.json({ task });
   } catch (err) {
     console.error("[tasks] Update error:", err);
@@ -425,6 +443,15 @@ router.patch("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskId
       userAgent: req.headers["user-agent"],
     });
 
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("task:updated", {
+        task,
+        assignedTo: task.assignedTo ? task.assignedTo.toString() : null,
+        createdBy: task.createdBy ? task.createdBy.toString() : null,
+      });
+    }
+
     res.json({ task });
   } catch (err) {
     console.error("[tasks] Checklist toggle error:", err);
@@ -438,10 +465,25 @@ router.patch("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskId
 
 router.delete("/:id", requireResourceAccess("task"), async (req: Request, res: Response) => {
   try {
-    const task = await Task.findByIdAndDelete(req.params["id"]);
+    const task = await Task.findById(req.params["id"]);
     if (!task) {
       res.status(404).json({ message: "Task not found" });
       return;
+    }
+
+    await Task.findByIdAndDelete(task._id);
+
+    // Clean up any associated notifications and emit realtime notification:deleted
+    const io = req.app.get("io");
+    await NotificationService.deleteByRelatedId(task._id, io);
+
+    // Emit real-time task:deleted event to all connected users
+    if (io) {
+      io.emit("task:deleted", {
+        taskId: task._id.toString(),
+        assignedTo: task.assignedTo ? task.assignedTo.toString() : null,
+        createdBy: task.createdBy ? task.createdBy.toString() : null,
+      });
     }
 
     await AuditLog.create({
@@ -455,7 +497,7 @@ router.delete("/:id", requireResourceAccess("task"), async (req: Request, res: R
       userAgent: req.headers["user-agent"],
     });
 
-    res.json({ message: "Task deleted" });
+    res.json({ message: "Task deleted", taskId: task._id });
   } catch (err) {
     console.error("[tasks] Delete error:", err);
     res.status(500).json({ message: "Internal server error" });

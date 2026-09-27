@@ -200,6 +200,42 @@ export class NotificationService {
   }
 
   /**
+   * Delete all notifications linked to a specific entity (e.g. deleted task or document).
+   * Emits notification:deleted via Socket.IO to all affected users.
+   */
+  static async deleteByRelatedId(
+    relatedId: Types.ObjectId | string,
+    io?: any
+  ): Promise<number> {
+    try {
+      const id = typeof relatedId === "string" ? new Types.ObjectId(relatedId) : relatedId;
+      const notifs = await Notification.find({
+        $or: [
+          { relatedId: id },
+          { "metadata.taskId": id.toString() },
+        ],
+      }).select("_id userId");
+
+      if (notifs.length === 0) return 0;
+
+      await Notification.deleteMany({
+        _id: { $in: notifs.map((n) => n._id) },
+      });
+
+      if (io) {
+        for (const n of notifs) {
+          io.to(`user:${n.userId}`).emit("notification:deleted", n._id.toString());
+        }
+      }
+
+      return notifs.length;
+    } catch (err) {
+      console.error("[NotificationService] Failed to delete notifications by relatedId:", err);
+      return 0;
+    }
+  }
+
+  /**
    * Get notifications for a user with pagination and filtering.
    * @param userId The ID of the user
    * @param options Filter and pagination options
