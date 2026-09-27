@@ -64,6 +64,14 @@ function ReportsPage() {
             ? "Firm-wide operational analytics — case mix, growth, workload and top clients."
             : "Your personal performance and work completed. No financial data."
         }
+        actions={
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-muted/50 px-3 py-1 text-caption font-medium">
+            <span
+              className={`size-2 rounded-full ${isAdmin ? "bg-primary" : "bg-emerald-500"}`}
+            />
+            <span>Scope: {isAdmin ? "Entire Firm" : "Personal (You)"}</span>
+          </span>
+        }
       />
 
       {/* ── Work Completed ── */}

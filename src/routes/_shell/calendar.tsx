@@ -151,7 +151,13 @@ function CalendarPage() {
         title={`${monthNames[currentMonth]} ${currentYear}`}
         subtitle={`${events.length} events · ${hearingCount} hearings this month`}
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-muted/50 px-3 py-1 text-caption font-medium">
+              <span
+                className={`size-2 rounded-full ${isAdmin ? "bg-primary" : "bg-emerald-500"}`}
+              />
+              <span>{isAdmin ? "Firm Calendar" : "My Calendar"}</span>
+            </span>
             {isAdmin && (
               <select
                 value={filterEmployee}

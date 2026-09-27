@@ -38,7 +38,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const visiblePrimary = primary.filter((item) => {
     if (user?.role === "admin") return true;
     if (!user?.permissions) return true;
-    return (user.permissions as any)[item.permission] !== false;
+    return user.permissions[item.permission] !== false;
   });
 
   const hasAnyAdminPerm =

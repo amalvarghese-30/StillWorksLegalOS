@@ -26,7 +26,7 @@ import { useAuth } from "@/lib/auth";
 // Types
 // ---------------------------------------------------------------------------
 
-export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
+export type ConnectionStatus = "disconnected" | "connecting" | "reconnecting" | "connected" | "error";
 
 interface SocketContextValue {
   socket: Socket | null;
@@ -127,21 +127,35 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     });
 
     newSocket.on("connect", () => {
-      console.log("[socket] connected:", newSocket.id, "user:", user._id);
       setStatus("connected");
     });
 
-    newSocket.on("disconnect", () => {
+    newSocket.on("disconnect", (_reason) => {
       setStatus("disconnected");
     });
 
-    newSocket.on("connect_error", (err) => {
-      console.warn("[socket] Connection error:", err.message);
+    newSocket.io.on("reconnect_attempt", () => {
+      setStatus("reconnecting");
+    });
+
+    newSocket.io.on("reconnect", () => {
+      setStatus("connected");
+    });
+
+    newSocket.io.on("reconnect_error", () => {
+      setStatus("reconnecting");
+    });
+
+    newSocket.io.on("reconnect_failed", () => {
       setStatus("error");
     });
 
-    newSocket.on("error", (err: { message?: string }) => {
-      console.warn("[socket] Server error:", err?.message ?? err);
+    newSocket.on("connect_error", (_err) => {
+      setStatus("error");
+    });
+
+    newSocket.on("error", (_err: { message?: string }) => {
+      // Internal socket error
     });
 
     // Publish new socket instance to context (triggers consumer re-renders)

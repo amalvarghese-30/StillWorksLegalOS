@@ -17,20 +17,19 @@ import { useAuth } from "@/lib/auth";
 import { useSearch } from "@/lib/search";
 import { useCreateDirectChat } from "@/services/chat";
 import { useNavigate } from "@tanstack/react-router";
+import { useTheme } from "@/lib/theme";
 
 export function AdminTopbar() {
-  const [dark, setDark] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const { user } = useAuth();
   const { searchResults, isLoading, isError } = useSearch(searchTerm, { limit: 8 });
   const createDirectChat = useCreateDirectChat();
   const navigate = useNavigate();
+  const { resolvedTheme, setTheme } = useTheme();
 
   const toggleTheme = () => {
-    const next = !dark;
-    setDark(next);
-    document.documentElement.classList.toggle("dark", next);
+    setTheme(resolvedTheme === "dark" ? "light" : "dark");
   };
 
   const handleUserClick = (userId: string) => {
@@ -224,7 +223,7 @@ export function AdminTopbar() {
           onClick={toggleTheme}
           aria-label="Toggle theme"
         >
-          {dark ? <Sun size={19} strokeWidth={1.75} /> : <Moon size={19} strokeWidth={1.75} />}
+          {resolvedTheme === "dark" ? <Sun size={19} strokeWidth={1.75} /> : <Moon size={19} strokeWidth={1.75} />}
         </Button>
         <span className="ml-1 hidden text-right sm:block">
           <span className="block truncate text-helper font-medium">{user?.name}</span>

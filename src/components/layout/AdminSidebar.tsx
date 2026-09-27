@@ -17,7 +17,17 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 
-const adminNav = [
+type PermissionKey = keyof NonNullable<import("@/lib/auth").UserPermissions>;
+
+interface NavItem {
+  to: string;
+  label: string;
+  icon: typeof Gauge;
+  exact?: boolean;
+  permission?: PermissionKey;
+}
+
+const adminNav: NavItem[] = [
   { to: "/admin", label: "Admin Dashboard", icon: Gauge, exact: true },
   { to: "/admin/employees", label: "Employees", icon: UserCog, permission: "employees" },
   { to: "/admin/approvals", label: "Approvals", icon: ShieldCheck, permission: "approvals" },
@@ -26,7 +36,7 @@ const adminNav = [
   { to: "/chat", label: "Chat", icon: MessageCircle, permission: "chat" },
 ];
 
-const firmNav = [
+const firmNav: NavItem[] = [
   { to: "/", label: "Dashboard", icon: Gauge, permission: "dashboard" },
   { to: "/cases", label: "Cases", icon: Briefcase, permission: "cases" },
   { to: "/clients", label: "Clients", icon: Users, permission: "clients" },
@@ -43,13 +53,13 @@ export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const visibleAdminNav = adminNav.filter((item) => {
     if (user?.role === "admin") return true;
     if (!item.permission) return true;
-    return (user?.permissions as any)?.[item.permission] !== false;
+    return user?.permissions?.[item.permission] !== false;
   });
 
   const visibleFirmNav = firmNav.filter((item) => {
     if (user?.role === "admin") return true;
     if (!item.permission) return true;
-    return (user?.permissions as any)?.[item.permission] !== false;
+    return user?.permissions?.[item.permission] !== false;
   });
 
   return (

@@ -229,12 +229,11 @@
     scroll-behavior: smooth;
   }
 
-  /* Better touch targets on mobile */
+  /* Better touch targets on mobile — scoped to primary interactive elements, not compact inline links */
   @media (pointer: coarse) {
-    button,
-    [role="button"],
-    a,
-    input,
+    button:not([data-compact]),
+    [role="button"]:not([data-compact]),
+    input:not([type="checkbox"]):not([type="radio"]),
     select,
     textarea {
       min-height: 44px;
@@ -569,3 +568,16 @@
   background-size: 28px 28px, 56px 56px;
   background-position: 0 0, 14px 14px;
 }
+
+/* ── Accessibility: Respect user preference for reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+

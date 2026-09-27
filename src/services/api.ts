@@ -196,6 +196,43 @@ export class ApiError extends Error {
     this.status = status;
     this.body = body;
   }
+
+  get isUnauthorized(): boolean {
+    return this.status === 401;
+  }
+
+  get isForbidden(): boolean {
+    return this.status === 403;
+  }
+
+  get isNotFound(): boolean {
+    return this.status === 404;
+  }
+
+  get isConflict(): boolean {
+    return this.status === 409;
+  }
+
+  get isRateLimited(): boolean {
+    return this.status === 429;
+  }
+
+  get isServerError(): boolean {
+    return this.status >= 500;
+  }
+
+  get userFriendlyMessage(): string {
+    if (this.isUnauthorized) return "Your session has expired. Please sign in again.";
+    if (this.isForbidden) return "You don't have permission to perform this action.";
+    if (this.isNotFound) return "The requested record was not found.";
+    if (this.isConflict) return "This record was updated by someone else. Please refresh.";
+    if (this.isRateLimited) return "Too many requests. Please wait a moment.";
+    if (this.isServerError) return "A server error occurred. Please try again shortly.";
+    if (this.body && typeof this.body === "object" && "message" in (this.body as Record<string, unknown>)) {
+      return String((this.body as Record<string, unknown>)["message"]);
+    }
+    return "An unexpected error occurred. Please try again.";
+  }
 }
 
 export async function apiFetch<T = unknown>(

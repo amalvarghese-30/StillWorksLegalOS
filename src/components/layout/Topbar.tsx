@@ -24,9 +24,9 @@ import { useAuth } from "@/lib/auth";
 import { useSearch } from "@/lib/search";
 import { useCreateDirectChat } from "@/services/chat";
 import { useNavigate } from "@tanstack/react-router";
+import { useTheme } from "@/lib/theme";
 
 export function Topbar() {
-  const [dark, setDark] = useState(false);
   const [showAddCase, setShowAddCase] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -34,11 +34,10 @@ export function Topbar() {
   const { searchResults, isLoading, isError } = useSearch(searchTerm, { limit: 8 });
   const createDirectChat = useCreateDirectChat();
   const navigate = useNavigate();
+  const { resolvedTheme, setTheme } = useTheme();
 
   const toggleTheme = () => {
-    const next = !dark;
-    setDark(next);
-    document.documentElement.classList.toggle("dark", next);
+    setTheme(resolvedTheme === "dark" ? "light" : "dark");
   };
 
   const handleUserClick = (userId: string) => {
@@ -79,10 +78,23 @@ export function Topbar() {
           type="search"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Search cases, clients, documents…"
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              setSearchTerm("");
+              (e.target as HTMLInputElement).blur();
+            }
+          }}
+          placeholder="Search cases, clients, documents… (Esc to close)"
           aria-label="Search"
           className="h-10 w-full rounded-md border border-border/70 bg-card/70 pr-3 pl-10 text-helper outline-none transition-colors focus:border-primary/50"
         />
+        {/* Backdrop for click outside dismiss */}
+        {searchTerm.trim() !== "" && (
+          <div
+            className="fixed inset-0 z-10"
+            onClick={() => setSearchTerm("")}
+          />
+        )}
         {/* Search Results Dropdown */}
         {!isLoading && !isError && searchTerm.trim() !== "" ? (
           <div className="absolute left-0 right-0 mt-2 w-full max-h-96 overflow-auto bg-card border border-border rounded-md shadow-lg z-20">
@@ -103,7 +115,10 @@ export function Topbar() {
                     variant="ghost"
                     size="sm"
                     className="w-full text-left px-3 py-2 border-b border-border/50 hover:bg-muted"
-                    onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: caseItem._id } })}
+                    onClick={() => {
+                      setSearchTerm("");
+                      navigate({ to: "/cases/$caseId", params: { caseId: caseItem._id } });
+                    }}
                   >
                     <div className="flex items-center gap-3">
                       <div className="shrink-0">
@@ -127,7 +142,10 @@ export function Topbar() {
                     variant="ghost"
                     size="sm"
                     className="w-full text-left px-3 py-2 border-b border-border/50 hover:bg-muted"
-                    onClick={() => navigate({ to: "/clients/$clientId", params: { clientId: clientItem._id } })}
+                    onClick={() => {
+                      setSearchTerm("");
+                      navigate({ to: "/clients/$clientId", params: { clientId: clientItem._id } });
+                    }}
                   >
                     <div className="flex items-center gap-3">
                       <div className="shrink-0">
@@ -151,7 +169,10 @@ export function Topbar() {
                     variant="ghost"
                     size="sm"
                     className="w-full text-left px-3 py-2 border-b border-border/50 hover:bg-muted"
-                    onClick={() => navigate({ to: "/documents" })}
+                    onClick={() => {
+                      setSearchTerm("");
+                      navigate({ to: "/documents" });
+                    }}
                   >
                     <div className="flex items-center gap-3">
                       <div className="shrink-0">
@@ -175,7 +196,10 @@ export function Topbar() {
                     variant="ghost"
                     size="sm"
                     className="w-full text-left px-3 py-2 border-b border-border/50 hover:bg-muted"
-                    onClick={() => navigate({ to: "/tasks" })}
+                    onClick={() => {
+                      setSearchTerm("");
+                      navigate({ to: "/tasks" });
+                    }}
                   >
                     <div className="flex items-center gap-3">
                       <div className="shrink-0">
@@ -241,7 +265,7 @@ export function Topbar() {
           onClick={toggleTheme}
           aria-label="Toggle theme"
         >
-          {dark ? <Sun size={19} strokeWidth={1.75} /> : <Moon size={19} strokeWidth={1.75} />}
+          {resolvedTheme === "dark" ? <Sun size={19} strokeWidth={1.75} /> : <Moon size={19} strokeWidth={1.75} />}
         </Button>
         {/* New Case Button */}
         <Button

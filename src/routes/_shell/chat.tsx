@@ -579,12 +579,30 @@ function ChatPage() {
               {connStatus === "connected" ? (
                 <Wifi size={14} strokeWidth={1.75} className="text-success" />
               ) : connStatus === "connecting" ? (
-                <Loader2 size={14} strokeWidth={1.75} className="animate-spin text-muted-foreground" />
+                <Loader2 size={14} strokeWidth={1.75} className="animate-spin text-primary" />
+              ) : connStatus === "reconnecting" ? (
+                <Loader2 size={14} strokeWidth={1.75} className="animate-spin text-amber-500" />
               ) : (
                 <WifiOff size={14} strokeWidth={1.75} className="text-muted-foreground" />
               )}
-              <span className={connStatus === "connected" ? "text-success" : "text-muted-foreground"}>
-                {connStatus === "connected" ? "Live" : connStatus === "connecting" ? "Connecting…" : "Offline"}
+              <span
+                className={
+                  connStatus === "connected"
+                    ? "text-success"
+                    : connStatus === "connecting"
+                    ? "text-primary"
+                    : connStatus === "reconnecting"
+                    ? "text-amber-500 font-medium"
+                    : "text-muted-foreground"
+                }
+              >
+                {connStatus === "connected"
+                  ? "Connected"
+                  : connStatus === "connecting"
+                  ? "Connecting…"
+                  : connStatus === "reconnecting"
+                  ? "Reconnecting…"
+                  : "Offline"}
               </span>
             </span>
             <div className="flex items-center gap-2 text-caption text-muted-foreground">
