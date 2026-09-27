@@ -141,19 +141,7 @@ export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
       </div>
 
       {/* StillWorks attribution */}
-      <div className="mt-3 flex items-center justify-center gap-2 rounded-md border border-border/40 bg-muted/30 px-3 py-1.5">
-        <img
-          src="/stillworks-logo-light.jpg"
-          alt="StillWorks"
-          className="h-5 w-auto object-contain dark:hidden"
-          style={{ mixBlendMode: "multiply", filter: "contrast(100)" }}
-        />
-        <img
-          src="/stillworks-logo-dark.jpg"
-          alt="StillWorks"
-          className="hidden h-5 w-auto object-contain dark:block"
-          style={{ mixBlendMode: "screen", filter: "contrast(100)" }}
-        />
+      <div className="mt-3 flex items-center justify-center rounded-md border border-border/40 bg-muted/30 px-3 py-1.5">
         <span className="text-[10px] font-medium tracking-wide text-muted-foreground">
           Powered by <span className="text-primary/70">stillworks.in</span>
         </span>
