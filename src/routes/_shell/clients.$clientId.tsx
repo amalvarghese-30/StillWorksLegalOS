@@ -30,9 +30,9 @@ import { EditClientDialog } from "@/components/clients/EditClientDialog";
 export const Route = createFileRoute("/_shell/clients/$clientId")({
   head: () => ({
     meta: [
-      { title: "Client profile · StillWorks LegalOS" },
+      { title: "Client profile · S & S Legal-Tech LLP" },
       { name: "description", content: "Client details, KYC, property, and sub-client records." },
-      { property: "og:title", content: "Client profile · StillWorks LegalOS" },
+      { property: "og:title", content: "Client profile · S & S Legal-Tech LLP" },
       { property: "og:description", content: "Client details, KYC, property, and sub-client records." },
     ],
   }),
@@ -177,7 +177,7 @@ function ClientProfile() {
     <div>
       <PageHeader
         breadcrumb={[
-          { label: "StillWorks", to: "/" },
+          { label: "S & S", to: "/" },
           { label: "Clients", to: "/clients" },
           { label: record.name },
         ]}

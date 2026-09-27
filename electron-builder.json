@@ -1,6 +1,6 @@
 {
   "appId": "legal.stillworks.os",
-  "productName": "StillWorks LegalOS",
+  "productName": "S & S Legal-Tech LLP",
   "directories": {
     "buildResources": "public",
     "output": "release"
@@ -15,7 +15,7 @@
   "win": {
     "target": "nsis",
     "icon": "build/icon.png",
-    "executableName": "StillWorks LegalOS"
+    "executableName": "S & S Legal-Tech LLP"
   },
   "nsis": {
     "oneClick": true,
@@ -23,6 +23,6 @@
     "allowToChangeInstallationDirectory": false,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "StillWorks LegalOS"
+    "shortcutName": "S & S Legal-Tech LLP"
   }
 }

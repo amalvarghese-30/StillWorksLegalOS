@@ -27,9 +27,9 @@ import { QuickActionsMenu } from "@/components/layout/QuickActionsMenu";
 export const Route = createFileRoute("/_shell/")({
   head: () => ({
     meta: [
-      { title: "Today · StillWorks LegalOS" },
+      { title: "Today · S & S Legal-Tech LLP" },
       { name: "description", content: "A calm daily command centre for your firm: hearings, approvals, tasks and live activity in one view." },
-      { property: "og:title", content: "Today · StillWorks LegalOS" },
+      { property: "og:title", content: "Today · S & S Legal-Tech LLP" },
       { property: "og:description", content: "Hearings, approvals, tasks and live activity in one calm view." },
     ],
   }),
@@ -153,7 +153,7 @@ function Dashboard() {
   return (
     <div className="space-y-6">
       <PageHeader
-        breadcrumb={[{ label: "StillWorks", to: "/" }, { label: "Dashboard" }]}
+        breadcrumb={[{ label: "S & S", to: "/" }, { label: "Dashboard" }]}
         title="What should I work on today?"
         subtitle={`${dateStr} · ${hearings.length} hearings, ${attentionTasks.length} urgent tasks, ${approvals.length} approvals waiting.`}
         actions={

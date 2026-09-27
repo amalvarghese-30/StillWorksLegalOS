@@ -14,12 +14,12 @@ import { EditEmployeeDialog } from "@/components/admin/EditEmployeeDialog";
 export const Route = createFileRoute("/_admin/admin/employees")({
   head: () => ({
     meta: [
-      { title: "Employees · StillWorks LegalOS" },
+      { title: "Employees · S & S Legal-Tech LLP" },
       {
         name: "description",
         content: "Team management for the firm — roles, workload, hearings and permissions.",
       },
-      { property: "og:title", content: "Employees · StillWorks LegalOS" },
+      { property: "og:title", content: "Employees · S & S Legal-Tech LLP" },
       { property: "og:description", content: "Roles, workload, hearings and permissions for your team." },
     ],
   }),
@@ -50,7 +50,7 @@ function EmployeesPage() {
   return (
     <div>
       <PageHeader
-        breadcrumb={[{ label: "StillWorks", to: "/" }, { label: "Employees" }]}
+        breadcrumb={[{ label: "S & S", to: "/" }, { label: "Employees" }]}
         title="Employees"
         subtitle={`${employees.length} people on the team.`}
         actions={

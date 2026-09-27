@@ -10,12 +10,12 @@ import { AddClientDialog } from "@/components/clients/AddClientDialog";
 export const Route = createFileRoute("/_shell/clients/")({
   head: () => ({
     meta: [
-      { title: "Clients · StillWorks LegalOS" },
+      { title: "Clients · S & S Legal-Tech LLP" },
       {
         name: "description",
         content: "Premium client profiles with KYC status, matters and relationships in one place.",
       },
-      { property: "og:title", content: "Clients · StillWorks LegalOS" },
+      { property: "og:title", content: "Clients · S & S Legal-Tech LLP" },
       {
         property: "og:description",
         content: "Client profiles with KYC status, matters and relationships.",
@@ -102,7 +102,7 @@ function ClientsPage() {
   return (
     <div>
       <PageHeader
-        breadcrumb={[{ label: "StillWorks", to: "/" }, { label: "Clients" }]}
+        breadcrumb={[{ label: "S & S", to: "/" }, { label: "Clients" }]}
         title="Clients"
         subtitle={`${data?.total ?? "—"} relationships — individuals, corporates and their sub-clients.`}
         actions={

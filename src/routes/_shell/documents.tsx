@@ -58,12 +58,12 @@ import { VersionHistoryDialog } from "@/components/documents/VersionHistoryDialo
 export const Route = createFileRoute("/_shell/documents")({
   head: () => ({
     meta: [
-      { title: "Documents · StillWorks LegalOS" },
+      { title: "Documents · S & S Legal-Tech LLP" },
       {
         name: "description",
         content: "A Finder-calm document library with previews, approvals and version history.",
       },
-      { property: "og:title", content: "Documents · StillWorks LegalOS" },
+      { property: "og:title", content: "Documents · S & S Legal-Tech LLP" },
       {
         property: "og:description",
         content: "Document library with previews, approvals and version history.",
@@ -313,7 +313,7 @@ function DocumentsPage() {
   return (
     <div>
       <PageHeader
-        breadcrumb={[{ label: "StillWorks", to: "/" }, { label: "Documents" }]}
+        breadcrumb={[{ label: "S & S", to: "/" }, { label: "Documents" }]}
         title="Documents"
         subtitle={`${data?.total ?? "—"} files — securely stored in LegalOS VPS storage.`}
         actions={

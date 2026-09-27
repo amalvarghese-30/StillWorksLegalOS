@@ -14,9 +14,9 @@ import { useUpdateProfile, useUpdateFirm, useUpdatePreferences } from "@/service
 export const Route = createFileRoute("/_shell/settings")({
   head: () => ({
     meta: [
-      { title: "Settings · StillWorks LegalOS" },
+      { title: "Settings · S & S Legal-Tech LLP" },
       { name: "description", content: "Manage your profile, firm details, notifications, security and storage preferences." },
-      { property: "og:title", content: "Settings · StillWorks LegalOS" },
+      { property: "og:title", content: "Settings · S & S Legal-Tech LLP" },
       { property: "og:description", content: "Profile, firm details, notifications, security and storage preferences." },
     ],
   }),
@@ -124,7 +124,7 @@ function SettingsPage() {
   return (
     <div>
       <PageHeader
-        breadcrumb={[{ label: "StillWorks", to: "/" }, { label: "Settings" }]}
+        breadcrumb={[{ label: "S & S", to: "/" }, { label: "Settings" }]}
         title="Settings"
         subtitle="Preferences for you and for the firm."
       />
@@ -190,7 +190,7 @@ function SettingsPage() {
               title={tabs.find((t) => t.id === tab)?.label ?? "Profile"}
               description={
                 tab === "appearance"
-                  ? "Choose how StillWorks looks on this device."
+                  ? "Choose how the app looks on this device."
                   : tab === "storage"
                     ? "Manage NAS storage and usage."
                     : "Keep these details current — they appear on filings and shared documents."

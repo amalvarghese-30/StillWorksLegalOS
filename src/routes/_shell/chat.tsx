@@ -59,9 +59,9 @@ import { GroupInfoSheet } from "@/components/chat/GroupInfoSheet";
 export const Route = createFileRoute("/_shell/chat")({
   head: () => ({
     meta: [
-      { title: "Chat · StillWorks LegalOS" },
+      { title: "Chat · S & S Legal-Tech LLP" },
       { name: "description", content: "Private, WhatsApp-style team messaging for the firm." },
-      { property: "og:title", content: "Chat · StillWorks LegalOS" },
+      { property: "og:title", content: "Chat · S & S Legal-Tech LLP" },
       { property: "og:description", content: "Private team messaging for the firm, without the noise." },
     ],
   }),
@@ -570,7 +570,7 @@ function ChatPage() {
     <div>
       <Toaster position="top-right" richColors />
       <PageHeader
-        breadcrumb={[{ label: "StillWorks", to: "/" }, { label: "Chat" }]}
+        breadcrumb={[{ label: "S & S", to: "/" }, { label: "Chat" }]}
         title="Chat"
         subtitle="Private, encrypted messaging for the firm."
         actions={
@@ -638,7 +638,7 @@ function ChatPage() {
                 <div className="size-20 rounded-full bg-primary/10 grid place-items-center mb-4 text-primary shadow-xs">
                   <MessageSquare size={38} strokeWidth={1.5} />
                 </div>
-                <h3 className="text-title font-semibold text-foreground">StillWorks Team Chat</h3>
+                <h3 className="text-title font-semibold text-foreground">Team Chat</h3>
                 <p className="mt-2 max-w-sm text-helper text-muted-foreground">
                   Select a conversation from the sidebar to start messaging. Private, end-to-end encrypted for the firm.
                 </p>

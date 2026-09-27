@@ -9,12 +9,12 @@ import { useAuditLogs, useVerifyAuditChain, useFileIntegrity, useVerifyAllFiles,
 export const Route = createFileRoute("/_admin/admin/audit-logs")({
   head: () => ({
     meta: [
-      { title: "Audit Logs · StillWorks LegalOS" },
+      { title: "Audit Logs · S & S Legal-Tech LLP" },
       {
         name: "description",
         content: "A searchable record of every action taken inside the firm's legal operating system. Includes tamper-evident chain verification and file integrity monitoring.",
       },
-      { property: "og:title", content: "Audit Logs · StillWorks LegalOS" },
+      { property: "og:title", content: "Audit Logs · S & S Legal-Tech LLP" },
       { property: "og:description", content: "A searchable record of every action taken in the firm with integrity verification." },
     ],
   }),
@@ -318,7 +318,7 @@ function AuditLogsPage() {
   return (
     <div>
       <PageHeader
-        breadcrumb={[{ label: "StillWorks", to: "/" }, { label: "Admin", to: "/admin" }, { label: "Audit Logs" }]}
+        breadcrumb={[{ label: "S & S", to: "/" }, { label: "Admin", to: "/admin" }, { label: "Audit Logs" }]}
         title="Audit logs"
         subtitle="Every action, with who did it, when, from where — plus tamper-evident verification."
         actions={

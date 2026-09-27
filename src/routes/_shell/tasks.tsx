@@ -16,12 +16,12 @@ import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 export const Route = createFileRoute("/_shell/tasks")({
   head: () => ({
     meta: [
-      { title: "Tasks · StillWorks LegalOS" },
+      { title: "Tasks · S & S Legal-Tech LLP" },
       {
         name: "description",
         content: "A calm reminders-style task list: overdue, due today, upcoming and call reminders.",
       },
-      { property: "og:title", content: "Tasks · StillWorks LegalOS" },
+      { property: "og:title", content: "Tasks · S & S Legal-Tech LLP" },
       {
         property: "og:description",
         content: "Overdue, due today, upcoming work and call reminders in one calm list.",
@@ -256,7 +256,7 @@ function TasksPage() {
   return (
     <div>
       <PageHeader
-        breadcrumb={[{ label: "StillWorks", to: "/" }, { label: "Tasks" }]}
+        breadcrumb={[{ label: "S & S", to: "/" }, { label: "Tasks" }]}
         title="Tasks"
         subtitle={`${tasks.filter((t) => t.status !== "completed").length} open items · ${tasks.filter((t) => getBucket(t) === "Overdue").length} overdue · ${tasks.filter((t) => t.callReminder).length} call reminders.`}
         actions={

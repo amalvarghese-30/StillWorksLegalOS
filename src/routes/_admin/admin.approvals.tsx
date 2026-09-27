@@ -12,12 +12,12 @@ import { useUpdateTask } from "@/services/tasks";
 export const Route = createFileRoute("/_admin/admin/approvals")({
   head: () => ({
     meta: [
-      { title: "Approvals · StillWorks LegalOS" },
+      { title: "Approvals · S & S Legal-Tech LLP" },
       {
         name: "description",
         content: "One approval centre for document uploads, access requests, case and client requests.",
       },
-      { property: "og:title", content: "Approvals · StillWorks LegalOS" },
+      { property: "og:title", content: "Approvals · S & S Legal-Tech LLP" },
       {
         property: "og:description",
         content: "Document uploads, access, case and client requests in one queue.",
@@ -124,7 +124,7 @@ function ApprovalsPage() {
   return (
     <div>
       <PageHeader
-        breadcrumb={[{ label: "StillWorks", to: "/" }, { label: "Approvals" }]}
+        breadcrumb={[{ label: "S & S", to: "/" }, { label: "Approvals" }]}
         title="Approval centre"
         subtitle={`${approvals.length} requests waiting.`}
       />

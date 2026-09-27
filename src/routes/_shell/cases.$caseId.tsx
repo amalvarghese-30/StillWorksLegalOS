@@ -37,9 +37,9 @@ import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 export const Route = createFileRoute("/_shell/cases/$caseId")({
   head: () => ({
     meta: [
-      { title: "Case workspace · StillWorks LegalOS" },
+      { title: "Case workspace · S & S Legal-Tech LLP" },
       { name: "description", content: "A single operating screen for a matter: hearings, documents, tasks, parties and timeline." },
-      { property: "og:title", content: "Case workspace · StillWorks LegalOS" },
+      { property: "og:title", content: "Case workspace · S & S Legal-Tech LLP" },
       { property: "og:description", content: "Hearings, documents, tasks, parties and timeline for one matter." },
     ],
   }),
@@ -296,7 +296,7 @@ function CaseWorkspace() {
     <div>
       <PageHeader
         breadcrumb={[
-          { label: "StillWorks", to: "/" },
+          { label: "S & S", to: "/" },
           { label: "Cases", to: "/cases" },
           { label: record.number },
         ]}

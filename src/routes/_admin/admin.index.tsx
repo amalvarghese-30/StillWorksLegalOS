@@ -16,9 +16,9 @@ import { useEmployeeWorkload } from "@/services/reports";
 export const Route = createFileRoute("/_admin/admin/")({
   head: () => ({
     meta: [
-      { title: "Admin Console · StillWorks LegalOS" },
+      { title: "Admin Console · S & S Legal-Tech LLP" },
       { name: "description", content: "Firm-wide administration: team capacity, approval queue, audit trail and governance controls." },
-      { property: "og:title", content: "Admin Console · StillWorks LegalOS" },
+      { property: "og:title", content: "Admin Console · S & S Legal-Tech LLP" },
       { property: "og:description", content: "Team capacity, approvals, audit trail and governance in one console." },
     ],
   }),

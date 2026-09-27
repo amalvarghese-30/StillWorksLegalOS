@@ -22,9 +22,9 @@ import {
 export const Route = createFileRoute("/_shell/reports")({
   head: () => ({
     meta: [
-      { title: "Reports · StillWorks LegalOS" },
+      { title: "Reports · S & S Legal-Tech LLP" },
       { name: "description", content: "Operational insight for the firm: case mix, growth, workload and completion rates." },
-      { property: "og:title", content: "Reports · StillWorks LegalOS" },
+      { property: "og:title", content: "Reports · S & S Legal-Tech LLP" },
       { property: "og:description", content: "Case mix, growth, workload and completion rates at a glance." },
     ],
   }),
@@ -57,7 +57,7 @@ function ReportsPage() {
   return (
     <div>
       <PageHeader
-        breadcrumb={[{ label: "StillWorks", to: "/" }, { label: "Reports" }]}
+        breadcrumb={[{ label: "S & S", to: "/" }, { label: "Reports" }]}
         title="Reports"
         subtitle={
           isAdmin

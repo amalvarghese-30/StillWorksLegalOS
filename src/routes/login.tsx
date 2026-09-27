@@ -11,12 +11,12 @@ import { ForgotPasswordDialog } from "@/components/auth/ForgotPasswordDialog";
 export const Route = createFileRoute("/login")({
   head: () => ({
     meta: [
-      { title: "Sign in · StillWorks LegalOS" },
+      { title: "Sign in · S & S Legal-Tech LLP" },
       {
         name: "description",
-        content: "Sign in to StillWorks LegalOS — the calm operating system for modern law firms.",
+        content: "Sign in to S & S Associates Legal-Tech LLP — the calm operating system for modern law firms.",
       },
-      { property: "og:title", content: "Sign in · StillWorks LegalOS" },
+      { property: "og:title", content: "Sign in · S & S Legal-Tech LLP" },
       { property: "og:description", content: "The calm operating system for modern law firms." },
     ],
   }),
@@ -131,6 +131,21 @@ function LoginPage() {
               setPassword("");
             }}
           />
+
+          {/* StillWorks attribution */}
+          <div className="mt-8 flex items-center justify-center gap-2 opacity-50">
+            <img
+              src="/stillworks-logo-light.jpg"
+              alt="StillWorks"
+              className="h-5 w-auto dark:hidden"
+            />
+            <img
+              src="/stillworks-logo-dark.jpg"
+              alt="StillWorks"
+              className="hidden h-5 w-auto dark:block"
+            />
+            <span className="text-[11px] text-muted-foreground">Developed by stillworks.in</span>
+          </div>
         </div>
       </div>
 
@@ -138,7 +153,7 @@ function LoginPage() {
         <div className="gradient-primary absolute inset-6 rounded-3xl opacity-95" />
         <div className="glass relative w-full max-w-md rounded-2xl p-8">
           <p className="text-caption font-medium tracking-wide text-muted-foreground uppercase">
-            StillWorks LegalOS
+            S &amp; S Associates Legal-Tech LLP
           </p>
           <p className="mt-4 font-display text-section leading-snug font-semibold">
             "Every hearing, every document, every client — in one calm place."

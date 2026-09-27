@@ -12,12 +12,12 @@ import { DayDetailsDialog } from "@/components/calendar/DayDetailsDialog";
 export const Route = createFileRoute("/_shell/calendar")({
   head: () => ({
     meta: [
-      { title: "Calendar · StillWorks LegalOS" },
+      { title: "Calendar · S & S Legal-Tech LLP" },
       {
         name: "description",
         content: "Hearings, tasks, call reminders and firm events across month, week, day and agenda views.",
       },
-      { property: "og:title", content: "Calendar · StillWorks LegalOS" },
+      { property: "og:title", content: "Calendar · S & S Legal-Tech LLP" },
       {
         property: "og:description",
         content: "Hearings, tasks, call reminders and firm events in one schedule.",
@@ -147,7 +147,7 @@ function CalendarPage() {
   return (
     <div>
       <PageHeader
-        breadcrumb={[{ label: "StillWorks", to: "/" }, { label: "Calendar" }]}
+        breadcrumb={[{ label: "S & S", to: "/" }, { label: "Calendar" }]}
         title={`${monthNames[currentMonth]} ${currentYear}`}
         subtitle={`${events.length} events · ${hearingCount} hearings this month`}
         actions={

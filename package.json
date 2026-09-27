@@ -1,7 +1,7 @@
 {
-  "name": "stillworks-legalos",
+  "name": "ss-legaltech-llp",
   "version": "1.0.0",
-  "description": "StillWorks LegalOS - Premium Legal Practice Management Desktop Application",
+  "description": "S & S Associates Legal-Tech LLP - Premium Legal Practice Management powered by StillWorks",
   "author": "StillWorks",
   "private": true,
   "sideEffects": false,

@@ -90,8 +90,8 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           <Scale size={21} strokeWidth={1.75} />
         </span>
         <div className="min-w-0">
-          <p className="truncate font-display text-body font-semibold">StillWorks</p>
-          <p className="truncate text-caption text-muted-foreground">LegalOS · Mumbai</p>
+          <p className="truncate font-display text-body font-semibold">S &amp; S Associates</p>
+          <p className="truncate text-caption text-muted-foreground">Legal-Tech LLP</p>
         </div>
       </div>
 
@@ -137,6 +137,21 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             <LogOut size={17} strokeWidth={1.75} />
           </button>
         </div>
+      </div>
+
+      {/* StillWorks attribution */}
+      <div className="mt-3 flex items-center justify-center gap-1.5 px-2 py-1">
+        <img
+          src="/stillworks-logo-light.jpg"
+          alt="StillWorks"
+          className="h-4 w-auto opacity-50 dark:hidden"
+        />
+        <img
+          src="/stillworks-logo-dark.jpg"
+          alt="StillWorks"
+          className="hidden h-4 w-auto opacity-50 dark:block"
+        />
+        <span className="text-[10px] text-muted-foreground/50">Powered by stillworks.in</span>
       </div>
     </div>
   );

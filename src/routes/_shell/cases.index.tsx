@@ -11,12 +11,12 @@ import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
 export const Route = createFileRoute("/_shell/cases/")({
   head: () => ({
     meta: [
-      { title: "Cases · StillWorks LegalOS" },
+      { title: "Cases · S & S Legal-Tech LLP" },
       {
         name: "description",
         content: "Every matter in one workspace — status, priority, next hearing and assigned counsel.",
       },
-      { property: "og:title", content: "Cases · StillWorks LegalOS" },
+      { property: "og:title", content: "Cases · S & S Legal-Tech LLP" },
       {
         property: "og:description",
         content: "Every matter in one workspace with status, hearings and counsel.",
@@ -116,7 +116,7 @@ function CasesPage() {
   return (
     <div>
       <PageHeader
-        breadcrumb={[{ label: "StillWorks", to: "/" }, { label: "Cases" }]}
+        breadcrumb={[{ label: "S & S", to: "/" }, { label: "Cases" }]}
         title="Cases"
         subtitle={`${data?.total ?? "—"} matters across practice areas.`}
         actions={
