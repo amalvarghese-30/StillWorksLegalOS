@@ -146,11 +146,13 @@ export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
           src="/stillworks-logo-light.jpg"
           alt="StillWorks"
           className="h-5 w-auto object-contain dark:hidden"
+          style={{ mixBlendMode: "multiply" }}
         />
         <img
           src="/stillworks-logo-dark.jpg"
           alt="StillWorks"
           className="hidden h-5 w-auto object-contain dark:block"
+          style={{ mixBlendMode: "screen" }}
         />
         <span className="text-[10px] font-medium tracking-wide text-muted-foreground">
           Powered by <span className="text-primary/70">stillworks.in</span>
