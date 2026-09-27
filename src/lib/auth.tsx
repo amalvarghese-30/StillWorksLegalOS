@@ -8,6 +8,7 @@ import {
   refreshAccessToken,
   clientTypeHeaders,
   ApiError,
+  isElectron,
 } from "@/services/api";
 
 export type Role = "admin" | "employee";
@@ -125,7 +126,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         let token = getAccessToken();
         if (!token) {
-          token = await refreshAccessToken();
+          const hasSessionHint = isElectron() || !!window.localStorage.getItem(STORAGE_KEY);
+          if (hasSessionHint) {
+            token = await refreshAccessToken();
+          }
         }
         if (!token) {
           setReady(true);

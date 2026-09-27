@@ -218,7 +218,7 @@ router.post("/refresh", async (req: Request, res: Response) => {
     const refreshToken = bodyToken || cookieToken;
 
     if (!refreshToken) {
-      res.status(400).json({ message: "Refresh token is required" });
+      res.status(401).json({ message: "Refresh token is required" });
       return;
     }
 
