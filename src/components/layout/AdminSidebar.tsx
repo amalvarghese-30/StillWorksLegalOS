@@ -141,9 +141,9 @@ export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
       </div>
 
       {/* StillWorks attribution */}
-      <div className="mt-3 flex items-center justify-center rounded-md border border-border/40 bg-muted/30 px-3 py-1.5">
-        <span className="text-[10px] font-medium tracking-wide text-muted-foreground">
-          Powered by <span className="text-primary/70">stillworks.in</span>
+      <div className="mt-3 flex items-center justify-center rounded-md border border-border/40 bg-muted/30 px-3 py-2">
+        <span className="text-xs font-semibold tracking-wide text-muted-foreground">
+          Powered by <span className="text-primary">stillworks.in</span>
         </span>
       </div>
     </div>
