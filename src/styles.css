@@ -513,3 +513,22 @@
   50% { opacity: 0.5; }
   100% { opacity: 1; }
 }
+
+/* WhatsApp-inspired chat wallpaper background */
+.chat-wallpaper {
+  background-color: oklch(0.965 0.008 85);
+  background-image: 
+    radial-gradient(circle at 50% 50%, oklch(0.85 0.01 85 / 0.45) 1px, transparent 1px),
+    radial-gradient(circle at 0% 0%, oklch(0.82 0.01 85 / 0.3) 1.5px, transparent 1.5px);
+  background-size: 28px 28px, 56px 56px;
+  background-position: 0 0, 14px 14px;
+}
+
+:is(.dark *) .chat-wallpaper {
+  background-color: oklch(0.15 0.015 250);
+  background-image: 
+    radial-gradient(circle at 50% 50%, oklch(0.24 0.02 250 / 0.6) 1px, transparent 1px),
+    radial-gradient(circle at 0% 0%, oklch(0.22 0.02 250 / 0.45) 1.5px, transparent 1.5px);
+  background-size: 28px 28px, 56px 56px;
+  background-position: 0 0, 14px 14px;
+}

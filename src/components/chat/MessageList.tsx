@@ -65,18 +65,23 @@ const readStateFor = (msg: ChatMessage): ReadState => {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center">
-        <Loader2 size={20} className="animate-spin text-muted-foreground" />
+      <div className="chat-wallpaper flex min-h-0 flex-1 items-center justify-center">
+        <div className="rounded-full bg-card/80 backdrop-blur-xs p-3 shadow-xs border border-border/50">
+          <Loader2 size={20} className="animate-spin text-primary" />
+        </div>
       </div>
     );
   }
 
   if (messages.length === 0) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center">
-        <div className="text-center">
-          <MessageSquare size={32} strokeWidth={1.5} className="mx-auto text-muted-foreground/40" />
-          <p className="mt-2 text-helper text-muted-foreground">{emptyText}</p>
+      <div className="chat-wallpaper flex min-h-0 flex-1 items-center justify-center p-6">
+        <div className="text-center rounded-2xl bg-card/85 dark:bg-[#182229]/85 backdrop-blur-xs p-6 shadow-xs border border-border/50 max-w-xs">
+          <div className="size-12 rounded-full bg-primary/10 grid place-items-center mx-auto text-primary mb-3">
+            <MessageSquare size={22} strokeWidth={1.75} />
+          </div>
+          <p className="text-sm font-medium text-foreground">{emptyText}</p>
+          <p className="mt-1 text-caption text-muted-foreground">Messages are end-to-end encrypted.</p>
         </div>
       </div>
     );
@@ -85,14 +90,14 @@ const readStateFor = (msg: ChatMessage): ReadState => {
   let lastDate = "";
 
   return (
-    <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-4 py-4">
+    <div className="chat-wallpaper min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4 sm:px-6">
       {hasOlder && (
-        <div className="flex justify-center">
+        <div className="flex justify-center mb-2">
           <button
             type="button"
             onClick={onLoadOlder}
             disabled={loadingOlder}
-            className="rounded-full bg-muted/60 px-3 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+            className="rounded-full bg-card/90 dark:bg-card/80 backdrop-blur-xs border border-border/60 px-3.5 py-1 text-[11px] font-medium text-muted-foreground shadow-xs transition-colors hover:bg-card disabled:opacity-50"
           >
             {loadingOlder ? "Loading…" : "Load older messages"}
           </button>
@@ -115,8 +120,8 @@ const readStateFor = (msg: ChatMessage): ReadState => {
         return (
           <div key={msg._id}>
             {showDate && (
-              <div className="my-3 flex items-center justify-center">
-                <span className="rounded-full bg-muted/60 px-3 py-1 text-[11px] text-muted-foreground">
+              <div className="sticky top-2 z-10 my-3 flex items-center justify-center pointer-events-none">
+                <span className="pointer-events-auto rounded-lg bg-card/90 dark:bg-[#182229]/90 backdrop-blur-xs px-3 py-1 text-[11px] font-semibold text-muted-foreground shadow-xs border border-border/50">
                   {date}
                 </span>
               </div>

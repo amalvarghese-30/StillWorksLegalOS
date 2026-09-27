@@ -129,28 +129,9 @@ export function formatLastSeen(iso: string | null | undefined): string {
 }
 
 
-// WhatsApp message bubble tail
-export function MessageTail({ own }: { own: boolean }) {
-  return (
-    <svg
-      className={`absolute bottom-0 ${own ? "-right-2" : "-left-2"}`}
-      width={16}
-      height={16}
-      viewBox="0 0 16 16"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path
-        d={
-          own
-            ? "M16 0 L8 0 C8 0 16 0 16 8 C16 8 8 8 8 16 L0 16 L0 0 Z"
-            : "M0 0 L8 0 C8 0 0 0 0 8 C0 8 8 8 8 16 L16 16 L16 0 Z"
-        }
-        fill={own ? "var(--primary)" : "var(--muted)"}
-        opacity={own ? 0.95 : 0.6}
-      />
-    </svg>
-  );
+// WhatsApp message bubble tail - now using seamless border-radius
+export function MessageTail(_props: { own: boolean }) {
+  return null;
 }
 
 export type ReadState = "sent" | "delivered" | "read";
@@ -174,15 +155,15 @@ export function computeReadState(message: ChatMessage, currentUserId: string, ot
 export function ReadReceipt({ state }: { state: ReadState }) {
   return (
     <span
-      className="flex items-center gap-0.5"
+      className="inline-flex items-center"
       aria-label={state === "read" ? "Read" : state === "delivered" ? "Delivered" : "Sent"}
     >
       {state === "read" ? (
-        <CheckCheck size={14} strokeWidth={2} className="text-blue-400" />
+        <CheckCheck size={14} strokeWidth={2.2} className="text-sky-300 dark:text-[#53bdeb]" />
       ) : state === "delivered" ? (
-        <CheckCheck size={14} strokeWidth={1.75} className="text-muted-foreground/60" />
+        <CheckCheck size={14} strokeWidth={1.75} className="opacity-70" />
       ) : (
-        <Check size={14} strokeWidth={1.75} className="text-muted-foreground/60" />
+        <Check size={14} strokeWidth={1.75} className="opacity-70" />
       )}
     </span>
   );

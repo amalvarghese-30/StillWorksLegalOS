@@ -613,8 +613,8 @@ function ChatPage() {
       )}
 
       {!groupsLoading && !groupsError && (
-        <div className="grid h-[calc(100dvh-5.5rem)] min-h-[480px] overflow-hidden rounded-lg border border-border bg-card shadow-soft sm:h-[calc(100vh-7.5rem)] sm:min-h-[540px] lg:grid-cols-[340px_minmax(0,1fr)]">
-          <div className={`${activeGroupId ? "hidden lg:block" : "block"} min-h-0 min-w-0`}>
+        <div className="grid h-[calc(100dvh-5.5rem)] min-h-[480px] overflow-hidden rounded-2xl border border-border/80 bg-card shadow-lift sm:h-[calc(100vh-7.5rem)] sm:min-h-[540px] md:grid-cols-[300px_minmax(0,1fr)] lg:grid-cols-[340px_minmax(0,1fr)]">
+          <div className={`${activeGroupId ? "hidden md:block" : "block"} min-h-0 min-w-0 border-r border-border/70 bg-card`}>
             <ChatSidebar
               groups={groups}
               activeGroupId={activeGroupId}
@@ -632,12 +632,19 @@ function ChatPage() {
             />
           </div>
 
-          <section className={`${activeGroupId ? "flex" : "hidden lg:flex"} min-h-0 min-w-0 flex-col`}>
+          <section className={`${activeGroupId ? "flex" : "hidden md:flex"} min-h-0 min-w-0 flex-col bg-card`}>
             {!activeGroup ? (
-              <div className="flex flex-1 items-center justify-center">
-                <div className="text-center">
-                  <MessageSquare size={40} strokeWidth={1} className="mx-auto text-muted-foreground/30" />
-                  <p className="mt-3 text-helper text-muted-foreground">Select a conversation</p>
+              <div className="chat-wallpaper flex flex-1 flex-col items-center justify-center p-8 text-center">
+                <div className="size-20 rounded-full bg-primary/10 grid place-items-center mb-4 text-primary shadow-xs">
+                  <MessageSquare size={38} strokeWidth={1.5} />
+                </div>
+                <h3 className="text-title font-semibold text-foreground">StillWorks Team Chat</h3>
+                <p className="mt-2 max-w-sm text-helper text-muted-foreground">
+                  Select a conversation from the sidebar to start messaging. Private, end-to-end encrypted for the firm.
+                </p>
+                <div className="mt-6 flex items-center gap-2 text-caption text-muted-foreground bg-card/85 backdrop-blur-xs px-4 py-1.5 rounded-full border border-border/60 shadow-xs">
+                  <Lock size={12} strokeWidth={2} className="text-success" />
+                  <span>End-to-end encrypted</span>
                 </div>
               </div>
             ) : (

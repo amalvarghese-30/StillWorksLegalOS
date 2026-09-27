@@ -177,6 +177,7 @@ function AttachmentItem({
   isMine: boolean;
 }) {
   const [downloading, setDownloading] = useState(false);
+  const ext = (attachment.name.split(".").pop() || "FILE").toUpperCase().slice(0, 4);
 
   const handleDownload = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -197,46 +198,46 @@ function AttachmentItem({
       onClick={handleDownload}
       className={`group/att flex items-center justify-between gap-3 rounded-xl p-2.5 transition-all cursor-pointer ${
         isMine
-          ? "bg-primary-foreground/15 hover:bg-primary-foreground/25 border border-primary-foreground/20 text-primary-foreground"
-          : "bg-card/90 hover:bg-card border border-border/80 text-foreground shadow-xs"
+          ? "bg-black/15 hover:bg-black/25 border border-white/15 text-primary-foreground"
+          : "bg-muted/80 hover:bg-muted border border-border/70 text-foreground shadow-xs"
       }`}
       title="Click to download"
     >
       <div className="flex items-center gap-2.5 min-w-0">
         <div
-          className={`grid size-9 shrink-0 place-items-center rounded-lg ${
-            isMine ? "bg-primary-foreground/20" : "bg-primary/10 text-primary"
+          className={`grid size-10 shrink-0 place-items-center rounded-lg font-bold text-[10px] tracking-wide ${
+            isMine ? "bg-white/20 text-white" : "bg-primary/10 text-primary"
           }`}
         >
-          <FileText size={18} strokeWidth={1.75} />
+          {ext === "PDF" ? "PDF" : ext === "DOCX" || ext === "DOC" ? "DOC" : <FileText size={18} />}
         </div>
         <div className="min-w-0">
-          <p className="truncate text-xs font-medium max-w-[180px] sm:max-w-[220px]">
+          <p className="truncate text-xs font-semibold max-w-[180px] sm:max-w-[220px]">
             {attachment.name}
           </p>
           <p
-            className={`text-[10px] ${
+            className={`text-[10.5px] ${
               isMine ? "text-primary-foreground/75" : "text-muted-foreground"
             }`}
           >
-            {attachment.size}
+            {ext} · {attachment.size}
           </p>
         </div>
       </div>
       <button
         type="button"
         disabled={downloading}
-        className={`grid size-8 shrink-0 place-items-center rounded-lg transition-colors ${
+        className={`grid size-8 shrink-0 place-items-center rounded-full transition-colors ${
           isMine
-            ? "hover:bg-primary-foreground/20 text-primary-foreground"
+            ? "hover:bg-white/20 text-primary-foreground"
             : "hover:bg-accent text-muted-foreground hover:text-foreground"
         }`}
         aria-label="Download attachment"
       >
         {downloading ? (
-          <Loader2 size={14} className="animate-spin" />
+          <Loader2 size={15} className="animate-spin" />
         ) : (
-          <Download size={14} strokeWidth={1.75} />
+          <Download size={15} strokeWidth={2} />
         )}
       </button>
     </div>
@@ -283,17 +284,22 @@ export function MessageBubble({
   onPinNotice,
 }: MessageBubbleProps) {
   const reactions = reactionGroups(message.reactions ?? [], currentUserId);
-  const timeClass = isMine ? "text-primary-foreground/70" : "text-muted-foreground";
+  const timeClass = isMine ? "text-primary-foreground/75" : "text-muted-foreground";
 
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <div id={`msg-${message._id}`} className={`group flex ${isMine ? "justify-end" : "justify-start"}`}>
-          <div className={`relative max-w-[78%] ${isMine ? "pl-10" : "pr-10"}`}>
+        <div
+          id={`msg-${message._id}`}
+          className={`group relative flex ${isMine ? "justify-end" : "justify-start"} ${
+            reactions.length > 0 ? "mb-3" : "mb-1"
+          }`}
+        >
+          <div className="relative max-w-[85%] sm:max-w-[75%] md:max-w-[65%]">
             {/* Quick reactions (appear on hover) */}
             <div
-              className={`absolute -top-4 z-10 flex items-center gap-0.5 rounded-full border border-border bg-card p-1 shadow-soft opacity-0 transition-opacity duration-150 group-hover:opacity-100 ${
-                isMine ? "right-0" : "left-0"
+              className={`absolute -top-7 z-20 flex items-center gap-0.5 rounded-full border border-border/80 bg-card/95 backdrop-blur-xs px-1.5 py-0.5 shadow-soft opacity-0 transition-opacity duration-150 group-hover:opacity-100 ${
+                isMine ? "right-1" : "left-1"
               }`}
             >
               {QUICK_REACTIONS.map((emoji) => (
@@ -308,43 +314,41 @@ export function MessageBubble({
               ))}
             </div>
 
+            {/* Bubble */}
             <div
-              className={`relative rounded-2xl px-3.5 py-2 shadow-soft ${
+              className={`relative rounded-2xl px-3 py-2 shadow-xs transition-shadow ${
                 isMine
-                  ? "gradient-primary text-primary-foreground rounded-br-md"
-                  : "border border-border bg-muted/60 rounded-bl-md"
+                  ? "gradient-primary text-primary-foreground rounded-tr-xs"
+                  : "border border-border/80 bg-card dark:bg-[#202c33] dark:border-transparent text-foreground rounded-tl-xs"
               }`}
             >
+              {/* Replying quote box */}
               {message.replyTo && (
                 <div
-                  className={`mb-1.5 rounded-md border-l-2 px-2 py-1 text-caption ${
+                  className={`mb-1.5 rounded-lg border-l-[3.5px] px-2.5 py-1 text-caption ${
                     isMine
-                      ? "border-primary-foreground/40 bg-primary-foreground/10"
-                      : "border-primary/40 bg-primary/5"
+                      ? "border-white/70 bg-black/15 text-primary-foreground"
+                      : "border-primary bg-primary/8 text-foreground"
                   }`}
                 >
-                  <p className="flex items-center gap-1 font-medium">
-                    <CornerUpLeft size={11} strokeWidth={2} />
+                  <p className="flex items-center gap-1 font-semibold text-[11px]">
+                    <CornerUpLeft size={10} strokeWidth={2.5} />
                     {message.replyTo.senderName}
                   </p>
-                  <p className="truncate opacity-80">{message.replyTo.text}</p>
+                  <p className="truncate text-[11.5px] opacity-85 mt-0.5">{message.replyTo.text}</p>
                 </div>
               )}
 
+              {/* Sender name for group chats */}
               {!isMine && isGroup && showSender && (
-                <p className={`mb-0.5 text-caption font-semibold ${senderColor(message.sender._id)}`}>
+                <p className={`mb-1 text-[11.5px] font-bold ${senderColor(message.sender._id)}`}>
                   {message.sender.name}
                 </p>
               )}
 
-              {message.text ? (
-                <p className="whitespace-pre-wrap break-words text-helper">
-                  {highlightMentions(message.text, searchQuery, onCaseClick)}
-                </p>
-              ) : null}
-
+              {/* Attachments / Voice notes */}
               {message.attachments && message.attachments.length > 0 && (
-                <div className={`flex flex-col gap-1.5 ${message.text ? "mt-2" : ""}`}>
+                <div className={`flex flex-col gap-1.5 ${message.text ? "mb-1.5" : ""}`}>
                   {message.attachments.map((att, idx) => {
                     const isAudio =
                       att.name.match(/\.(webm|mp3|wav|ogg|m4a)$/i) ||
@@ -368,33 +372,53 @@ export function MessageBubble({
                 </div>
               )}
 
-              <div className="mt-1 flex items-center justify-end gap-1">
-                <div className="mr-auto flex flex-wrap gap-1">
-                  {reactions.map((r) => (
-                    <button
-                      key={r.emoji}
-                      type="button"
-                      onClick={() => onToggleReaction(message, r.emoji)}
-                      className={`flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs transition-colors ${
-                        r.hasMine
-                          ? "border border-primary/30 bg-primary/20 text-primary"
-                          : "border border-border/60 bg-card/60 text-muted-foreground hover:bg-card"
-                      }`}
-                      title={`${r.count} ${r.count > 1 ? "people" : "person"}`}
-                    >
-                      <span style={{ fontSize: "12px" }}>{r.emoji}</span>
-                      {r.count > 1 && <span className="text-[10px]">{r.count}</span>}
-                    </button>
-                  ))}
+              {/* Message text with inline timestamp like WhatsApp */}
+              {message.text ? (
+                <div className="flex flex-wrap items-end justify-between gap-x-2.5 gap-y-0.5">
+                  <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-[13.5px] sm:text-[14px] leading-relaxed select-text">
+                    {highlightMentions(message.text, searchQuery, onCaseClick)}
+                  </span>
+                  <span
+                    className={`ml-auto inline-flex shrink-0 items-center gap-1 text-[10px] tabular-nums select-none ${timeClass} self-end pb-0.5`}
+                  >
+                    {formatTime(message.createdAt)}
+                    {isMine && <ReadReceipt state={readState} />}
+                  </span>
                 </div>
-                <span className={`flex items-center gap-1 text-[10px] tabular-nums ${timeClass}`}>
-                  {formatTime(message.createdAt)}
-                  {isMine && <ReadReceipt state={readState} />}
-                </span>
-              </div>
+              ) : (
+                /* Timestamp for attachment-only messages */
+                <div className="mt-1 flex items-center justify-end gap-1">
+                  <span className={`inline-flex items-center gap-1 text-[10px] tabular-nums select-none ${timeClass}`}>
+                    {formatTime(message.createdAt)}
+                    {isMine && <ReadReceipt state={readState} />}
+                  </span>
+                </div>
+              )}
             </div>
 
-            <MessageTail own={isMine} />
+            {/* Reactions pill attached at bubble corner */}
+            {reactions.length > 0 && (
+              <div
+                className={`absolute -bottom-2.5 z-10 flex items-center gap-0.5 rounded-full border border-border/70 bg-card px-1.5 py-0.5 shadow-xs ${
+                  isMine ? "right-2" : "left-2"
+                }`}
+              >
+                {reactions.map((r) => (
+                  <button
+                    key={r.emoji}
+                    type="button"
+                    onClick={() => onToggleReaction(message, r.emoji)}
+                    className="flex items-center gap-0.5 text-xs hover:scale-110 transition-transform"
+                    title={`${r.count} ${r.count > 1 ? "people" : "person"}`}
+                  >
+                    <span>{r.emoji}</span>
+                    {r.count > 1 && (
+                      <span className="text-[10px] font-semibold text-muted-foreground">{r.count}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </ContextMenuTrigger>

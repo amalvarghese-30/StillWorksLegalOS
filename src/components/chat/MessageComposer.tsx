@@ -258,7 +258,7 @@ export function MessageComposer({
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="border-t border-border bg-card/70 px-3 py-2">
+      <div className="border-t border-border/70 bg-card/95 backdrop-blur-md px-3 py-2 sm:px-4 sm:py-2.5">
         {/* Replying-to bar */}
         {replyTo && (
           <div className="mb-2 flex items-center gap-2 rounded-lg border-l-2 border-primary bg-primary/5 px-3 py-2">
@@ -479,11 +479,11 @@ export function MessageComposer({
               <input
                 ref={inputRef}
                 aria-label="Message"
-                placeholder="Write a message or type @ to mention someone…"
+                placeholder="Type a message or @ to mention..."
                 value={value}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
-                className="min-w-0 flex-1 rounded-full border border-border bg-muted/50 px-4 py-3 text-helper outline-none transition-shadow focus:ring-2 focus:ring-ring/40"
+                className="min-w-0 flex-1 rounded-2xl border border-border/60 bg-muted/40 dark:bg-muted/20 px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/70 outline-none transition-all focus:bg-card focus:border-primary/50 focus:ring-1 focus:ring-primary/40"
               />
 
               {value.trim() || attachment ? (

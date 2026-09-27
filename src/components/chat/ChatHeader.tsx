@@ -80,13 +80,13 @@ export function ChatHeader({
   }
 
   return (
-    <header className="flex flex-col border-b border-border bg-card/70">
+    <header className="flex flex-col border-b border-border/70 bg-card/95 backdrop-blur-md">
       <div className="flex items-center gap-2.5 px-3 py-2.5 sm:px-4 sm:py-3">
         {onBack && (
           <Button
             variant="ghost"
             size="icon"
-            className="size-9 shrink-0 rounded-full lg:hidden"
+            className="size-9 shrink-0 rounded-full md:hidden"
             onClick={onBack}
             aria-label="Back to conversations"
           >
@@ -106,7 +106,13 @@ export function ChatHeader({
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium sm:text-base">{group.name}</p>
-          <p className="truncate text-[11px] text-muted-foreground sm:text-caption">{subtitle}</p>
+          <p
+            className={`truncate text-[11px] sm:text-caption ${
+              subtitle === "online" ? "text-success font-medium" : "text-muted-foreground"
+            }`}
+          >
+            {subtitle}
+          </p>
         </div>
 
         <div className="flex items-center gap-0.5">
