@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { Task } from "../models/Task.js";
 import { Case } from "../models/Case.js";
+import { Client } from "../models/Client.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { User } from "../models/User.js";
 import { AppSettings } from "../models/AppSettings.js";
@@ -8,6 +9,58 @@ import { NotificationService } from "../services/notifications.js";
 import { Types } from "mongoose";
 import { requireAuth } from "../middleware/auth.js";
 import { canAccessCase, canAccessTask, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
+
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function resolveCaseId(identifier: unknown): Promise<{ id: string | null; error?: string }> {
+  if (identifier === null || identifier === undefined) return { id: null };
+  const clean = String(identifier).trim();
+  if (!clean || clean.toLowerCase() === "none") return { id: null };
+
+  if (/^[0-9a-fA-F]{24}$/.test(clean)) {
+    const byId = await Case.findById(clean).select("_id").lean();
+    if (byId) return { id: (byId as any)._id.toString() };
+  }
+
+  const escaped = escapeRegex(clean);
+  const byOther = await Case.findOne({
+    $or: [
+      { number: clean },
+      { courtCaseId: clean },
+      { title: { $regex: `^${escaped}$`, $options: "i" } },
+    ],
+  }).select("_id").lean();
+
+  if (byOther) return { id: (byOther as any)._id.toString() };
+
+  return { id: null, error: `Case "${clean}" was not found. Please select a valid case.` };
+}
+
+async function resolveClientId(identifier: unknown): Promise<{ id: string | null; error?: string }> {
+  if (identifier === null || identifier === undefined) return { id: null };
+  const clean = String(identifier).trim();
+  if (!clean || clean.toLowerCase() === "none") return { id: null };
+
+  if (/^[0-9a-fA-F]{24}$/.test(clean)) {
+    const byId = await Client.findById(clean).select("_id").lean();
+    if (byId) return { id: (byId as any)._id.toString() };
+  }
+
+  const escaped = escapeRegex(clean);
+  const byOther = await Client.findOne({
+    $or: [
+      { name: { $regex: `^${escaped}$`, $options: "i" } },
+      { email: { $regex: `^${escaped}$`, $options: "i" } },
+      { phone: clean },
+    ],
+  }).select("_id").lean();
+
+  if (byOther) return { id: (byOther as any)._id.toString() };
+
+  return { id: null, error: `Client "${clean}" was not found. Please select a valid client.` };
+}
 
 const router = Router();
 router.use(requireAuth);
@@ -170,22 +223,23 @@ router.post("/", async (req: Request, res: Response) => {
       return;
     }
 
-    const cleanCaseId = caseId && String(caseId).trim() ? String(caseId).trim() : null;
-    const cleanClientId = clientId && String(clientId).trim() ? String(clientId).trim() : null;
+    const caseResolution = await resolveCaseId(caseId);
+    if (caseResolution.error) {
+      res.status(400).json({ message: caseResolution.error });
+      return;
+    }
+    const cleanCaseId = caseResolution.id;
 
-    // Validate MongoDB ObjectId hex formats
-    if (cleanCaseId && !/^[0-9a-fA-F]{24}$/.test(cleanCaseId)) {
-      res.status(400).json({ message: "Invalid Case ID format. Must be a 24-character hexadecimal string." });
+    const clientResolution = await resolveClientId(clientId);
+    if (clientResolution.error) {
+      res.status(400).json({ message: clientResolution.error });
       return;
     }
-    if (cleanClientId && !/^[0-9a-fA-F]{24}$/.test(cleanClientId)) {
-      res.status(400).json({ message: "Invalid Client ID format. Must be a 24-character hexadecimal string." });
-      return;
-    }
+    const cleanClientId = clientResolution.id;
 
     // Validate case access if caseId provided
     if (cleanCaseId && req.user!.role !== "admin") {
-      const hasAccess = await canAccessCase(req.userId!, req.user!.role, cleanCaseId);
+      const hasAccess = await canAccessCase(req.userId!, req.user!.role, cleanCaseId, req.user?.permissions);
       if (!hasAccess) {
         res.status(403).json({ message: "Cannot create task for a case you don't have access to" });
         return;
@@ -275,20 +329,20 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
     if (req.body["callReminder"]) updates["callReminder"] = req.body["callReminder"];
 
     if (updates["caseId"] !== undefined) {
-      const cid = String(updates["caseId"]).trim();
-      updates["caseId"] = cid ? cid : null;
-      if (updates["caseId"] && !/^[0-9a-fA-F]{24}$/.test(updates["caseId"] as string)) {
-        res.status(400).json({ message: "Invalid Case ID format" });
+      const resolved = await resolveCaseId(updates["caseId"]);
+      if (resolved.error) {
+        res.status(400).json({ message: resolved.error });
         return;
       }
+      updates["caseId"] = resolved.id;
     }
     if (updates["clientId"] !== undefined) {
-      const clid = String(updates["clientId"]).trim();
-      updates["clientId"] = clid ? clid : null;
-      if (updates["clientId"] && !/^[0-9a-fA-F]{24}$/.test(updates["clientId"] as string)) {
-        res.status(400).json({ message: "Invalid Client ID format" });
+      const resolved = await resolveClientId(updates["clientId"]);
+      if (resolved.error) {
+        res.status(400).json({ message: resolved.error });
         return;
       }
+      updates["clientId"] = resolved.id;
     }
 
     // Non-admins cannot reassign to others
@@ -299,7 +353,7 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
 
     // Validate case access if caseId changed
     if (updates["caseId"] && req.user!.role !== "admin") {
-      const hasAccess = await canAccessCase(req.userId!, req.user!.role, updates["caseId"] as string);
+      const hasAccess = await canAccessCase(req.userId!, req.user!.role, updates["caseId"] as string, req.user?.permissions);
       if (!hasAccess) {
         res.status(403).json({ message: "Cannot move task to a case you don't have access to" });
         return;

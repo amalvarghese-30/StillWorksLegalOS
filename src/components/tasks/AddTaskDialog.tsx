@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/select";
 import { useAuth } from "@/lib/auth";
 import { useCreateTask, useTaskOptions, type CreateTaskPayload } from "@/services/tasks";
+import { useCases } from "@/services/cases";
+import { useClients } from "@/services/clients";
 import {
   Dialog,
   DialogContent,
@@ -81,6 +83,8 @@ function nextId() {
 export function AddTaskDialog({ open, onClose }: AddTaskDialogProps) {
   const { user } = useAuth();
   const { data: options } = useTaskOptions();
+  const { data: casesData } = useCases({ limit: "100" });
+  const { data: clientsData } = useClients({ limit: "100" });
 
   const [form, setForm] = useState<FormState>({ ...EMPTY_FORM, assignedTo: user?._id ?? "" });
   const [checklist, setChecklist] = useState<ChecklistLine[]>([]);
@@ -88,6 +92,8 @@ export function AddTaskDialog({ open, onClose }: AddTaskDialogProps) {
   const [agentSelect, setAgentSelect] = useState("");
   const [agentCustom, setAgentCustom] = useState("");
   const [appliedTemplates, setAppliedTemplates] = useState<string[]>([]);
+  const [manualCase, setManualCase] = useState(false);
+  const [manualClient, setManualClient] = useState(false);
   const templateInsertions = useRef<Record<string, string[]>>({});
 
   const createTask = useCreateTask();
@@ -100,6 +106,8 @@ export function AddTaskDialog({ open, onClose }: AddTaskDialogProps) {
   const templates = options?.checklistTemplates ?? [];
   const agents = options?.agents ?? [];
   const staff = (options?.staff ?? []).filter((s) => s._id !== (user?._id ?? ""));
+  const cases = casesData?.cases ?? [];
+  const clients = clientsData?.clients ?? [];
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -140,6 +148,8 @@ export function AddTaskDialog({ open, onClose }: AddTaskDialogProps) {
     setAgentSelect("");
     setAgentCustom("");
     setAppliedTemplates([]);
+    setManualCase(false);
+    setManualClient(false);
     templateInsertions.current = {};
   };
 
@@ -312,24 +322,102 @@ export function AddTaskDialog({ open, onClose }: AddTaskDialogProps) {
               )}
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="task-caseid" className="text-helper">Case ID (optional)</Label>
-              <Input
-                id="task-caseid"
-                value={form.caseId}
-                onChange={(e) => update("caseId", e.target.value)}
-                placeholder="Link to a case"
-                className="h-11 rounded-md"
-              />
+              <div className="flex items-center justify-between">
+                <Label htmlFor="task-caseid" className="text-helper">Case (optional)</Label>
+                <button
+                  type="button"
+                  onClick={() => setManualCase((prev) => !prev)}
+                  className="text-xs text-primary hover:underline font-normal"
+                >
+                  {manualCase ? "Select from list" : "Enter manually"}
+                </button>
+              </div>
+              {manualCase ? (
+                <Input
+                  id="task-caseid"
+                  value={form.caseId}
+                  onChange={(e) => update("caseId", e.target.value)}
+                  placeholder="Case number or ID (e.g. SW-2026-0001)"
+                  className="h-11 rounded-md"
+                />
+              ) : (
+                <Select
+                  value={form.caseId || "none"}
+                  onValueChange={(val) => {
+                    if (val === "__manual__") {
+                      setManualCase(true);
+                    } else {
+                      const selectedId = val === "none" ? "" : val;
+                      update("caseId", selectedId);
+                      if (selectedId && !form.clientId) {
+                        const matchedCase = cases.find((c) => c._id === selectedId);
+                        const primaryParty = matchedCase?.parties?.find((p) => p.clientId);
+                        if (primaryParty?.clientId) {
+                          update("clientId", primaryParty.clientId);
+                        }
+                      }
+                    }
+                  }}
+                >
+                  <SelectTrigger id="task-caseid" className="h-11 rounded-md">
+                    <SelectValue placeholder="Select linked case" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-60">
+                    <SelectItem value="none">None (General task)</SelectItem>
+                    {cases.map((c) => (
+                      <SelectItem key={c._id} value={c._id}>
+                        {c.number ? `${c.number} — ` : ""}{c.title}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="__manual__">+ Enter manually...</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="task-clientid" className="text-helper">Client ID (optional)</Label>
-              <Input
-                id="task-clientid"
-                value={form.clientId}
-                onChange={(e) => update("clientId", e.target.value)}
-                placeholder="Link to a client"
-                className="h-11 rounded-md"
-              />
+              <div className="flex items-center justify-between">
+                <Label htmlFor="task-clientid" className="text-helper">Client (optional)</Label>
+                <button
+                  type="button"
+                  onClick={() => setManualClient((prev) => !prev)}
+                  className="text-xs text-primary hover:underline font-normal"
+                >
+                  {manualClient ? "Select from list" : "Enter manually"}
+                </button>
+              </div>
+              {manualClient ? (
+                <Input
+                  id="task-clientid"
+                  value={form.clientId}
+                  onChange={(e) => update("clientId", e.target.value)}
+                  placeholder="Client name or ID"
+                  className="h-11 rounded-md"
+                />
+              ) : (
+                <Select
+                  value={form.clientId || "none"}
+                  onValueChange={(val) => {
+                    if (val === "__manual__") {
+                      setManualClient(true);
+                    } else {
+                      update("clientId", val === "none" ? "" : val);
+                    }
+                  }}
+                >
+                  <SelectTrigger id="task-clientid" className="h-11 rounded-md">
+                    <SelectValue placeholder="Select linked client" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-60">
+                    <SelectItem value="none">None (No client)</SelectItem>
+                    {clients.map((cl) => (
+                      <SelectItem key={cl._id} value={cl._id}>
+                        {cl.name} {cl.phone ? `(${cl.phone})` : ""}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="__manual__">+ Enter manually...</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
             </div>
           </div>
 

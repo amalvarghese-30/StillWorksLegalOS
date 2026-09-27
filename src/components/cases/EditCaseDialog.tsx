@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { useUpdateCase, type CaseRecord, type CreateCasePayload } from "@/services/cases";
 import { useEmployees } from "@/services/admin";
+import { useAuth } from "@/lib/auth";
 
 const PRACTICE_AREAS = [
   "Civil Litigation",
@@ -84,7 +85,9 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
   const [tags, setTags] = useState<string>((record.tags || []).join(", "));
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const { data: empData } = useEmployees();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const { data: empData } = useEmployees(undefined, { enabled: isAdmin });
   const employees = empData?.employees ?? [];
 
   const updateCase = useUpdateCase();

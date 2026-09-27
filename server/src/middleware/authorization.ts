@@ -4,7 +4,7 @@ import { Client } from "../models/Client.js";
 import { Task } from "../models/Task.js";
 import { CalendarEvent } from "../models/CalendarEvent.js";
 import { DocumentModel } from "../models/Document.js";
-import { User, type IUser } from "../models/User.js";
+import { User, type IUser, type UserPermissions } from "../models/User.js";
 
 // Extend Express Request with user info (already in auth.ts, but for type safety)
 declare global {
@@ -32,7 +32,7 @@ export async function canAccessCase(
   userId: string,
   userRole: string,
   caseId: string,
-  userPermissions?: Record<string, boolean>
+  userPermissions?: UserPermissions | Record<string, boolean>
 ): Promise<boolean> {
   if (userRole === "admin") return true;
   if (userPermissions?.cases === true) return true;
@@ -55,7 +55,7 @@ export async function canAccessClient(
   userId: string,
   userRole: string,
   clientId: string,
-  userPermissions?: Record<string, boolean>
+  userPermissions?: UserPermissions | Record<string, boolean>
 ): Promise<boolean> {
   if (userRole === "admin") return true;
   if (userPermissions?.clients === true) return true;
@@ -114,7 +114,7 @@ export async function canAccessCalendarEvent(
   userId: string,
   userRole: string,
   eventId: string,
-  userPermissions?: Record<string, boolean>
+  userPermissions?: UserPermissions | Record<string, boolean>
 ): Promise<boolean> {
   if (userRole === "admin") return true;
 
@@ -143,7 +143,7 @@ export async function canAccessDocument(
   userId: string,
   userRole: string,
   documentId: string,
-  userPermissions?: Record<string, boolean>
+  userPermissions?: UserPermissions | Record<string, boolean>
 ): Promise<boolean> {
   if (userRole === "admin") return true;
   if (userPermissions?.documents === true) return true;
