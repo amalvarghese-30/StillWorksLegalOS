@@ -20,7 +20,7 @@ import { useCases } from "@/services/cases";
 import { useDocuments, useUpdateDocument, useReviewAccessRequest } from "@/services/documents";
 import { useApprovals } from "@/services/admin";
 import { useAuditLogs } from "@/services/admin";
-import { useTasks, taskKeys, type TaskRecord } from "@/services/tasks";
+import { useTasks, useUpdateTask, taskKeys, type TaskRecord } from "@/services/tasks";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import { QuickActionsMenu } from "@/components/layout/QuickActionsMenu";
 
@@ -36,8 +36,11 @@ export const Route = createFileRoute("/_shell/")({
   component: Dashboard,
 });
 
-/** Resolve an approval `_id` back into the document + (optional) access-request ids. */
-function approvalTarget(a: { kind: string; _id: string }): { docId: string; requestId?: string } {
+/** Resolve an approval `_id` back into the document + (optional) access-request ids or task id. */
+function approvalTarget(a: { kind: string; _id: string }): { docId?: string; requestId?: string; taskId?: string } {
+  if (a.kind === "Task Completion" || a._id.startsWith("task_")) {
+    return { taskId: a._id.replace(/^task_/, "") };
+  }
   if (a.kind === "Access Request") {
     const marker = "_access_";
     const idx = a._id.indexOf(marker);
@@ -54,6 +57,7 @@ function Dashboard() {
   const hasAuditAccess = isAdmin || user?.permissions?.auditLogs === true;
   const updateDocument = useUpdateDocument();
   const reviewAccessRequest = useReviewAccessRequest();
+  const updateTask = useUpdateTask();
   const [actingOn, setActingOn] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
   const queryClient = useQueryClient();
@@ -103,7 +107,7 @@ function Dashboard() {
     const isAssignedToMe = assignedId?.toString() === user?._id?.toString();
     const isCreatedByMe = (typeof t.createdBy === "object" && t.createdBy ? (t.createdBy as any)._id : t.createdBy)?.toString() === user?._id?.toString();
     const isUrgentOrHigh = t.priority === "High" || (t.priority as string) === "Urgent";
-    const isOverdue = t.status === "overdue" || (t.deadline ? new Date(t.deadline).getTime() < today.getTime() : false);
+    const isOverdue = t.status !== "pending_approval" && (t.status === "overdue" || (t.deadline ? new Date(t.deadline).getTime() < today.getTime() : false));
     const isDueToday = t.deadline ? new Date(t.deadline).toDateString() === today.toDateString() : false;
 
     if (isAdmin) {
@@ -124,13 +128,21 @@ function Dashboard() {
   const runApproval = (a: { kind: string; _id: string }, action: "approved" | "rejected") => {
     const target = approvalTarget(a);
     setActingOn(a._id);
-    const onSettled = () => setActingOn(null);
-    if (target.requestId) {
+    const onSettled = () => {
+      setActingOn(null);
+      queryClient.invalidateQueries({ queryKey: ["admin", "approvals"] });
+    };
+    if (target.taskId) {
+      updateTask.mutate(
+        { id: target.taskId, data: { status: action === "approved" ? "completed" : "in_progress" } },
+        { onSettled },
+      );
+    } else if (target.requestId && target.docId) {
       reviewAccessRequest.mutate(
         { docId: target.docId, requestId: target.requestId, status: action },
         { onSettled },
       );
-    } else {
+    } else if (target.docId) {
       updateDocument.mutate(
         { id: target.docId, data: { state: action === "approved" ? "Approved" : "Rejected" } },
         { onSettled },
@@ -243,11 +255,15 @@ function Dashboard() {
                         <span className="shrink-0 rounded-pill bg-destructive/15 px-2 py-0.5 text-[11px] font-semibold text-destructive">
                           {t.priority === "High" ? "High Priority" : t.priority}
                         </span>
-                        {(t.status === "overdue" || (t.deadline && new Date(t.deadline).getTime() < today.getTime())) && (
+                        {t.status === "pending_approval" ? (
+                          <span className="shrink-0 rounded-pill bg-amber-500/15 text-amber-600 dark:text-amber-400 px-2 py-0.5 text-[10px] font-bold">
+                            IN REVIEW
+                          </span>
+                        ) : (t.status === "overdue" || (t.deadline && new Date(t.deadline).getTime() < today.getTime())) ? (
                           <span className="shrink-0 rounded-pill bg-destructive text-destructive-foreground px-2 py-0.5 text-[10px] font-bold">
                             OVERDUE
                           </span>
-                        )}
+                        ) : null}
                       </div>
                       <p className="mt-0.5 truncate text-helper text-muted-foreground">
                         {t.caseName ? `Case: ${t.caseName}` : t.clientName ? `Client: ${t.clientName}` : t.category || "Task"}

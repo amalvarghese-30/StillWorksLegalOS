@@ -6,7 +6,7 @@ import mongoose, { Document, Schema } from "mongoose";
 
 export type TaskCategory = string;
 export type TaskPriority = "High" | "Medium" | "Low";
-export type TaskStatus = "pending" | "in_progress" | "completed" | "overdue";
+export type TaskStatus = "pending" | "in_progress" | "pending_approval" | "completed" | "overdue";
 
 /** A checklist item within a task */
 export interface ChecklistItem {
@@ -79,7 +79,7 @@ const TaskSchema = new Schema<ITask>(
     },
     status: {
       type: String,
-      enum: ["pending", "in_progress", "completed", "overdue"],
+      enum: ["pending", "in_progress", "pending_approval", "completed", "overdue"],
       default: "pending",
       index: true,
     },
@@ -116,7 +116,12 @@ TaskSchema.index({ deadline: 1, status: 1 });
 // ---------------------------------------------------------------------------
 
 TaskSchema.pre("save", function (next) {
-  if (this.deadline && this.deadline < new Date() && this.status !== "completed") {
+  if (
+    this.deadline &&
+    this.deadline < new Date() &&
+    this.status !== "completed" &&
+    this.status !== "pending_approval"
+  ) {
     this.status = "overdue";
   }
   next();

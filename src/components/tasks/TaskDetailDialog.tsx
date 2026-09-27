@@ -180,6 +180,25 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
     }
   };
 
+  const handleSetStatus = async (status: "completed" | "pending_approval" | "in_progress") => {
+    try {
+      await updateTask.mutateAsync({
+        id: task._id,
+        data: { status },
+      });
+      if (status === "pending_approval") {
+        toast.success("Task submitted for admin approval");
+      } else if (status === "completed") {
+        toast.success("Task marked as completed");
+      } else if (status === "in_progress") {
+        toast.info("Task returned to in progress");
+      }
+    } catch (err) {
+      console.error("Failed to update task status:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to update status");
+    }
+  };
+
   return (
     <>
       <Dialog open={open} onOpenChange={(val) => !val && onClose()}>
@@ -202,6 +221,19 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
                   >
                     {task.priority || "Medium"}
                   </span>
+                  {task.status === "completed" ? (
+                    <span className="rounded-pill bg-success/15 text-success px-2.5 py-0.5 text-caption font-semibold flex items-center gap-1">
+                      <CheckCircle2 size={12} /> Completed
+                    </span>
+                  ) : task.status === "pending_approval" ? (
+                    <span className="rounded-pill bg-amber-500/15 text-amber-600 dark:text-amber-400 px-2.5 py-0.5 text-caption font-semibold flex items-center gap-1">
+                      <Clock size={12} /> Pending Approval
+                    </span>
+                  ) : task.status === "overdue" ? (
+                    <span className="rounded-pill bg-destructive text-destructive-foreground px-2.5 py-0.5 text-caption font-bold">
+                      Overdue
+                    </span>
+                  ) : null}
                 </div>
                 <DialogTitle className="text-title font-semibold text-foreground pt-1">
                   {task.title}
@@ -225,6 +257,97 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
               </Button>
             </div>
           </DialogHeader>
+
+          {/* Status banners */}
+          {task.status === "pending_approval" && (
+            <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-2.5">
+                  <Clock size={18} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <div>
+                    <p className="text-helper font-semibold text-foreground">
+                      Pending Admin Verification & Approval
+                    </p>
+                    <p className="text-caption text-muted-foreground mt-0.5">
+                      {isAdmin
+                        ? "Submitted for review. Verify the checklist items and approve or request changes."
+                        : "Task submitted. An administrator will verify completion and sign off."}
+                    </p>
+                  </div>
+                </div>
+                {isAdmin && (
+                  <div className="flex items-center gap-2 shrink-0 sm:self-center">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 rounded-md text-caption"
+                      disabled={updateTask.isPending}
+                      onClick={() => handleSetStatus("in_progress")}
+                    >
+                      Request Changes
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="h-8 gradient-primary rounded-md text-primary-foreground text-caption"
+                      disabled={updateTask.isPending}
+                      onClick={() => handleSetStatus("completed")}
+                    >
+                      {updateTask.isPending ? <Loader2 size={13} className="animate-spin mr-1" /> : <Check size={13} className="mr-1" />}
+                      Approve & Complete
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {task.status === "completed" && (
+            <div className="mt-4 rounded-lg border border-success/30 bg-success/10 p-3.5 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 size={18} className="shrink-0 text-success" />
+                <div>
+                  <p className="text-helper font-semibold text-foreground">Task Completed</p>
+                  <p className="text-caption text-muted-foreground">Work and checklist items have been completed and verified.</p>
+                </div>
+              </div>
+              {isAdmin && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 rounded-md text-caption shrink-0"
+                  disabled={updateTask.isPending}
+                  onClick={() => handleSetStatus("in_progress")}
+                >
+                  Reopen Task
+                </Button>
+              )}
+            </div>
+          )}
+
+          {task.status !== "completed" && task.status !== "pending_approval" && total > 0 && doneCount === total && (
+            <div className="mt-4 rounded-lg border border-primary/30 bg-primary/5 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 size={18} className="shrink-0 text-primary" />
+                <div>
+                  <p className="text-helper font-semibold text-foreground">All checklist items are completed!</p>
+                  <p className="text-caption text-muted-foreground">
+                    {isAdmin
+                      ? "Ready to mark this task as fully completed?"
+                      : "Submit this task for admin verification to complete it."}
+                  </p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                className="h-8 gradient-primary rounded-md text-primary-foreground text-caption shrink-0"
+                disabled={updateTask.isPending}
+                onClick={() => handleSetStatus(isAdmin ? "completed" : "pending_approval")}
+              >
+                {updateTask.isPending ? <Loader2 size={13} className="animate-spin mr-1" /> : <Check size={13} className="mr-1" />}
+                {isAdmin ? "Mark as Completed" : "Submit for Approval"}
+              </Button>
+            </div>
+          )}
 
           {isEditing ? (
             /* Edit Form */
@@ -430,24 +553,74 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
             </form>
           </div>
 
-          <DialogFooter className="mt-6 flex items-center justify-between border-t border-border/60 pt-4">
-            {isAdmin || (task.createdBy && (typeof task.createdBy === "object" ? (task.createdBy as any)._id : task.createdBy)?.toString() === user?._id?.toString()) ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowDeleteConfirm(true)}
-                className="text-destructive hover:bg-destructive/10 hover:text-destructive rounded-md"
-              >
-                <Trash2 size={15} className="mr-1.5" />
-                Delete Task
+          <DialogFooter className="mt-6 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 border-t border-border/60 pt-4">
+            <div>
+              {isAdmin || (task.createdBy && (typeof task.createdBy === "object" ? (task.createdBy as any)._id : task.createdBy)?.toString() === user?._id?.toString()) ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive rounded-md"
+                >
+                  <Trash2 size={15} className="mr-1.5" />
+                  Delete Task
+                </Button>
+              ) : null}
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={onClose} className="rounded-md">
+                Done
               </Button>
-            ) : (
-              <div />
-            )}
-            <Button type="button" variant="outline" size="sm" onClick={onClose} className="rounded-md">
-              Done
-            </Button>
+
+              {task.status === "pending_approval" ? (
+                isAdmin ? (
+                  <>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={updateTask.isPending}
+                      onClick={() => handleSetStatus("in_progress")}
+                      className="rounded-md"
+                    >
+                      Request Changes
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="gradient-primary rounded-md text-primary-foreground"
+                      disabled={updateTask.isPending}
+                      onClick={() => handleSetStatus("completed")}
+                    >
+                      {updateTask.isPending ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Check size={14} className="mr-1.5" />}
+                      Approve & Complete
+                    </Button>
+                  </>
+                ) : (
+                  <Button type="button" size="sm" variant="secondary" disabled className="rounded-md opacity-80">
+                    <Clock size={14} className="mr-1.5 text-amber-500" />
+                    Awaiting Admin Approval
+                  </Button>
+                )
+              ) : task.status !== "completed" ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="gradient-primary rounded-md text-primary-foreground"
+                  disabled={updateTask.isPending}
+                  onClick={() => handleSetStatus(isAdmin ? "completed" : "pending_approval")}
+                >
+                  {updateTask.isPending ? (
+                    <Loader2 size={14} className="animate-spin mr-1.5" />
+                  ) : (
+                    <Check size={14} className="mr-1.5" />
+                  )}
+                  {isAdmin ? "Mark as Completed" : "Submit for Approval"}
+                </Button>
+              ) : null}
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

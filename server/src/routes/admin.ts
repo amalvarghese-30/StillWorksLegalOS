@@ -363,10 +363,14 @@ router.delete("/employees/:id", requireAdminOrPermission("employees"), async (re
 
 router.get("/approvals", requireAdminOrPermission("approvals"), async (req: Request, res: Response) => {
   try {
-    const [pendingDocs, pendingAccess] = await Promise.all([
+    const [pendingDocs, pendingAccess, pendingTasks] = await Promise.all([
       DocumentModel.find({ state: "Pending" }).sort({ createdAt: -1 }).lean(),
       DocumentModel.find({ "accessRequests.status": "pending" })
         .select("name accessRequests")
+        .lean(),
+      Task.find({ status: "pending_approval" })
+        .populate("assignedTo", "name email")
+        .sort({ updatedAt: -1 })
         .lean(),
     ]);
 
@@ -389,6 +393,19 @@ router.get("/approvals", requireAdminOrPermission("approvals"), async (req: Requ
             when: ar.createdAt,
           })),
       ),
+      ...pendingTasks.map((t) => {
+        const assignedUser = t.assignedTo as any;
+        const totalItems = t.checklist?.length ?? 0;
+        const doneItems = t.checklist?.filter((c: any) => c.done).length ?? 0;
+        const checklistSummary = totalItems > 0 ? ` · ${doneItems}/${totalItems} subtasks completed` : "";
+        return {
+          _id: `task_${t._id.toString()}`,
+          kind: "Task Completion",
+          title: t.title,
+          context: `Submitted by ${assignedUser?.name ?? "Assignee"}${checklistSummary}`,
+          when: (t as any).updatedAt ?? (t as any).createdAt,
+        };
+      }),
     ];
 
     res.json({ approvals, total: approvals.length });

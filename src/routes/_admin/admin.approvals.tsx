@@ -1,11 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { ShieldCheck, FileText, KeyRound, UserPlus, Briefcase, Loader2, AlertTriangle, Check, X, Inbox } from "lucide-react";
+import { ShieldCheck, FileText, KeyRound, UserPlus, Briefcase, CheckSquare, Loader2, AlertTriangle, Check, X, Inbox } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StatusPill } from "@/components/common/StatusPill";
 import { Button } from "@/components/ui/button";
-import { useApprovals, type ApprovalItem } from "@/services/admin";
+import { useQueryClient } from "@tanstack/react-query";
+import { useApprovals, adminKeys, type ApprovalItem } from "@/services/admin";
 import { useUpdateDocument, useReviewAccessRequest } from "@/services/documents";
+import { useUpdateTask } from "@/services/tasks";
 
 export const Route = createFileRoute("/_admin/admin/approvals")({
   head: () => ({
@@ -25,20 +27,28 @@ export const Route = createFileRoute("/_admin/admin/approvals")({
   component: ApprovalsPage,
 });
 
-const FILTERS = ["All", "Documents", "Access", "Cases", "Clients"] as const;
+const FILTERS = ["All", "Tasks", "Documents", "Access", "Cases", "Clients"] as const;
 type Filter = (typeof FILTERS)[number];
 
-const iconFor = (kind: string) =>
-  kind === "Document Upload"
-    ? FileText
-    : kind === "Access Request"
-      ? KeyRound
-      : kind === "Client Request"
-        ? UserPlus
-        : Briefcase;
+const iconFor = (kind: string) => {
+  switch (kind) {
+    case "Task Completion":
+      return CheckSquare;
+    case "Document Upload":
+      return FileText;
+    case "Access Request":
+      return KeyRound;
+    case "Client Request":
+      return UserPlus;
+    default:
+      return Briefcase;
+  }
+};
 
 function matchesFilter(a: ApprovalItem, filter: Filter): boolean {
   switch (filter) {
+    case "Tasks":
+      return a.kind === "Task Completion";
     case "Documents":
       return a.kind === "Document Upload";
     case "Access":
@@ -52,8 +62,11 @@ function matchesFilter(a: ApprovalItem, filter: Filter): boolean {
   }
 }
 
-/** Resolve an approval `_id` back into the document + (optional) access-request ids. */
-function parseTarget(a: ApprovalItem): { docId: string; requestId?: string } {
+/** Resolve an approval `_id` back into the task, document + (optional) access-request ids. */
+function parseTarget(a: ApprovalItem): { docId?: string; requestId?: string; taskId?: string } {
+  if (a.kind === "Task Completion" || a._id.startsWith("task_")) {
+    return { taskId: a._id.replace(/^task_/, "") };
+  }
   if (a.kind === "Access Request") {
     const marker = "_access_";
     const idx = a._id.indexOf(marker);
@@ -65,6 +78,7 @@ function parseTarget(a: ApprovalItem): { docId: string; requestId?: string } {
 }
 
 function ApprovalsPage() {
+  const qc = useQueryClient();
   const { data, isLoading, isError } = useApprovals();
   const approvals = data?.approvals ?? [];
 
@@ -74,6 +88,7 @@ function ApprovalsPage() {
 
   const updateDocument = useUpdateDocument();
   const reviewAccessRequest = useReviewAccessRequest();
+  const updateTask = useUpdateTask();
 
   const visible = approvals.filter((a) => matchesFilter(a, filter));
 
@@ -82,17 +97,25 @@ function ApprovalsPage() {
     setActingOn(a._id);
     setErrorMsg(null);
 
-    const onSettled = () => setActingOn(null);
+    const onSettled = () => {
+      qc.invalidateQueries({ queryKey: adminKeys.approvals });
+      setActingOn(null);
+    };
     const onError = () => setErrorMsg(`Could not ${action === "approved" ? "approve" : "reject"} this request. Please try again.`);
 
-    if (target.requestId) {
+    if (target.taskId) {
+      updateTask.mutate(
+        { id: target.taskId, data: { status: action === "approved" ? "completed" : "in_progress" } },
+        { onSettled, onError },
+      );
+    } else if (target.requestId) {
       reviewAccessRequest.mutate(
-        { docId: target.docId, requestId: target.requestId, status: action },
+        { docId: target.docId!, requestId: target.requestId, status: action },
         { onSettled, onError },
       );
     } else {
       updateDocument.mutate(
-        { id: target.docId, data: { state: action === "approved" ? "Approved" : "Rejected" } },
+        { id: target.docId!, data: { state: action === "approved" ? "Approved" : "Rejected" } },
         { onSettled, onError },
       );
     }

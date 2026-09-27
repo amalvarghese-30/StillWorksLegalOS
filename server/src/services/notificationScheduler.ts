@@ -194,7 +194,7 @@ export class NotificationScheduler {
 
     const overdueTasks = await Task.find({
       deadline: { $lt: now },
-      status: { $nin: ["completed"] },
+      status: { $nin: ["completed", "pending_approval"] },
       assignedTo: { $ne: null },
     })
       .select("_id title deadline assignedTo caseId priority")

@@ -70,6 +70,8 @@ export function toneForStatus(status: string): Tone {
       return "danger";
     case "On Hold":
     case "Pending":
+    case "In Review":
+    case "pending_approval":
     case "Busy":
     case "Due Today":
     case "Medium":

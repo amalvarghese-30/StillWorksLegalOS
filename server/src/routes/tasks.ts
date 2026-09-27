@@ -306,6 +306,13 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       }
     }
 
+    // Non-admins attempting to mark task completed submit it for admin approval
+    if (updates["status"] !== undefined) {
+      if (req.user!.role !== "admin" && updates["status"] === "completed") {
+        updates["status"] = "pending_approval";
+      }
+    }
+
     // Fetch the original task to detect changes
     const originalTask = await Task.findById(req.params["id"]);
 
@@ -346,6 +353,33 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       }, req.app.get("io"));
     }
 
+    // Notify admins if task status changed to pending_approval
+    if (
+      updates["status"] === "pending_approval" &&
+      originalTask &&
+      originalTask.status !== "pending_approval"
+    ) {
+      const admins = await User.find({ role: "admin", status: "active" }).select("_id");
+      for (const admin of admins) {
+        if (admin._id.toString() !== req.userId) {
+          await NotificationService.createNotification({
+            userId: admin._id as Types.ObjectId,
+            type: "APPROVAL_REQUEST",
+            title: "Task Completion Approval",
+            message: `${req.user?.name ?? "Employee"} submitted task "${task.title}" for verification.`,
+            relatedId: task._id,
+            relatedModel: "Task",
+            actorId: new Types.ObjectId(req.userId),
+            metadata: {
+              taskTitle: task.title,
+              taskId: task._id.toString(),
+              action: "pending_approval",
+            },
+          }, req.app.get("io"));
+        }
+      }
+    }
+
     // Notify assignee if task status changed to completed
     if (
       updates["status"] !== undefined &&
@@ -353,6 +387,7 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       originalTask.status !== updates["status"] &&
       updates["status"] === "completed"
     ) {
+      const isApproval = originalTask.status === "pending_approval";
       // Notify the assignee (if any) and the creator
       const notifyUserIds = new Set<string>();
       if (task.assignedTo) notifyUserIds.add(task.assignedTo.toString());
@@ -362,9 +397,11 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
         if (userId && userId !== req.userId) { // Don't notify the user who made the change
           await NotificationService.createNotification({
             userId: new Types.ObjectId(userId),
-            type: "TASK_ASSIGNED", // We can use a different type, but let's reuse for now
-            title: "Task Completed",
-            message: `The task "${task.title}" has been marked as completed.`,
+            type: "TASK_ASSIGNED",
+            title: isApproval ? "Task Completion Approved" : "Task Completed",
+            message: isApproval
+              ? `${req.user?.name ?? "Admin"} approved and verified completion of task: "${task.title}".`
+              : `The task "${task.title}" has been marked as completed.`,
             relatedId: task._id,
             relatedModel: "Task",
             actorId: new Types.ObjectId(req.userId),
@@ -375,6 +412,32 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
             },
           }, req.app.get("io"));
         }
+      }
+    }
+
+    // Notify assignee if admin requested changes (moved from pending_approval back to in_progress/pending)
+    if (
+      originalTask &&
+      originalTask.status === "pending_approval" &&
+      updates["status"] !== undefined &&
+      updates["status"] !== "completed" &&
+      updates["status"] !== "pending_approval"
+    ) {
+      if (task.assignedTo && task.assignedTo.toString() !== req.userId) {
+        await NotificationService.createNotification({
+          userId: task.assignedTo as Types.ObjectId,
+          type: "TASK_ASSIGNED",
+          title: "Task Changes Requested",
+          message: `${req.user?.name ?? "Admin"} reviewed task "${task.title}" and requested changes.`,
+          relatedId: task._id,
+          relatedModel: "Task",
+          actorId: new Types.ObjectId(req.userId),
+          metadata: {
+            taskTitle: task.title,
+            taskId: task._id.toString(),
+            action: "changes_requested",
+          },
+        }, req.app.get("io"));
       }
     }
 

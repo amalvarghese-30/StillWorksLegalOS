@@ -18,10 +18,12 @@ const { Session } = await import("../models/Session.js");
 const { Case } = await import("../models/Case.js");
 const { Client } = await import("../models/Client.js");
 const { Counter } = await import("../models/Counter.js");
+const { Task } = await import("../models/Task.js");
 const { default: adminRoutes } = await import("../routes/admin.js");
 const { default: calendarRoutes } = await import("../routes/calendar.js");
 const { default: casesRoutes } = await import("../routes/cases.js");
 const { default: clientsRoutes } = await import("../routes/clients.js");
+const { default: tasksRoutes } = await import("../routes/tasks.js");
 
 function buildApp() {
   const app = express();
@@ -31,6 +33,7 @@ function buildApp() {
   app.use("/api/calendar", calendarRoutes);
   app.use("/api/cases", casesRoutes);
   app.use("/api/clients", clientsRoutes);
+  app.use("/api/tasks", tasksRoutes);
   return app;
 }
 
@@ -308,6 +311,81 @@ async function run() {
     const sequences = logs.map(l => l.sequence);
     const uniqueSeqs = new Set(sequences);
     assert(uniqueSeqs.size === M, `AUDIT CONCURRENCY: all ${M} audit logs have unique sequence numbers`);
+  }
+
+  // Test suite 7: TASK COMPLETION & APPROVAL WORKFLOW
+  console.log("\nSuite: Task Completion & Approval Workflow");
+  {
+    const admin = await createUser({
+      name: "Admin Approver",
+      email: "adminapprover@test.com",
+      role: "admin",
+      permissions: { employees: true, approvals: true, auditLogs: true, settings: true, tasks: true },
+    });
+    const adminToken = await createToken(admin);
+
+    const employee = await createUser({
+      name: "Associate Staff",
+      email: "associatestaff@test.com",
+      role: "junior_advocate",
+      permissions: { tasks: true, dashboard: true },
+    });
+    const employeeToken = await createToken(employee);
+
+    // 1. Create a task assigned to employee
+    const task = await Task.create({
+      title: "Draft Initial Written Statement",
+      description: "Prepare and review statement draft",
+      category: "Drafting",
+      priority: "High",
+      status: "in_progress",
+      deadline: new Date(Date.now() - 3600000), // 1 hour ago
+      assignedTo: employee._id,
+      createdBy: admin._id,
+      checklist: [
+        { text: "Collect facts from client", done: true },
+        { text: "Draft preliminary arguments", done: true },
+      ],
+    });
+
+    // 2. Employee submits task as completed via PATCH
+    const submitRes = await request(app)
+      .patch(`/api/tasks/${task._id}`)
+      .set("Authorization", `Bearer ${employeeToken}`)
+      .send({ status: "completed" });
+
+    assert(submitRes.status === 200, "TASK-APPR-001: Employee PATCH status: completed succeeds");
+    assert(submitRes.body.task.status === "pending_approval", "TASK-APPR-002: Non-admin completion request routes to pending_approval");
+
+    // Verify overdue hook does not mark pending_approval as overdue
+    const refreshed = await Task.findById(task._id);
+    assert(refreshed?.status === "pending_approval", "TASK-APPR-003: Task with past deadline remains in pending_approval");
+
+    // 3. Admin checks approvals queue
+    const approvalsRes = await request(app)
+      .get("/api/admin/approvals")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    assert(approvalsRes.status === 200, "TASK-APPR-004: Admin GET /api/admin/approvals succeeds");
+    const taskApproval = approvalsRes.body.approvals.find((a: any) => a._id === `task_${task._id}`);
+    assert(Boolean(taskApproval), "TASK-APPR-005: Task completion appears in approvals queue");
+    assert(taskApproval?.kind === "Task Completion", "TASK-APPR-006: Approval kind is 'Task Completion'");
+
+    // 4. Admin approves the task
+    const approveRes = await request(app)
+      .patch(`/api/tasks/${task._id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ status: "completed" });
+
+    assert(approveRes.status === 200, "TASK-APPR-007: Admin PATCH status: completed succeeds");
+    assert(approveRes.body.task.status === "completed", "TASK-APPR-008: Admin approval transitions task to completed");
+
+    // 5. Verify task is no longer in pending_approval
+    const approvalsAfterRes = await request(app)
+      .get("/api/admin/approvals")
+      .set("Authorization", `Bearer ${adminToken}`);
+    const taskApprovalAfter = approvalsAfterRes.body.approvals.find((a: any) => a._id === `task_${task._id}`);
+    assert(!taskApprovalAfter, "TASK-APPR-009: Completed task cleared from approvals queue");
   }
 
   await mongoose.disconnect();

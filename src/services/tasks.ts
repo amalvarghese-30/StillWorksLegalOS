@@ -47,7 +47,7 @@ export interface TaskRecord {
   description: string;
   category: string;
   priority: "High" | "Medium" | "Low";
-  status: "pending" | "in_progress" | "completed" | "overdue";
+  status: "pending" | "in_progress" | "pending_approval" | "completed" | "overdue";
   deadline: string | null;
   assignedTo?: { _id: string; name: string };
   caseId?: string;
@@ -75,6 +75,7 @@ export interface CreateTaskPayload {
   description?: string;
   category?: string;
   priority?: string;
+  status?: "pending" | "in_progress" | "pending_approval" | "completed" | "overdue";
   deadline?: string;
   assignedTo?: string;
   caseId?: string;
@@ -89,6 +90,8 @@ export interface CreateTaskPayload {
   agent?: string;
   isCall?: boolean;
 }
+
+export type UpdateTaskPayload = Partial<CreateTaskPayload>;
 
 // ---------------------------------------------------------------------------
 // Query keys

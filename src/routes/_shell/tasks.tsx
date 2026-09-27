@@ -31,7 +31,7 @@ export const Route = createFileRoute("/_shell/tasks")({
   component: TasksPage,
 });
 
-const BUCKETS = ["Overdue", "Due Today", "Upcoming", "Completed"] as const;
+const BUCKETS = ["Overdue", "Due Today", "Upcoming", "In Review", "Completed"] as const;
 const VIEWS = [
   { id: "list", label: "List", icon: ListTodo },
   { id: "kanban", label: "Kanban", icon: LayoutGrid },
@@ -40,6 +40,7 @@ const VIEWS = [
 
 function getBucket(task: TaskRecord): string {
   if (task.status === "completed") return "Completed";
+  if (task.status === "pending_approval") return "In Review";
   if (task.status === "overdue") return "Overdue";
   if (!task.deadline) return "Upcoming";
   const dl = new Date(task.deadline);
@@ -78,7 +79,19 @@ function TaskCard({ task, onSelect }: { task: TaskRecord; onSelect?: (task: Task
     >
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
         <div className="min-w-0">
-          <p className="truncate font-medium">{task.title}</p>
+          <div className="flex items-center gap-2">
+            <p className="truncate font-medium">{task.title}</p>
+            {task.status === "pending_approval" && (
+              <span className="shrink-0 rounded-pill bg-amber-500/15 text-amber-600 dark:text-amber-400 px-2 py-0.5 text-[10px] font-bold">
+                IN REVIEW
+              </span>
+            )}
+            {task.status === "completed" && (
+              <span className="shrink-0 rounded-pill bg-success/15 text-success px-2 py-0.5 text-[10px] font-bold">
+                COMPLETED
+              </span>
+            )}
+          </div>
           <p className="truncate text-caption text-muted-foreground">
             {task.caseName || task.description || "No case linked"}
           </p>
@@ -319,7 +332,7 @@ function TasksPage() {
 
       {/* Data */}
       {!isLoading && !isError && tasks.length > 0 && view === "kanban" ? (
-        <div className="flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-4">
+        <div className="flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-3 xl:grid-cols-5">
           {BUCKETS.map((b) => {
             const bucketTasks = tasks.filter((t) => getBucket(t) === b);
             return (
