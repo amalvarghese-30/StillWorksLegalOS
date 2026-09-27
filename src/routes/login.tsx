@@ -133,18 +133,20 @@ function LoginPage() {
           />
 
           {/* StillWorks attribution */}
-          <div className="mt-8 flex flex-col items-center gap-1.5">
+          <div className="mt-8 flex items-center justify-center gap-2">
             <img
               src="/stillworks-logo-light.jpg"
               alt="StillWorks"
-              className="h-8 w-auto object-contain opacity-70 dark:hidden"
+              className="h-7 w-auto object-contain dark:hidden"
+              style={{ mixBlendMode: "multiply" }}
             />
             <img
               src="/stillworks-logo-dark.jpg"
               alt="StillWorks"
-              className="hidden h-8 w-auto object-contain opacity-70 dark:block"
+              className="hidden h-7 w-auto object-contain dark:block"
+              style={{ mixBlendMode: "screen" }}
             />
-            <span className="text-[11px] font-medium text-muted-foreground/70 tracking-wide">Developed by stillworks.in</span>
+            <span className="text-xs font-medium text-muted-foreground tracking-wide">Developed by stillworks.in</span>
           </div>
         </div>
       </div>
