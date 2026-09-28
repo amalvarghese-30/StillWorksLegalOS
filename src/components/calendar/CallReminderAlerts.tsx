@@ -140,7 +140,7 @@ export function CallReminderAlerts() {
       const candidates: ActiveReminder[] = [];
 
       for (const t of tasks) {
-        if (!t.isCall || t.status === "completed" || !t.callReminder?.scheduledAt) continue;
+        if (!t.isCall || t.status === "completed" || t.callReminder?.completed || !t.callReminder?.scheduledAt) continue;
         const due = new Date(t.callReminder.scheduledAt).getTime();
         candidates.push({
           id: `task-${t._id}`,
@@ -211,6 +211,70 @@ export function CallReminderAlerts() {
     };
   }, [taskData, calendarData, triggerAlert]);
 
+  // Inline edit state when editing from the popup alert
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editSchedule, setEditSchedule] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+
+  const startEdit = () => {
+    if (!activeAlert) return;
+    setEditName(activeAlert.clientName);
+    setEditPhone(activeAlert.phone || "");
+    const localIso = new Date(activeAlert.dueTime.getTime() - activeAlert.dueTime.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
+    setEditSchedule(localIso);
+    setEditNotes(activeAlert.notes || "");
+    setIsEditing(true);
+  };
+
+  const applyQuickReschedule = (mins: number) => {
+    const target = new Date(Date.now() + mins * 60 * 1000);
+    const localIso = new Date(target.getTime() - target.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
+    setEditSchedule(localIso);
+  };
+
+  const handleSaveReschedule = () => {
+    if (!activeAlert) return;
+    if (!editName.trim()) {
+      toast.error("Contact name is required");
+      return;
+    }
+    const newScheduledIso = editSchedule ? new Date(editSchedule).toISOString() : new Date().toISOString();
+
+    if (activeAlert.taskId) {
+      updateTask.mutate({
+        id: activeAlert.taskId,
+        data: {
+          title: `📞 CALL: ${editName.trim()}`,
+          deadline: newScheduledIso,
+          callReminder: {
+            clientName: editName.trim(),
+            phone: editPhone.trim(),
+            scheduledAt: newScheduledIso,
+            notes: editNotes.trim(),
+            completed: false,
+          },
+        },
+      });
+      toast.success("Call reminder updated and rescheduled!");
+    } else {
+      toast.info("Rescheduled");
+    }
+
+    channelRef.current?.postMessage({
+      type: "ALERT_DISMISSED",
+      id: activeAlert.id,
+      snoozedUntil: new Date(newScheduledIso).getTime(),
+    });
+    setIsEditing(false);
+    setActiveAlert(null);
+  };
+
   if (!activeAlert) return null;
 
   const handleSnooze = () => {
@@ -223,6 +287,7 @@ export function CallReminderAlerts() {
       snoozedUntil: snoozeTime,
     });
     toast.info("Call reminder snoozed for 5 minutes");
+    setIsEditing(false);
     setActiveAlert(null);
   };
 
@@ -230,7 +295,16 @@ export function CallReminderAlerts() {
     if (activeAlert.taskId) {
       updateTask.mutate({
         id: activeAlert.taskId,
-        data: { status: "completed" },
+        data: {
+          status: "completed",
+          callReminder: {
+            clientName: activeAlert.clientName,
+            phone: activeAlert.phone || "",
+            scheduledAt: activeAlert.dueTime.toISOString(),
+            notes: activeAlert.notes || "",
+            completed: true,
+          },
+        },
       });
       toast.success("Call marked as completed!");
     } else {
@@ -240,6 +314,7 @@ export function CallReminderAlerts() {
       type: "ALERT_COMPLETED",
       id: activeAlert.id,
     });
+    setIsEditing(false);
     setActiveAlert(null);
   };
 
@@ -251,7 +326,15 @@ export function CallReminderAlerts() {
   };
 
   return (
-    <Dialog open={Boolean(activeAlert)} onOpenChange={(open) => !open && setActiveAlert(null)}>
+    <Dialog
+      open={Boolean(activeAlert)}
+      onOpenChange={(open) => {
+        if (!open) {
+          setIsEditing(false);
+          setActiveAlert(null);
+        }
+      }}
+    >
       <DialogContent className="max-w-md border-amber-500/40 bg-card p-6 shadow-2xl animate-in zoom-in-95">
         <DialogHeader>
           <div className="flex items-center gap-3">
@@ -272,49 +355,144 @@ export function CallReminderAlerts() {
               </DialogTitle>
             </div>
           </div>
-          <DialogDescription className="mt-2 text-sm text-foreground/80">
-            {activeAlert.notes || activeAlert.title}
-          </DialogDescription>
+          {!isEditing && (
+            <DialogDescription className="mt-2 text-sm text-foreground/80">
+              {activeAlert.notes || activeAlert.title}
+            </DialogDescription>
+          )}
         </DialogHeader>
 
-        {activeAlert.phone && (
-          <div className="my-2 flex items-center justify-between rounded-lg border border-border bg-muted/40 p-3">
-            <div className="flex items-center gap-2.5">
-              <span className="text-caption text-muted-foreground font-medium">Phone:</span>
-              <span className="font-mono text-sm font-semibold tracking-wide text-foreground">
-                {activeAlert.phone}
-              </span>
+        {isEditing ? (
+          /* Inline Edit / Reschedule Form */
+          <div className="my-2 space-y-3.5 border-t border-b border-border/70 py-3">
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-foreground">Contact / Client Name</label>
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              />
             </div>
-            <div className="flex items-center gap-1.5">
-              <Button variant="ghost" size="sm" onClick={copyPhone} title="Copy phone number" className="h-8 px-2">
-                <Copy size={14} />
-              </Button>
-              <a
-                href={`tel:${activeAlert.phone}`}
-                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-transform active:scale-95"
-              >
-                <PhoneForwarded size={13} /> Call
-              </a>
+
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-foreground">Phone Number</label>
+              <input
+                type="text"
+                value={editPhone}
+                onChange={(e) => setEditPhone(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-medium text-foreground">Reschedule Date & Time</label>
+              <input
+                type="datetime-local"
+                value={editSchedule}
+                onChange={(e) => setEditSchedule(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <div className="flex items-center gap-1.5 pt-0.5">
+                <span className="text-[10px] text-muted-foreground">Quick:</span>
+                <button
+                  type="button"
+                  onClick={() => applyQuickReschedule(15)}
+                  className="rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] hover:border-primary/50"
+                >
+                  +15m
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyQuickReschedule(60)}
+                  className="rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] hover:border-primary/50"
+                >
+                  +1h
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyQuickReschedule(180)}
+                  className="rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] hover:border-primary/50"
+                >
+                  +3h
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-foreground">Notes / Agenda</label>
+              <textarea
+                value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
+                rows={2}
+                placeholder="What to discuss..."
+                className="w-full rounded-md border border-input bg-background p-2 text-xs text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary"
+              />
             </div>
           </div>
+        ) : (
+          /* Normal Alert Details */
+          activeAlert.phone && (
+            <div className="my-2 flex items-center justify-between rounded-lg border border-border bg-muted/40 p-3">
+              <div className="flex items-center gap-2.5">
+                <span className="text-caption text-muted-foreground font-medium">Phone:</span>
+                <span className="font-mono text-sm font-semibold tracking-wide text-foreground">
+                  {activeAlert.phone}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Button variant="ghost" size="sm" onClick={copyPhone} title="Copy phone number" className="h-8 px-2">
+                  <Copy size={14} />
+                </Button>
+                <a
+                  href={`tel:${activeAlert.phone}`}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-transform active:scale-95"
+                >
+                  <PhoneForwarded size={13} /> Call
+                </a>
+              </div>
+            </div>
+          )
         )}
 
         <DialogFooter className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-between">
-          <Button variant="outline" size="sm" onClick={handleSnooze} className="w-full sm:w-auto text-xs">
-            Snooze 5 min
-          </Button>
-          <div className="flex gap-2 w-full sm:w-auto">
-            <Button variant="ghost" size="sm" onClick={() => setActiveAlert(null)} className="flex-1 sm:flex-none text-xs">
-              Dismiss
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleMarkDone}
-              className="flex-1 sm:flex-none gradient-primary text-primary-foreground text-xs shadow-soft"
-            >
-              <Check size={14} /> Done
-            </Button>
-          </div>
+          {isEditing ? (
+            <div className="flex w-full justify-between items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setIsEditing(false)} className="text-xs">
+                Back
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleSaveReschedule}
+                className="gradient-primary text-primary-foreground text-xs shadow-soft"
+              >
+                <Check size={14} className="mr-1" /> Save & Reschedule
+              </Button>
+            </div>
+          ) : (
+            <>
+              <div className="flex gap-2 w-full sm:w-auto">
+                <Button variant="outline" size="sm" onClick={handleSnooze} className="text-xs">
+                  Snooze 5m
+                </Button>
+                <Button variant="outline" size="sm" onClick={startEdit} className="text-xs">
+                  Edit / Reschedule
+                </Button>
+              </div>
+              <div className="flex gap-2 w-full sm:w-auto">
+                <Button variant="ghost" size="sm" onClick={() => setActiveAlert(null)} className="flex-1 sm:flex-none text-xs">
+                  Dismiss
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleMarkDone}
+                  className="flex-1 sm:flex-none gradient-primary text-primary-foreground text-xs shadow-soft"
+                >
+                  <Check size={14} className="mr-1" /> Done
+                </Button>
+              </div>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

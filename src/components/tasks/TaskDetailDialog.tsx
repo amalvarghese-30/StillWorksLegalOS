@@ -13,6 +13,10 @@ import {
   AlertTriangle,
   Edit2,
   Check,
+  PhoneCall,
+  Phone,
+  Copy,
+  CalendarClock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -75,6 +79,14 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
   const [newChecklistText, setNewChecklistText] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
+  // Call reminder state
+  const isCallTask = Boolean(task?.isCall || task?.callReminder);
+  const [callClientName, setCallClientName] = useState("");
+  const [callPhone, setCallPhone] = useState("");
+  const [callScheduledAt, setCallScheduledAt] = useState("");
+  const [callNotes, setCallNotes] = useState("");
+  const [callCompleted, setCallCompleted] = useState(false);
+
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const { data: empData } = useEmployees(undefined, { enabled: isAdmin });
@@ -96,6 +108,19 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
       setPriority(task.priority || "Medium");
       setDeadline(task.deadline ? new Date(task.deadline).toISOString().slice(0, 16) : "");
       setAssignedTo(task.assignedTo?._id || "");
+
+      const cr = task.callReminder;
+      setCallClientName(cr?.clientName || (task.isCall ? task.title.replace(/^📞\s*CALL:\s*/i, "") : ""));
+      setCallPhone(cr?.phone || "");
+      const sched = cr?.scheduledAt ? new Date(cr.scheduledAt) : task.deadline ? new Date(task.deadline) : null;
+      if (sched) {
+        const localIso = new Date(sched.getTime() - sched.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+        setCallScheduledAt(localIso);
+      } else {
+        setCallScheduledAt("");
+      }
+      setCallNotes(cr?.notes || "");
+      setCallCompleted(Boolean(cr?.completed || task.status === "completed"));
 
       const initialCaseId =
         task.caseId && typeof task.caseId === "object"
@@ -179,6 +204,30 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
     }
   };
 
+  const handleToggleCallDone = async () => {
+    const nextVal = !callCompleted;
+    setCallCompleted(nextVal);
+    try {
+      await updateTask.mutateAsync({
+        id: task._id,
+        data: {
+          status: nextVal ? "completed" : "pending",
+          callReminder: {
+            clientName: callClientName.trim() || task.callReminder?.clientName || task.title,
+            phone: callPhone.trim() || task.callReminder?.phone || "",
+            scheduledAt: callScheduledAt ? new Date(callScheduledAt).toISOString() : task.callReminder?.scheduledAt || new Date().toISOString(),
+            notes: callNotes.trim() || task.callReminder?.notes || "",
+            completed: nextVal,
+          },
+        },
+      });
+      toast.success(nextVal ? "Call marked as completed!" : "Call marked as pending");
+    } catch {
+      setCallCompleted(!nextVal);
+      toast.error("Failed to update status");
+    }
+  };
+
   const handleSaveDetails = async () => {
     try {
       const payload: Partial<CreateTaskPayload> = {
@@ -191,6 +240,22 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
       };
       if (deadline) payload.deadline = new Date(deadline).toISOString();
       if (assignedTo) payload.assignedTo = assignedTo;
+
+      if (isCallTask || callClientName.trim()) {
+        const scheduledIso = callScheduledAt
+          ? new Date(callScheduledAt).toISOString()
+          : deadline
+          ? new Date(deadline).toISOString()
+          : new Date().toISOString();
+        payload.callReminder = {
+          clientName: callClientName.trim() || title.trim(),
+          phone: callPhone.trim(),
+          scheduledAt: scheduledIso,
+          notes: callNotes.trim(),
+          completed: callCompleted,
+        };
+        payload.isCall = true;
+      }
 
       await updateTask.mutateAsync({
         id: task._id,
@@ -565,6 +630,71 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
                 </div>
               </div>
 
+              {/* Call Reminder Details in Edit Mode */}
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3.5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
+                    <PhoneCall size={14} className="text-amber-500" />
+                    Call Reminder Details
+                  </Label>
+                  <label className="flex items-center gap-1.5 text-xs cursor-pointer text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={callCompleted}
+                      onChange={(e) => setCallCompleted(e.target.checked)}
+                      className="rounded border-border text-primary"
+                    />
+                    Mark call completed
+                  </label>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="call-edit-client" className="text-xs text-muted-foreground">Contact / Client Name</Label>
+                    <Input
+                      id="call-edit-client"
+                      value={callClientName}
+                      onChange={(e) => setCallClientName(e.target.value)}
+                      placeholder="Who to call"
+                      className="h-9 rounded-md text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="call-edit-phone" className="text-xs text-muted-foreground">Phone Number</Label>
+                    <Input
+                      id="call-edit-phone"
+                      value={callPhone}
+                      onChange={(e) => setCallPhone(e.target.value)}
+                      placeholder="+91-XXXXXXXXXX"
+                      className="h-9 rounded-md text-xs font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="call-edit-sched" className="text-xs text-muted-foreground">Scheduled Time</Label>
+                    <Input
+                      id="call-edit-sched"
+                      type="datetime-local"
+                      value={callScheduledAt}
+                      onChange={(e) => setCallScheduledAt(e.target.value)}
+                      className="h-9 rounded-md text-xs font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="call-edit-notes" className="text-xs text-muted-foreground">Call Agenda / Notes</Label>
+                    <Input
+                      id="call-edit-notes"
+                      value={callNotes}
+                      onChange={(e) => setCallNotes(e.target.value)}
+                      placeholder="Discussion topic..."
+                      className="h-9 rounded-md text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="outline" size="sm" onClick={() => setIsEditing(false)} className="rounded-md">
                   Cancel
@@ -630,6 +760,105 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
                   </div>
                 )}
               </div>
+
+              {/* Dedicated Call Reminder Card */}
+              {(task.isCall || task.callReminder) && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 shadow-soft">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <span className="grid size-9 place-items-center rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                        <PhoneCall size={18} strokeWidth={2} />
+                      </span>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-semibold text-foreground">Call Reminder</h4>
+                          <span
+                            className={`rounded-pill px-2 py-0.5 text-[10px] font-bold ${
+                              callCompleted
+                                ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30"
+                                : "bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30"
+                            }`}
+                          >
+                            {callCompleted ? "Done" : "Pending"}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground flex items-center gap-1 mt-0.5">
+                          <Clock size={11} />
+                          {task.callReminder?.scheduledAt
+                            ? new Date(task.callReminder.scheduledAt).toLocaleDateString("en-IN", {
+                                weekday: "short",
+                                day: "numeric",
+                                month: "short",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "No scheduled time"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant={callCompleted ? "outline" : "default"}
+                      size="sm"
+                      onClick={handleToggleCallDone}
+                      disabled={updateTask.isPending}
+                      className={`h-8 rounded-pill text-xs font-semibold ${
+                        callCompleted
+                          ? "border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10"
+                          : "gradient-primary text-primary-foreground font-bold shadow-soft"
+                      }`}
+                    >
+                      {callCompleted ? (
+                        <>
+                          <CheckCircle2 size={13} className="mr-1 text-emerald-600" /> Completed
+                        </>
+                      ) : (
+                        <>
+                          <Check size={13} className="mr-1" /> Mark Call Done
+                        </>
+                      )}
+                    </Button>
+                  </div>
+
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2 text-xs">
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <User size={13} />
+                      <span>Contact: <strong className="text-foreground">{task.callReminder?.clientName || task.title}</strong></span>
+                    </div>
+                    {task.callReminder?.phone && (
+                      <div className="flex items-center justify-between rounded border border-border/60 bg-card px-2.5 py-1">
+                        <span className="font-mono text-xs font-medium text-foreground">{task.callReminder.phone}</span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(task.callReminder!.phone);
+                              toast.success("Phone number copied to clipboard");
+                            }}
+                            className="rounded p-1 text-muted-foreground hover:text-foreground"
+                            title="Copy phone"
+                          >
+                            <Copy size={12} />
+                          </button>
+                          <a
+                            href={`tel:${task.callReminder.phone}`}
+                            className="rounded bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
+                          >
+                            Call
+                          </a>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {task.callReminder?.notes && (
+                    <p className="mt-2.5 rounded border border-border/50 bg-background/60 p-2.5 text-xs text-foreground/90 italic">
+                      &ldquo;{task.callReminder.notes}&rdquo;
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

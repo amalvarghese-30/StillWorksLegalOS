@@ -356,7 +356,15 @@ router.post("/", async (req: Request, res: Response) => {
       caseId: cleanCaseId,
       clientId: cleanClientId,
       checklist: checklist ?? [],
-      callReminder: callReminder?.clientName ? callReminder : undefined,
+      callReminder: callReminder?.clientName
+        ? {
+            clientName: String(callReminder.clientName).trim(),
+            phone: String(callReminder.phone ?? "").trim(),
+            scheduledAt: callReminder.scheduledAt ? new Date(callReminder.scheduledAt) : new Date(),
+            notes: String(callReminder.notes ?? "").trim(),
+            completed: Boolean(callReminder.completed ?? false),
+          }
+        : undefined,
       agent: agent ?? "",
       isCall: Boolean(isCall),
       createdBy: req.userId,
@@ -422,7 +430,20 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     }
     if (req.body["deadline"]) updates["deadline"] = new Date(req.body["deadline"]);
-    if (req.body["callReminder"]) updates["callReminder"] = req.body["callReminder"];
+    if (req.body["callReminder"] !== undefined) {
+      if (req.body["callReminder"] === null) {
+        updates["callReminder"] = undefined;
+      } else if (typeof req.body["callReminder"] === "object") {
+        const cr = req.body["callReminder"] as Record<string, unknown>;
+        updates["callReminder"] = {
+          clientName: String(cr["clientName"] ?? "").trim(),
+          phone: String(cr["phone"] ?? "").trim(),
+          scheduledAt: cr["scheduledAt"] ? new Date(cr["scheduledAt"] as string) : new Date(),
+          notes: String(cr["notes"] ?? "").trim(),
+          completed: Boolean(cr["completed"]),
+        };
+      }
+    }
 
     if (updates["caseId"] !== undefined) {
       const resolved = await resolveCaseId(updates["caseId"]);
@@ -465,6 +486,22 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
 
     // Fetch the original task to detect changes
     const originalTask = await Task.findById(req.params["id"]);
+
+    // Synchronize callReminder completed state with task status if relevant
+    if (updates["callReminder"]) {
+      const cr = updates["callReminder"] as { completed?: boolean };
+      if (cr.completed && updates["status"] === undefined) {
+        updates["status"] = req.user!.role === "admin" ? "completed" : "pending_approval";
+      }
+    } else if (updates["status"] === "completed" && originalTask?.callReminder) {
+      updates["callReminder"] = {
+        clientName: originalTask.callReminder.clientName,
+        phone: originalTask.callReminder.phone,
+        scheduledAt: originalTask.callReminder.scheduledAt,
+        notes: originalTask.callReminder.notes,
+        completed: true,
+      };
+    }
 
     let task;
     if (

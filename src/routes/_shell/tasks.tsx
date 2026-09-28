@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
-import { Plus, PhoneCall, ListTodo, LayoutGrid, CalendarDays, CheckCircle2, Circle, Clock, Loader2, ChevronLeft, ChevronRight, Search, Briefcase, Filter, X, SlidersHorizontal, UserCheck, AlertCircle, Check } from "lucide-react";
+import { Plus, PhoneCall, ListTodo, LayoutGrid, CalendarDays, CheckCircle2, Circle, Clock, Loader2, ChevronLeft, ChevronRight, Search, Briefcase, Filter, X, SlidersHorizontal, UserCheck, AlertCircle, Check, Edit2, PhoneForwarded } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
 import { StatusPill, toneForStatus } from "@/components/common/StatusPill";
@@ -8,11 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSocketEvent } from "@/lib/socket";
-import { useTasks, useToggleChecklistItem, taskKeys, type TaskRecord } from "@/services/tasks";
+import { useTasks, useUpdateTask, useToggleChecklistItem, taskKeys, type TaskRecord } from "@/services/tasks";
 import { useEmployees } from "@/services/admin";
 import { AddTaskDialog } from "@/components/tasks/AddTaskDialog";
 import { QuickCallDialog } from "@/components/tasks/QuickCallDialog";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
+import { EditCallDialog } from "@/components/tasks/EditCallDialog";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_shell/tasks")({
   head: () => ({
@@ -196,9 +198,35 @@ function TasksPage() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showQuickCall, setShowQuickCall] = useState(false);
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
+  const [editingCallTask, setEditingCallTask] = useState<TaskRecord | null>(null);
   const [calendarMonth, setCalendarMonth] = useState(new Date());
 
   const queryClient = useQueryClient();
+  const updateTask = useUpdateTask();
+
+  const handleToggleCallDone = async (e: React.MouseEvent, t: TaskRecord) => {
+    e.stopPropagation();
+    const cr = t.callReminder;
+    const nextCompleted = !Boolean(cr?.completed || t.status === "completed");
+    try {
+      await updateTask.mutateAsync({
+        id: t._id,
+        data: {
+          status: nextCompleted ? "completed" : "pending",
+          callReminder: {
+            clientName: cr?.clientName || t.title,
+            phone: cr?.phone || "",
+            scheduledAt: cr?.scheduledAt || new Date().toISOString(),
+            notes: cr?.notes || "",
+            completed: nextCompleted,
+          },
+        },
+      });
+      toast.success(nextCompleted ? "Call marked as completed!" : "Call marked as pending");
+    } catch {
+      toast.error("Failed to update call status");
+    }
+  };
 
   const apiFilters = useMemo(() => {
     const f: Record<string, string> = {
@@ -741,42 +769,133 @@ function TasksPage() {
           </div>
 
           {/* Call reminders sidebar */}
-          <SectionCard title="Call reminders" description="Scheduled client calls." icon={PhoneCall}>
-            {tasks.filter((t) => t.callReminder).length > 0 ? (
-              <ul className="space-y-3">
+          <SectionCard
+            title="Call reminders"
+            description="Scheduled client calls."
+            icon={PhoneCall}
+            action={
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs rounded-pill"
+                onClick={() => setShowQuickCall(true)}
+              >
+                <Plus size={12} className="mr-1" /> Add Call
+              </Button>
+            }
+          >
+            {tasks.filter((t) => t.callReminder || t.isCall).length > 0 ? (
+              <ul className="space-y-2.5">
                 {tasks
-                  .filter((t) => t.callReminder)
-                  .map((t) => (
-                    <li
-                      key={t._id}
-                      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-border p-4"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{t.callReminder!.clientName}</p>
-                        <p className="num truncate text-caption text-muted-foreground">
-                          {t.callReminder!.phone}
-                        </p>
-                        <p className="num mt-0.5 text-caption text-muted-foreground">
-                          {new Date(t.callReminder!.scheduledAt).toLocaleDateString("en-IN", {
-                            weekday: "short",
-                            day: "numeric",
-                            month: "short",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </p>
-                      </div>
-                      <StatusPill tone={t.callReminder!.completed ? "success" : "warning"}>
-                        {t.callReminder!.completed ? "Done" : "Pending"}
-                      </StatusPill>
-                    </li>
-                  ))}
+                  .filter((t) => t.callReminder || t.isCall)
+                  .map((t) => {
+                    const cr = t.callReminder;
+                    const isDone = Boolean(cr?.completed || t.status === "completed");
+                    const clientName = cr?.clientName || t.title.replace(/^📞\s*CALL:\s*/i, "");
+                    const phone = cr?.phone || "";
+                    const schedTime = cr?.scheduledAt || t.deadline;
+
+                    return (
+                      <li
+                        key={t._id}
+                        onClick={() => setEditingCallTask(t)}
+                        className={`group relative flex flex-col gap-2 rounded-lg border p-3.5 transition-all cursor-pointer ${
+                          isDone
+                            ? "border-border/60 bg-muted/20 opacity-75 hover:opacity-100 hover:border-border"
+                            : "border-border bg-card shadow-soft hover:border-amber-500/40 hover:shadow-md"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-start gap-2.5 min-w-0">
+                            <button
+                              type="button"
+                              onClick={(e) => handleToggleCallDone(e, t)}
+                              className="mt-0.5 shrink-0 rounded-full p-0.5 text-muted-foreground hover:text-foreground transition-colors"
+                              title={isDone ? "Mark as pending" : "Mark as completed"}
+                            >
+                              {isDone ? (
+                                <CheckCircle2 size={17} className="text-emerald-500 fill-emerald-500/20" />
+                              ) : (
+                                <Circle size={17} className="hover:text-amber-500" />
+                              )}
+                            </button>
+                            <div className="min-w-0">
+                              <p
+                                className={`truncate font-medium text-sm ${
+                                  isDone ? "line-through text-muted-foreground" : "text-foreground"
+                                }`}
+                              >
+                                {clientName}
+                              </p>
+                              {phone && (
+                                <p className="font-mono text-xs text-muted-foreground">
+                                  {phone}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <StatusPill tone={isDone ? "success" : "warning"}>
+                              {isDone ? "Done" : "Pending"}
+                            </StatusPill>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="size-7 p-0 rounded-full text-muted-foreground hover:text-foreground"
+                              onClick={() => setEditingCallTask(t)}
+                              title="Edit call reminder"
+                            >
+                              <Edit2 size={12} />
+                            </Button>
+                            {phone && (
+                              <a
+                                href={`tel:${phone}`}
+                                className="grid size-7 place-items-center rounded-full bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
+                                title="Call now"
+                              >
+                                <PhoneCall size={11} />
+                              </a>
+                            )}
+                          </div>
+                        </div>
+
+                        {schedTime && (
+                          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground border-t border-border/40 pt-1.5 mt-0.5">
+                            <Clock size={11} />
+                            <span>
+                              {new Date(schedTime).toLocaleDateString("en-IN", {
+                                weekday: "short",
+                                day: "numeric",
+                                month: "short",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                            {cr?.notes && (
+                              <span className="truncate italic ml-1">
+                                · {cr.notes}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
               </ul>
             ) : (
               <div className="py-8 text-center text-helper text-muted-foreground">
                 <PhoneCall size={28} strokeWidth={1.5} className="mx-auto mb-2 opacity-40" />
                 <p>No call reminders</p>
-                <p className="mt-1 text-caption">Add a call reminder when creating a task.</p>
+                <p className="mt-1 text-caption">Add a call reminder using Quick Call or when creating a task.</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 text-xs rounded-pill"
+                  onClick={() => setShowQuickCall(true)}
+                >
+                  <Plus size={12} className="mr-1" /> Add Call Reminder
+                </Button>
               </div>
             )}
           </SectionCard>
@@ -789,6 +908,11 @@ function TasksPage() {
         open={!!selectedTask}
         onClose={() => setSelectedTask(null)}
         task={selectedTask}
+      />
+      <EditCallDialog
+        open={Boolean(editingCallTask)}
+        onClose={() => setEditingCallTask(null)}
+        task={editingCallTask}
       />
     </div>
   );

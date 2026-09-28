@@ -81,23 +81,24 @@ export interface TasksResponse {
 
 export interface CreateTaskPayload {
   title: string;
-  description?: string;
-  category?: string;
-  priority?: string;
-  status?: "pending" | "in_progress" | "pending_approval" | "completed" | "overdue";
-  deadline?: string;
-  assignedTo?: string;
-  caseId?: string | null;
-  clientId?: string | null;
-  checklist?: { text: string; done: boolean }[];
+  description?: string | undefined;
+  category?: string | undefined;
+  priority?: string | undefined;
+  status?: "pending" | "in_progress" | "pending_approval" | "completed" | "overdue" | undefined;
+  deadline?: string | undefined;
+  assignedTo?: string | undefined;
+  caseId?: string | null | undefined;
+  clientId?: string | null | undefined;
+  checklist?: { text: string; done: boolean }[] | undefined;
   callReminder?: {
     clientName: string;
     phone: string;
     scheduledAt: string;
     notes: string;
-  };
-  agent?: string;
-  isCall?: boolean;
+    completed?: boolean | undefined;
+  } | undefined;
+  agent?: string | undefined;
+  isCall?: boolean | undefined;
 }
 
 export type UpdateTaskPayload = Partial<CreateTaskPayload>;
