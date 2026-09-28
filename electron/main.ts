@@ -310,12 +310,24 @@ function validateAndResolvePath(inputPath: string): string {
 
   const resolved = path.resolve(cleaned);
 
-  // In production, you may want to restrict to specific allowed roots:
-  // e.g., only allow paths under the NAS mount point
-  // const allowedRoots = [process.env.NAS_MOUNT_POINT || "Z:"];
-  // if (!allowedRoots.some((root) => resolved.startsWith(path.resolve(root)))) {
-  //   throw new Error("Path not in allowed directory");
-  // }
+  // Restrict to app data, uploads, downloads, documents, or configured storage/NAS mount
+  const allowedRoots = [
+    app.getPath("userData"),
+    app.getPath("downloads"),
+    app.getPath("documents"),
+    path.resolve(process.cwd(), "uploads"),
+    ...(process.env.STORAGE_DIR ? [path.resolve(process.env.STORAGE_DIR)] : []),
+    ...(process.env.NAS_MOUNT_POINT ? [path.resolve(process.env.NAS_MOUNT_POINT)] : []),
+  ];
+
+  const isAllowed = allowedRoots.some((root) => {
+    const rel = path.relative(root, resolved);
+    return !rel.startsWith("..") && !path.isAbsolute(rel);
+  });
+
+  if (!isAllowed) {
+    throw new Error("Access denied: path is outside allowed application directories");
+  }
 
   // Check path exists
   if (!fs.existsSync(resolved)) {

@@ -8,7 +8,7 @@ import { AppSettings } from "../models/AppSettings.js";
 import { NotificationService } from "../services/notifications.js";
 import { Types } from "mongoose";
 import { requireAuth } from "../middleware/auth.js";
-import { canAccessCase, canAccessTask, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
+import { canAccessCase, canAccessClient, canAccessTask, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
 
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -342,6 +342,15 @@ router.post("/", async (req: Request, res: Response) => {
       }
     }
 
+    // Validate client access if clientId provided
+    if (cleanClientId && req.user!.role !== "admin") {
+      const hasClientAccess = await canAccessClient(req.userId!, req.user!.role, cleanClientId, req.user?.permissions);
+      if (!hasClientAccess) {
+        res.status(403).json({ message: "Cannot create task for a client you don't have access to" });
+        return;
+      }
+    }
+
     // Non-admins can only assign to themselves
     const finalAssignedTo = req.user!.role === "admin" ? (assignedTo ?? null) : req.userId;
 
@@ -473,6 +482,15 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       const hasAccess = await canAccessCase(req.userId!, req.user!.role, updates["caseId"] as string, req.user?.permissions);
       if (!hasAccess) {
         res.status(403).json({ message: "Cannot move task to a case you don't have access to" });
+        return;
+      }
+    }
+
+    // Validate client access if clientId changed
+    if (updates["clientId"] && req.user!.role !== "admin") {
+      const hasClientAccess = await canAccessClient(req.userId!, req.user!.role, updates["clientId"] as string, req.user?.permissions);
+      if (!hasClientAccess) {
+        res.status(403).json({ message: "Cannot link task to a client you don't have access to" });
         return;
       }
     }

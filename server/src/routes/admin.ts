@@ -588,8 +588,8 @@ router.get("/reports/summary", requireAdminOrPermission("reports"), async (req: 
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
     const [totalClients, activeCases, tasksCompleted, docsApproved] = await Promise.all([
-      Client.countDocuments(),
-      Case.countDocuments({ status: "Active" }),
+      Client.countDocuments({ tag: { $ne: "Archived" } }),
+      Case.countDocuments({ status: { $nin: ["Closed", "Archived"] } }),
       Task.countDocuments({ status: "completed", updatedAt: { $gte: thirtyDaysAgo } }),
       DocumentModel.countDocuments({ state: "Approved", updatedAt: { $gte: thirtyDaysAgo } }),
     ]);
@@ -623,7 +623,7 @@ router.get("/reports/case-growth", requireAdminOrPermission("reports"), async (_
       const monthLabel = start.toLocaleDateString("en-US", { month: "short" });
 
       const [cases, closed] = await Promise.all([
-        Case.countDocuments({ createdAt: { $gte: start, $lte: end } }),
+        Case.countDocuments({ createdAt: { $gte: start, $lte: end }, status: { $ne: "Archived" } }),
         Case.countDocuments({ status: "Closed", updatedAt: { $gte: start, $lte: end } }),
       ]);
 
@@ -644,6 +644,7 @@ router.get("/reports/case-growth", requireAdminOrPermission("reports"), async (_
 router.get("/reports/practice-areas", requireAdminOrPermission("reports"), async (_req: Request, res: Response) => {
   try {
     const distribution = await Case.aggregate([
+      { $match: { status: { $ne: "Archived" } } },
       { $group: { _id: "$practice", value: { $sum: 1 } } },
       { $sort: { value: -1 } },
       { $project: { name: "$_id", value: 1, _id: 0 } },
