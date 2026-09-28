@@ -18,29 +18,19 @@ export function isElectron(): boolean {
 }
 
 function getApiBase(): string {
-  if (typeof window !== "undefined") {
-    const host = window.location.hostname;
-    // Local dev: any port on localhost or 127.0.0.1
-    if (host === "localhost" || host === "127.0.0.1") {
-      return "http://localhost:3001/api";
-    }
-    // Local LAN IP (testing on same WiFi)
-    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(host)) {
-      return `${window.location.protocol}//${host}:3001/api`;
-    }
-    // Web browser domain
-    if (host.includes("stillworks.in")) {
-      return `${window.location.origin}/api`;
-    }
-  }
   // Electron desktop app: ALWAYS connect directly to the production VPS API
   if (isElectron()) {
     return "https://legalos.stillworks.in/api";
   }
+  if (typeof window !== "undefined") {
+    // Web browser: on localhost/LAN, relative /api is seamlessly forwarded to
+    // https://legalos.stillworks.in/api via the Vite dev server proxy without CORS issues.
+    // On the hosted web app, it resolves to https://legalos.stillworks.in/api natively.
+    return `${window.location.origin}/api`;
+  }
   if (import.meta.env["VITE_API_URL"]) {
     return import.meta.env["VITE_API_URL"];
   }
-  // Production remote default:
   return "https://legalos.stillworks.in/api";
 }
 

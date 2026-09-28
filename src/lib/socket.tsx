@@ -44,28 +44,17 @@ function isElectron(): boolean {
 }
 
 function getSocketUrl(): string {
-  if (typeof window !== "undefined") {
-    const host = window.location.hostname;
-    // Local dev: any port on localhost or 127.0.0.1
-    if (host === "localhost" || host === "127.0.0.1") {
-      return "http://localhost:3001";
-    }
-    // Local LAN IP (testing on same WiFi)
-    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(host)) {
-      return `${window.location.protocol}//${host}:3001`;
-    }
-    // Web browser domain
-    if (host.includes("stillworks.in")) {
-      return window.location.origin;
-    }
-  }
   if (isElectron()) {
     return "https://legalos.stillworks.in";
+  }
+  if (typeof window !== "undefined") {
+    // In dev, Vite proxies /socket.io to https://legalos.stillworks.in
+    // In production web, window.location.origin connects to https://legalos.stillworks.in
+    return window.location.origin;
   }
   if (import.meta.env["VITE_SOCKET_URL"]) {
     return import.meta.env["VITE_SOCKET_URL"];
   }
-  // Production remote default:
   return "https://legalos.stillworks.in";
 }
 

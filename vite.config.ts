@@ -16,6 +16,18 @@ export default defineConfig({
     port: 5174,
     strictPort: true,
     cors: true,
+    proxy: {
+      "/api": {
+        target: "https://legalos.stillworks.in",
+        changeOrigin: true,
+        secure: true,
+      },
+      "/socket.io": {
+        target: "https://legalos.stillworks.in",
+        ws: true,
+        changeOrigin: true,
+      },
+    },
     watch: {
       ignored: ["**/*.zip", "**/dist-electron.zip"],
     },
