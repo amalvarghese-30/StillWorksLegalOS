@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
-import { Briefcase, Plus, Filter, Search, Loader2, SlidersHorizontal, X, AlertCircle, RotateCcw } from "lucide-react";
+import { Briefcase, Plus, Filter, Search, Loader2, SlidersHorizontal, X, AlertCircle, RotateCcw, ChevronLeft, ChevronRight } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StatusPill } from "@/components/common/StatusPill";
 import { Button } from "@/components/ui/button";
@@ -156,6 +156,12 @@ function CasesPage() {
   const [priorityFilter, setPriorityFilter] = useState<string>("All");
   const [practiceFilter, setPracticeFilter] = useState<string>("All");
   const [selectedStaff, setSelectedStaff] = useState<string[]>([]);
+  const [courtFilter, setCourtFilter] = useState("");
+  const [judgeFilter, setJudgeFilter] = useState("");
+  const [hearingFrom, setHearingFrom] = useState("");
+  const [hearingTo, setHearingTo] = useState("");
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(24);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [reopenTargetCase, setReopenTargetCase] = useState<CaseRecord | null>(null);
@@ -163,16 +169,20 @@ function CasesPage() {
   // Construct server-side query filters to filter across full MongoDB database
   const apiFilters = useMemo(() => {
     const f: Record<string, string> = {
-      page: "1",
-      limit: "50",
+      page: String(page),
+      limit: String(limit),
     };
     if (search.trim()) f["search"] = search.trim();
     if (statusFilter !== "All") f["status"] = statusFilter;
     if (priorityFilter !== "All") f["priority"] = priorityFilter;
     if (practiceFilter !== "All") f["practice"] = practiceFilter;
     if (selectedStaff.length > 0) f["assignedTo"] = selectedStaff.join(",");
+    if (courtFilter.trim()) f["court"] = courtFilter.trim();
+    if (judgeFilter.trim()) f["judge"] = judgeFilter.trim();
+    if (hearingFrom) f["hearingFrom"] = hearingFrom;
+    if (hearingTo) f["hearingTo"] = hearingTo;
     return f;
-  }, [search, statusFilter, priorityFilter, practiceFilter, selectedStaff]);
+  }, [page, limit, search, statusFilter, priorityFilter, practiceFilter, selectedStaff, courtFilter, judgeFilter, hearingFrom, hearingTo]);
 
   // Fetch cases with server-side query parameters
   const { data, isLoading, isError, error } = useCases(apiFilters);
@@ -181,10 +191,12 @@ function CasesPage() {
   const employees = empData?.employees ?? [];
 
   const rawCases = data?.cases ?? [];
+  const totalItems = data?.total ?? rawCases.length;
+  const totalPages = data?.totalPages ?? 1;
 
   // Stat counts across all matters from server aggregation
   const stats = data?.stats ?? {
-    total: data?.total ?? rawCases.length,
+    total: totalItems,
     active: rawCases.filter((c) => c.status === "Active").length,
     urgent: rawCases.filter((c) => c.status === "Urgent").length,
     onHold: rawCases.filter((c) => c.status === "On Hold").length,
@@ -194,6 +206,7 @@ function CasesPage() {
   const filteredCases = rawCases;
 
   const toggleStaff = (idOrName: string) => {
+    setPage(1);
     setSelectedStaff((prev) =>
       prev.includes(idOrName) ? prev.filter((s) => s !== idOrName) : [...prev, idOrName]
     );
@@ -221,12 +234,21 @@ function CasesPage() {
     setPriorityFilter("All");
     setPracticeFilter("All");
     setSelectedStaff([]);
+    setCourtFilter("");
+    setJudgeFilter("");
+    setHearingFrom("");
+    setHearingTo("");
+    setPage(1);
   };
 
   const activeFilterCount =
     (statusFilter !== "All" ? 1 : 0) +
     (priorityFilter !== "All" ? 1 : 0) +
     (practiceFilter !== "All" ? 1 : 0) +
+    (courtFilter.trim() ? 1 : 0) +
+    (judgeFilter.trim() ? 1 : 0) +
+    (hearingFrom ? 1 : 0) +
+    (hearingTo ? 1 : 0) +
     selectedStaff.length +
     (search.trim() ? 1 : 0);
 
@@ -329,11 +351,20 @@ function CasesPage() {
             aria-label="Search cases"
             placeholder="Search by case number, title, court, client or staff…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
             className="min-w-0 flex-1 bg-transparent text-helper outline-none"
           />
           {search && (
-            <button onClick={() => setSearch("")} className="text-muted-foreground hover:text-foreground">
+            <button
+              onClick={() => {
+                setSearch("");
+                setPage(1);
+              }}
+              className="text-muted-foreground hover:text-foreground"
+            >
               <X size={15} />
             </button>
           )}
@@ -372,7 +403,10 @@ function CasesPage() {
               <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Status</label>
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setPage(1);
+                }}
                 className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs outline-none focus:border-primary"
               >
                 <option value="All">All Statuses</option>
@@ -388,7 +422,10 @@ function CasesPage() {
               <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Priority</label>
               <select
                 value={priorityFilter}
-                onChange={(e) => setPriorityFilter(e.target.value)}
+                onChange={(e) => {
+                  setPriorityFilter(e.target.value);
+                  setPage(1);
+                }}
                 className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs outline-none focus:border-primary"
               >
                 <option value="All">All Priorities</option>
@@ -403,7 +440,10 @@ function CasesPage() {
               <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Practice / Category</label>
               <select
                 value={practiceFilter}
-                onChange={(e) => setPracticeFilter(e.target.value)}
+                onChange={(e) => {
+                  setPracticeFilter(e.target.value);
+                  setPage(1);
+                }}
                 className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs outline-none focus:border-primary"
               >
                 {PRACTICE_OPTIONS.map((p) => (
@@ -437,6 +477,63 @@ function CasesPage() {
                   })
                 )}
               </div>
+            </div>
+
+            {/* Court / Forum */}
+            <div>
+              <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Court / Forum</label>
+              <input
+                type="text"
+                placeholder="e.g. Bombay High Court"
+                value={courtFilter}
+                onChange={(e) => {
+                  setCourtFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs outline-none focus:border-primary"
+              />
+            </div>
+
+            {/* Judge / Bench */}
+            <div>
+              <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Judge / Bench</label>
+              <input
+                type="text"
+                placeholder="e.g. Justice Deshmukh"
+                value={judgeFilter}
+                onChange={(e) => {
+                  setJudgeFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs outline-none focus:border-primary"
+              />
+            </div>
+
+            {/* Next Hearing Range */}
+            <div>
+              <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Hearing From</label>
+              <input
+                type="date"
+                value={hearingFrom}
+                onChange={(e) => {
+                  setHearingFrom(e.target.value);
+                  setPage(1);
+                }}
+                className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs outline-none focus:border-primary"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Hearing To</label>
+              <input
+                type="date"
+                value={hearingTo}
+                onChange={(e) => {
+                  setHearingTo(e.target.value);
+                  setPage(1);
+                }}
+                className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs outline-none focus:border-primary"
+              />
             </div>
           </div>
         </div>
@@ -493,10 +590,57 @@ function CasesPage() {
         </div>
       )}
 
-      {filteredCases.length > 0 && (
-        <p className="mt-6 flex items-center gap-2 text-helper text-muted-foreground">
-          <Briefcase size={16} strokeWidth={1.75} /> Showing {filteredCases.length} of {rawCases.length} matters
-        </p>
+      {totalItems > 0 && (
+        <div className="mt-6 flex flex-col items-center justify-between gap-4 border-t border-border pt-4 sm:flex-row">
+          <p className="flex items-center gap-2 text-helper text-muted-foreground">
+            <Briefcase size={16} strokeWidth={1.75} />
+            Showing {Math.min((page - 1) * limit + 1, totalItems)}–{Math.min(page * limit, totalItems)} of {totalItems} matters
+          </p>
+
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">Rows:</span>
+              <select
+                value={limit}
+                onChange={(e) => {
+                  setLimit(Number(e.target.value));
+                  setPage(1);
+                }}
+                className="h-8 rounded border border-border bg-background px-2 text-xs"
+              >
+                <option value={12}>12</option>
+                <option value={24}>24</option>
+                <option value={48}>48</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="h-8 w-8 p-0"
+                aria-label="Previous page"
+              >
+                <ChevronLeft size={16} />
+              </Button>
+              <span className="px-2 text-xs font-medium text-foreground">
+                Page {page} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="h-8 w-8 p-0"
+                aria-label="Next page"
+              >
+                <ChevronRight size={16} />
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       <AddCaseDialog open={showAddDialog} onClose={() => setShowAddDialog(false)} />

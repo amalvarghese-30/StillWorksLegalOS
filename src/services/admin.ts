@@ -190,9 +190,15 @@ export function useUpdateEmployee() {
   });
 }
 
+export interface CreateEmployeeResponse {
+  user: EmployeeRecord;
+  tempPassword?: string;
+  mustChangePassword?: boolean;
+}
+
 export function useCreateEmployee() {
   const qc = useQueryClient();
-  return useMutation<{ user: EmployeeRecord }, Error, CreateEmployeePayload>({
+  return useMutation<CreateEmployeeResponse, Error, CreateEmployeePayload>({
     mutationFn: (data) => api.post("/admin/employees", data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: adminKeys.all });
@@ -367,3 +373,45 @@ export function useUpdateTaskOptions() {
     },
   });
 }
+
+// ---------------------------------------------------------------------------
+// Active sessions management
+// ---------------------------------------------------------------------------
+
+export interface ActiveSession {
+  _id: string;
+  ip: string;
+  userAgent: string;
+  rememberMe: boolean;
+  createdAt: string;
+  lastActiveAt: string;
+  isCurrent: boolean;
+}
+
+export function useActiveSessions() {
+  return useQuery<{ sessions: ActiveSession[] }>({
+    queryKey: ["auth", "sessions"],
+    queryFn: () => api.get("/auth/sessions"),
+  });
+}
+
+export function useRevokeSession() {
+  const qc = useQueryClient();
+  return useMutation<{ message: string }, Error, string>({
+    mutationFn: (id) => api.delete(`/auth/sessions/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["auth", "sessions"] });
+    },
+  });
+}
+
+export function useRevokeAllOtherSessions() {
+  const qc = useQueryClient();
+  return useMutation<{ message: string }, Error, void>({
+    mutationFn: () => api.delete("/auth/sessions"),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["auth", "sessions"] });
+    },
+  });
+}
+

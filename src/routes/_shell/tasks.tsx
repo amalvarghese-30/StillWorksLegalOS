@@ -194,6 +194,10 @@ function TasksPage() {
   const [priorityFilter, setPriorityFilter] = useState<string>("All");
   const [categoryFilter, setCategoryFilter] = useState<string>("All");
   const [selectedStaff, setSelectedStaff] = useState<string[]>([]);
+  const [dueFrom, setDueFrom] = useState("");
+  const [dueTo, setDueTo] = useState("");
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(24);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showQuickCall, setShowQuickCall] = useState(false);
@@ -230,8 +234,8 @@ function TasksPage() {
 
   const apiFilters = useMemo(() => {
     const f: Record<string, string> = {
-      page: "1",
-      limit: "100",
+      page: String(page),
+      limit: String(limit),
     };
     if (search.trim()) f["search"] = search.trim();
     if (statusFilter !== "All") {
@@ -246,8 +250,10 @@ function TasksPage() {
     if (priorityFilter !== "All") f["priority"] = priorityFilter;
     if (categoryFilter !== "All") f["category"] = categoryFilter;
     if (selectedStaff.length > 0) f["assignedTo"] = selectedStaff.join(",");
+    if (dueFrom) f["dueFrom"] = dueFrom;
+    if (dueTo) f["dueTo"] = dueTo;
     return f;
-  }, [search, statusFilter, priorityFilter, categoryFilter, selectedStaff]);
+  }, [page, limit, search, statusFilter, priorityFilter, categoryFilter, selectedStaff, dueFrom, dueTo]);
 
   const { data, isLoading, isError, error } = useTasks(apiFilters);
   const { data: empData } = useEmployees();
@@ -298,18 +304,26 @@ function TasksPage() {
     );
   };
 
+  const totalItems = data?.total ?? allTasks.length;
+  const totalPages = data?.totalPages ?? 1;
+
   const clearAllFilters = () => {
     setSearch("");
     setStatusFilter("All");
     setPriorityFilter("All");
     setCategoryFilter("All");
     setSelectedStaff([]);
+    setDueFrom("");
+    setDueTo("");
+    setPage(1);
   };
 
   const activeFilterCount =
     (statusFilter !== "All" ? 1 : 0) +
     (priorityFilter !== "All" ? 1 : 0) +
     (categoryFilter !== "All" ? 1 : 0) +
+    (dueFrom ? 1 : 0) +
+    (dueTo ? 1 : 0) +
     selectedStaff.length +
     (search.trim() ? 1 : 0);
 
@@ -510,11 +524,20 @@ function TasksPage() {
             aria-label="Search tasks"
             placeholder="Search title, client, category, staff…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
             className="min-w-0 flex-1 bg-transparent text-helper outline-none"
           />
           {search && (
-            <button onClick={() => setSearch("")} className="text-muted-foreground hover:text-foreground">
+            <button
+              onClick={() => {
+                setSearch("");
+                setPage(1);
+              }}
+              className="text-muted-foreground hover:text-foreground"
+            >
               <X size={14} />
             </button>
           )}
@@ -524,13 +547,16 @@ function TasksPage() {
       {/* ── Expandable Filter Panel ── */}
       {showFilterPanel && (
         <div className="mb-6 rounded-xl border border-border bg-card/95 p-4 shadow-soft backdrop-blur-md animate-in fade-in-50 slide-in-from-top-2">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             {/* Status Filter */}
             <div>
               <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Status</label>
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setPage(1);
+                }}
                 className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs outline-none focus:border-primary"
               >
                 <option value="All">All Statuses</option>
@@ -548,7 +574,10 @@ function TasksPage() {
               <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Priority</label>
               <select
                 value={priorityFilter}
-                onChange={(e) => setPriorityFilter(e.target.value)}
+                onChange={(e) => {
+                  setPriorityFilter(e.target.value);
+                  setPage(1);
+                }}
                 className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs outline-none focus:border-primary"
               >
                 <option value="All">All Priorities</option>
@@ -563,7 +592,10 @@ function TasksPage() {
               <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Category</label>
               <select
                 value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
+                onChange={(e) => {
+                  setCategoryFilter(e.target.value);
+                  setPage(1);
+                }}
                 className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs outline-none focus:border-primary"
               >
                 <option value="All">All Categories</option>
@@ -571,6 +603,33 @@ function TasksPage() {
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
+            </div>
+
+            {/* Due Date Range */}
+            <div>
+              <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Due From</label>
+              <input
+                type="date"
+                value={dueFrom}
+                onChange={(e) => {
+                  setDueFrom(e.target.value);
+                  setPage(1);
+                }}
+                className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs outline-none focus:border-primary"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Due To</label>
+              <input
+                type="date"
+                value={dueTo}
+                onChange={(e) => {
+                  setDueTo(e.target.value);
+                  setPage(1);
+                }}
+                className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs outline-none focus:border-primary"
+              />
             </div>
 
             {/* Staff Multi-Select Filter */}
@@ -589,7 +648,10 @@ function TasksPage() {
                         <input
                           type="checkbox"
                           checked={checked}
-                          onChange={() => toggleStaff(emp._id)}
+                          onChange={() => {
+                            toggleStaff(emp._id);
+                            setPage(1);
+                          }}
                           className="rounded border-border"
                         />
                         <span className="truncate">{emp.name}</span>
@@ -901,6 +963,59 @@ function TasksPage() {
           </SectionCard>
         </div>
       ) : null}
+
+      {totalItems > 0 && (
+        <div className="mt-6 flex flex-col items-center justify-between gap-4 border-t border-border pt-4 sm:flex-row">
+          <p className="flex items-center gap-2 text-helper text-muted-foreground">
+            <ListTodo size={16} strokeWidth={1.75} />
+            Showing {Math.min((page - 1) * limit + 1, totalItems)}–{Math.min(page * limit, totalItems)} of {totalItems} tasks
+          </p>
+
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">Rows:</span>
+              <select
+                value={limit}
+                onChange={(e) => {
+                  setLimit(Number(e.target.value));
+                  setPage(1);
+                }}
+                className="h-8 rounded border border-border bg-background px-2 text-xs"
+              >
+                <option value={12}>12</option>
+                <option value={24}>24</option>
+                <option value={48}>48</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="h-8 w-8 p-0"
+                aria-label="Previous page"
+              >
+                <ChevronLeft size={16} />
+              </Button>
+              <span className="px-2 text-xs font-medium text-foreground">
+                Page {page} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="h-8 w-8 p-0"
+                aria-label="Next page"
+              >
+                <ChevronRight size={16} />
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <AddTaskDialog open={showAddDialog} onClose={() => setShowAddDialog(false)} />
       <QuickCallDialog open={showQuickCall} onClose={() => setShowQuickCall(false)} />

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { User, Building2, Bell, Lock, Palette, HardDrive, Loader2 } from "lucide-react";
+import { User, Building2, Bell, Lock, Palette, HardDrive, Loader2, Laptop, LogOut, ShieldCheck } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,14 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/lib/auth";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
-import { useUpdateProfile, useUpdateFirm, useUpdatePreferences } from "@/services/admin";
+import {
+  useUpdateProfile,
+  useUpdateFirm,
+  useUpdatePreferences,
+  useActiveSessions,
+  useRevokeSession,
+  useRevokeAllOtherSessions,
+} from "@/services/admin";
 import { validatePhone, sanitizePhone } from "@/lib/validation";
 
 export const Route = createFileRoute("/_shell/settings")({
@@ -39,6 +46,10 @@ function SettingsPage() {
   const updateProfile = useUpdateProfile();
   const updateFirm = useUpdateFirm();
   const updatePreferences = useUpdatePreferences();
+
+  const activeSessionsQuery = useActiveSessions();
+  const revokeSessionMutation = useRevokeSession();
+  const revokeAllOtherSessionsMutation = useRevokeAllOtherSessions();
 
   // Form state — initialised from auth user
   const [name, setName] = useState("");
@@ -71,10 +82,34 @@ function SettingsPage() {
     { label: "Daily digest", description: "A calm morning summary at 8:00 AM", checked: notifyDailyDigest, setter: setNotifyDailyDigest },
   ];
 
-  const securitySettings = [
-    { label: "Two-factor authentication", description: "Ask for a code on every new device", checked: securityTwoFactor, setter: setSecurityTwoFactor },
-    { label: "Session timeout", description: "Sign out after 30 minutes of inactivity", checked: securitySessionTimeout, setter: setSecuritySessionTimeout },
-    { label: "Login alerts", description: "Email me when a new device signs in", checked: securityLoginAlerts, setter: setSecurityLoginAlerts },
+  const securitySettings: {
+    label: string;
+    description: string;
+    checked: boolean;
+    setter: (val: boolean) => void;
+    disabled?: boolean;
+    badge?: string;
+  }[] = [
+    {
+      label: "Session inactivity timeout",
+      description: "Sign out automatically after 30 minutes of idle inactivity (Enforced)",
+      checked: securitySessionTimeout,
+      setter: setSecuritySessionTimeout,
+    },
+    {
+      label: "Login alerts",
+      description: "Real-time in-app notification when a new device signs in",
+      checked: securityLoginAlerts,
+      setter: setSecurityLoginAlerts,
+    },
+    {
+      label: "Two-factor authentication",
+      description: "Requires enterprise authenticator or SMS integration (Scheduled for next release)",
+      checked: securityTwoFactor,
+      setter: setSecurityTwoFactor,
+      disabled: true,
+      badge: "Enterprise Roadmap",
+    },
   ];
 
   useEffect(() => {
@@ -163,38 +198,129 @@ function SettingsPage() {
 
         <div className="min-w-0 space-y-6">
           {tab === "notifications" || tab === "security" ? (
-            <SectionCard
-              title={tab === "security" ? "Security" : "Notifications"}
-              description="Choose what reaches you, and how."
-              icon={tab === "security" ? Lock : Bell}
-            >
-              <form onSubmit={handlePreferencesSave}>
-                <ul className="divide-y divide-border">
-                  {(tab === "security" ? securitySettings : notificationSettings).map((setting) => (
-                    <li key={setting.label} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 py-4">
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{setting.label}</p>
-                        <p className="text-helper text-muted-foreground">{setting.description}</p>
-                      </div>
-                      <Switch checked={setting.checked} onCheckedChange={setting.setter} aria-label={setting.label} />
-                    </li>
-                  ))}
-                </ul>
-                <div className="flex items-center gap-3 pt-4 border-t border-border">
-                  <Button
-                    type="submit"
-                    disabled={updatePreferences.isPending}
-                    className="gradient-primary rounded-md text-primary-foreground shadow-soft"
-                  >
-                    {updatePreferences.isPending ? <Loader2 size={17} className="animate-spin" /> : null}
-                    {updatePreferences.isPending ? "Saving…" : prefsSaved ? "Saved ✓" : "Save changes"}
-                  </Button>
-                  {updatePreferences.isError && (
-                    <span className="text-caption text-destructive">Failed to save. Please try again.</span>
-                  )}
-                </div>
-              </form>
-            </SectionCard>
+            <div className="space-y-6">
+              <SectionCard
+                title={tab === "security" ? "Security Policies" : "Notifications"}
+                description={tab === "security" ? "Configure session security and login alerts." : "Choose what reaches you, and how."}
+                icon={tab === "security" ? Lock : Bell}
+              >
+                <form onSubmit={handlePreferencesSave}>
+                  <ul className="divide-y divide-border">
+                    {(tab === "security" ? securitySettings : notificationSettings).map((setting: any) => (
+                      <li key={setting.label} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 py-4">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="truncate font-medium">{setting.label}</p>
+                            {setting.badge && (
+                              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground border border-border">
+                                {setting.badge}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-helper text-muted-foreground">{setting.description}</p>
+                        </div>
+                        <Switch
+                          checked={setting.checked}
+                          onCheckedChange={setting.setter}
+                          disabled={Boolean(setting.disabled)}
+                          aria-label={setting.label}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="flex items-center gap-3 pt-4 border-t border-border">
+                    <Button
+                      type="submit"
+                      disabled={updatePreferences.isPending}
+                      className="gradient-primary rounded-md text-primary-foreground shadow-soft"
+                    >
+                      {updatePreferences.isPending ? <Loader2 size={17} className="animate-spin" /> : null}
+                      {updatePreferences.isPending ? "Saving…" : prefsSaved ? "Saved ✓" : "Save changes"}
+                    </Button>
+                    {updatePreferences.isError && (
+                      <span className="text-caption text-destructive">Failed to save. Please try again.</span>
+                    )}
+                  </div>
+                </form>
+              </SectionCard>
+
+              {tab === "security" && (
+                <SectionCard
+                  title="Active Sessions"
+                  description="Devices and browsers currently authenticated to your account."
+                  icon={ShieldCheck}
+                >
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">
+                        {activeSessionsQuery.data?.sessions.length ?? 0} active session(s)
+                      </span>
+                      {(activeSessionsQuery.data?.sessions.length ?? 0) > 1 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={revokeAllOtherSessionsMutation.isPending}
+                          onClick={() => revokeAllOtherSessionsMutation.mutate()}
+                          className="h-8 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        >
+                          <LogOut size={13} className="mr-1.5" /> Sign out all other sessions
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="divide-y divide-border rounded-lg border border-border bg-card">
+                      {activeSessionsQuery.data?.sessions.map((s) => (
+                        <div key={s._id} className="flex items-center justify-between p-3.5">
+                          <div className="flex items-center gap-3">
+                            <span className="grid size-9 place-items-center rounded-md bg-muted text-muted-foreground">
+                              <Laptop size={18} />
+                            </span>
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-semibold text-foreground">
+                                  {s.userAgent.slice(0, 48)}...
+                                </span>
+                                {s.isCurrent && (
+                                  <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                                    Current session
+                                  </span>
+                                )}
+                                {s.rememberMe && (
+                                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                                    Remember Me
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 text-[11px] text-muted-foreground font-mono">
+                                <span>IP: {s.ip || "127.0.0.1"}</span>
+                                <span>•</span>
+                                <span>Active: {new Date(s.lastActiveAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}</span>
+                              </div>
+                            </div>
+                          </div>
+                          {!s.isCurrent && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={revokeSessionMutation.isPending}
+                              onClick={() => revokeSessionMutation.mutate(s._id)}
+                              className="h-8 text-xs text-muted-foreground hover:text-destructive"
+                            >
+                              Revoke
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                      {!activeSessionsQuery.data?.sessions?.length && (
+                        <div className="p-4 text-center text-xs text-muted-foreground">
+                          No active sessions found.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </SectionCard>
+              )}
+            </div>
           ) : (
             <SectionCard
               title={tabs.find((t) => t.id === tab)?.label ?? "Profile"}
@@ -298,7 +424,7 @@ function SettingsPage() {
                   <HardDrive size={32} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
                   <p className="mt-4 font-medium">Storage is managed by your administrator</p>
                   <p className="mt-1 text-helper text-muted-foreground">
-                    NAS storage configuration is handled from the admin settings.
+                    Firm Document Storage configuration is managed from the administrative console.
                   </p>
                 </div>
               ) : null}

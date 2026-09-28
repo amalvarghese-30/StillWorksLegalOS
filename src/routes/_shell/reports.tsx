@@ -186,7 +186,7 @@ function ReportsPage() {
                       border: "1px solid var(--border)",
                       backgroundColor: "var(--card)",
                     }}
-                    formatter={(value: any) => [`${value} active matters`, "Caseload"]}
+                    formatter={(value: any) => [`${value} active matters`, "Active Matters"]}
                   />
                   <Bar dataKey="value" radius={[0, 6, 6, 0]} fill="var(--chart-2)" barSize={16} name="Active Matters" />
                 </BarChart>
@@ -194,7 +194,7 @@ function ReportsPage() {
             )}
           </div>
           <p className="mt-2 text-[11px] text-muted-foreground border-t border-border/40 pt-2">
-            Displays firm caseload concentration to help partners allocate advocate resources and court appearances effectively.
+            Displays active matters concentration across practice areas to help partners allocate advocate resources and court appearances effectively.
           </p>
         </SectionCard>
 

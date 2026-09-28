@@ -16,7 +16,7 @@ const router = Router();
 // body and persist it via the OS-level safeStorage API — see x-client-type.
 
 const REFRESH_COOKIE = "stillworks_refresh";
-const REFRESH_COOKIE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60; // 7 days
+const REFRESH_COOKIE_PERSISTENT_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
 
 function parseCookies(header?: string): Record<string, string> {
   const cookies: Record<string, string> = {};
@@ -36,15 +36,17 @@ function parseCookies(header?: string): Record<string, string> {
   return cookies;
 }
 
-function setRefreshCookie(res: Response, token: string): void {
+function setRefreshCookie(res: Response, token: string, persistent = false): void {
   const isProd = process.env["NODE_ENV"] === "production";
   const parts = [
     `${REFRESH_COOKIE}=${encodeURIComponent(token)}`,
     "HttpOnly",
     "SameSite=Lax",
     "Path=/api/auth",
-    `Max-Age=${REFRESH_COOKIE_MAX_AGE_SECONDS}`,
   ];
+  if (persistent) {
+    parts.push(`Max-Age=${REFRESH_COOKIE_PERSISTENT_MAX_AGE_SECONDS}`);
+  }
   if (isProd) parts.push("Secure");
   res.setHeader("Set-Cookie", parts.join("; "));
 }
@@ -137,9 +139,13 @@ router.post("/login", async (req: Request, res: Response) => {
     // Hash refresh token before storing
     const refreshTokenHash = await bcrypt.hash(refreshToken, 12);
 
-    // Create session record with refresh token hash
-    const device = req.headers["user-agent"] ?? "Unknown";
+    // Create session record with refresh token hash and rememberMe policy
+    const device = (req.headers["user-agent"] as string) ?? "Unknown";
     const ip = req.ip ?? req.socket.remoteAddress ?? "";
+    const rememberMe = Boolean(req.body?.rememberMe);
+    const sessionLifetimeMs = rememberMe
+      ? 30 * 24 * 60 * 60 * 1000 // 30 days persistent
+      : 12 * 60 * 60 * 1000;      // 12 hours (session scoped)
 
     await Session.create({
       userId: user._id,
@@ -147,8 +153,9 @@ router.post("/login", async (req: Request, res: Response) => {
       refreshTokenHash,
       device,
       ip,
+      rememberMe,
       lastActiveAt: new Date(),
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      expiresAt: new Date(Date.now() + sessionLifetimeMs),
     });
 
     // Update user status
@@ -156,8 +163,24 @@ router.post("/login", async (req: Request, res: Response) => {
     user.lastActiveAt = new Date();
     await user.save();
 
-    // Always set the refresh token as an httpOnly cookie (web clients).
-    setRefreshCookie(res, refreshToken);
+    // Set refresh token cookie: persistent if rememberMe, session-only if not
+    setRefreshCookie(res, refreshToken, rememberMe);
+
+    // If user has securityLoginAlerts enabled, trigger alert notification
+    if (user.securityLoginAlerts !== false) {
+      import("../services/notifications.js").then(({ NotificationService }) => {
+        NotificationService.createNotification(
+          {
+            userId: user._id,
+            type: "SYSTEM_ALERT",
+            title: "New sign-in detected",
+            message: `Account signed in from ${device.slice(0, 45)} (${ip || "Local network"}) at ${new Date().toLocaleTimeString("en-IN")}.`,
+            metadata: { ip, device },
+          },
+          req.app.get("io")
+        ).catch(() => {});
+      });
+    }
 
     const isElectron = req.headers["x-client-type"] === "electron";
     const body: Record<string, unknown> = {
@@ -213,6 +236,102 @@ router.post("/logout", requireAuth, async (req: Request, res: Response) => {
     res.json({ message: "Logged out" });
   } catch (err) {
     console.error("[auth] Logout error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/auth/sessions — list active sessions for current user
+// ---------------------------------------------------------------------------
+
+router.get("/sessions", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const currentToken = req.headers.authorization?.slice(7) ?? "";
+    const sessions = await Session.find({
+      userId: req.userId,
+      isRevoked: false,
+      expiresAt: { $gt: new Date() },
+    })
+      .sort({ lastActiveAt: -1 })
+      .lean();
+
+    res.json({
+      sessions: sessions.map((s) => ({
+        id: s._id.toString(),
+        device: s.device || "Unknown Device",
+        ip: s.ip || "Local",
+        lastActiveAt: s.lastActiveAt,
+        createdAt: s.createdAt,
+        isCurrent: s.token === currentToken,
+        rememberMe: Boolean(s.rememberMe),
+      })),
+    });
+  } catch (err) {
+    console.error("[auth] List sessions error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/auth/sessions/:id — revoke specific session
+// ---------------------------------------------------------------------------
+
+router.delete("/sessions/:id", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const session = await Session.findOneAndUpdate(
+      { _id: req.params["id"], userId: req.userId },
+      { $set: { isRevoked: true } },
+      { new: true }
+    );
+    if (!session) {
+      res.status(404).json({ message: "Session not found" });
+      return;
+    }
+
+    const io = req.app.get("io");
+    if (io) {
+      const sessionId = session._id.toString();
+      for (const s of io.sockets.sockets.values()) {
+        if (s.data.sessionId === sessionId) s.disconnect(true);
+      }
+    }
+
+    res.json({ message: "Session revoked successfully" });
+  } catch (err) {
+    console.error("[auth] Revoke session error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/auth/sessions — revoke all other sessions
+// ---------------------------------------------------------------------------
+
+router.delete("/sessions", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const currentToken = req.headers.authorization?.slice(7) ?? "";
+    const otherSessions = await Session.find({
+      userId: req.userId,
+      token: { $ne: currentToken },
+      isRevoked: false,
+    });
+
+    await Session.updateMany(
+      { userId: req.userId, token: { $ne: currentToken }, isRevoked: false },
+      { $set: { isRevoked: true } }
+    );
+
+    const io = req.app.get("io");
+    if (io && otherSessions.length > 0) {
+      const otherIds = new Set(otherSessions.map((s) => s._id.toString()));
+      for (const s of io.sockets.sockets.values()) {
+        if (otherIds.has(s.data.sessionId)) s.disconnect(true);
+      }
+    }
+
+    res.json({ message: "All other sessions revoked", revokedCount: otherSessions.length });
+  } catch (err) {
+    console.error("[auth] Revoke all other sessions error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -291,7 +410,7 @@ router.post("/refresh", async (req: Request, res: Response) => {
     await session.save();
 
     // Always rotate the httpOnly cookie (web clients); Electron ignores it.
-    setRefreshCookie(res, newRefreshToken);
+    setRefreshCookie(res, newRefreshToken, Boolean(session.rememberMe));
 
     const body: Record<string, unknown> = {
       accessToken: newAccessToken,

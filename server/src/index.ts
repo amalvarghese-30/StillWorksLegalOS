@@ -19,11 +19,13 @@ import chatRoutes from "./routes/chat.js";
 import adminRoutes from "./routes/admin.js";
 import notificationsRoutes from "./routes/notifications.js";
 import searchRoutes from "./routes/search.js";
+import remindersRoutes from "./routes/reminders.js";
 import { ChatGroup, ChatMessage } from "./models/Chat.js";
 import { Session } from "./models/Session.js";
 import { User } from "./models/User.js";
 import { getJwtSecret } from "./middleware/auth.js";
 import { NotificationScheduler } from "./services/notificationScheduler.js";
+import { startReminderScheduler } from "./services/reminderScheduler.js";
 import rateLimit from "express-rate-limit";
 
 // ---------------------------------------------------------------------------
@@ -242,6 +244,7 @@ app.use("/api/documents", documentsRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/notifications", notificationsRoutes);
+app.use("/api/reminders", remindersRoutes);
 app.use("/api/search", searchRoutes);
 
 // ---------------------------------------------------------------------------
@@ -580,8 +583,9 @@ async function start() {
       console.log(`[server] StillWorks LegalOS API running on http://localhost:${PORT}`);
       console.log(`[server] CORS origins: ${ALLOWED_ORIGINS.join(", ")}`);
       console.log(`[server] Environment: ${process.env["NODE_ENV"] ?? "development"}`);
-      // Start the notification scheduler
+      // Start the notification and reminder schedulers
       NotificationScheduler.start(io);
+      startReminderScheduler(io);
     });
   } catch (err) {
     console.error("[server] Failed to start:", err);

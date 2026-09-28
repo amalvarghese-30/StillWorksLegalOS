@@ -265,7 +265,7 @@ function ClientProfile() {
                   { label: "Phone", value: record.phone || "—" },
                   { label: "Email", value: record.email || "—" },
                   { label: "Address", value: record.address || "—" },
-                  { label: "KYC Status", value: record.kyc, pill: kycTone[record.kyc] ?? "muted" },
+                  { label: "Verification Status", value: record.kyc, pill: kycTone[record.kyc] ?? "muted" },
                   { label: "PAN", value: record.pan || "—" },
                   { label: "Aadhaar", value: record.aadhar || "—" },
                   {

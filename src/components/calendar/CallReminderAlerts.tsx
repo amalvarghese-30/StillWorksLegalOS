@@ -4,6 +4,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from "@/components/ui/button";
 import { useTasks, useUpdateTask, type TaskRecord } from "@/services/tasks";
 import { useCalendarEvents, type CalendarEvent } from "@/services/calendar";
+import {
+  useDueReminders,
+  useSnoozeReminder,
+  useCompleteReminder,
+  useDismissReminder,
+} from "@/services/reminders";
+import { useSocketEvent } from "@/lib/socket";
 import { toast } from "sonner";
 
 interface ActiveReminder {
@@ -211,6 +218,55 @@ export function CallReminderAlerts() {
     };
   }, [taskData, calendarData, triggerAlert]);
 
+  const dueRemindersQuery = useDueReminders();
+  const snoozeMutation = useSnoozeReminder();
+  const completeMutation = useCompleteReminder();
+  const dismissMutation = useDismissReminder();
+
+  // Socket.IO real-time listener for reminder triggers from server scheduler
+  useSocketEvent("reminder:due", (payload: any) => {
+    if (!payload || !payload.id) return;
+    const reminderId = String(payload.id);
+    if (alertedIdsRef.current.has(reminderId)) return;
+
+    const cand: ActiveReminder = {
+      id: reminderId,
+      source: payload.sourceType === "task" ? "task" : "event",
+      title: `📞 CALL: ${payload.clientName || "Call Reminder"}`,
+      clientName: payload.clientName || "Call Reminder",
+      phone: payload.phone,
+      notes: payload.notes,
+      dueTime: payload.scheduledAt ? new Date(payload.scheduledAt) : new Date(),
+      taskId: payload.sourceType === "task" ? payload.sourceId : undefined,
+    };
+    triggerAlert(cand);
+  });
+
+  // Reconcile missed/due reminders returned by server API on load
+  useEffect(() => {
+    const list = dueRemindersQuery.data?.reminders;
+    if (!list || list.length === 0) return;
+    for (const r of list) {
+      const reminderId = String(r._id);
+      if (alertedIdsRef.current.has(reminderId)) continue;
+      const snoozedUntil = r.snoozedUntil ? new Date(r.snoozedUntil).getTime() : null;
+      if (snoozedUntil && Date.now() < snoozedUntil) continue;
+
+      const cand: ActiveReminder = {
+        id: reminderId,
+        source: r.sourceType === "task" ? "task" : "event",
+        title: `📞 CALL: ${r.clientName || "Call Reminder"}`,
+        clientName: r.clientName || "Call Reminder",
+        phone: r.phone,
+        notes: r.notes,
+        dueTime: r.scheduledAt ? new Date(r.scheduledAt) : new Date(),
+        taskId: r.sourceType === "task" ? r.sourceId : undefined,
+      };
+      triggerAlert(cand);
+      break; // Show one at a time to prevent popup floods
+    }
+  }, [dueRemindersQuery.data, triggerAlert]);
+
   // Inline edit state when editing from the popup alert
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState("");
@@ -277,16 +333,22 @@ export function CallReminderAlerts() {
 
   if (!activeAlert) return null;
 
-  const handleSnooze = () => {
+  const handleSnooze = (minutes = 5) => {
     if (!activeAlert) return;
-    const snoozeTime = Date.now() + 5 * 60 * 1000; // 5 minutes
+    const snoozeTime = Date.now() + minutes * 60 * 1000;
     snoozedUntilRef.current.set(activeAlert.id, snoozeTime);
+
+    // Call server snooze if it's a server reminder ID
+    if (!activeAlert.id.startsWith("task-") && !activeAlert.id.startsWith("event-")) {
+      snoozeMutation.mutate({ id: activeAlert.id, minutes });
+    }
+
     channelRef.current?.postMessage({
       type: "ALERT_DISMISSED",
       id: activeAlert.id,
       snoozedUntil: snoozeTime,
     });
-    toast.info("Call reminder snoozed for 5 minutes");
+    toast.info(`Call reminder snoozed for ${minutes} minutes`);
     setIsEditing(false);
     setActiveAlert(null);
   };
@@ -310,8 +372,27 @@ export function CallReminderAlerts() {
     } else {
       toast.success("Call acknowledged");
     }
+
+    // Call server complete mutation
+    if (!activeAlert.id.startsWith("task-") && !activeAlert.id.startsWith("event-")) {
+      completeMutation.mutate(activeAlert.id);
+    }
+
     channelRef.current?.postMessage({
       type: "ALERT_COMPLETED",
+      id: activeAlert.id,
+    });
+    setIsEditing(false);
+    setActiveAlert(null);
+  };
+
+  const handleDismiss = () => {
+    if (!activeAlert) return;
+    if (!activeAlert.id.startsWith("task-") && !activeAlert.id.startsWith("event-")) {
+      dismissMutation.mutate(activeAlert.id);
+    }
+    channelRef.current?.postMessage({
+      type: "ALERT_DISMISSED",
       id: activeAlert.id,
     });
     setIsEditing(false);
@@ -471,16 +552,19 @@ export function CallReminderAlerts() {
             </div>
           ) : (
             <>
-              <div className="flex gap-2 w-full sm:w-auto">
-                <Button variant="outline" size="sm" onClick={handleSnooze} className="text-xs">
+              <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                <Button variant="outline" size="sm" onClick={() => handleSnooze(5)} className="text-xs">
                   Snooze 5m
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => handleSnooze(15)} className="text-xs">
+                  15m
                 </Button>
                 <Button variant="outline" size="sm" onClick={startEdit} className="text-xs">
                   Edit / Reschedule
                 </Button>
               </div>
               <div className="flex gap-2 w-full sm:w-auto">
-                <Button variant="ghost" size="sm" onClick={() => setActiveAlert(null)} className="flex-1 sm:flex-none text-xs">
+                <Button variant="ghost" size="sm" onClick={handleDismiss} className="flex-1 sm:flex-none text-xs">
                   Dismiss
                 </Button>
                 <Button

@@ -107,7 +107,7 @@ function toSessionUser(apiUser: RawUser): SessionUser {
 interface AuthValue {
   user: SessionUser | null;
   ready: boolean;
-  signIn: (email: string, password: string) => Promise<{ ok: true; user: SessionUser } | { ok: false; error: string; field?: "email" | "password" | undefined }>;
+  signIn: (email: string, password: string, rememberMe?: boolean) => Promise<{ ok: true; user: SessionUser } | { ok: false; error: string; field?: "email" | "password" | undefined }>;
   signOut: () => Promise<void>;
 }
 
@@ -126,7 +126,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         let token = getAccessToken();
         if (!token) {
-          const hasSessionHint = isElectron() || !!window.localStorage.getItem(STORAGE_KEY);
+          const hasSessionHint =
+            isElectron() ||
+            !!window.localStorage.getItem(STORAGE_KEY) ||
+            !!window.sessionStorage.getItem(STORAGE_KEY);
           if (hasSessionHint) {
             token = await refreshAccessToken();
           }
@@ -138,11 +141,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const res = await apiFetch<{ user: RawUser }>("/auth/me");
         const sessionUser = toSessionUser(res.user);
         setUser(sessionUser);
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionUser));
+        if (window.localStorage.getItem(STORAGE_KEY)) {
+          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionUser));
+        } else {
+          window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(sessionUser));
+        }
       } catch {
         // Token is invalid or expired — clear everything
         await clearTokens();
         window.localStorage.removeItem(STORAGE_KEY);
+        window.sessionStorage.removeItem(STORAGE_KEY);
       }
       setReady(true);
     };
@@ -159,6 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const handleTimeout = async () => {
       setUser(null);
       window.localStorage.removeItem(STORAGE_KEY);
+      window.sessionStorage.removeItem(STORAGE_KEY);
       await clearTokens();
       queryClient.cancelQueries();
       queryClient.clear();
@@ -189,11 +198,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       user,
       ready,
-      signIn: async (email, password) => {
+      signIn: async (email, password, rememberMe = false) => {
         try {
           const res = await apiFetch<{ accessToken: string; refreshToken?: string; user: RawUser }>("/auth/login", {
             method: "POST",
-            body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+            body: JSON.stringify({ email: email.trim().toLowerCase(), password, rememberMe }),
             headers: clientTypeHeaders(),
           });
 
@@ -201,7 +210,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           const sessionUser = toSessionUser(res.user);
           setUser(sessionUser);
-          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionUser));
+          if (rememberMe) {
+            window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionUser));
+            window.sessionStorage.removeItem(STORAGE_KEY);
+          } else {
+            window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(sessionUser));
+            window.localStorage.removeItem(STORAGE_KEY);
+          }
           return { ok: true as const, user: sessionUser };
         } catch (err) {
           if (err instanceof ApiError) {
@@ -225,6 +240,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // 1. Clear local session immediately so React components unmount & stop querying
         setUser(null);
         window.localStorage.removeItem(STORAGE_KEY);
+        window.sessionStorage.removeItem(STORAGE_KEY);
         await clearTokens();
 
         // 2. Cancel all pending in-flight queries and clear cache

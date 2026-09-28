@@ -128,7 +128,7 @@ export function StorageSettings() {
                 </p>
                 {testResult.rootExists === false ? (
                   <p className="mt-1 font-medium text-amber-600 dark:text-amber-400">
-                    Connected, but the root folder was not found — create it on the NAS or check the path.
+                    Connected, but the root folder was not found — create it on the storage server or check the path.
                   </p>
                 ) : null}
               </>

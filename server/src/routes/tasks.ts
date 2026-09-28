@@ -410,6 +410,22 @@ router.post("/", async (req: Request, res: Response) => {
       userAgent: req.headers["user-agent"],
     });
 
+    // Create synchronized Reminder document if callReminder is present
+    if (task.callReminder && task.callReminder.clientName) {
+      import("../models/Reminder.js").then(({ Reminder }) => {
+        Reminder.create({
+          userId: task.assignedTo || task.createdBy,
+          sourceType: "task",
+          sourceId: task._id,
+          clientName: task.callReminder!.clientName,
+          phone: task.callReminder!.phone || "",
+          notes: task.callReminder!.notes || "",
+          scheduledAt: task.callReminder!.scheduledAt || new Date(),
+          status: task.callReminder!.completed ? "completed" : "scheduled",
+        }).catch(() => {});
+      });
+    }
+
     const io = req.app.get("io");
     if (io) {
       io.emit("task:created", {
@@ -561,6 +577,36 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
         res.status(404).json({ message: "Task not found" });
         return;
       }
+    }
+
+    // Synchronize Reminder document if task has callReminder or status changed
+    if (task && (updates["callReminder"] !== undefined || updates["status"] !== undefined)) {
+      import("../models/Reminder.js").then(({ Reminder }) => {
+        const isDone = task.status === "completed" || Boolean(task.callReminder?.completed);
+        const updateDoc: Record<string, unknown> = {};
+        if (isDone) {
+          updateDoc["status"] = "completed";
+          updateDoc["completedAt"] = new Date();
+        } else if (task.callReminder?.scheduledAt) {
+          updateDoc["status"] = "scheduled";
+        }
+        if (task.callReminder) {
+          updateDoc["clientName"] = task.callReminder.clientName;
+          updateDoc["phone"] = task.callReminder.phone || "";
+          updateDoc["notes"] = task.callReminder.notes || "";
+          updateDoc["scheduledAt"] = task.callReminder.scheduledAt || new Date();
+        }
+        if (task.assignedTo) {
+          updateDoc["userId"] = (task.assignedTo as any)._id || task.assignedTo;
+        }
+        if (Object.keys(updateDoc).length > 0) {
+          Reminder.findOneAndUpdate(
+            { sourceType: "task", sourceId: task._id },
+            { $set: updateDoc },
+            { upsert: Boolean(task.callReminder?.clientName) }
+          ).catch(() => {});
+        }
+      });
     }
 
     // Notify assignee if task was assigned or reassigned to another user

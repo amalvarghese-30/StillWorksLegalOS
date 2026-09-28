@@ -10,6 +10,7 @@ export interface ISession extends Document {
   refreshTokenHash: string; // bcrypt hash of refresh token
   device: string;          // e.g., "Windows · Chrome", "Electron Desktop"
   ip: string;
+  rememberMe: boolean;
   lastActiveAt: Date;
   expiresAt: Date;
   isRevoked: boolean;
@@ -33,6 +34,7 @@ const SessionSchema = new Schema<ISession>(
     refreshTokenHash: { type: String, required: true },
     device: { type: String, default: "Unknown" },
     ip: { type: String, default: "" },
+    rememberMe: { type: Boolean, default: false },
     lastActiveAt: { type: Date, default: Date.now },
     expiresAt: { type: Date, required: true },
     isRevoked: { type: Boolean, default: false },

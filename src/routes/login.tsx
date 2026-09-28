@@ -91,7 +91,7 @@ function LoginPage() {
 
     setLoading(true);
     try {
-      const result = await signIn(cleanEmail, password);
+      const result = await signIn(cleanEmail, password, rememberMe);
       if (!result.ok) {
         if (result.field === "email") {
           setEmailError(result.error);

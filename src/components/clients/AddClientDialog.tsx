@@ -257,7 +257,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
         <DialogHeader>
           <DialogTitle>Add new client</DialogTitle>
           <DialogDescription>
-            Fill in the details below. KYC fields help auto-verify the profile.
+            Fill in the details below. Identification details help establish client records.
           </DialogDescription>
         </DialogHeader>
 

@@ -38,7 +38,8 @@ function AuditLogsPage() {
         (l) =>
           l.userName.toLowerCase().includes(search.toLowerCase()) ||
           l.action.toLowerCase().includes(search.toLowerCase()) ||
-          (l.resourceName ?? "").toLowerCase().includes(search.toLowerCase()),
+          (l.resourceName ?? "").toLowerCase().includes(search.toLowerCase()) ||
+          (l.ip ?? "").toLowerCase().includes(search.toLowerCase()),
       )
     : logs;
 
@@ -81,7 +82,7 @@ function AuditLogsPage() {
         <input
           type="search"
           aria-label="Search logs"
-          placeholder="Search by user, action or record…"
+          placeholder="Search by user, action, IP or record…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="min-w-0 flex-1 bg-transparent text-helper outline-none"
@@ -96,6 +97,7 @@ function AuditLogsPage() {
                 <div className="h-4 w-28 rounded bg-muted" />
                 <div className="h-4 w-32 rounded bg-muted" />
                 <div className="h-4 w-40 rounded bg-muted" />
+                <div className="h-4 w-24 rounded bg-muted" />
                 <div className="h-4 w-24 rounded bg-muted" />
                 <div className="h-4 w-20 rounded bg-muted" />
               </div>
@@ -126,12 +128,13 @@ function AuditLogsPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] border-separate border-spacing-y-1 p-2 text-left">
+              <table className="w-full min-w-[780px] border-separate border-spacing-y-1 p-2 text-left">
                 <thead>
                   <tr className="text-caption text-muted-foreground">
                     <th className="px-4 py-3 font-medium">User</th>
                     <th className="px-4 py-3 font-medium">Action</th>
                     <th className="px-4 py-3 font-medium">Details</th>
+                    <th className="px-4 py-3 font-medium">IP / Location</th>
                     <th className="px-4 py-3 font-medium">Device</th>
                     <th className="px-4 py-3 font-medium">When</th>
                   </tr>
@@ -146,6 +149,9 @@ function AuditLogsPage() {
                       <td className="px-4 py-4 capitalize">{l.action.replace(/_/g, " ")}</td>
                       <td className="px-4 py-4 text-muted-foreground">
                         {l.resourceName ?? l.resource} {l.details ? `· ${l.details}` : ""}
+                      </td>
+                      <td className="px-4 py-4 font-mono text-xs text-muted-foreground">
+                        {l.ip ? (l.ip === "::1" || l.ip === "127.0.0.1" ? "Local (127.0.0.1)" : l.ip) : "—"}
                       </td>
                       <td className="px-4 py-4 text-muted-foreground">{l.userAgent ?? "—"}</td>
                       <td className="num rounded-r-md px-4 py-4 text-muted-foreground">{formatWhen(l.createdAt)}</td>
