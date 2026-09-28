@@ -8,6 +8,16 @@ import { Progress } from "@/components/ui/progress";
 import { useCases, useUpdateCase, type CaseRecord } from "@/services/cases";
 import { useEmployees } from "@/services/admin";
 import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export const Route = createFileRoute("/_shell/cases/")({
   head: () => ({
@@ -59,7 +69,7 @@ function CaseCard({
   onReopen,
 }: {
   c: CaseRecord;
-  onReopen?: (e: React.MouseEvent, id: string) => void;
+  onReopen?: (e: React.MouseEvent, c: CaseRecord) => void;
 }) {
   return (
     <Link
@@ -85,7 +95,7 @@ function CaseCard({
                 variant="outline"
                 size="sm"
                 className="h-6 text-[10px] px-2 rounded-pill border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
-                onClick={(e) => onReopen(e, c._id)}
+                onClick={(e) => onReopen(e, c)}
               >
                 <RotateCcw size={11} className="mr-1" /> Reopen
               </Button>
@@ -148,69 +158,40 @@ function CasesPage() {
   const [selectedStaff, setSelectedStaff] = useState<string[]>([]);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [reopenTargetCase, setReopenTargetCase] = useState<CaseRecord | null>(null);
 
-  // Fetch cases
-  const { data, isLoading, isError, error } = useCases({ page: "1", limit: "150" });
+  // Construct server-side query filters to filter across full MongoDB database
+  const apiFilters = useMemo(() => {
+    const f: Record<string, string> = {
+      page: "1",
+      limit: "50",
+    };
+    if (search.trim()) f["search"] = search.trim();
+    if (statusFilter !== "All") f["status"] = statusFilter;
+    if (priorityFilter !== "All") f["priority"] = priorityFilter;
+    if (practiceFilter !== "All") f["practice"] = practiceFilter;
+    if (selectedStaff.length > 0) f["assignedTo"] = selectedStaff.join(",");
+    return f;
+  }, [search, statusFilter, priorityFilter, practiceFilter, selectedStaff]);
+
+  // Fetch cases with server-side query parameters
+  const { data, isLoading, isError, error } = useCases(apiFilters);
   const updateCase = useUpdateCase();
   const { data: empData } = useEmployees();
   const employees = empData?.employees ?? [];
 
   const rawCases = data?.cases ?? [];
 
-  // Compute stat counts across all matters
-  const stats = useMemo(() => {
-    const total = rawCases.length;
-    const active = rawCases.filter((c) => c.status === "Active").length;
-    const urgent = rawCases.filter((c) => c.status === "Urgent").length;
-    const onHold = rawCases.filter((c) => c.status === "On Hold").length;
-    const closed = rawCases.filter((c) => c.status === "Closed").length;
-    return { total, active, urgent, onHold, closed };
-  }, [rawCases]);
+  // Stat counts across all matters from server aggregation
+  const stats = data?.stats ?? {
+    total: data?.total ?? rawCases.length,
+    active: rawCases.filter((c) => c.status === "Active").length,
+    urgent: rawCases.filter((c) => c.status === "Urgent").length,
+    onHold: rawCases.filter((c) => c.status === "On Hold").length,
+    closed: rawCases.filter((c) => c.status === "Closed").length,
+  };
 
-  const query = search.trim().toLowerCase();
-
-  // Multi-attribute filtering matching the user's specification
-  const filteredCases = useMemo(() => {
-    return rawCases.filter((c) => {
-      // 1. Keyword search (title, number, court, client/parties, practice, assigned staff)
-      if (query) {
-        const titleMatch = c.title.toLowerCase().includes(query);
-        const numMatch = (c.number ?? "").toLowerCase().includes(query);
-        const courtMatch = (c.court ?? "").toLowerCase().includes(query);
-        const practiceMatch = (c.practice ?? "").toLowerCase().includes(query);
-        const staffMatch = (c.assignedTo?.name ?? "").toLowerCase().includes(query);
-        const partyMatch = (c.parties ?? []).some((p) => p.name.toLowerCase().includes(query));
-        if (!titleMatch && !numMatch && !courtMatch && !practiceMatch && !staffMatch && !partyMatch) {
-          return false;
-        }
-      }
-
-      // 2. Status filter
-      if (statusFilter !== "All" && c.status !== statusFilter) {
-        return false;
-      }
-
-      // 3. Priority filter
-      if (priorityFilter !== "All" && c.priority !== priorityFilter) {
-        return false;
-      }
-
-      // 4. Practice / Category filter
-      if (practiceFilter !== "All" && c.practice !== practiceFilter) {
-        return false;
-      }
-
-      // 5. Staff multi-select filter
-      if (selectedStaff.length > 0) {
-        const staffId = c.assignedTo?._id ?? "";
-        const staffName = c.assignedTo?.name ?? "";
-        const match = selectedStaff.includes(staffId) || selectedStaff.includes(staffName);
-        if (!match) return false;
-      }
-
-      return true;
-    });
-  }, [rawCases, query, statusFilter, priorityFilter, practiceFilter, selectedStaff]);
+  const filteredCases = rawCases;
 
   const toggleStaff = (idOrName: string) => {
     setSelectedStaff((prev) =>
@@ -218,10 +199,20 @@ function CasesPage() {
     );
   };
 
-  const handleReopen = (e: React.MouseEvent, id: string) => {
+  const handleReopen = (e: React.MouseEvent, c: CaseRecord) => {
     e.preventDefault();
     e.stopPropagation();
-    updateCase.mutate({ id, data: { status: "Active" } });
+    setReopenTargetCase(c);
+  };
+
+  const confirmReopen = () => {
+    if (!reopenTargetCase) return;
+    updateCase.mutate(
+      { id: reopenTargetCase._id, data: { status: "Active" } },
+      {
+        onSuccess: () => setReopenTargetCase(null),
+      }
+    );
   };
 
   const clearAllFilters = () => {
@@ -509,6 +500,36 @@ function CasesPage() {
       )}
 
       <AddCaseDialog open={showAddDialog} onClose={() => setShowAddDialog(false)} />
+
+      <AlertDialog open={Boolean(reopenTargetCase)} onOpenChange={(open) => !open && setReopenTargetCase(null)}>
+        <AlertDialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-title font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
+              <RotateCcw size={18} />
+              Reopen Case
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-helper text-muted-foreground mt-2">
+              Are you sure you want to reopen case{" "}
+              <span className="font-semibold text-foreground">
+                "{reopenTargetCase?.number} — {reopenTargetCase?.title}"
+              </span>
+              ? Its status will be restored to <strong className="text-foreground">Active</strong>, and it will reappear in active matter listings.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-5 flex justify-end gap-2">
+            <AlertDialogCancel className="rounded-md" disabled={updateCase.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-md bg-emerald-600 text-white hover:bg-emerald-700"
+              onClick={confirmReopen}
+              disabled={updateCase.isPending}
+            >
+              {updateCase.isPending ? "Reopening…" : "Reopen Case"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

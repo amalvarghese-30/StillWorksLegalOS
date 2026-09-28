@@ -199,7 +199,29 @@ function TasksPage() {
   const [calendarMonth, setCalendarMonth] = useState(new Date());
 
   const queryClient = useQueryClient();
-  const { data, isLoading, isError, error } = useTasks();
+
+  const apiFilters = useMemo(() => {
+    const f: Record<string, string> = {
+      page: "1",
+      limit: "100",
+    };
+    if (search.trim()) f["search"] = search.trim();
+    if (statusFilter !== "All") {
+      if (statusFilter === "overdue") f["overdue"] = "true";
+      else if (statusFilter === "due_today") f["dueToday"] = "true";
+      else if (statusFilter === "in_progress") f["status"] = "in_progress,pending";
+      else if (statusFilter === "in_review") f["status"] = "pending_approval";
+      else if (statusFilter === "completed") f["status"] = "completed";
+      else if (statusFilter === "calls") f["isCall"] = "true";
+      else f["status"] = statusFilter;
+    }
+    if (priorityFilter !== "All") f["priority"] = priorityFilter;
+    if (categoryFilter !== "All") f["category"] = categoryFilter;
+    if (selectedStaff.length > 0) f["assignedTo"] = selectedStaff.join(",");
+    return f;
+  }, [search, statusFilter, priorityFilter, categoryFilter, selectedStaff]);
+
+  const { data, isLoading, isError, error } = useTasks(apiFilters);
   const { data: empData } = useEmployees();
   const employees = empData?.employees ?? [];
 
@@ -227,8 +249,9 @@ function TasksPage() {
     return Array.from(set);
   }, [allTasks]);
 
-  // Stat card counts
+  // Stat card counts from backend aggregation with fallback
   const stats = useMemo(() => {
+    if (data?.stats) return data.stats;
     const total = allTasks.length;
     const overdue = allTasks.filter((t) => getBucket(t) === "Overdue" && t.status !== "completed").length;
     const dueToday = allTasks.filter((t) => getBucket(t) === "Due Today" && t.status !== "completed").length;
@@ -237,55 +260,9 @@ function TasksPage() {
     const completed = allTasks.filter((t) => t.status === "completed").length;
     const calls = allTasks.filter((t) => t.isCall || Boolean(t.callReminder)).length;
     return { total, overdue, dueToday, inProgress, inReview, completed, calls };
-  }, [allTasks]);
+  }, [data?.stats, allTasks]);
 
-  const query = search.trim().toLowerCase();
-
-  const tasks = useMemo(() => {
-    return allTasks.filter((t) => {
-      // 1. Text Search across title, category, assigned staff, description, client
-      if (query) {
-        const titleMatch = t.title.toLowerCase().includes(query);
-        const descMatch = (t.description ?? "").toLowerCase().includes(query);
-        const catMatch = (t.category ?? "").toLowerCase().includes(query);
-        const staffMatch = t.assignedTo && typeof t.assignedTo === "object" && "name" in t.assignedTo && (t.assignedTo as { name: string }).name.toLowerCase().includes(query);
-        const clientMatch = t.callReminder?.clientName ? t.callReminder.clientName.toLowerCase().includes(query) : false;
-        if (!titleMatch && !descMatch && !catMatch && !staffMatch && !clientMatch) {
-          return false;
-        }
-      }
-
-      // 2. Status Filter
-      if (statusFilter !== "All") {
-        if (statusFilter === "overdue" && (getBucket(t) !== "Overdue" || t.status === "completed")) return false;
-        if (statusFilter === "due_today" && (getBucket(t) !== "Due Today" || t.status === "completed")) return false;
-        if (statusFilter === "in_progress" && t.status !== "in_progress" && t.status !== "pending") return false;
-        if (statusFilter === "in_review" && t.status !== "pending_approval") return false;
-        if (statusFilter === "completed" && t.status !== "completed") return false;
-        if (statusFilter === "calls" && !t.isCall && !t.callReminder) return false;
-      }
-
-      // 3. Priority Filter
-      if (priorityFilter !== "All" && t.priority !== priorityFilter) {
-        return false;
-      }
-
-      // 4. Category Filter
-      if (categoryFilter !== "All" && t.category !== categoryFilter) {
-        return false;
-      }
-
-      // 5. Staff Filter (multi-select)
-      if (selectedStaff.length > 0) {
-        const staffId = t.assignedTo?._id ?? "";
-        const staffName = t.assignedTo?.name ?? "";
-        const match = selectedStaff.includes(staffId) || selectedStaff.includes(staffName);
-        if (!match) return false;
-      }
-
-      return true;
-    });
-  }, [allTasks, query, statusFilter, priorityFilter, categoryFilter, selectedStaff]);
+  const tasks = allTasks;
 
   const toggleStaff = (idOrName: string) => {
     setSelectedStaff((prev) =>

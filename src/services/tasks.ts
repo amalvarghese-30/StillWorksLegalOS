@@ -68,6 +68,15 @@ export interface TasksResponse {
   total: number;
   page: number;
   totalPages: number;
+  stats?: {
+    total: number;
+    overdue: number;
+    dueToday: number;
+    inProgress: number;
+    inReview: number;
+    completed: number;
+    calls: number;
+  };
 }
 
 export interface CreateTaskPayload {

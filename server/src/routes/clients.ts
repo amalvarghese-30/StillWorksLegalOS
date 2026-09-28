@@ -157,11 +157,43 @@ router.post("/", async (req: Request, res: Response) => {
     } = req.body;
 
     if (!name || !name.trim()) {
-      res.status(400).json({ message: "Client name is required" });
+      res.status(400).json({ field: "name", message: "Client name is required" });
       return;
     }
 
-    // KYC auto-verification: if Aadhar + PAN provided, mark Verified
+    if (phone && phone.trim()) {
+      const cleanPhone = phone.trim().replace(/\D/g, "");
+      if (cleanPhone.length !== 10) {
+        res.status(400).json({ field: "phone", message: "Phone number must be a valid 10-digit number" });
+        return;
+      }
+    }
+
+    if (email && email.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email.trim())) {
+        res.status(400).json({ field: "email", message: "Invalid email address format" });
+        return;
+      }
+    }
+
+    if (aadhar && aadhar.trim()) {
+      const cleanAadhar = aadhar.trim().replace(/\D/g, "");
+      if (cleanAadhar.length !== 12) {
+        res.status(400).json({ field: "aadhar", message: "Aadhaar must be exactly 12 digits" });
+        return;
+      }
+    }
+
+    if (pan && pan.trim()) {
+      const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/i;
+      if (!panRegex.test(pan.trim())) {
+        res.status(400).json({ field: "pan", message: "Invalid PAN format (e.g. ABCDE1234F)" });
+        return;
+      }
+    }
+
+    // Identity auto-verification: if Aadhar + PAN provided, mark Verified
     const kyc = aadhar && pan ? "Verified" : "Pending";
 
     const client = await Client.create({
@@ -227,6 +259,43 @@ router.patch("/:id", requireResourceAccess("client"), async (req: Request, res: 
     }
     // updatedBy is always the current authenticated user — never from client input.
     updates["updatedBy"] = req.userId;
+
+    if (updates["name"] !== undefined && (!updates["name"] || !String(updates["name"]).trim())) {
+      res.status(400).json({ field: "name", message: "Client name cannot be empty" });
+      return;
+    }
+
+    if (updates["phone"] && typeof updates["phone"] === "string" && updates["phone"].trim()) {
+      const cleanPhone = updates["phone"].trim().replace(/\D/g, "");
+      if (cleanPhone.length !== 10) {
+        res.status(400).json({ field: "phone", message: "Phone number must be a valid 10-digit number" });
+        return;
+      }
+    }
+
+    if (updates["email"] && typeof updates["email"] === "string" && updates["email"].trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(updates["email"].trim())) {
+        res.status(400).json({ field: "email", message: "Invalid email address format" });
+        return;
+      }
+    }
+
+    if (updates["aadhar"] && typeof updates["aadhar"] === "string" && updates["aadhar"].trim()) {
+      const cleanAadhar = updates["aadhar"].trim().replace(/\D/g, "");
+      if (cleanAadhar.length !== 12) {
+        res.status(400).json({ field: "aadhar", message: "Aadhaar must be exactly 12 digits" });
+        return;
+      }
+    }
+
+    if (updates["pan"] && typeof updates["pan"] === "string" && updates["pan"].trim()) {
+      const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/i;
+      if (!panRegex.test(updates["pan"].trim())) {
+        res.status(400).json({ field: "pan", message: "Invalid PAN format (e.g. ABCDE1234F)" });
+        return;
+      }
+    }
 
     // Re-evaluate KYC if Aadhar/PAN change
     const existing = await Client.findById(req.params["id"]);

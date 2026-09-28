@@ -20,7 +20,18 @@ router.get("/", async (req: Request, res: Response) => {
       search,
       status,
       priority,
+      practice,
+      practiceArea,
       assignedTo,
+      court,
+      judge,
+      hearingFrom,
+      hearingTo,
+      createdFrom,
+      createdTo,
+      updatedFrom,
+      updatedTo,
+      tag,
       includeArchived,
       page = "1",
       limit = "24",
@@ -33,49 +44,117 @@ router.get("/", async (req: Request, res: Response) => {
       filter["status"] = { $ne: "Archived" };
     }
 
-    // Non-admins without cases permission only see their assigned cases
+    // Base accessibility filter for non-admins without cases permission
+    const baseAccessibleFilter: Record<string, unknown> = {
+      ...(!includeArchived || includeArchived === "false" ? { status: { $ne: "Archived" } } : {}),
+    };
+
     if (req.user!.role !== "admin" && !req.user?.permissions?.cases) {
       const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
       if (accessibleCaseIds.length === 0) {
-        res.json({ cases: [], total: 0, page: 1, totalPages: 1 });
+        res.json({
+          cases: [],
+          total: 0,
+          page: 1,
+          totalPages: 1,
+          stats: { total: 0, active: 0, urgent: 0, onHold: 0, closed: 0 },
+        });
         return;
       }
       filter["_id"] = { $in: accessibleCaseIds };
+      baseAccessibleFilter["_id"] = { $in: accessibleCaseIds };
     }
 
-    if (status && status !== "All") filter["status"] = status;
-    if (priority && priority !== "All") filter["priority"] = priority;
-    if (assignedTo) filter["assignedTo"] = assignedTo;
-
-    // Full-text or regex search
-    if (search && search.trim()) {
-      const textResults = await Case.find(
-        { $text: { $search: search.trim() } },
-        { score: { $meta: "textScore" } },
-      )
-        .sort({ score: { $meta: "textScore" } })
-        .limit(50)
-        .lean();
-
-      if (textResults.length > 0) {
-        // Filter text results by accessible cases for non-admins without cases permission
-        if (req.user!.role !== "admin" && !req.user?.permissions?.cases) {
-          const accessibleIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
-          const filtered = textResults.filter((c) => accessibleIds.includes(c._id.toString()));
-          res.json({ cases: filtered, total: filtered.length, page: 1, totalPages: 1 });
-        } else {
-          res.json({ cases: textResults, total: textResults.length, page: 1, totalPages: 1 });
-        }
-        return;
+    // Status filter: single or comma-separated
+    if (status && status !== "All") {
+      if (status.includes(",")) {
+        const statuses = status.split(",").map((s) => s.trim()).filter(Boolean);
+        filter["status"] = { $in: statuses };
+      } else {
+        filter["status"] = status;
       }
+    }
 
-      const regex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    // Priority filter: single or comma-separated
+    if (priority && priority !== "All") {
+      if (priority.includes(",")) {
+        const priorities = priority.split(",").map((p) => p.trim()).filter(Boolean);
+        filter["priority"] = { $in: priorities };
+      } else {
+        filter["priority"] = priority;
+      }
+    }
+
+    // Practice / Practice area filter
+    const practiceFilterVal = practice || practiceArea;
+    if (practiceFilterVal && practiceFilterVal !== "All") {
+      const escapedPractice = practiceFilterVal.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      filter["practice"] = new RegExp(`^${escapedPractice}$`, "i");
+    }
+
+    // Assigned staff: single or comma-separated
+    if (assignedTo && assignedTo !== "All") {
+      if (assignedTo.includes(",")) {
+        const ids = assignedTo.split(",").map((id) => id.trim()).filter((id) => mongoose.Types.ObjectId.isValid(id));
+        if (ids.length > 0) {
+          filter["assignedTo"] = { $in: ids.map((id) => new mongoose.Types.ObjectId(id)) };
+        }
+      } else if (mongoose.Types.ObjectId.isValid(assignedTo)) {
+        filter["assignedTo"] = new mongoose.Types.ObjectId(assignedTo);
+      }
+    }
+
+    // Court match
+    if (court && court.trim()) {
+      filter["court"] = new RegExp(court.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    }
+
+    // Judge match
+    if (judge && judge.trim()) {
+      filter["judge"] = new RegExp(judge.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    }
+
+    // Tag match
+    if (tag && tag.trim()) {
+      filter["tags"] = tag.trim();
+    }
+
+    // Next hearing date range
+    if (hearingFrom || hearingTo) {
+      const hearingCond: Record<string, unknown> = {};
+      if (hearingFrom) hearingCond["$gte"] = new Date(hearingFrom);
+      if (hearingTo) hearingCond["$lte"] = new Date(hearingTo);
+      filter["nextHearing"] = hearingCond;
+    }
+
+    // Created date range
+    if (createdFrom || createdTo) {
+      const createdCond: Record<string, unknown> = {};
+      if (createdFrom) createdCond["$gte"] = new Date(createdFrom);
+      if (createdTo) createdCond["$lte"] = new Date(createdTo);
+      filter["createdAt"] = createdCond;
+    }
+
+    // Updated date range
+    if (updatedFrom || updatedTo) {
+      const updatedCond: Record<string, unknown> = {};
+      if (updatedFrom) updatedCond["$gte"] = new Date(updatedFrom);
+      if (updatedTo) updatedCond["$lte"] = new Date(updatedTo);
+      filter["updatedAt"] = updatedCond;
+    }
+
+    // Search query: matches across title, number, court, judge, parties, tags
+    if (search && search.trim()) {
+      const escaped = search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const regex = new RegExp(escaped, "i");
       filter["$or"] = [
         { number: regex },
         { title: regex },
         { court: regex },
+        { judge: regex },
         { "parties.name": regex },
         { courtCaseId: regex },
+        { tags: regex },
       ];
     }
 
@@ -83,7 +162,7 @@ router.get("/", async (req: Request, res: Response) => {
     const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 24));
     const skip = (pageNum - 1) * limitNum;
 
-    const [cases, total] = await Promise.all([
+    const [cases, total, statusCounts] = await Promise.all([
       Case.find(filter)
         .populate("assignedTo", "name email")
         .populate("createdBy", "name")
@@ -92,9 +171,34 @@ router.get("/", async (req: Request, res: Response) => {
         .limit(limitNum)
         .lean(),
       Case.countDocuments(filter),
+      Case.aggregate([
+        { $match: baseAccessibleFilter },
+        { $group: { _id: "$status", count: { $sum: 1 } } },
+      ]),
     ]);
 
-    res.json({ cases, total, page: pageNum, totalPages: Math.ceil(total / limitNum) });
+    const stats = {
+      total: 0,
+      active: 0,
+      urgent: 0,
+      onHold: 0,
+      closed: 0,
+    };
+    for (const sc of statusCounts) {
+      stats.total += sc.count;
+      if (sc._id === "Active") stats.active = sc.count;
+      if (sc._id === "Urgent") stats.urgent = sc.count;
+      if (sc._id === "On Hold") stats.onHold = sc.count;
+      if (sc._id === "Closed") stats.closed = sc.count;
+    }
+
+    res.json({
+      cases,
+      total,
+      page: pageNum,
+      totalPages: Math.ceil(total / limitNum) || 1,
+      stats,
+    });
   } catch (err) {
     console.error("[cases] List error:", err);
     res.status(500).json({ message: "Internal server error" });

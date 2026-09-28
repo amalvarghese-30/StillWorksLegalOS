@@ -56,6 +56,13 @@ export interface CasesResponse {
   total: number;
   page: number;
   totalPages: number;
+  stats?: {
+    total: number;
+    active: number;
+    urgent: number;
+    onHold: number;
+    closed: number;
+  };
 }
 
 export interface CaseResponse {

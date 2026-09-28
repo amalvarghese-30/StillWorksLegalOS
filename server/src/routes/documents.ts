@@ -537,24 +537,38 @@ router.patch("/:id", requireResourceAccess("document"), async (req: Request, res
       updates["rejectedReason"] = req.body["rejectedReason"] ?? "";
     }
 
-    // Fetch the original document to detect state changes
-    const originalDocument = await DocumentModel.findById(req.params["id"]);
-
-    const document = await DocumentModel.findByIdAndUpdate(req.params["id"], updates, {
-      new: true,
-      runValidators: true,
-    });
-
-    if (!document) {
-      res.status(404).json({ message: "Document not found" });
-      return;
+    // Atomically update state if this is an approval/rejection action
+    let document;
+    if (updates["state"] === "Approved" || updates["state"] === "Rejected") {
+      document = await DocumentModel.findOneAndUpdate(
+        { _id: req.params["id"], state: "Pending" },
+        { $set: updates },
+        { new: true, runValidators: true }
+      );
+      if (!document) {
+        // Check if document was already processed in a concurrent request
+        const existing = await DocumentModel.findById(req.params["id"]);
+        if (existing) {
+          res.json({ document: existing, code: "ALREADY_PROCESSED", message: "This document has already been reviewed." });
+          return;
+        }
+        res.status(404).json({ message: "Document not found" });
+        return;
+      }
+    } else {
+      document = await DocumentModel.findByIdAndUpdate(req.params["id"], updates, {
+        new: true,
+        runValidators: true,
+      });
+      if (!document) {
+        res.status(404).json({ message: "Document not found" });
+        return;
+      }
     }
 
     // Notify uploader if document was approved or rejected
     if (
       updates["state"] !== undefined &&
-      originalDocument &&
-      originalDocument.state !== updates["state"] &&
       (updates["state"] === "Approved" || updates["state"] === "Rejected")
     ) {
       // Notify the uploader if they are not the one who made the change
@@ -688,6 +702,11 @@ router.patch("/:docId/access-requests/:requestId", requireAuth, async (req: Requ
     );
     if (!request) {
       res.status(404).json({ message: "Access request not found" });
+      return;
+    }
+
+    if (request.status !== "pending") {
+      res.json({ message: `Access request already ${request.status}`, document, code: "ALREADY_PROCESSED" });
       return;
     }
 

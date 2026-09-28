@@ -3,7 +3,7 @@ import { useState, useRef } from "react";
 import {
   LayoutDashboard, FileBadge, Home, Users,
   Phone, Mail, MapPin, Loader2, Edit3, ChevronDown,
-  Send, Check, X, UserPlus, Building2, FileText, Trash2,
+  Send, Check, X, UserPlus, Building2, FileText, Trash2, Archive,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
@@ -31,9 +31,9 @@ export const Route = createFileRoute("/_shell/clients/$clientId")({
   head: () => ({
     meta: [
       { title: "Client profile · S & S Legal-Tech LLP" },
-      { name: "description", content: "Client details, KYC, property, and sub-client records." },
+      { name: "description", content: "Client details, Identity Verification, property, and sub-client records." },
       { property: "og:title", content: "Client profile · S & S Legal-Tech LLP" },
-      { property: "og:description", content: "Client details, KYC, property, and sub-client records." },
+      { property: "og:description", content: "Client details, Identity Verification, property, and sub-client records." },
     ],
   }),
   component: ClientProfile,
@@ -41,7 +41,7 @@ export const Route = createFileRoute("/_shell/clients/$clientId")({
 
 const sections = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
-  { id: "kyc", label: "KYC", icon: FileBadge },
+  { id: "kyc", label: "Identity Verification", icon: FileBadge },
   { id: "property", label: "Property", icon: Home },
   { id: "subclients", label: "Sub-clients", icon: Users },
 ] as const;
@@ -182,7 +182,7 @@ function ClientProfile() {
           { label: record.name },
         ]}
         title={record.name}
-        subtitle={`${record.type} · ${record.tag} · KYC ${record.kyc}`}
+        subtitle={`${record.type} · ${record.tag} · Verification: ${record.kyc}`}
         actions={
           <div className="flex items-center gap-2">
             <Button variant="outline" className="rounded-md" onClick={() => setShowEditDialog(true)}>
@@ -191,11 +191,11 @@ function ClientProfile() {
             </Button>
             <Button
               variant="outline"
-              className="rounded-md text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
+              className="rounded-md text-amber-600 hover:bg-amber-500/10 hover:text-amber-700 hover:border-amber-500/30"
               onClick={() => setShowDeleteConfirm(true)}
             >
-              <Trash2 size={15} strokeWidth={1.75} />
-              Delete Client
+              <Archive size={15} strokeWidth={1.75} />
+              Archive Client
             </Button>
           </div>
         }
@@ -207,7 +207,7 @@ function ClientProfile() {
           {[
             ["Type", record.type],
             ["Tag", record.tag],
-            ["KYC Status", record.kyc],
+            ["Verification Status", record.kyc],
             ["Created", formatDate(record.createdAt)],
           ].map(([label, value]) => (
             <div key={label} className="min-w-0">
@@ -304,11 +304,11 @@ function ClientProfile() {
             </SectionCard>
           )}
 
-          {/* ── KYC ── */}
+          {/* ── Identity Verification ── */}
           {active === "kyc" && (
-            <SectionCard title="KYC Verification" description="Aadhar, PAN and identity verification status." icon={FileBadge}>
+            <SectionCard title="Identity Verification" description="Aadhaar, PAN and client identity credentials." icon={FileBadge}>
               <div className="space-y-5">
-                {/* KYC Status */}
+                {/* Verification Status */}
                 <div className="flex items-center gap-4 rounded-lg border border-border bg-muted/30 p-4">
                   <span className="grid size-12 shrink-0 place-items-center rounded-full bg-muted">
                     <FileBadge size={22} strokeWidth={1.5} className="text-muted-foreground" />
@@ -319,13 +319,13 @@ function ClientProfile() {
                       {record.kyc}
                     </StatusPill>
                     {record.kyc === "Verified" && (
-                      <p className="mt-1 text-caption text-success">Both Aadhar and PAN verified.</p>
+                      <p className="mt-1 text-caption text-success">Both Aadhaar and PAN verified.</p>
                     )}
                     {record.kyc === "Pending" && (
-                      <p className="mt-1 text-caption text-warning">Awaiting Aadhar and/or PAN submission.</p>
+                      <p className="mt-1 text-caption text-warning">Awaiting Aadhaar and/or PAN submission.</p>
                     )}
                     {record.kyc === "Rejected" && (
-                      <p className="mt-1 text-caption text-destructive">KYC verification was rejected. Please review.</p>
+                      <p className="mt-1 text-caption text-destructive">Identity verification was rejected. Please review.</p>
                     )}
                   </div>
                 </div>
@@ -438,23 +438,23 @@ function ClientProfile() {
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
         <AlertDialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-title font-semibold text-destructive flex items-center gap-2">
-              <Trash2 size={18} />
-              Delete Client
+            <AlertDialogTitle className="text-title font-semibold text-foreground flex items-center gap-2">
+              <Archive size={18} className="text-amber-600" />
+              Archive Client Profile
             </AlertDialogTitle>
             <AlertDialogDescription className="text-helper text-muted-foreground mt-2">
-              Are you sure you want to delete client <span className="font-semibold text-foreground">"{record.name}"</span>?
-              This will permanently remove the client and their associated records.
+              Are you sure you want to archive client <span className="font-semibold text-foreground">"{record.name}"</span>?
+              Historical cases, court proceedings, and verified documents will remain permanently preserved in firm archives.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="mt-5 flex justify-end gap-2">
             <AlertDialogCancel className="rounded-md" disabled={isDeleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="rounded-md bg-amber-600 text-white hover:bg-amber-700"
               onClick={handleDeleteClient}
               disabled={isDeleting}
             >
-              {isDeleting ? "Deleting…" : "Delete Client"}
+              {isDeleting ? "Archiving…" : "Archive Client"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

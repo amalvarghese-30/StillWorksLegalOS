@@ -59,6 +59,37 @@ export function CallReminderAlerts() {
   const [activeAlert, setActiveAlert] = useState<ActiveReminder | null>(null);
   const alertedIdsRef = useRef<Set<string>>(new Set());
   const snoozedUntilRef = useRef<Map<string, number>>(new Map());
+  const nextTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const channelRef = useRef<BroadcastChannel | null>(null);
+
+  // Initialize BroadcastChannel for cross-tab synchronization
+  useEffect(() => {
+    if (typeof window === "undefined" || !("BroadcastChannel" in window)) {
+      return undefined;
+    }
+
+    const bc = new BroadcastChannel("legalos_call_reminders");
+    channelRef.current = bc;
+
+    bc.onmessage = (event: MessageEvent) => {
+      const { type, id, snoozedUntil } = event.data || {};
+      if (type === "ALERT_TRIGGERED" && id) {
+        alertedIdsRef.current.add(id);
+        // If we had this alert open in this tab too, close to avoid duplicate popups
+        setActiveAlert((curr) => (curr?.id === id ? null : curr));
+      } else if (type === "ALERT_DISMISSED" && id) {
+        if (snoozedUntil) snoozedUntilRef.current.set(id, snoozedUntil);
+        setActiveAlert((curr) => (curr?.id === id ? null : curr));
+      } else if (type === "ALERT_COMPLETED" && id) {
+        alertedIdsRef.current.add(id);
+        setActiveAlert((curr) => (curr?.id === id ? null : curr));
+      }
+    };
+
+    return () => {
+      bc.close();
+    };
+  }, []);
 
   // Ask for browser notification permission once
   useEffect(() => {
@@ -71,6 +102,9 @@ export function CallReminderAlerts() {
     setActiveAlert(reminder);
     alertedIdsRef.current.add(reminder.id);
     playReminderBeep();
+
+    // Broadcast to other tabs so they don't fire duplicate audio or modal
+    channelRef.current?.postMessage({ type: "ALERT_TRIGGERED", id: reminder.id });
 
     // Browser push notification if in background
     if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
@@ -87,68 +121,94 @@ export function CallReminderAlerts() {
     }
   }, []);
 
-  // Poll for upcoming or due call reminders every 10 seconds
+  // Exact-time scheduling and periodic reconciliation
   useEffect(() => {
-    const checkReminders = () => {
-      const now = Date.now();
+    const tasks = taskData?.tasks ?? [];
+    const events = calendarData?.events ?? [];
 
-      // 1. Check Tasks with call reminders
-      const tasks = taskData?.tasks ?? [];
+    const reconcileAndSchedule = () => {
+      const now = Date.now();
+      let nextDueReminder: { reminder: ActiveReminder; delayMs: number } | null = null;
+
+      // Clear existing single-shot timer
+      if (nextTimerRef.current) {
+        clearTimeout(nextTimerRef.current);
+        nextTimerRef.current = null;
+      }
+
+      // Collect all candidate reminders
+      const candidates: ActiveReminder[] = [];
+
       for (const t of tasks) {
         if (!t.isCall || t.status === "completed" || !t.callReminder?.scheduledAt) continue;
-        const dueTime = new Date(t.callReminder.scheduledAt).getTime();
-        const reminderId = `task-${t._id}`;
+        const due = new Date(t.callReminder.scheduledAt).getTime();
+        candidates.push({
+          id: `task-${t._id}`,
+          source: "task",
+          title: t.title,
+          clientName: t.callReminder.clientName || t.title.replace(/^📞\s*CALL:\s*/i, ""),
+          phone: t.callReminder.phone,
+          notes: t.callReminder.notes,
+          dueTime: new Date(due),
+          taskId: t._id,
+        });
+      }
 
-        const snoozedUntil = snoozedUntilRef.current.get(reminderId);
+      for (const ev of events) {
+        if (ev.type !== "call_reminder" || !ev.start) continue;
+        const due = new Date(ev.start).getTime();
+        candidates.push({
+          id: `event-${ev._id}`,
+          source: "event",
+          title: ev.title,
+          clientName: ev.clientName || ev.title,
+          notes: ev.description,
+          dueTime: new Date(due),
+        });
+      }
+
+      for (const cand of candidates) {
+        const dueMs = cand.dueTime.getTime();
+        const snoozedUntil = snoozedUntilRef.current.get(cand.id);
+
         if (snoozedUntil && now < snoozedUntil) continue;
 
-        // Due if within 2 minutes past or up to 30 seconds ahead
-        if (now >= dueTime - 30_000 && now <= dueTime + 180_000) {
-          if (!alertedIdsRef.current.has(reminderId) || (snoozedUntil && now >= snoozedUntil)) {
-            triggerAlert({
-              id: reminderId,
-              source: "task",
-              title: t.title,
-              clientName: t.callReminder.clientName || t.title.replace(/^📞\s*CALL:\s*/i, ""),
-              phone: t.callReminder.phone,
-              notes: t.callReminder.notes,
-              dueTime: new Date(dueTime),
-              taskId: t._id,
-            });
+        // EXACT TIMING: Trigger only once scheduled time has arrived (scheduledAt <= now)
+        // and within 5 minutes past (300,000ms grace window)
+        if (now >= dueMs && now <= dueMs + 300_000) {
+          if (!alertedIdsRef.current.has(cand.id) || (snoozedUntil && now >= snoozedUntil)) {
+            triggerAlert(cand);
             return;
+          }
+        } else if (dueMs > now) {
+          // Future reminder: calculate delay to exact millisecond
+          const delayMs = dueMs - now;
+          if (delayMs <= 24 * 60 * 60 * 1000) { // within 24 hours
+            if (!nextDueReminder || delayMs < nextDueReminder.delayMs) {
+              nextDueReminder = { reminder: cand, delayMs };
+            }
           }
         }
       }
 
-      // 2. Check Calendar Events of type "call_reminder"
-      const events = calendarData?.events ?? [];
-      for (const ev of events) {
-        if (ev.type !== "call_reminder" || !ev.start) continue;
-        const dueTime = new Date(ev.start).getTime();
-        const reminderId = `event-${ev._id}`;
-
-        const snoozedUntil = snoozedUntilRef.current.get(reminderId);
-        if (snoozedUntil && now < snoozedUntil) continue;
-
-        if (now >= dueTime - 30_000 && now <= dueTime + 180_000) {
-          if (!alertedIdsRef.current.has(reminderId) || (snoozedUntil && now >= snoozedUntil)) {
-            triggerAlert({
-              id: reminderId,
-              source: "event",
-              title: ev.title,
-              clientName: ev.clientName || ev.title,
-              notes: ev.description,
-              dueTime: new Date(dueTime),
-            });
-            return;
-          }
-        }
+      // Schedule exact setTimeout for the next closest reminder
+      if (nextDueReminder) {
+        nextTimerRef.current = setTimeout(() => {
+          triggerAlert(nextDueReminder!.reminder);
+        }, nextDueReminder.delayMs);
       }
     };
 
-    checkReminders();
-    const timer = setInterval(checkReminders, 10_000);
-    return () => clearInterval(timer);
+    reconcileAndSchedule();
+    // 20-second heartbeat reconciliation for tab wake/sleep
+    const intervalTimer = setInterval(reconcileAndSchedule, 20_000);
+
+    return () => {
+      clearInterval(intervalTimer);
+      if (nextTimerRef.current) {
+        clearTimeout(nextTimerRef.current);
+      }
+    };
   }, [taskData, calendarData, triggerAlert]);
 
   if (!activeAlert) return null;
@@ -157,6 +217,11 @@ export function CallReminderAlerts() {
     if (!activeAlert) return;
     const snoozeTime = Date.now() + 5 * 60 * 1000; // 5 minutes
     snoozedUntilRef.current.set(activeAlert.id, snoozeTime);
+    channelRef.current?.postMessage({
+      type: "ALERT_DISMISSED",
+      id: activeAlert.id,
+      snoozedUntil: snoozeTime,
+    });
     toast.info("Call reminder snoozed for 5 minutes");
     setActiveAlert(null);
   };
@@ -171,6 +236,10 @@ export function CallReminderAlerts() {
     } else {
       toast.success("Call acknowledged");
     }
+    channelRef.current?.postMessage({
+      type: "ALERT_COMPLETED",
+      id: activeAlert.id,
+    });
     setActiveAlert(null);
   };
 

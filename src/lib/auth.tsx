@@ -107,7 +107,7 @@ function toSessionUser(apiUser: RawUser): SessionUser {
 interface AuthValue {
   user: SessionUser | null;
   ready: boolean;
-  signIn: (email: string, password: string) => Promise<{ ok: true; user: SessionUser } | { ok: false; error: string }>;
+  signIn: (email: string, password: string) => Promise<{ ok: true; user: SessionUser } | { ok: false; error: string; field?: "email" | "password" | undefined }>;
   signOut: () => Promise<void>;
 }
 
@@ -169,13 +169,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return { ok: true as const, user: sessionUser };
         } catch (err) {
           if (err instanceof ApiError) {
+            const errBody = err.body && typeof err.body === "object" ? (err.body as Record<string, unknown>) : null;
+            const fieldVal = errBody ? errBody["field"] : null;
+            const field = fieldVal === "email" || fieldVal === "password" ? fieldVal : undefined;
             const msg =
-              err.status === 401
-                ? "Invalid email or password."
-                : typeof err.body === "string"
-                  ? err.body
-                  : "Login failed. Please try again.";
-            return { ok: false as const, error: msg };
+              errBody && typeof errBody["message"] === "string"
+                ? String(errBody["message"])
+                : err.status === 401
+                  ? "Invalid email or password."
+                  : typeof err.body === "string"
+                    ? err.body
+                    : "Login failed. Please try again.";
+            return { ok: false as const, error: msg, field };
           }
           return { ok: false as const, error: "Network error. Is the server running?" };
         }

@@ -79,6 +79,13 @@ router.get("/", async (req: Request, res: Response) => {
       category,
       assignedTo,
       caseId,
+      clientId,
+      dueFrom,
+      dueTo,
+      overdue,
+      dueToday,
+      isCall,
+      hasCallReminder,
       page = "1",
       limit = "24",
     } = req.query as Record<string, string>;
@@ -92,12 +99,55 @@ router.get("/", async (req: Request, res: Response) => {
         filter["status"] = status;
       }
     }
-    if (priority && priority !== "all") filter["priority"] = priority;
+    if (priority && priority !== "all") {
+      if (priority.includes(",")) {
+        filter["priority"] = { $in: priority.split(",").map((p) => p.trim()) };
+      } else {
+        filter["priority"] = priority;
+      }
+    }
     if (category && category !== "all") filter["category"] = category;
-    if (assignedTo) filter["assignedTo"] = assignedTo;
     if (caseId) filter["caseId"] = caseId;
+    if (clientId) filter["clientId"] = clientId;
+
+    if (assignedTo && assignedTo !== "all") {
+      if (assignedTo.includes(",")) {
+        filter["assignedTo"] = { $in: assignedTo.split(",").map((id) => id.trim()) };
+      } else {
+        filter["assignedTo"] = assignedTo;
+      }
+    }
+
+    if (isCall === "true" || hasCallReminder === "true") {
+      filter["$or"] = [{ isCall: true }, { "callReminder.scheduledAt": { $exists: true, $ne: null } }];
+    }
 
     const andConditions: Record<string, unknown>[] = [];
+
+    // Date range filters on deadline
+    if (dueFrom || dueTo) {
+      const deadlineCond: Record<string, unknown> = {};
+      if (dueFrom) deadlineCond["$gte"] = new Date(dueFrom);
+      if (dueTo) deadlineCond["$lte"] = new Date(dueTo);
+      andConditions.push({ deadline: deadlineCond });
+    }
+
+    if (overdue === "true") {
+      andConditions.push({
+        deadline: { $lt: new Date() },
+        status: { $ne: "completed" },
+      });
+    }
+
+    if (dueToday === "true") {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date();
+      endOfDay.setHours(23, 59, 59, 999);
+      andConditions.push({
+        deadline: { $gte: startOfDay, $lte: endOfDay },
+      });
+    }
 
     // Non-admins only see their tasks
     if (req.user!.role !== "admin") {
@@ -126,7 +176,23 @@ router.get("/", async (req: Request, res: Response) => {
     const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 24));
     const skip = (pageNum - 1) * limitNum;
 
-    const [tasks, total] = await Promise.all([
+    const now = new Date();
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+
+    const baseAccessibleTaskFilter: Record<string, unknown> = {};
+    if (req.user!.role !== "admin") {
+      const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
+      baseAccessibleTaskFilter["$or"] = [
+        { assignedTo: req.userId },
+        { createdBy: req.userId },
+        ...(accessibleCaseIds.length > 0 ? [{ caseId: { $in: accessibleCaseIds } }] : []),
+      ];
+    }
+
+    const [tasks, total, allAccessible] = await Promise.all([
       Task.find(filter)
         .sort({ deadline: 1, priority: -1, createdAt: -1 })
         .skip(skip)
@@ -136,13 +202,43 @@ router.get("/", async (req: Request, res: Response) => {
         .populate("clientId", "name")
         .lean(),
       Task.countDocuments(filter),
+      Task.find(baseAccessibleTaskFilter, { status: 1, deadline: 1, isCall: 1, callReminder: 1 }).lean(),
     ]);
+
+    const stats = {
+      total: allAccessible.length,
+      overdue: 0,
+      dueToday: 0,
+      inProgress: 0,
+      inReview: 0,
+      completed: 0,
+      calls: 0,
+    };
+
+    for (const t of allAccessible) {
+      if (t.status === "completed") {
+        stats.completed++;
+      } else {
+        if (t.status === "pending_approval") stats.inReview++;
+        else stats.inProgress++;
+
+        if (t.deadline) {
+          const d = new Date(t.deadline);
+          if (d < now) stats.overdue++;
+          else if (d >= startOfToday && d <= endOfToday) stats.dueToday++;
+        }
+      }
+      if (t.isCall || (t as any).callReminder?.scheduledAt) {
+        stats.calls++;
+      }
+    }
 
     res.json({
       tasks,
       total,
       page: pageNum,
-      totalPages: Math.ceil(total / limitNum),
+      totalPages: Math.ceil(total / limitNum) || 1,
+      stats,
     });
   } catch (err) {
     console.error("[tasks] List error:", err);
@@ -370,17 +466,46 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
     // Fetch the original task to detect changes
     const originalTask = await Task.findById(req.params["id"]);
 
-    const task = await Task.findByIdAndUpdate(req.params["id"], updates, {
-      new: true,
-      runValidators: true,
-    })
-      .populate("assignedTo", "name email")
-      .populate("caseId", "title number")
-      .populate("clientId", "name");
+    let task;
+    if (
+      req.user!.role === "admin" &&
+      originalTask?.status === "pending_approval" &&
+      (updates["status"] === "completed" || updates["status"] === "in_progress")
+    ) {
+      task = await Task.findOneAndUpdate(
+        { _id: req.params["id"], status: "pending_approval" },
+        { $set: updates },
+        { new: true, runValidators: true }
+      )
+        .populate("assignedTo", "name email")
+        .populate("caseId", "title number")
+        .populate("clientId", "name");
 
-    if (!task) {
-      res.status(404).json({ message: "Task not found" });
-      return;
+      if (!task) {
+        const existing = await Task.findById(req.params["id"])
+          .populate("assignedTo", "name email")
+          .populate("caseId", "title number")
+          .populate("clientId", "name");
+        if (existing) {
+          res.json({ task: existing, code: "ALREADY_PROCESSED", message: "This task has already been reviewed." });
+          return;
+        }
+        res.status(404).json({ message: "Task not found" });
+        return;
+      }
+    } else {
+      task = await Task.findByIdAndUpdate(req.params["id"], updates, {
+        new: true,
+        runValidators: true,
+      })
+        .populate("assignedTo", "name email")
+        .populate("caseId", "title number")
+        .populate("clientId", "name");
+
+      if (!task) {
+        res.status(404).json({ message: "Task not found" });
+        return;
+      }
     }
 
     // Notify assignee if task was assigned or reassigned to another user

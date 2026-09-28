@@ -369,11 +369,11 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
             </div>
           </div>
 
-          {/* ── KYC ── */}
+          {/* ── Identity Verification ── */}
           <div className="rounded-lg border border-border bg-muted/30 p-4">
             <p className="flex items-center gap-2 text-helper font-medium">
               <FileBadge size={16} strokeWidth={1.75} className="text-muted-foreground" />
-              KYC &amp; Verification Details
+              Identity Verification Details
             </p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
@@ -407,7 +407,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
             </div>
             {form.aadhar && form.pan && (
               <p className="mt-2 text-caption text-emerald-600 dark:text-emerald-400 font-medium">
-                ✓ Aadhaar and PAN provided — KYC will be auto-verified on creation.
+                ✓ Aadhaar and PAN provided — Identity verification will be auto-completed on creation.
               </p>
             )}
           </div>

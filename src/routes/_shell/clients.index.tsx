@@ -13,12 +13,12 @@ export const Route = createFileRoute("/_shell/clients/")({
       { title: "Clients · S & S Legal-Tech LLP" },
       {
         name: "description",
-        content: "Premium client profiles with KYC status, matters and relationships in one place.",
+        content: "Client profiles with verification status, matters and relationships in one place.",
       },
       { property: "og:title", content: "Clients · S & S Legal-Tech LLP" },
       {
         property: "og:description",
-        content: "Client profiles with KYC status, matters and relationships.",
+        content: "Client profiles with verification status, matters and relationships.",
       },
     ],
   }),
@@ -113,7 +113,7 @@ function ClientCard({ c }: { c: ClientRecord }) {
               strokeWidth={1.75}
               className={c.kyc === "Verified" ? "text-success" : "text-warning"}
             />
-            <span className="text-helper">KYC {c.kyc}</span>
+            <span className="text-helper">{c.kyc === "Verified" ? "Verified" : "Pending Verification"}</span>
           </span>
         </div>
       </article>

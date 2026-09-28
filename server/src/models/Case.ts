@@ -182,6 +182,11 @@ CaseSchema.index({
   courtCaseId: "text",
 });
 
+CaseSchema.index({ status: 1, priority: 1, updatedAt: -1 });
+CaseSchema.index({ assignedTo: 1, status: 1 });
+CaseSchema.index({ practice: 1, updatedAt: -1 });
+CaseSchema.index({ nextHearing: 1 });
+
 // ---------------------------------------------------------------------------
 // Auto-generate case number on save — uses atomic Counter to prevent races
 // ---------------------------------------------------------------------------

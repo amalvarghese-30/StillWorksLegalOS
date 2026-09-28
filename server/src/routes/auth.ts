@@ -71,13 +71,21 @@ router.post("/login", async (req: Request, res: Response) => {
     const { email, password } = req.body;
 
     if (!email || !password || typeof email !== "string" || typeof password !== "string") {
-      res.status(400).json({ message: "Email and password must be valid text strings" });
+      res.status(400).json({
+        field: !email ? "email" : "password",
+        code: "VALIDATION_ERROR",
+        message: "Email and password must be valid text strings",
+      });
       return;
     }
 
     const inputIdentifier = email.toLowerCase().trim();
     if (!inputIdentifier) {
-      res.status(400).json({ message: "Email and password must be valid text strings" });
+      res.status(400).json({
+        field: "email",
+        code: "VALIDATION_ERROR",
+        message: "Email address or username cannot be empty",
+      });
       return;
     }
 
@@ -99,13 +107,21 @@ router.post("/login", async (req: Request, res: Response) => {
     }
 
     if (!user) {
-      res.status(401).json({ message: "Invalid email or password" });
+      res.status(401).json({
+        field: "email",
+        code: "USER_NOT_FOUND",
+        message: "No account found matching this email or username.",
+      });
       return;
     }
 
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
-      res.status(401).json({ message: "Invalid email or password" });
+      res.status(401).json({
+        field: "password",
+        code: "INVALID_PASSWORD",
+        message: "Incorrect password. Please check your password and try again.",
+      });
       return;
     }
 

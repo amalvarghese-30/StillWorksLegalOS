@@ -93,10 +93,9 @@ function LoginPage() {
     try {
       const result = await signIn(cleanEmail, password);
       if (!result.ok) {
-        const errLower = (result.error || "").toLowerCase();
-        if (errLower.includes("user not found") || errLower.includes("email") || errLower.includes("no account")) {
+        if (result.field === "email") {
           setEmailError(result.error);
-        } else if (errLower.includes("password") || errLower.includes("incorrect") || errLower.includes("credential")) {
+        } else if (result.field === "password") {
           setPasswordError(result.error);
         } else {
           setGeneralError(result.error);
@@ -104,7 +103,7 @@ function LoginPage() {
         return;
       }
 
-      // Persist or clean up "Remember me"
+      // Persist or clean up "Remember me" (email only — passwords are NEVER stored in browser storage)
       if (rememberMe) {
         localStorage.setItem(REMEMBER_KEY, JSON.stringify({ email: cleanEmail, rememberMe: true }));
       } else {
@@ -136,10 +135,10 @@ function LoginPage() {
           </div>
 
           <h1 className="mt-8 text-2xl sm:text-3xl font-bold tracking-tight text-foreground font-display">
-            Welcome to LegalOS
+            Enterprise Practice Portal
           </h1>
           <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
-            Securely sign in to access firm matters, case proceedings, and confidential client records.
+            Welcome back. Please authenticate your identity to access court listings, confidential matter records, and client communications.
           </p>
 
           <form className="mt-8 space-y-4" onSubmit={submit} noValidate>

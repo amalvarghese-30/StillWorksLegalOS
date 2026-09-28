@@ -13,6 +13,10 @@ import {
   FileText,
   Check,
   ShieldCheck,
+  ChevronDown,
+  ChevronUp,
+  Trash2,
+  Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,6 +55,14 @@ interface FormErrors {
   pan?: string;
 }
 
+interface SubClientEntry {
+  name: string;
+  relationship: string;
+  description: string;
+  phone: string;
+  email: string;
+}
+
 export function EditClientDialog({ open, onClose, record }: EditClientDialogProps) {
   const [type, setType] = useState<"Individual" | "Corporate">(record.type as any || "Individual");
   const [tag, setTag] = useState<"Active" | "VIP" | "Corporate" | "Individual" | "Archived">(
@@ -68,6 +80,8 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
   const [notes, setNotes] = useState(record.notes || "");
   const [promisedCompletionDate, setPromisedCompletionDate] = useState<string>("");
   const [assignedTo, setAssignedTo] = useState<string[]>([]);
+  const [subClients, setSubClients] = useState<SubClientEntry[]>([]);
+  const [showSubClient, setShowSubClient] = useState(false);
 
   // Property Details
   const [propertyAddress, setPropertyAddress] = useState(record.propertyDetails?.address || "");
@@ -105,6 +119,16 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
         typeof a === "object" && a !== null ? a._id : a
       );
       setAssignedTo(initialAssigned);
+
+      const initialSubClients = (record.subClients || []).map((sc: any) => ({
+        name: sc.name || "",
+        relationship: sc.relationship || "",
+        description: sc.description || sc.notes || "",
+        phone: sc.phone || "",
+        email: sc.email || "",
+      }));
+      setSubClients(initialSubClients);
+
       setPropertyAddress(record.propertyDetails?.address || "");
       setSurveyNo(record.propertyDetails?.surveyNo || "");
       setChsName(record.propertyDetails?.chsName || "");
@@ -119,6 +143,28 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
   const toggleStaff = (empId: string) => {
     setAssignedTo((prev) =>
       prev.includes(empId) ? prev.filter((id) => id !== empId) : [...prev, empId]
+    );
+  };
+
+  const addSubClient = () => {
+    setSubClients((prev) => [
+      ...prev,
+      { name: "", relationship: "", description: "", phone: "", email: "" },
+    ]);
+    setShowSubClient(true);
+  };
+
+  const removeSubClient = (idx: number) => {
+    setSubClients((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const updateSubClient = (
+    idx: number,
+    field: keyof SubClientEntry,
+    val: string
+  ) => {
+    setSubClients((prev) =>
+      prev.map((sc, i) => (i === idx ? { ...sc, [field]: val } : sc))
     );
   };
 
@@ -196,6 +242,16 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
           area: area.trim(),
         };
       }
+
+      payload.subClients = subClients
+        .filter((sc) => sc.name.trim())
+        .map((sc) => ({
+          name: sc.name.trim(),
+          relationship: sc.relationship.trim(),
+          phone: sc.phone.trim(),
+          email: sc.email.trim(),
+          notes: sc.description.trim(),
+        }));
 
       await updateClient.mutateAsync({
         id: record._id,
@@ -282,7 +338,7 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
             <div className="space-y-1.5">
               <Label htmlFor="client-kyc" className="text-helper font-medium flex items-center gap-1">
                 <ShieldCheck size={14} className="text-muted-foreground" />
-                KYC Status
+                Identity Verification
               </Label>
               <select
                 id="client-kyc"
@@ -374,11 +430,11 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
             </div>
           </div>
 
-          {/* KYC Documents */}
+          {/* Identity Verification Documents */}
           <div className="space-y-3 border-t border-border/50 pt-3">
             <h4 className="text-caption font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
               <FileBadge size={14} />
-              KYC &amp; Identification Details
+              Identity Verification Details
             </h4>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
@@ -554,6 +610,122 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
                 />
               </div>
             </div>
+          </div>
+
+          {/* ── Sub-Clients (Optional) ── */}
+          <div className="rounded-lg border border-border">
+            <button
+              type="button"
+              onClick={() => setShowSubClient(!showSubClient)}
+              className="flex w-full items-center justify-between px-4 py-3 text-left"
+            >
+              <p className="flex items-center gap-2 text-helper font-medium">
+                <Users size={16} strokeWidth={1.75} className="text-muted-foreground" />
+                Sub-clients ({subClients.length}) <span className="text-caption text-muted-foreground">(optional)</span>
+              </p>
+              {showSubClient ? <ChevronUp size={17} /> : <ChevronDown size={17} />}
+            </button>
+            {showSubClient && (
+              <div className="border-t border-border p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-helper text-muted-foreground">
+                    Buyers, sellers, family members, or related parties for this client.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1 text-caption"
+                    onClick={addSubClient}
+                  >
+                    <Plus size={13} /> Add Sub-client
+                  </Button>
+                </div>
+
+                {subClients.map((sc, idx) => (
+                  <div key={idx} className="rounded-md border border-border bg-muted/30 p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <p className="text-helper font-medium">Sub-client #{idx + 1}</p>
+                      <button
+                        type="button"
+                        onClick={() => removeSubClient(idx)}
+                        className="grid size-8 place-items-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        aria-label="Remove sub-client"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`sc-name-${idx}`} className="text-helper">Name</Label>
+                        <Input
+                          id={`sc-name-${idx}`}
+                          value={sc.name}
+                          onChange={(e) => updateSubClient(idx, "name", e.target.value)}
+                          placeholder="Full name"
+                          className="h-10 rounded-md"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`sc-rel-${idx}`} className="text-helper">Relationship</Label>
+                        <Input
+                          id={`sc-rel-${idx}`}
+                          value={sc.relationship}
+                          onChange={(e) => updateSubClient(idx, "relationship", e.target.value)}
+                          placeholder="Buyer / Seller / Partner"
+                          className="h-10 rounded-md"
+                        />
+                      </div>
+                      <div className="space-y-1.5 sm:col-span-2">
+                        <Label htmlFor={`sc-desc-${idx}`} className="text-helper">Description / Notes</Label>
+                        <Input
+                          id={`sc-desc-${idx}`}
+                          value={sc.description}
+                          onChange={(e) => updateSubClient(idx, "description", e.target.value)}
+                          placeholder="Notes or details about this sub-client"
+                          className="h-10 rounded-md"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`sc-phone-${idx}`} className="text-helper">Phone Number</Label>
+                        <Input
+                          id={`sc-phone-${idx}`}
+                          value={sc.phone}
+                          onChange={(e) => updateSubClient(idx, "phone", sanitizePhone(e.target.value))}
+                          placeholder="10-digit phone number"
+                          className="h-10 rounded-md"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`sc-email-${idx}`} className="text-helper">Email Address</Label>
+                        <Input
+                          id={`sc-email-${idx}`}
+                          value={sc.email}
+                          onChange={(e) => updateSubClient(idx, "email", e.target.value)}
+                          placeholder="email@domain.com"
+                          className="h-10 rounded-md"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {subClients.length === 0 && (
+                  <div className="rounded-md border border-dashed border-border/80 p-6 text-center">
+                    <p className="text-helper text-muted-foreground">No sub-clients added yet.</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-2 text-caption gap-1"
+                      onClick={addSubClient}
+                    >
+                      <Plus size={13} /> Add first sub-client
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <DialogFooter className="mt-6 flex justify-end gap-2 border-t border-border/60 pt-4">

@@ -110,6 +110,9 @@ const TaskSchema = new Schema<ITask>(
 
 TaskSchema.index({ title: "text", description: "text" });
 TaskSchema.index({ deadline: 1, status: 1 });
+TaskSchema.index({ assignedTo: 1, status: 1 });
+TaskSchema.index({ category: 1, priority: 1 });
+TaskSchema.index({ isCall: 1, "callReminder.scheduledAt": 1 });
 
 // ---------------------------------------------------------------------------
 // Pre-save: auto-set overdue status

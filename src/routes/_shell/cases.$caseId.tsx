@@ -251,6 +251,7 @@ function CaseWorkspace() {
   const deleteCase = useDeleteCase();
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showReopenConfirm, setShowReopenConfirm] = useState(false);
   const [showAddTaskDialog, setShowAddTaskDialog] = useState(false);
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -264,6 +265,14 @@ function CaseWorkspace() {
       console.error("Failed to delete case:", err);
       setIsDeleting(false);
     }
+  };
+
+  const handleReopenCase = () => {
+    updateCase.mutate({ id: caseId, data: { status: "Active" } }, {
+      onSuccess: () => {
+        setShowReopenConfirm(false);
+      },
+    });
   };
 
   if (isLoading) {
@@ -313,7 +322,7 @@ function CaseWorkspace() {
                 variant="default"
                 className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-md gap-1.5 shadow-soft"
                 disabled={updateCase.isPending}
-                onClick={() => updateCase.mutate({ id: caseId, data: { status: "Active" } })}
+                onClick={() => setShowReopenConfirm(true)}
               >
                 <RotateCcw size={15} strokeWidth={1.75} />
                 Reopen Case
@@ -724,6 +733,31 @@ function CaseWorkspace() {
               disabled={isDeleting}
             >
               {isDeleting ? "Deleting…" : "Delete Case"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showReopenConfirm} onOpenChange={setShowReopenConfirm}>
+        <AlertDialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-title font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
+              <RotateCcw size={18} />
+              Reopen Case
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-helper text-muted-foreground mt-2">
+              Are you sure you want to reopen case <span className="font-semibold text-foreground">"{record.number} — {record.title}"</span>?
+              Its status will be restored to <strong className="text-foreground">Active</strong>, and it will reappear in active court listings and daily case management.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-5 flex justify-end gap-2">
+            <AlertDialogCancel className="rounded-md" disabled={updateCase.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-md bg-emerald-600 text-white hover:bg-emerald-700"
+              onClick={handleReopenCase}
+              disabled={updateCase.isPending}
+            >
+              {updateCase.isPending ? "Reopening…" : "Reopen Case"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
