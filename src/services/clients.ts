@@ -16,6 +16,14 @@ export interface SubClient {
   notes?: string;
 }
 
+export interface AssignedUser {
+  _id: string;
+  name: string;
+  email: string;
+  title?: string;
+  initials?: string;
+}
+
 export interface ClientRecord {
   _id: string;
   type: "Individual" | "Corporate";
@@ -27,6 +35,9 @@ export interface ClientRecord {
   aadhar: string;
   pan: string;
   kyc: "Verified" | "Pending" | "Rejected";
+  notes?: string;
+  assignedTo?: (string | AssignedUser)[];
+  promisedCompletionDate?: string | null;
   propertyDetails?: {
     address: string;
     surveyNo: string;
@@ -61,6 +72,10 @@ export interface CreateClientPayload {
   address?: string;
   aadhar?: string;
   pan?: string;
+  notes?: string;
+  assignedTo?: string[];
+  promisedCompletionDate?: string | null;
+  kyc?: "Verified" | "Pending" | "Rejected";
   propertyDetails?: ClientRecord["propertyDetails"];
   subClients?: SubClient[];
 }

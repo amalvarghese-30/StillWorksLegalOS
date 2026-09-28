@@ -8,6 +8,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useApprovals, adminKeys, type ApprovalItem } from "@/services/admin";
 import { useUpdateDocument, useReviewAccessRequest } from "@/services/documents";
 import { useUpdateTask } from "@/services/tasks";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_admin/admin/approvals")({
   head: () => ({
@@ -83,7 +84,7 @@ function ApprovalsPage() {
   const approvals = data?.approvals ?? [];
 
   const [filter, setFilter] = useState<Filter>("All");
-  const [actingOn, setActingOn] = useState<string | null>(null);
+  const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const updateDocument = useUpdateDocument();
@@ -93,30 +94,62 @@ function ApprovalsPage() {
   const visible = approvals.filter((a) => matchesFilter(a, filter));
 
   const run = (a: ApprovalItem, action: "approved" | "rejected") => {
-    const target = parseTarget(a);
-    setActingOn(a._id);
+    // Prevent multiple clicks immediately
+    if (processingIds.has(a._id)) return;
+
+    setProcessingIds((prev) => new Set(prev).add(a._id));
     setErrorMsg(null);
+
+    const toastId = `approval-${a._id}`;
+    toast.loading(action === "approved" ? "Approving request…" : "Rejecting request…", { id: toastId });
+
+    const target = parseTarget(a);
 
     const onSettled = () => {
       qc.invalidateQueries({ queryKey: adminKeys.approvals });
-      setActingOn(null);
+      setProcessingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(a._id);
+        return next;
+      });
     };
-    const onError = () => setErrorMsg(`Could not ${action === "approved" ? "approve" : "reject"} this request. Please try again.`);
+
+    const onSuccess = () => {
+      toast.success(action === "approved" ? "Request approved successfully!" : "Request rejected.", { id: toastId });
+    };
+
+    const onError = () => {
+      const msg = `Could not ${action === "approved" ? "approve" : "reject"} this request. Please try again.`;
+      setErrorMsg(msg);
+      toast.error(msg, { id: toastId });
+    };
 
     if (target.taskId) {
       updateTask.mutate(
         { id: target.taskId, data: { status: action === "approved" ? "completed" : "in_progress" } },
-        { onSettled, onError },
+        {
+          onSuccess,
+          onError,
+          onSettled,
+        },
       );
     } else if (target.requestId) {
       reviewAccessRequest.mutate(
         { docId: target.docId!, requestId: target.requestId, status: action },
-        { onSettled, onError },
+        {
+          onSuccess,
+          onError,
+          onSettled,
+        },
       );
     } else {
       updateDocument.mutate(
         { id: target.docId!, data: { state: action === "approved" ? "Approved" : "Rejected" } },
-        { onSettled, onError },
+        {
+          onSuccess,
+          onError,
+          onSettled,
+        },
       );
     }
   };
@@ -196,7 +229,7 @@ function ApprovalsPage() {
           ) : (
             visible.map((a) => {
               const Icon = iconFor(a.kind);
-              const busy = actingOn === a._id;
+              const busy = processingIds.has(a._id);
               return (
                 <article key={a._id} className="lift rounded-lg border border-border bg-card p-6 shadow-soft">
                   <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-4">

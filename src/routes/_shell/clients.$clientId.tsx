@@ -267,12 +267,31 @@ function ClientProfile() {
                   { label: "Address", value: record.address || "—" },
                   { label: "KYC Status", value: record.kyc, pill: kycTone[record.kyc] ?? "muted" },
                   { label: "PAN", value: record.pan || "—" },
-                  { label: "Aadhar", value: record.aadhar || "—" },
+                  { label: "Aadhaar", value: record.aadhar || "—" },
+                  {
+                    label: "Assigned Staff",
+                    value:
+                      record.assignedTo && record.assignedTo.length > 0
+                        ? record.assignedTo
+                            .map((a: any) => (typeof a === "object" && a !== null ? a.name : a))
+                            .join(", ")
+                        : "Unassigned",
+                  },
+                  {
+                    label: "Promised Completion Date",
+                    value: record.promisedCompletionDate
+                      ? new Date(record.promisedCompletionDate).toLocaleString("en-IN", {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        })
+                      : "Not set",
+                  },
+                  { label: "Sub-clients", value: `${record.subClients?.length ?? 0}` },
+                  { label: "Onboarding Notes", value: record.notes || "No intake notes entered." },
                   { label: "Created", value: formatDate(record.createdAt) },
                   { label: "Updated", value: formatDate(record.updatedAt) },
-                  { label: "Sub-clients", value: `${record.subClients?.length ?? 0}` },
                 ].map(({ label, value, pill }) => (
-                  <div key={label} className="space-y-1">
+                  <div key={label} className={`space-y-1 ${label === "Onboarding Notes" ? "sm:col-span-2 rounded-md bg-muted/30 p-3" : ""}`}>
                     <p className="text-caption text-muted-foreground">{label}</p>
                     {pill ? (
                       <StatusPill tone={pill as "success" | "warning" | "destructive"}>{value}</StatusPill>

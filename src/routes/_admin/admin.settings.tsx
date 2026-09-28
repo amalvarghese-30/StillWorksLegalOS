@@ -12,6 +12,7 @@ import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
 import { StorageSettings } from "@/components/settings/StorageSettings";
 import { TaskOptionsSettings } from "@/components/settings/TaskOptionsSettings";
 import { useUpdateProfile, useUpdateFirm, useUpdatePreferences } from "@/services/admin";
+import { validatePhone, sanitizePhone } from "@/lib/validation";
 
 export const Route = createFileRoute("/_admin/admin/settings")({
   head: () => ({
@@ -52,6 +53,7 @@ function SettingsPage() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [title, setTitle] = useState("");
+  const [phoneError, setPhoneError] = useState<string | null>(null);
 
   // Firm details form state
   const [firmName, setFirmName] = useState("");
@@ -105,7 +107,15 @@ function SettingsPage() {
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    updateProfile.mutate({ name, phone, title });
+    if (phone.trim()) {
+      const pCheck = validatePhone(phone);
+      if (!pCheck.valid) {
+        setPhoneError(pCheck.error ?? "Invalid phone number format");
+        return;
+      }
+    }
+    setPhoneError(null);
+    updateProfile.mutate({ name, phone: phone.trim(), title });
   };
 
   const handleFirmSave = (e: React.FormEvent) => {
@@ -210,22 +220,43 @@ function SettingsPage() {
             >
               {tab === "profile" ? (
                 <form className="space-y-5 sm:grid sm:grid-cols-2 sm:gap-5" onSubmit={handleSave}>
-                  {[
-                    { label: "Full name", value: name, setter: setName },
-                    { label: "Email", value: user?.email ?? "", readonly: true },
-                    { label: "Phone", value: phone, setter: setPhone },
-                    { label: "Designation", value: title, setter: setTitle },
-                  ].map(({ label, value, setter, readonly }) => (
-                    <div key={label} className="space-y-2">
-                      <Label className="text-helper">{label}</Label>
-                      <Input
-                        value={value}
-                        onChange={setter ? (e) => setter(e.target.value) : undefined}
-                        readOnly={readonly}
-                        className={`h-12 rounded-md ${readonly ? "bg-muted text-muted-foreground" : ""}`}
-                      />
-                    </div>
-                  ))}
+                  <div className="space-y-2">
+                    <Label className="text-helper">Full name</Label>
+                    <Input
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="h-12 rounded-md"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-helper">Email</Label>
+                    <Input
+                      value={user?.email ?? ""}
+                      readOnly
+                      className="h-12 rounded-md bg-muted text-muted-foreground"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-helper">Phone (10-digit Mobile)</Label>
+                    <Input
+                      value={phone}
+                      onChange={(e) => {
+                        setPhone(sanitizePhone(e.target.value));
+                        if (phoneError) setPhoneError(null);
+                      }}
+                      placeholder="e.g. 9876543210"
+                      className={`h-12 rounded-md ${phoneError ? "border-destructive focus-visible:ring-destructive" : ""}`}
+                    />
+                    {phoneError && <p className="text-caption text-destructive font-medium">{phoneError}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-helper">Designation</Label>
+                    <Input
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      className="h-12 rounded-md"
+                    />
+                  </div>
                   <div className="flex items-center gap-3 sm:col-span-2">
                     <Button
                       type="submit"

@@ -57,10 +57,10 @@ router.get("/audit-logs", requireAdminOrPermission("auditLogs"), async (req: Req
 });
 
 // ---------------------------------------------------------------------------
-// GET /api/admin/employees — list all employees (admin or employees perm)
+// GET /api/admin/employees — list all employees (all authenticated staff)
 // ---------------------------------------------------------------------------
 
-router.get("/employees", requireAdminOrPermission("employees"), async (req: Request, res: Response) => {
+router.get("/employees", async (req: Request, res: Response) => {
   try {
     const { status, role } = req.query as Record<string, string>;
     const filter: Record<string, unknown> = {};

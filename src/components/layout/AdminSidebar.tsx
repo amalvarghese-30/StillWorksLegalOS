@@ -16,6 +16,18 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { buttonVariants } from "@/components/ui/button";
 
 type PermissionKey = keyof NonNullable<import("@/lib/auth").UserPermissions>;
 
@@ -136,17 +148,37 @@ export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
             <p className="truncate text-helper font-medium">{user?.name ?? "Administrator"}</p>
             <p className="truncate text-caption text-muted-foreground">{user?.title ?? "Administrator"}</p>
           </div>
-          <button
-            type="button"
-            aria-label="Sign out"
-            onClick={async () => {
-              await signOut();
-              navigate({ to: "/login", replace: true });
-            }}
-            className="grid size-9 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground"
-          >
-            <LogOut size={17} strokeWidth={1.75} />
-          </button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <button
+                type="button"
+                aria-label="Sign out"
+                className="grid size-9 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground active:scale-95"
+              >
+                <LogOut size={17} strokeWidth={1.75} />
+              </button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Sign out of Admin Console?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to end your administrator session? Ensure any administrative approvals or user updates have been saved.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  className={buttonVariants({ variant: "destructive" })}
+                  onClick={async () => {
+                    await signOut();
+                    navigate({ to: "/login", replace: true });
+                  }}
+                >
+                  Sign Out
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
 

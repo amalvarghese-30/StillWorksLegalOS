@@ -8,6 +8,11 @@ import {
   Phone,
   Mail,
   MapPin,
+  Calendar,
+  UserCheck,
+  FileText,
+  Check,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +26,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useUpdateClient, type ClientRecord, type CreateClientPayload } from "@/services/clients";
+import { useEmployees } from "@/services/admin";
+import {
+  validatePhone,
+  validateAadhaar,
+  validatePan,
+  validateEmail,
+  sanitizePhone,
+  sanitizePan,
+  sanitizeAadhaar,
+} from "@/lib/validation";
 
 interface EditClientDialogProps {
   open: boolean;
@@ -28,10 +43,21 @@ interface EditClientDialogProps {
   record: ClientRecord;
 }
 
+interface FormErrors {
+  name?: string;
+  phone?: string;
+  email?: string;
+  aadhar?: string;
+  pan?: string;
+}
+
 export function EditClientDialog({ open, onClose, record }: EditClientDialogProps) {
   const [type, setType] = useState<"Individual" | "Corporate">(record.type as any || "Individual");
   const [tag, setTag] = useState<"Active" | "VIP" | "Corporate" | "Individual" | "Archived">(
     record.tag as any || "Active"
+  );
+  const [kyc, setKyc] = useState<"Verified" | "Pending" | "Rejected">(
+    record.kyc || "Pending"
   );
   const [name, setName] = useState(record.name || "");
   const [phone, setPhone] = useState(record.phone || "");
@@ -39,6 +65,9 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
   const [address, setAddress] = useState(record.address || "");
   const [aadhar, setAadhar] = useState(record.aadhar || "");
   const [pan, setPan] = useState(record.pan || "");
+  const [notes, setNotes] = useState(record.notes || "");
+  const [promisedCompletionDate, setPromisedCompletionDate] = useState<string>("");
+  const [assignedTo, setAssignedTo] = useState<string[]>([]);
 
   // Property Details
   const [propertyAddress, setPropertyAddress] = useState(record.propertyDetails?.address || "");
@@ -48,29 +77,50 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
   const [plot, setPlot] = useState(record.propertyDetails?.plot || "");
   const [area, setArea] = useState(record.propertyDetails?.area || "");
 
+  const [fieldErrors, setFieldErrors] = useState<FormErrors>({});
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  const { data: empData } = useEmployees();
+  const employees = empData?.employees ?? [];
   const updateClient = useUpdateClient();
 
   useEffect(() => {
     if (open) {
       setType(record.type as any || "Individual");
       setTag(record.tag as any || "Active");
+      setKyc(record.kyc || "Pending");
       setName(record.name || "");
       setPhone(record.phone || "");
       setEmail(record.email || "");
       setAddress(record.address || "");
       setAadhar(record.aadhar || "");
       setPan(record.pan || "");
+      setNotes(record.notes || "");
+      setPromisedCompletionDate(
+        record.promisedCompletionDate
+          ? new Date(record.promisedCompletionDate).toISOString().slice(0, 16)
+          : ""
+      );
+      const initialAssigned = (record.assignedTo || []).map((a: any) =>
+        typeof a === "object" && a !== null ? a._id : a
+      );
+      setAssignedTo(initialAssigned);
       setPropertyAddress(record.propertyDetails?.address || "");
       setSurveyNo(record.propertyDetails?.surveyNo || "");
       setChsName(record.propertyDetails?.chsName || "");
       setSector(record.propertyDetails?.sector || "");
       setPlot(record.propertyDetails?.plot || "");
       setArea(record.propertyDetails?.area || "");
+      setFieldErrors({});
       setErrorMsg(null);
     }
   }, [open, record]);
+
+  const toggleStaff = (empId: string) => {
+    setAssignedTo((prev) =>
+      prev.includes(empId) ? prev.filter((id) => id !== empId) : [...prev, empId]
+    );
+  };
 
   if (!open) return null;
 
@@ -78,10 +128,37 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
     e.preventDefault();
     setErrorMsg(null);
 
+    const errors: FormErrors = {};
+
     if (!name.trim()) {
-      setErrorMsg("Client name is required.");
+      errors.name = "Client name is required.";
+    }
+
+    if (phone.trim()) {
+      const pCheck = validatePhone(phone);
+      if (!pCheck.valid) errors.phone = pCheck.error ?? "Invalid phone number";
+    }
+
+    if (email.trim()) {
+      const eCheck = validateEmail(email);
+      if (!eCheck.valid) errors.email = eCheck.error ?? "Invalid email format";
+    }
+
+    if (aadhar.trim()) {
+      const aCheck = validateAadhaar(aadhar);
+      if (!aCheck.valid) errors.aadhar = aCheck.error ?? "Invalid Aadhaar number";
+    }
+
+    if (pan.trim()) {
+      const panCheck = validatePan(pan);
+      if (!panCheck.valid) errors.pan = panCheck.error ?? "Invalid PAN format";
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
       return;
     }
+    setFieldErrors({});
 
     try {
       const hasProperty =
@@ -95,13 +172,20 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
       const payload: Partial<CreateClientPayload> = {
         type,
         tag,
+        kyc,
         name: name.trim(),
+        phone: phone.trim(),
+        email: email.trim(),
+        address: address.trim(),
+        aadhar: aadhar.trim(),
+        pan: pan.trim().toUpperCase(),
+        notes: notes.trim(),
+        assignedTo,
+        promisedCompletionDate: promisedCompletionDate
+          ? new Date(promisedCompletionDate).toISOString()
+          : null,
       };
-      if (phone.trim()) payload.phone = phone.trim();
-      if (email.trim()) payload.email = email.trim();
-      if (address.trim()) payload.address = address.trim();
-      if (aadhar.trim()) payload.aadhar = aadhar.trim();
-      if (pan.trim()) payload.pan = pan.trim();
+
       if (hasProperty) {
         payload.propertyDetails = {
           address: propertyAddress.trim(),
@@ -138,7 +222,7 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
                 Edit Client Profile
               </DialogTitle>
               <DialogDescription className="text-helper text-muted-foreground">
-                Update client contact, classification, identification, and property details.
+                Update client contact, classification, assigned counsel, and property details.
               </DialogDescription>
             </div>
           </div>
@@ -152,28 +236,28 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-5">
           {/* Classification */}
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label className="text-helper font-medium">Client Type</Label>
-              <div className="flex gap-2">
+              <div className="flex gap-1">
                 <Button
                   type="button"
                   size="sm"
                   variant={type === "Individual" ? "default" : "outline"}
-                  className="flex-1 rounded-md"
+                  className="flex-1 rounded-md px-2 text-caption"
                   onClick={() => setType("Individual")}
                 >
-                  <Users size={14} className="mr-1.5" />
+                  <Users size={13} className="mr-1" />
                   Individual
                 </Button>
                 <Button
                   type="button"
                   size="sm"
                   variant={type === "Corporate" ? "default" : "outline"}
-                  className="flex-1 rounded-md"
+                  className="flex-1 rounded-md px-2 text-caption"
                   onClick={() => setType("Corporate")}
                 >
-                  <Building2 size={14} className="mr-1.5" />
+                  <Building2 size={13} className="mr-1" />
                   Corporate
                 </Button>
               </div>
@@ -192,6 +276,23 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
                 <option value="Corporate">Corporate</option>
                 <option value="Individual">Individual</option>
                 <option value="Archived">Archived</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="client-kyc" className="text-helper font-medium flex items-center gap-1">
+                <ShieldCheck size={14} className="text-muted-foreground" />
+                KYC Status
+              </Label>
+              <select
+                id="client-kyc"
+                value={kyc}
+                onChange={(e) => setKyc(e.target.value as any)}
+                className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                <option value="Verified">Verified</option>
+                <option value="Pending">Pending</option>
+                <option value="Rejected">Rejected</option>
               </select>
             </div>
           </div>
@@ -219,15 +320,21 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
               <div className="space-y-1.5">
                 <Label htmlFor="client-phone" className="text-helper font-medium flex items-center gap-1.5">
                   <Phone size={13} className="text-muted-foreground" />
-                  Phone Number
+                  Phone (10-digit Mobile)
                 </Label>
                 <Input
                   id="client-phone"
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+91 98765 43210"
-                  className="h-10 rounded-md"
+                  onChange={(e) => {
+                    setPhone(sanitizePhone(e.target.value));
+                    if (fieldErrors.phone) setFieldErrors((p) => ({ ...p, phone: "" }));
+                  }}
+                  placeholder="9876543210"
+                  className={`h-10 rounded-md ${fieldErrors.phone ? "border-destructive focus-visible:ring-destructive" : ""}`}
                 />
+                {fieldErrors.phone && (
+                  <p className="text-caption text-destructive font-medium">{fieldErrors.phone}</p>
+                )}
               </div>
 
               <div className="space-y-1.5">
@@ -239,17 +346,23 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
                   id="client-email"
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="client@example.com"
-                  className="h-10 rounded-md"
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (fieldErrors.email) setFieldErrors((p) => ({ ...p, email: "" }));
+                  }}
+                  placeholder="client@firm.com"
+                  className={`h-10 rounded-md ${fieldErrors.email ? "border-destructive focus-visible:ring-destructive" : ""}`}
                 />
+                {fieldErrors.email && (
+                  <p className="text-caption text-destructive font-medium">{fieldErrors.email}</p>
+                )}
               </div>
             </div>
 
             <div className="space-y-1.5">
               <Label htmlFor="client-address" className="text-helper font-medium flex items-center gap-1.5">
                 <MapPin size={13} className="text-muted-foreground" />
-                Physical Address
+                Physical / Office Address
               </Label>
               <Input
                 id="client-address"
@@ -265,27 +378,107 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
           <div className="space-y-3 border-t border-border/50 pt-3">
             <h4 className="text-caption font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
               <FileBadge size={14} />
-              KYC & Identification
+              KYC &amp; Identification Details
             </h4>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label htmlFor="client-aadhar" className="text-helper font-medium">Aadhar Number</Label>
+                <Label htmlFor="client-aadhar" className="text-helper font-medium">Aadhaar Number (12 digits)</Label>
                 <Input
                   id="client-aadhar"
                   value={aadhar}
-                  onChange={(e) => setAadhar(e.target.value)}
-                  placeholder="XXXX XXXX XXXX"
-                  className="h-10 rounded-md"
+                  onChange={(e) => {
+                    setAadhar(sanitizeAadhaar(e.target.value));
+                    if (fieldErrors.aadhar) setFieldErrors((p) => ({ ...p, aadhar: "" }));
+                  }}
+                  placeholder="123456789012"
+                  maxLength={12}
+                  className={`h-10 rounded-md ${fieldErrors.aadhar ? "border-destructive focus-visible:ring-destructive" : ""}`}
                 />
+                {fieldErrors.aadhar && (
+                  <p className="text-caption text-destructive font-medium">{fieldErrors.aadhar}</p>
+                )}
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="client-pan" className="text-helper font-medium">PAN Number</Label>
+                <Label htmlFor="client-pan" className="text-helper font-medium">PAN Number (10 characters)</Label>
                 <Input
                   id="client-pan"
                   value={pan}
-                  onChange={(e) => setPan(e.target.value.toUpperCase())}
+                  onChange={(e) => {
+                    setPan(sanitizePan(e.target.value));
+                    if (fieldErrors.pan) setFieldErrors((p) => ({ ...p, pan: "" }));
+                  }}
                   placeholder="ABCDE1234F"
-                  className="h-10 rounded-md uppercase"
+                  maxLength={10}
+                  className={`h-10 rounded-md uppercase ${fieldErrors.pan ? "border-destructive focus-visible:ring-destructive" : ""}`}
+                />
+                {fieldErrors.pan && (
+                  <p className="text-caption text-destructive font-medium">{fieldErrors.pan}</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Staff Assignment & Promised Delivery */}
+          <div className="space-y-3 border-t border-border/50 pt-3">
+            <h4 className="text-caption font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <UserCheck size={14} className="text-primary" />
+              Staff Assignment &amp; Promised Delivery
+            </h4>
+
+            {/* Multi-staff Assignment */}
+            <div className="space-y-1.5">
+              <Label className="text-helper font-medium">Assigned Legal Staff / Advocates</Label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 max-h-32 overflow-y-auto pr-1">
+                {employees.map((emp) => {
+                  const selected = assignedTo.includes(emp._id);
+                  return (
+                    <button
+                      key={emp._id}
+                      type="button"
+                      onClick={() => toggleStaff(emp._id)}
+                      className={`flex items-center gap-2 rounded-md border p-2 text-left text-caption transition-colors ${
+                        selected
+                          ? "border-primary bg-primary/10 text-primary font-medium"
+                          : "border-border bg-background text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      <span className={`grid size-4 shrink-0 place-items-center rounded border ${selected ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground"}`}>
+                        {selected && <Check size={12} strokeWidth={2.5} />}
+                      </span>
+                      <span className="truncate">{emp.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Promised Completion & Notes */}
+            <div className="grid gap-4 sm:grid-cols-2 pt-1">
+              <div className="space-y-1.5">
+                <Label htmlFor="client-completion" className="text-helper font-medium flex items-center gap-1.5">
+                  <Calendar size={13} className="text-muted-foreground" />
+                  Promised Completion Date &amp; Time
+                </Label>
+                <Input
+                  id="client-completion"
+                  type="datetime-local"
+                  value={promisedCompletionDate}
+                  onChange={(e) => setPromisedCompletionDate(e.target.value)}
+                  className="h-10 rounded-md"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="client-notes" className="text-helper font-medium flex items-center gap-1.5">
+                  <FileText size={13} className="text-muted-foreground" />
+                  Client / Intake Notes
+                </Label>
+                <Input
+                  id="client-notes"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Intake notes, billing preferences…"
+                  className="h-10 rounded-md"
                 />
               </div>
             </div>

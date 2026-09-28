@@ -4,7 +4,7 @@ import {
   Gavel, FileText, CheckSquare, StickyNote, History, Users,
   LayoutDashboard, Plus, Loader2, ChevronDown, Clock,
   Send, Check, X, UserPlus, Activity as ActivityIcon,
-  CalendarDays, Edit3, Trash2,
+  CalendarDays, Edit3, Trash2, RotateCcw,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
@@ -247,6 +247,7 @@ function CaseWorkspace() {
     caseId,
   });
   const navigate = useNavigate();
+  const updateCase = useUpdateCase();
   const deleteCase = useDeleteCase();
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -307,6 +308,17 @@ function CaseWorkspace() {
             <Button variant="outline" className="rounded-md" asChild>
               <Link to="/calendar"><CalendarDays size={17} strokeWidth={1.75} /> View calendar</Link>
             </Button>
+            {record.status === "Closed" && (
+              <Button
+                variant="default"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-md gap-1.5 shadow-soft"
+                disabled={updateCase.isPending}
+                onClick={() => updateCase.mutate({ id: caseId, data: { status: "Active" } })}
+              >
+                <RotateCcw size={15} strokeWidth={1.75} />
+                Reopen Case
+              </Button>
+            )}
             <Button variant="outline" className="rounded-md" onClick={() => setShowEditDialog(true)}>
               <Edit3 size={15} strokeWidth={1.75} />
               Edit Case
@@ -322,6 +334,32 @@ function CaseWorkspace() {
           </div>
         }
       />
+
+      {/* Closed matter banner */}
+      {record.status === "Closed" && (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-amber-950 dark:text-amber-200">
+          <div className="flex items-center gap-3">
+            <span className="grid size-9 shrink-0 place-items-center rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400">
+              <RotateCcw size={18} strokeWidth={2} />
+            </span>
+            <div>
+              <p className="font-semibold">This matter is currently Marked as Closed</p>
+              <p className="text-caption opacity-90">
+                All records, hearings, notes, and documents remain safely preserved. You can edit any details or reopen the case at any time.
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-md gap-1.5 shadow-sm"
+            disabled={updateCase.isPending}
+            onClick={() => updateCase.mutate({ id: caseId, data: { status: "Active" } })}
+          >
+            <RotateCcw size={14} strokeWidth={2} />
+            Reopen This Case
+          </Button>
+        </div>
+      )}
 
       {/* Hero card */}
       <div className="gradient-primary mb-6 rounded-lg p-6 text-primary-foreground shadow-lift">

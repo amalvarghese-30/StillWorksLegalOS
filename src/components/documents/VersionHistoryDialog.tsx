@@ -98,7 +98,7 @@ export function VersionHistoryDialog({ open, onClose, documentId, documentName }
                     <Button variant="outline" size="sm" onClick={(e) => {
                       e.stopPropagation();
                       navigator.clipboard.writeText(version.sha256 || "");
-                    }} title="Copy SHA-256">
+                    }} title="Copy Security Checksum">
                       <Copy size={16} />
                     </Button>
                     <button className={`text-caption text-muted-foreground hover:text-foreground ${
@@ -117,7 +117,7 @@ export function VersionHistoryDialog({ open, onClose, documentId, documentName }
                   <div className="px-5 py-4 border-t border-border bg-muted/50">
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <p className="text-caption text-muted-foreground">SHA-256:</p>
+                        <p className="text-caption text-muted-foreground">Security Checksum:</p>
                         <p className="font-mono text-break">{version.sha256}</p>
                       </div>
                       {version.caseName && (

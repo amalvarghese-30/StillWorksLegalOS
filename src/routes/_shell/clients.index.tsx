@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Plus, Search, Mail, Phone, ShieldCheck, Briefcase, Loader2 } from "lucide-react";
+import { Plus, Search, Mail, Phone, ShieldCheck, Briefcase, Loader2, UserCheck, Calendar } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StatusPill } from "@/components/common/StatusPill";
 import { Button } from "@/components/ui/button";
@@ -72,6 +72,35 @@ function ClientCard({ c }: { c: ClientRecord }) {
             <span className="truncate">{c.phone || "—"}</span>
           </li>
         </ul>
+
+        {/* Assigned & Promised Delivery */}
+        {(Boolean(c.assignedTo?.length) || Boolean(c.promisedCompletionDate)) && (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/50 px-2.5 py-1.5 text-caption">
+            {c.assignedTo && c.assignedTo.length > 0 && (
+              <span className="flex items-center gap-1.5 text-muted-foreground">
+                <UserCheck size={13} className="text-primary" />
+                <span className="font-medium text-foreground">
+                  {typeof c.assignedTo[0] === "object" && c.assignedTo[0] !== null
+                    ? (c.assignedTo[0] as any).name
+                    : "Staff"}
+                  {c.assignedTo.length > 1 ? ` +${c.assignedTo.length - 1}` : ""}
+                </span>
+              </span>
+            )}
+            {c.promisedCompletionDate && (
+              <span className="flex items-center gap-1.5 text-muted-foreground ml-auto">
+                <Calendar size={13} className="text-amber-600 dark:text-amber-400" />
+                <span>
+                  Due:{" "}
+                  {new Date(c.promisedCompletionDate).toLocaleDateString("en-IN", {
+                    day: "numeric",
+                    month: "short",
+                  })}
+                </span>
+              </span>
+            )}
+          </div>
+        )}
 
         <div className="mt-5 flex items-center justify-between border-t border-border pt-4">
           <span className="flex items-center gap-2 text-helper">

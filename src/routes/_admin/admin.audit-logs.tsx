@@ -320,7 +320,7 @@ function AuditLogsPage() {
       <PageHeader
         breadcrumb={[{ label: "S & S", to: "/" }, { label: "Admin", to: "/admin" }, { label: "Audit Logs" }]}
         title="Audit logs"
-        subtitle="Every action, with who did it, when, from where — plus tamper-evident verification."
+        subtitle="A clear, tamper-proof record of every action, including who performed it, when it happened, and where it was performed"
         actions={
           <Button variant="outline" className="rounded-md">
             <Download size={17} strokeWidth={1.75} />

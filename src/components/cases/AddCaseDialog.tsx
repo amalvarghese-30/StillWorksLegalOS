@@ -345,9 +345,9 @@ export function AddCaseDialog({ open, onClose }: AddCaseDialogProps) {
             )}
           </div>
 
-          {/* ── NAS Path ── */}
+          {/* ── Document Storage Folder ── */}
           <div className="space-y-1.5">
-            <Label htmlFor="case-nas" className="text-helper">NAS folder path</Label>
+            <Label htmlFor="case-nas" className="text-helper">Document Storage Folder</Label>
             <Input
               id="case-nas"
               value={form.nasPath}
@@ -356,7 +356,7 @@ export function AddCaseDialog({ open, onClose }: AddCaseDialogProps) {
               className="h-11 rounded-md"
             />
             <p className="text-caption text-muted-foreground">
-              Synology NAS folder where case documents will be stored.
+              Firm central storage folder where case documents and files are stored.
             </p>
           </div>
 

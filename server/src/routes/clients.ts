@@ -96,6 +96,7 @@ router.get("/", async (req: Request, res: Response) => {
 
     const [clients, total] = await Promise.all([
       Client.find(filter)
+        .populate("assignedTo", "name email title initials")
         .sort({ updatedAt: -1 })
         .skip(skip)
         .limit(limitNum)
@@ -121,7 +122,7 @@ router.get("/", async (req: Request, res: Response) => {
 
 router.get("/:id", requireResourceAccess("client"), async (req: Request, res: Response) => {
   try {
-    const client = await Client.findById(req.params["id"]);
+    const client = await Client.findById(req.params["id"]).populate("assignedTo", "name email title initials");
     if (!client) {
       res.status(404).json({ message: "Client not found" });
       return;
@@ -148,6 +149,9 @@ router.post("/", async (req: Request, res: Response) => {
       address,
       aadhar,
       pan,
+      notes,
+      assignedTo,
+      promisedCompletionDate,
       propertyDetails,
       subClients,
     } = req.body;
@@ -170,6 +174,9 @@ router.post("/", async (req: Request, res: Response) => {
       aadhar: aadhar ?? "",
       pan: pan ?? "",
       kyc,
+      notes: notes ?? "",
+      assignedTo: Array.isArray(assignedTo) ? assignedTo : assignedTo ? [assignedTo] : [],
+      promisedCompletionDate: promisedCompletionDate ? new Date(promisedCompletionDate) : null,
       propertyDetails: propertyDetails?.address ? propertyDetails : undefined,
       subClients: subClients ?? [],
       createdBy: req.userId,
@@ -187,7 +194,9 @@ router.post("/", async (req: Request, res: Response) => {
       userAgent: req.headers["user-agent"],
     });
 
-    res.status(201).json({ client });
+    const populatedClient = await Client.findById(client._id).populate("assignedTo", "name email title initials");
+
+    res.status(201).json({ client: populatedClient ?? client });
   } catch (err: any) {
     console.error("[clients] Create error:", err);
     if (err.code === 11000) {
@@ -208,7 +217,8 @@ router.patch("/:id", requireResourceAccess("client"), async (req: Request, res: 
     // _id, createdBy, createdAt, updatedAt are server-controlled.
     const ALLOWED_FIELDS = [
       "name", "type", "tag", "phone", "email", "address",
-      "aadhar", "pan", "propertyDetails", "subClients",
+      "aadhar", "pan", "notes", "assignedTo", "promisedCompletionDate",
+      "kyc", "propertyDetails", "subClients",
     ] as const;
 
     const updates: Record<string, unknown> = {};
@@ -227,12 +237,14 @@ router.patch("/:id", requireResourceAccess("client"), async (req: Request, res: 
 
     const aadhar = (updates["aadhar"] ?? existing.aadhar) as string;
     const pan = (updates["pan"] ?? existing.pan) as string;
-    updates["kyc"] = aadhar && pan ? "Verified" : existing.kyc;
+    if (updates["kyc"] === undefined) {
+      updates["kyc"] = aadhar && pan ? "Verified" : existing.kyc;
+    }
 
     const client = await Client.findByIdAndUpdate(req.params["id"], updates, {
       new: true,
       runValidators: true,
-    });
+    }).populate("assignedTo", "name email title initials");
 
     if (!client) {
       res.status(404).json({ message: "Client not found" });

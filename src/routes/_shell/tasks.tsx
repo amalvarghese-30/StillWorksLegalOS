@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
-import { Plus, PhoneCall, ListTodo, LayoutGrid, CalendarDays, CheckCircle2, Circle, Clock, Loader2, ChevronLeft, ChevronRight, Search, Briefcase } from "lucide-react";
+import { Plus, PhoneCall, ListTodo, LayoutGrid, CalendarDays, CheckCircle2, Circle, Clock, Loader2, ChevronLeft, ChevronRight, Search, Briefcase, Filter, X, SlidersHorizontal, UserCheck, AlertCircle, Check } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
 import { StatusPill, toneForStatus } from "@/components/common/StatusPill";
@@ -9,6 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSocketEvent } from "@/lib/socket";
 import { useTasks, useToggleChecklistItem, taskKeys, type TaskRecord } from "@/services/tasks";
+import { useEmployees } from "@/services/admin";
 import { AddTaskDialog } from "@/components/tasks/AddTaskDialog";
 import { QuickCallDialog } from "@/components/tasks/QuickCallDialog";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
@@ -187,12 +188,20 @@ function TaskCard({ task, onSelect }: { task: TaskRecord; onSelect?: (task: Task
 function TasksPage() {
   const [view, setView] = useState("list");
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("All");
+  const [priorityFilter, setPriorityFilter] = useState<string>("All");
+  const [categoryFilter, setCategoryFilter] = useState<string>("All");
+  const [selectedStaff, setSelectedStaff] = useState<string[]>([]);
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showQuickCall, setShowQuickCall] = useState(false);
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
   const [calendarMonth, setCalendarMonth] = useState(new Date());
+
   const queryClient = useQueryClient();
   const { data, isLoading, isError, error } = useTasks();
+  const { data: empData } = useEmployees();
+  const employees = empData?.employees ?? [];
 
   useSocketEvent("task:created", () => {
     queryClient.invalidateQueries({ queryKey: taskKeys.all });
@@ -208,15 +217,96 @@ function TasksPage() {
   });
 
   const allTasks = data?.tasks ?? [];
+
+  // Unique categories
+  const categories = useMemo(() => {
+    const set = new Set<string>(["Court Case", "Agreement", "CIDCO", "Property / RERA", "Due Diligence", "Other Work"]);
+    for (const t of allTasks) {
+      if (t.category) set.add(t.category);
+    }
+    return Array.from(set);
+  }, [allTasks]);
+
+  // Stat card counts
+  const stats = useMemo(() => {
+    const total = allTasks.length;
+    const overdue = allTasks.filter((t) => getBucket(t) === "Overdue" && t.status !== "completed").length;
+    const dueToday = allTasks.filter((t) => getBucket(t) === "Due Today" && t.status !== "completed").length;
+    const inProgress = allTasks.filter((t) => t.status === "in_progress" || t.status === "pending").length;
+    const inReview = allTasks.filter((t) => t.status === "pending_approval").length;
+    const completed = allTasks.filter((t) => t.status === "completed").length;
+    const calls = allTasks.filter((t) => t.isCall || Boolean(t.callReminder)).length;
+    return { total, overdue, dueToday, inProgress, inReview, completed, calls };
+  }, [allTasks]);
+
   const query = search.trim().toLowerCase();
+
   const tasks = useMemo(() => {
-    if (!query) return allTasks;
-    return allTasks.filter((t) =>
-      t.title.toLowerCase().includes(query) ||
-      (t.category && t.category.toLowerCase().includes(query)) ||
-      (t.assignedTo && typeof t.assignedTo === "object" && "name" in t.assignedTo && (t.assignedTo as { name: string }).name.toLowerCase().includes(query))
+    return allTasks.filter((t) => {
+      // 1. Text Search across title, category, assigned staff, description, client
+      if (query) {
+        const titleMatch = t.title.toLowerCase().includes(query);
+        const descMatch = (t.description ?? "").toLowerCase().includes(query);
+        const catMatch = (t.category ?? "").toLowerCase().includes(query);
+        const staffMatch = t.assignedTo && typeof t.assignedTo === "object" && "name" in t.assignedTo && (t.assignedTo as { name: string }).name.toLowerCase().includes(query);
+        const clientMatch = t.callReminder?.clientName ? t.callReminder.clientName.toLowerCase().includes(query) : false;
+        if (!titleMatch && !descMatch && !catMatch && !staffMatch && !clientMatch) {
+          return false;
+        }
+      }
+
+      // 2. Status Filter
+      if (statusFilter !== "All") {
+        if (statusFilter === "overdue" && (getBucket(t) !== "Overdue" || t.status === "completed")) return false;
+        if (statusFilter === "due_today" && (getBucket(t) !== "Due Today" || t.status === "completed")) return false;
+        if (statusFilter === "in_progress" && t.status !== "in_progress" && t.status !== "pending") return false;
+        if (statusFilter === "in_review" && t.status !== "pending_approval") return false;
+        if (statusFilter === "completed" && t.status !== "completed") return false;
+        if (statusFilter === "calls" && !t.isCall && !t.callReminder) return false;
+      }
+
+      // 3. Priority Filter
+      if (priorityFilter !== "All" && t.priority !== priorityFilter) {
+        return false;
+      }
+
+      // 4. Category Filter
+      if (categoryFilter !== "All" && t.category !== categoryFilter) {
+        return false;
+      }
+
+      // 5. Staff Filter (multi-select)
+      if (selectedStaff.length > 0) {
+        const staffId = t.assignedTo?._id ?? "";
+        const staffName = t.assignedTo?.name ?? "";
+        const match = selectedStaff.includes(staffId) || selectedStaff.includes(staffName);
+        if (!match) return false;
+      }
+
+      return true;
+    });
+  }, [allTasks, query, statusFilter, priorityFilter, categoryFilter, selectedStaff]);
+
+  const toggleStaff = (idOrName: string) => {
+    setSelectedStaff((prev) =>
+      prev.includes(idOrName) ? prev.filter((s) => s !== idOrName) : [...prev, idOrName]
     );
-  }, [allTasks, query]);
+  };
+
+  const clearAllFilters = () => {
+    setSearch("");
+    setStatusFilter("All");
+    setPriorityFilter("All");
+    setCategoryFilter("All");
+    setSelectedStaff([]);
+  };
+
+  const activeFilterCount =
+    (statusFilter !== "All" ? 1 : 0) +
+    (priorityFilter !== "All" ? 1 : 0) +
+    (categoryFilter !== "All" ? 1 : 0) +
+    selectedStaff.length +
+    (search.trim() ? 1 : 0);
 
   // Calendar helpers
   const calendarDays = useMemo(() => {
@@ -228,9 +318,7 @@ function TasksPage() {
     const daysInMonth = lastDay.getDate();
 
     const days: (Date | null)[] = [];
-    // Add leading empty days
     for (let i = 0; i < startDay; i++) days.push(null);
-    // Add actual days
     for (let d = 1; d <= daysInMonth; d++) days.push(new Date(year, month, d));
     return days;
   }, [calendarMonth]);
@@ -258,7 +346,7 @@ function TasksPage() {
       <PageHeader
         breadcrumb={[{ label: "S & S", to: "/" }, { label: "Tasks" }]}
         title="Tasks"
-        subtitle={`${tasks.filter((t) => t.status !== "completed").length} open items · ${tasks.filter((t) => getBucket(t) === "Overdue").length} overdue · ${tasks.filter((t) => t.callReminder).length} call reminders.`}
+        subtitle={`${tasks.length} items visible · ${stats.overdue} overdue · ${stats.calls} call reminders.`}
         actions={
           <>
             <Button
@@ -280,37 +368,235 @@ function TasksPage() {
         }
       />
 
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="inline-flex rounded-pill border border-border bg-card p-1 shadow-soft">
-          {VIEWS.map((v) => (
-            <button
-              key={v.id}
-              onClick={() => setView(v.id)}
-              className={`flex min-h-11 items-center gap-2 rounded-pill px-4 text-helper font-medium transition-all duration-200 ${
-                view === v.id
-                  ? "gradient-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
+      {/* ── Interactive Stat Cards (Clickable quick filters) ── */}
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === "All" ? "All" : "All")}
+          className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 ${
+            statusFilter === "All"
+              ? "border-primary bg-primary/10 shadow-sm"
+              : "border-border bg-card hover:border-primary/40"
+          }`}
+        >
+          <span className="text-caption font-medium text-muted-foreground">All Tasks</span>
+          <span className="num mt-1 text-section font-bold">{stats.total}</span>
+          <span className="mt-1 text-[11px] text-muted-foreground">All workspace items</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === "overdue" ? "All" : "overdue")}
+          className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 ${
+            statusFilter === "overdue"
+              ? "border-destructive bg-destructive/10 shadow-sm"
+              : "border-border bg-card hover:border-destructive/40"
+          }`}
+        >
+          <span className="text-caption font-medium text-destructive">Overdue</span>
+          <span className="num mt-1 text-section font-bold text-destructive">{stats.overdue}</span>
+          <span className="mt-1 text-[11px] text-muted-foreground">Passed deadline</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === "due_today" ? "All" : "due_today")}
+          className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 ${
+            statusFilter === "due_today"
+              ? "border-amber-500 bg-amber-500/10 shadow-sm"
+              : "border-border bg-card hover:border-amber-500/40"
+          }`}
+        >
+          <span className="text-caption font-medium text-amber-600 dark:text-amber-400">Due Today</span>
+          <span className="num mt-1 text-section font-bold text-amber-600 dark:text-amber-400">{stats.dueToday}</span>
+          <span className="mt-1 text-[11px] text-muted-foreground">Needs attention</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === "in_progress" ? "All" : "in_progress")}
+          className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 ${
+            statusFilter === "in_progress"
+              ? "border-indigo-500 bg-indigo-500/10 shadow-sm"
+              : "border-border bg-card hover:border-indigo-500/40"
+          }`}
+        >
+          <span className="text-caption font-medium text-indigo">In Progress</span>
+          <span className="num mt-1 text-section font-bold text-indigo">{stats.inProgress}</span>
+          <span className="mt-1 text-[11px] text-muted-foreground">Currently open</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === "completed" ? "All" : "completed")}
+          className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 ${
+            statusFilter === "completed"
+              ? "border-success bg-success/10 shadow-sm"
+              : "border-border bg-card hover:border-success/40"
+          }`}
+        >
+          <span className="text-caption font-medium text-success">Completed</span>
+          <span className="num mt-1 text-section font-bold text-success">{stats.completed}</span>
+          <span className="mt-1 text-[11px] text-muted-foreground">Marked done</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === "calls" ? "All" : "calls")}
+          className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 ${
+            statusFilter === "calls"
+              ? "border-violet bg-violet/10 shadow-sm"
+              : "border-border bg-card hover:border-violet/40"
+          }`}
+        >
+          <span className="text-caption font-medium text-violet">Call Reminders</span>
+          <span className="num mt-1 text-section font-bold text-violet">{stats.calls}</span>
+          <span className="mt-1 text-[11px] text-muted-foreground">Client calls</span>
+        </button>
+      </div>
+
+      {/* ── Search & Filter Controls ── */}
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-pill border border-border bg-card p-1 shadow-soft">
+            {VIEWS.map((v) => (
+              <button
+                key={v.id}
+                onClick={() => setView(v.id)}
+                className={`flex min-h-10 items-center gap-2 rounded-pill px-3.5 text-helper font-medium transition-all duration-200 ${
+                  view === v.id
+                    ? "gradient-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <v.icon size={16} strokeWidth={1.75} />
+                {v.label}
+              </button>
+            ))}
+          </div>
+
+          <Button
+            variant={showFilterPanel || activeFilterCount > 0 ? "default" : "outline"}
+            size="sm"
+            onClick={() => setShowFilterPanel(!showFilterPanel)}
+            className="h-10 gap-2 rounded-pill px-4 text-xs font-medium"
+          >
+            <SlidersHorizontal size={14} />
+            Filters {activeFilterCount > 0 && `(${activeFilterCount})`}
+          </Button>
+
+          {activeFilterCount > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearAllFilters}
+              className="h-10 text-xs text-muted-foreground hover:text-destructive"
             >
-              <v.icon size={17} strokeWidth={1.75} />
-              {v.label}
-            </button>
-          ))}
+              <X size={14} className="mr-1" /> Clear all
+            </Button>
+          )}
         </div>
 
         {/* Universal search input for tasks */}
-        <label className="flex min-w-0 flex-1 items-center gap-3 rounded-pill border border-border bg-card px-4 py-2.5 shadow-soft sm:max-w-xs">
-          <Search size={18} strokeWidth={1.75} className="shrink-0 text-muted-foreground" />
+        <label className="flex min-w-0 flex-1 items-center gap-2.5 rounded-pill border border-border bg-card px-4 py-2 shadow-soft sm:max-w-sm">
+          <Search size={16} strokeWidth={1.75} className="shrink-0 text-muted-foreground" />
           <input
             type="search"
             aria-label="Search tasks"
-            placeholder="Search tasks or assignee…"
+            placeholder="Search title, client, category, staff…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="min-w-0 flex-1 bg-transparent text-helper outline-none"
           />
+          {search && (
+            <button onClick={() => setSearch("")} className="text-muted-foreground hover:text-foreground">
+              <X size={14} />
+            </button>
+          )}
         </label>
       </div>
+
+      {/* ── Expandable Filter Panel ── */}
+      {showFilterPanel && (
+        <div className="mb-6 rounded-xl border border-border bg-card/95 p-4 shadow-soft backdrop-blur-md animate-in fade-in-50 slide-in-from-top-2">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {/* Status Filter */}
+            <div>
+              <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Status</label>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs outline-none focus:border-primary"
+              >
+                <option value="All">All Statuses</option>
+                <option value="in_progress">Pending / In Progress</option>
+                <option value="in_review">In Review (Approval)</option>
+                <option value="overdue">Overdue</option>
+                <option value="due_today">Due Today</option>
+                <option value="completed">Completed</option>
+                <option value="calls">Call Reminders Only</option>
+              </select>
+            </div>
+
+            {/* Priority Filter */}
+            <div>
+              <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Priority</label>
+              <select
+                value={priorityFilter}
+                onChange={(e) => setPriorityFilter(e.target.value)}
+                className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs outline-none focus:border-primary"
+              >
+                <option value="All">All Priorities</option>
+                <option value="High">High Priority</option>
+                <option value="Medium">Medium Priority</option>
+                <option value="Low">Low Priority</option>
+              </select>
+            </div>
+
+            {/* Category Filter */}
+            <div>
+              <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Category</label>
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs outline-none focus:border-primary"
+              >
+                <option value="All">All Categories</option>
+                {categories.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Staff Multi-Select Filter */}
+            <div>
+              <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">
+                Assigned Staff ({selectedStaff.length} selected)
+              </label>
+              <div className="max-h-28 overflow-y-auto rounded-md border border-border bg-background p-2 space-y-1.5 text-xs">
+                {employees.length === 0 ? (
+                  <span className="text-muted-foreground italic">No staff members found</span>
+                ) : (
+                  employees.map((emp) => {
+                    const checked = selectedStaff.includes(emp._id) || selectedStaff.includes(emp.name);
+                    return (
+                      <label key={emp._id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleStaff(emp._id)}
+                          className="rounded border-border"
+                        />
+                        <span className="truncate">{emp.name}</span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Loading */}
       {isLoading && (

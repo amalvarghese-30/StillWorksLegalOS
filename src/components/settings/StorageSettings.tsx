@@ -57,7 +57,7 @@ export function StorageSettings() {
     <form className="space-y-5" onSubmit={handleSave}>
       <div className="grid gap-5 sm:grid-cols-2">
         <div className="space-y-2 sm:col-span-2">
-          <Label className="text-helper">WebDAV URL</Label>
+          <Label className="text-helper">Storage Server Address (WebDAV)</Label>
           <Input
             value={url}
             onChange={(e) => setUrl(e.target.value)}
@@ -65,12 +65,12 @@ export function StorageSettings() {
             className="h-12 rounded-md"
           />
           <p className="text-caption text-muted-foreground">
-            The HTTPS WebDAV endpoint for your office Synology NAS (e.g. via Cloudflare Tunnel).
+            The secure server address for your firm's central document repository (WebDAV / Cloudflare Tunnel).
           </p>
         </div>
 
         <div className="space-y-2">
-          <Label className="text-helper">Username</Label>
+          <Label className="text-helper">Storage Username</Label>
           <Input
             value={username}
             onChange={(e) => setUsername(e.target.value)}
@@ -80,19 +80,19 @@ export function StorageSettings() {
         </div>
 
         <div className="space-y-2">
-          <Label className="text-helper">Password</Label>
+          <Label className="text-helper">Storage Password</Label>
           <Input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder={passwordSet ? "•••••••• (leave blank to keep)" : "NAS password"}
+            placeholder={passwordSet ? "•••••••• (leave blank to keep)" : "Storage password"}
             autoComplete="new-password"
             className="h-12 rounded-md"
           />
         </div>
 
         <div className="space-y-2 sm:col-span-2">
-          <Label className="text-helper">Root folder</Label>
+          <Label className="text-helper">Primary Document Folder</Label>
           <Input
             value={rootPath}
             onChange={(e) => setRootPath(e.target.value)}
@@ -100,7 +100,7 @@ export function StorageSettings() {
             className="h-12 rounded-md"
           />
           <p className="text-caption text-muted-foreground">
-            Folder on the NAS where LegalOS stores case files.
+            Central folder where LegalOS securely stores and organizes case files.
           </p>
         </div>
       </div>

@@ -29,6 +29,9 @@ export interface IClient extends Document {
   aadhar: string;            // Aadhar Card Number
   pan: string;               // PAN Card Number
   kyc: KYCStatus;
+  notes?: string;
+  assignedTo?: mongoose.Types.ObjectId[];
+  promisedCompletionDate?: Date | null;
   // Optional property details
   propertyDetails?: {
     address: string;
@@ -85,6 +88,9 @@ const ClientSchema = new Schema<IClient>(
       enum: ["Verified", "Pending", "Rejected"],
       default: "Pending",
     },
+    notes: { type: String, default: "" },
+    assignedTo: [{ type: Schema.Types.ObjectId, ref: "User" }],
+    promisedCompletionDate: { type: Date, default: null },
     propertyDetails: {
       type: new Schema(
         {

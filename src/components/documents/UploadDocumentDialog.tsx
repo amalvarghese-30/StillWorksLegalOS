@@ -167,7 +167,7 @@ export function UploadDocumentDialog({ open, onClose, preSelectedCaseId }: Uploa
         <DialogHeader>
           <DialogTitle>Upload document</DialogTitle>
           <DialogDescription>
-            Select a file and case. Files are streamed to the NAS and verified with SHA-256.
+            Select a file and case. Files are securely saved to firm storage and verified for tamper-proof integrity.
           </DialogDescription>
         </DialogHeader>
 
@@ -258,8 +258,8 @@ export function UploadDocumentDialog({ open, onClose, preSelectedCaseId }: Uploa
 
                 {uploadedSha256 && (
                   <details className="text-caption text-muted-foreground">
-                    <summary className="cursor-pointer">SHA-256: {uploadedSha256.substring(0, 16)}…</summary>
-                    <pre className="mt-2 p-2 rounded bg-muted overflow-x-auto text-[10px] font-mono">{uploadedSha256}</pre>
+                    <summary className="cursor-pointer">Security Checksum: {uploadedSha256.substring(0, 16)}…</summary>
+                    <pre className="mt-2 p-2 rounded bg-muted overflow-x-auto text-[10px] font-mono">Digital Fingerprint: {uploadedSha256}</pre>
                   </details>
                 )}
               </div>
