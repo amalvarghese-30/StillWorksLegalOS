@@ -8,6 +8,7 @@
   "asar": true,
   "npmRebuild": false,
   "nodeGypRebuild": false,
+  "electronDist": "node_modules/electron/dist",
   "files": [
     "dist/**/*",
     "dist-electron/**/*"
