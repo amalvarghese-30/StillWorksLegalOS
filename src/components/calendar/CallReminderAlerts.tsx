@@ -52,7 +52,7 @@ function playReminderBeep() {
 }
 
 export function CallReminderAlerts() {
-  const { data: taskData } = useTasks();
+  const { data: taskData } = useTasks({ limit: "200" });
   const { data: calendarData } = useCalendarEvents();
   const updateTask = useUpdateTask();
 

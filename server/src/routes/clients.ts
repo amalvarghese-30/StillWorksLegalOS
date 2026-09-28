@@ -193,6 +193,39 @@ router.post("/", async (req: Request, res: Response) => {
       }
     }
 
+    if (subClients !== undefined) {
+      if (!Array.isArray(subClients)) {
+        res.status(400).json({ field: "subClients", message: "subClients must be an array" });
+        return;
+      }
+      for (let i = 0; i < subClients.length; i++) {
+        const sc = subClients[i];
+        if (!sc || typeof sc !== "object" || !sc.name || !String(sc.name).trim()) {
+          res.status(400).json({ field: `subClients[${i}].name`, message: "Sub-client name is required" });
+          return;
+        }
+        if (sc.phone && String(sc.phone).trim()) {
+          const clean = String(sc.phone).trim().replace(/\D/g, "");
+          if (clean.length !== 10) {
+            res.status(400).json({ field: `subClients[${i}].phone`, message: "Sub-client phone must be 10 digits" });
+            return;
+          }
+        }
+        if (sc.email && String(sc.email).trim()) {
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (!emailRegex.test(String(sc.email).trim())) {
+            res.status(400).json({ field: `subClients[${i}].email`, message: "Sub-client email format is invalid" });
+            return;
+          }
+        }
+      }
+    }
+
+    const hasPropertyData =
+      propertyDetails &&
+      typeof propertyDetails === "object" &&
+      Object.values(propertyDetails).some((v) => v !== undefined && v !== null && String(v).trim() !== "");
+
     // Identity auto-verification: if Aadhar + PAN provided, mark Verified
     const kyc = aadhar && pan ? "Verified" : "Pending";
 
@@ -209,7 +242,7 @@ router.post("/", async (req: Request, res: Response) => {
       notes: notes ?? "",
       assignedTo: Array.isArray(assignedTo) ? assignedTo : assignedTo ? [assignedTo] : [],
       promisedCompletionDate: promisedCompletionDate ? new Date(promisedCompletionDate) : null,
-      propertyDetails: propertyDetails?.address ? propertyDetails : undefined,
+      propertyDetails: hasPropertyData ? propertyDetails : undefined,
       subClients: subClients ?? [],
       createdBy: req.userId,
       updatedBy: req.userId,
@@ -295,6 +328,44 @@ router.patch("/:id", requireResourceAccess("client"), async (req: Request, res: 
         res.status(400).json({ field: "pan", message: "Invalid PAN format (e.g. ABCDE1234F)" });
         return;
       }
+    }
+
+    if (updates["subClients"] !== undefined) {
+      const scList = updates["subClients"];
+      if (!Array.isArray(scList)) {
+        res.status(400).json({ field: "subClients", message: "subClients must be an array" });
+        return;
+      }
+      for (let i = 0; i < scList.length; i++) {
+        const sc = scList[i];
+        if (!sc || typeof sc !== "object" || !sc.name || !String(sc.name).trim()) {
+          res.status(400).json({ field: `subClients[${i}].name`, message: "Sub-client name is required" });
+          return;
+        }
+        if (sc.phone && String(sc.phone).trim()) {
+          const clean = String(sc.phone).trim().replace(/\D/g, "");
+          if (clean.length !== 10) {
+            res.status(400).json({ field: `subClients[${i}].phone`, message: "Sub-client phone must be 10 digits" });
+            return;
+          }
+        }
+        if (sc.email && String(sc.email).trim()) {
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (!emailRegex.test(String(sc.email).trim())) {
+            res.status(400).json({ field: `subClients[${i}].email`, message: "Sub-client email format is invalid" });
+            return;
+          }
+        }
+      }
+    }
+
+    if (updates["propertyDetails"] !== undefined) {
+      const p = updates["propertyDetails"] as Record<string, unknown> | null;
+      const hasProp =
+        p &&
+        typeof p === "object" &&
+        Object.values(p).some((v) => v !== undefined && v !== null && String(v).trim() !== "");
+      updates["propertyDetails"] = hasProp ? p : undefined;
     }
 
     // Re-evaluate KYC if Aadhar/PAN change

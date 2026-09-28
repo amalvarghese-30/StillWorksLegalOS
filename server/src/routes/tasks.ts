@@ -578,7 +578,7 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       originalTask &&
       originalTask.status !== "pending_approval"
     ) {
-      const admins = await User.find({ role: "admin", status: "active" }).select("_id");
+      const admins = await User.find({ role: "admin" }).select("_id");
       for (const admin of admins) {
         if (admin._id.toString() !== req.userId) {
           await NotificationService.createNotification({

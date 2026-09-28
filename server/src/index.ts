@@ -525,7 +525,7 @@ io.on("connection", (socket) => {
       if (!isAdmin && !isMember) return;
 
       const message = await ChatMessage.findById(messageId);
-      if (!message) return;
+      if (!message || message.groupId.toString() !== groupId) return;
 
       const existingIdx = message.reactions.findIndex(
         (r: any) => r.userId.toString() === socket.data.userId && r.emoji === emoji

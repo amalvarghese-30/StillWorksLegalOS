@@ -60,6 +60,27 @@ export class NotificationService {
         }
       }
 
+      // Respect recipient notification preferences
+      const recipient = await User.findById(data.userId).select(
+        "notifyHearingReminders notifyApprovalRequests notifyCallReminders notifyDailyDigest"
+      ).lean();
+
+      if (recipient) {
+        if (data.type === "HEARING_REMINDER" && recipient.notifyHearingReminders === false) {
+          return null;
+        }
+        if (data.type === "APPROVAL_REQUEST" && recipient.notifyApprovalRequests === false) {
+          return null;
+        }
+        const isCall =
+          data.metadata?.["isCallReminder"] === true ||
+          (data.type === "CUSTOM" && data.metadata?.["subType"] === "call_reminder") ||
+          data.title.toLowerCase().includes("call reminder");
+        if (isCall && recipient.notifyCallReminders === false) {
+          return null;
+        }
+      }
+
       // Create the notification
       const notification = await Notification.create({
         userId: data.userId,

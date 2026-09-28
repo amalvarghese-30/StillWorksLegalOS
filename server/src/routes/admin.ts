@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import fsp from "node:fs/promises";
 import { Router, type Request, type Response } from "express";
 import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
@@ -8,10 +10,10 @@ import { Client } from "../models/Client.js";
 import { Case } from "../models/Case.js";
 import { Task } from "../models/Task.js";
 import { DocumentModel } from "../models/Document.js";
-import { FileIntegrity } from "../models/FileIntegrity.js";
+import { FileIntegrity, computeFileHash, type FileIntegrityStatus } from "../models/FileIntegrity.js";
 import { CalendarEvent } from "../models/CalendarEvent.js";
 import { AppSettings } from "../models/AppSettings.js";
-import { testConnection } from "../services/webdav.js";
+import { testConnection, getLocalPath } from "../services/webdav.js";
 import { requireAuth, requireAdmin, requireAdminOrPermission } from "../middleware/auth.js";
 
 const router = Router();
@@ -120,6 +122,20 @@ router.post("/employees", requireAdminOrPermission("employees"), async (req: Req
     }
 
     const normalizedEmail = email.toLowerCase().trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(normalizedEmail)) {
+      res.status(400).json({ field: "email", message: "Invalid email address format" });
+      return;
+    }
+
+    if (phone && typeof phone === "string" && phone.trim()) {
+      const cleanPhone = phone.trim().replace(/\D/g, "");
+      if (cleanPhone.length !== 10) {
+        res.status(400).json({ field: "phone", message: "Phone number must be a valid 10-digit number" });
+        return;
+      }
+    }
+
     const existing = await User.findOne({ email: normalizedEmail });
     if (existing) {
       res.status(409).json({ message: "An employee with this email already exists" });
@@ -241,6 +257,18 @@ router.patch("/employees/:id", requireAdminOrPermission("employees"), async (req
 
     if (updates["email"]) {
       updates["email"] = String(updates["email"]).toLowerCase().trim();
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(updates["email"] as string)) {
+        res.status(400).json({ field: "email", message: "Invalid email address format" });
+        return;
+      }
+    }
+    if (updates["phone"] && typeof updates["phone"] === "string" && (updates["phone"] as string).trim()) {
+      const cleanPhone = (updates["phone"] as string).trim().replace(/\D/g, "");
+      if (cleanPhone.length !== 10) {
+        res.status(400).json({ field: "phone", message: "Phone number must be a valid 10-digit number" });
+        return;
+      }
     }
     if (updates["name"]) {
       updates["name"] = String(updates["name"]).trim();
@@ -638,8 +666,9 @@ router.get("/reports/employee-workload", requireAdminOrPermission("reports"), as
 
     const workloads = await Promise.all(
       employees.map(async (emp) => {
-        const [cases, topTasks, completedTasks] = await Promise.all([
+        const [cases, pendingTasksCount, topTasks, completedTasks] = await Promise.all([
           Case.countDocuments({ assignedTo: emp._id, status: { $ne: "Closed" } }),
+          Task.countDocuments({ assignedTo: emp._id, status: { $ne: "completed" } }),
           Task.find({ assignedTo: emp._id, status: { $ne: "completed" } })
             .sort({ priority: -1, deadline: 1 })
             .limit(1)
@@ -649,14 +678,7 @@ router.get("/reports/employee-workload", requireAdminOrPermission("reports"), as
         ]);
         const currentTask = topTasks[0] ?? null;
 
-        const workloadScore = Math.min(100,
-          (cases * 15) +
-          (topTasks.length * 10) +
-          (topTasks.reduce((sum, task) => {
-            const priorityWeight = task.priority === "High" ? 3 : task.priority === "Medium" ? 2 : 1;
-            return sum + priorityWeight;
-          }, 0))
-        );
+        const workloadScore = Math.min(100, (cases * 12) + (pendingTasksCount * 8));
 
         return {
           _id: emp._id,
@@ -664,7 +686,7 @@ router.get("/reports/employee-workload", requireAdminOrPermission("reports"), as
           role: emp.role,
           status: emp.status,
           activeCases: cases,
-          pendingTasks: topTasks.length,
+          pendingTasks: pendingTasksCount,
           completedTasks: completedTasks,
           currentTask: currentTask ? {
             _id: currentTask._id,
@@ -805,9 +827,19 @@ router.get("/integrity/files", requireAdminOrPermission("auditLogs"), async (req
 
 router.post("/integrity/verify-all", requireAdminOrPermission("auditLogs"), async (req: Request, res: Response) => {
   try {
+    const results = await FileIntegrity.verifyAllPending(req.user!._id, async (storedPath: string) => {
+      try {
+        const fullPath = getLocalPath(storedPath);
+        if (!fs.existsSync(fullPath)) return null;
+        return await fsp.readFile(fullPath);
+      } catch {
+        return null;
+      }
+    });
+
     res.json({
-      message: "Full file integrity verification requires NAS (WebDAV) streaming implementation",
-      note: "Implement getFileBuffer function in FileIntegrity model to enable server-side verification",
+      message: "File integrity verification completed",
+      ...results,
     });
   } catch (err) {
     console.error("[admin] Full file verification error:", err);
@@ -827,11 +859,37 @@ router.post("/integrity/verify-file/:id", requireAdminOrPermission("auditLogs"),
       return;
     }
 
+    let actualHash = "";
+    let status: FileIntegrityStatus = "missing";
+
+    try {
+      const fullPath = getLocalPath(record.storedPath);
+      if (fs.existsSync(fullPath)) {
+        actualHash = await computeFileHash(fullPath);
+        status = actualHash === record.sha256 ? "verified" : "tampered";
+      } else {
+        status = "missing";
+      }
+    } catch {
+      status = "missing";
+    }
+
+    record.status = status;
+    record.lastVerifiedAt = new Date();
+    record.verifications.push({
+      verifiedAt: new Date(),
+      verifiedBy: req.user!._id,
+      status,
+      computedHash: actualHash,
+    });
+    await record.save();
+
     res.json({
       fileId: record._id.toString(),
       documentId: record.documentId.toString(),
       originalName: record.originalName,
       expectedHash: record.sha256,
+      actualHash,
       algorithm: "SHA-256",
       lastVerifiedAt: record.lastVerifiedAt,
       currentStatus: record.status,

@@ -820,6 +820,16 @@ router.get(
         return;
       }
 
+      // Verify the attachment actually belongs to a message in this chat group (prevent BOLA)
+      const attachmentExists = await ChatMessage.findOne({
+        groupId: req.params["groupId"],
+        "attachments.nasPath": nasPath,
+      });
+      if (!attachmentExists) {
+        res.status(403).json({ message: "Access denied: file is not an attachment of this chat group" });
+        return;
+      }
+
       if (nasPath.startsWith("local:")) {
         const localRel = nasPath.replace(/^local:/, "");
         const safeBase = path.resolve(process.cwd(), "uploads");
@@ -1010,8 +1020,8 @@ router.delete(
   async (req: Request, res: Response) => {
     try {
       const message = await ChatMessage.findById(req.params["messageId"]);
-      if (!message) {
-        res.status(404).json({ message: "Message not found" });
+      if (!message || message.groupId.toString() !== req.params["groupId"]) {
+        res.status(404).json({ message: "Message not found in this group" });
         return;
       }
 
@@ -1055,8 +1065,8 @@ router.post(
   async (req: Request, res: Response) => {
     try {
       const message = await ChatMessage.findById(req.params["messageId"]);
-      if (!message) {
-        res.status(404).json({ message: "Message not found" });
+      if (!message || message.groupId.toString() !== req.params["groupId"]) {
+        res.status(404).json({ message: "Message not found in this group" });
         return;
       }
 
@@ -1385,8 +1395,8 @@ router.post(
       }
 
       const message = await ChatMessage.findById(messageId);
-      if (!message) {
-        res.status(404).json({ message: "Message not found" });
+      if (!message || message.groupId.toString() !== req.params["groupId"]) {
+        res.status(404).json({ message: "Message not found in this group" });
         return;
       }
 

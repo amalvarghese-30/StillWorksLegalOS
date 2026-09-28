@@ -149,6 +149,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     init();
   }, []);
 
+  // 30-minute idle inactivity timeout when securitySessionTimeout is enabled (default on)
+  useEffect(() => {
+    if (!user || user.securitySessionTimeout === false) return;
+
+    const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+    let timeoutId: ReturnType<typeof setTimeout>;
+
+    const handleTimeout = async () => {
+      setUser(null);
+      window.localStorage.removeItem(STORAGE_KEY);
+      await clearTokens();
+      queryClient.cancelQueries();
+      queryClient.clear();
+      try {
+        await apiFetch("/auth/logout", { method: "POST" });
+      } catch {
+        /* ignore */
+      }
+      window.dispatchEvent(new CustomEvent("session-expired", { detail: { reason: "inactivity" } }));
+    };
+
+    const resetTimer = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(handleTimeout, INACTIVITY_TIMEOUT_MS);
+    };
+
+    const activityEvents = ["mousemove", "mousedown", "keydown", "touchstart", "scroll", "wheel"];
+    activityEvents.forEach((ev) => window.addEventListener(ev, resetTimer, { passive: true }));
+    resetTimer();
+
+    return () => {
+      clearTimeout(timeoutId);
+      activityEvents.forEach((ev) => window.removeEventListener(ev, resetTimer));
+    };
+  }, [user, queryClient]);
+
   const value = useMemo<AuthValue>(
     () => ({
       user,
