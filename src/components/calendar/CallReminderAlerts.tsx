@@ -12,6 +12,7 @@ import {
 } from "@/services/reminders";
 import { useSocketEvent } from "@/lib/socket";
 import { toast } from "sonner";
+import { notifications, externalLinks } from "@/platform";
 
 interface ActiveReminder {
   id: string;
@@ -98,11 +99,9 @@ export function CallReminderAlerts() {
     };
   }, []);
 
-  // Ask for browser notification permission once
+  // Request platform notification permission on mount
   useEffect(() => {
-    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
-      Notification.requestPermission().catch(() => {});
-    }
+    notifications.requestPermission().catch(() => {});
   }, []);
 
   const triggerAlert = useCallback((reminder: ActiveReminder) => {
@@ -113,19 +112,15 @@ export function CallReminderAlerts() {
     // Broadcast to other tabs so they don't fire duplicate audio or modal
     channelRef.current?.postMessage({ type: "ALERT_TRIGGERED", id: reminder.id });
 
-    // Browser push notification if in background
-    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
-      try {
-        new Notification(`📞 Call Reminder: ${reminder.clientName || reminder.title}`, {
-          body: `Scheduled for ${reminder.dueTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}${
-            reminder.phone ? ` • ${reminder.phone}` : ""
-          }\n${reminder.notes || ""}`,
-          icon: "/favicon.ico",
-        });
-      } catch {
-        /* ignore */
-      }
-    }
+    // Show platform-appropriate notification (Browser push or Windows native toast)
+    notifications.show({
+      id: reminder.id,
+      title: `📞 Call Reminder: ${reminder.clientName || reminder.title}`,
+      body: `Scheduled for ${reminder.dueTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}${
+        reminder.phone ? ` • ${reminder.phone}` : ""
+      }\n${reminder.notes || ""}`,
+      sound: false, // We already played playReminderBeep()
+    });
   }, []);
 
   // Exact-time scheduling and periodic reconciliation
@@ -399,9 +394,9 @@ export function CallReminderAlerts() {
     setActiveAlert(null);
   };
 
-  const copyPhone = () => {
+  const copyPhone = async () => {
     if (activeAlert.phone) {
-      navigator.clipboard.writeText(activeAlert.phone);
+      await externalLinks.dialPhone(activeAlert.phone);
       toast.success("Phone number copied to clipboard");
     }
   };

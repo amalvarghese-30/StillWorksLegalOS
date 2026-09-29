@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, uploadStream, downloadBlob } from "./api";
+import { downloads } from "@/platform";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -187,14 +188,10 @@ export async function downloadChatAttachment(
   const { blob, fileName: serverName } = await downloadBlob(
     `/chat/groups/${groupId}/attachments/download?${query}`,
   );
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = serverName || fileName;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
+  await downloads.download({
+    filename: serverName || fileName,
+    data: blob,
+  });
 }
 
 export function useCreateGroup() {

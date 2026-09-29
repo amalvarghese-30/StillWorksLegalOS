@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, dialog, protocol, session, Event, safeStorage } from "electron";
+import { app, BrowserWindow, shell, ipcMain, dialog, protocol, session, Event, safeStorage, Tray, Menu, Notification } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import { spawn } from "node:child_process";
@@ -248,11 +248,88 @@ async function loadDevWithRetry(win: BrowserWindow): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Single-Instance Lock (Windows Desktop requirement)
+// ---------------------------------------------------------------------------
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  console.log("[App] Another instance is already running. Quitting.");
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    // Focus existing window if a second instance was launched
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      if (!mainWindow.isVisible()) mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// System Tray & Notification Controls (Desktop-only requirement)
+// ---------------------------------------------------------------------------
+let appTray: Tray | null = null;
+let notificationsPaused = false;
+
+function updateTrayMenu(): void {
+  if (!appTray) return;
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: "Open S & S LegalOS",
+      click: () => {
+        if (mainWindow) {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          if (!mainWindow.isVisible()) mainWindow.show();
+          mainWindow.focus();
+        }
+      },
+    },
+    {
+      label: notificationsPaused ? "Resume Notifications" : "Pause Notifications",
+      click: () => {
+        notificationsPaused = !notificationsPaused;
+        updateTrayMenu();
+      },
+    },
+    { type: "separator" },
+    {
+      label: "Quit LegalOS",
+      click: () => {
+        app.quit();
+      },
+    },
+  ]);
+  appTray.setContextMenu(contextMenu);
+}
+
+function createTray(): void {
+  if (appTray) return;
+  try {
+    const iconPath = path.join(__dirname, "..", "public", "icon.png");
+    if (fs.existsSync(iconPath)) {
+      appTray = new Tray(iconPath);
+      appTray.setToolTip("S & S Associates Legal-Tech LLP");
+      updateTrayMenu();
+      appTray.on("double-click", () => {
+        if (mainWindow) {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          if (!mainWindow.isVisible()) mainWindow.show();
+          mainWindow.focus();
+        }
+      });
+    }
+  } catch (err) {
+    console.warn("[Tray] Failed to create system tray:", err);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // App lifecycle
 // ---------------------------------------------------------------------------
 app.whenReady().then(async () => {
   await startServer();
   mainWindow = createWindow();
+  createTray();
 
   if (isDev) {
     await loadDevWithRetry(mainWindow);
@@ -464,6 +541,88 @@ ipcMain.handle("auth:clearRefreshToken", async () => {
     }
   } catch (err) {
     console.error("[IPC auth:clearRefreshToken] Clear failed:", err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Native Desktop Platform IPC Handlers
+// ---------------------------------------------------------------------------
+
+// Native Windows Toast Notification
+ipcMain.handle("notification:show", async (_event, options: { title: string; body: string; sound?: boolean; tag?: string }) => {
+  if (notificationsPaused) {
+    return { shown: false, reason: "notifications_paused" };
+  }
+  if (!Notification.isSupported()) {
+    return { shown: false, reason: "unsupported" };
+  }
+  try {
+    const iconPath = path.join(__dirname, "..", "public", "icon.png");
+    const notif = new Notification({
+      title: options.title || "S & S Legal-Tech LLP",
+      body: options.body || "",
+      icon: fs.existsSync(iconPath) ? iconPath : undefined,
+      silent: options.sound === false,
+    });
+    notif.on("click", () => {
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        if (!mainWindow.isVisible()) mainWindow.show();
+        mainWindow.focus();
+      }
+    });
+    notif.show();
+    return { shown: true };
+  } catch (err) {
+    console.error("[IPC notification:show] Error:", err);
+    return { shown: false, reason: (err as Error).message };
+  }
+});
+
+ipcMain.handle("notification:isPaused", () => notificationsPaused);
+
+ipcMain.handle("notification:setPaused", (_event, paused: boolean) => {
+  notificationsPaused = Boolean(paused);
+  updateTrayMenu();
+  return { success: true, paused: notificationsPaused };
+});
+
+// Safe External Link / Phone Opener
+ipcMain.handle("shell:openExternal", async (_event, rawUrl: string) => {
+  try {
+    if (!rawUrl || typeof rawUrl !== "string") {
+      return { success: false, error: "Invalid URL string" };
+    }
+    const parsed = new URL(rawUrl);
+    const allowed = ["https:", "http:", "mailto:", "tel:"];
+    if (!allowed.includes(parsed.protocol)) {
+      return { success: false, error: `Protocol "${parsed.protocol}" is not allowed` };
+    }
+    await shell.openExternal(rawUrl);
+    return { success: true };
+  } catch (err) {
+    console.error("[IPC shell:openExternal] Error:", err);
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// Native Windows Save Dialog & File Downloader
+ipcMain.handle("dialog:saveFile", async (_event, options: { defaultFilename: string; buffer: Uint8Array | number[]; mimeType?: string }) => {
+  if (!mainWindow) return { canceled: true, error: "Window not available" };
+  try {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: options.defaultFilename || "download",
+      title: "Save File · S & S LegalOS",
+    });
+    if (result.canceled || !result.filePath) {
+      return { canceled: true };
+    }
+    const dataBuffer = Buffer.from(options.buffer);
+    fs.writeFileSync(result.filePath, dataBuffer);
+    return { canceled: false, filePath: result.filePath };
+  } catch (err) {
+    console.error("[IPC dialog:saveFile] Error:", err);
+    return { canceled: false, error: (err as Error).message };
   }
 });
 

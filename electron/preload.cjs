@@ -11,6 +11,13 @@ const ALLOWED_IPC_CHANNELS = [
   "auth:saveRefreshToken",
   "auth:getRefreshToken",
   "auth:clearRefreshToken",
+  "app:getVersion",
+  "app:isDev",
+  "notification:show",
+  "notification:isPaused",
+  "notification:setPaused",
+  "shell:openExternal",
+  "dialog:saveFile",
 ];
 
 // Validate IPC channel
@@ -96,6 +103,17 @@ const electronAPI = {
   saveRefreshToken: (token) => ipcRenderer.invoke("auth:saveRefreshToken", token),
   getRefreshToken: () => ipcRenderer.invoke("auth:getRefreshToken"),
   clearRefreshToken: () => ipcRenderer.invoke("auth:clearRefreshToken"),
+
+  // Native desktop notifications
+  showNotification: (options) => ipcRenderer.invoke("notification:show", options),
+  isNotificationsPaused: () => ipcRenderer.invoke("notification:isPaused"),
+  setNotificationsPaused: (paused) => ipcRenderer.invoke("notification:setPaused", paused),
+
+  // Native external link opener (strictly validated protocols)
+  openExternal: (url) => ipcRenderer.invoke("shell:openExternal", url),
+
+  // Native save file dialog
+  saveFile: (options) => ipcRenderer.invoke("dialog:saveFile", options),
 };
 
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, uploadStream, downloadBlob } from "./api";
+import { downloads } from "@/platform";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -116,14 +117,10 @@ export function uploadDocumentStream(
 
 export async function downloadDocument(documentId: string): Promise<void> {
   const { blob, fileName } = await downloadBlob(`/documents/${documentId}/download`);
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = fileName;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
+  await downloads.download({
+    filename: fileName,
+    data: blob,
+  });
 }
 
 export async function viewDocument(documentId: string): Promise<void> {

@@ -21,6 +21,7 @@ import {
 import { io, Socket } from "socket.io-client";
 import { getAccessToken } from "@/services/api";
 import { useAuth } from "@/lib/auth";
+import { isElectron } from "@/platform";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -31,16 +32,6 @@ export type ConnectionStatus = "disconnected" | "connecting" | "reconnecting" | 
 interface SocketContextValue {
   socket: Socket | null;
   status: ConnectionStatus;
-}
-
-function isElectron(): boolean {
-  if (typeof window === "undefined") return false;
-  return (
-    (window as any).STILLWORKS_ENV?.isElectron === true ||
-    window.location.protocol === "file:" ||
-    window.location.protocol === "app:" ||
-    (typeof navigator !== "undefined" && navigator.userAgent.includes("Electron"))
-  );
 }
 
 function getSocketUrl(): string {

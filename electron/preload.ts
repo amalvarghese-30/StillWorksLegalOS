@@ -8,6 +8,16 @@ const ALLOWED_IPC_CHANNELS = [
   "nas:watchFolder",
   "nas:unwatchFolder",
   "nas:selectFolder",
+  "auth:saveRefreshToken",
+  "auth:getRefreshToken",
+  "auth:clearRefreshToken",
+  "app:getVersion",
+  "app:isDev",
+  "notification:show",
+  "notification:isPaused",
+  "notification:setPaused",
+  "shell:openExternal",
+  "dialog:saveFile",
 ] as const;
 
 type AllowedChannel = (typeof ALLOWED_IPC_CHANNELS)[number];
@@ -48,9 +58,14 @@ interface ElectronAPI {
   onFileEvent: (callback: (data: FileEventData) => void) => () => void;
   getVersion: () => Promise<string>;
   isDev: () => Promise<boolean>;
-  saveRefreshToken: (token: string) => Promise<void>;
-  getRefreshToken: () => Promise<string | null>;
-  clearRefreshToken: () => Promise<void>;
+  saveRefreshToken: (token: string) => Promise<{ success: boolean; error?: string }>;
+  getRefreshToken: () => Promise<{ success: boolean; token?: string | null; error?: string }>;
+  clearRefreshToken: () => Promise<{ success: boolean; error?: string }>;
+  showNotification: (options: { title: string; body: string; sound?: boolean; tag?: string }) => Promise<{ shown: boolean; reason?: string }>;
+  isNotificationsPaused: () => Promise<boolean>;
+  setNotificationsPaused: (paused: boolean) => Promise<{ success: boolean; paused: boolean }>;
+  openExternal: (url: string) => Promise<{ success: boolean; error?: string }>;
+  saveFile: (options: { defaultFilename: string; buffer: Uint8Array | number[]; mimeType?: string }) => Promise<{ canceled: boolean; filePath?: string; error?: string }>;
 }
 
 const electronAPI: ElectronAPI = {
@@ -115,6 +130,17 @@ const electronAPI: ElectronAPI = {
   saveRefreshToken: (token: string) => ipcRenderer.invoke("auth:saveRefreshToken", token),
   getRefreshToken: () => ipcRenderer.invoke("auth:getRefreshToken"),
   clearRefreshToken: () => ipcRenderer.invoke("auth:clearRefreshToken"),
+
+  // Native notifications
+  showNotification: (options) => ipcRenderer.invoke("notification:show", options),
+  isNotificationsPaused: () => ipcRenderer.invoke("notification:isPaused"),
+  setNotificationsPaused: (paused) => ipcRenderer.invoke("notification:setPaused", paused),
+
+  // Native external link opener
+  openExternal: (url) => ipcRenderer.invoke("shell:openExternal", url),
+
+  // Native save file dialog
+  saveFile: (options) => ipcRenderer.invoke("dialog:saveFile", options),
 };
 
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);

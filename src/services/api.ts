@@ -7,15 +7,8 @@
 // (web) or from the OS-level safeStorage vault (Electron desktop).
 // ---------------------------------------------------------------------------
 
-export function isElectron(): boolean {
-  if (typeof window === "undefined") return false;
-  return (
-    window.STILLWORKS_ENV?.isElectron === true ||
-    window.location.protocol === "file:" ||
-    window.location.protocol === "app:" ||
-    (typeof navigator !== "undefined" && navigator.userAgent.includes("Electron"))
-  );
-}
+import { isElectron } from "@/platform";
+export { isElectron };
 
 function getApiBase(): string {
   // Electron desktop app: ALWAYS connect directly to the production VPS API

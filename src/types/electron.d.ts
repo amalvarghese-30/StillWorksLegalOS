@@ -23,6 +23,22 @@ export interface ElectronAPI {
   saveRefreshToken: (token: string) => Promise<{ success: boolean; error?: string }>;
   getRefreshToken: () => Promise<TokenResult>;
   clearRefreshToken: () => Promise<{ success: boolean; error?: string }>;
+  getVersion?: () => Promise<string>;
+  isDev?: () => Promise<boolean>;
+  showNotification?: (options: {
+    title: string;
+    body: string;
+    sound?: boolean;
+    tag?: string;
+  }) => Promise<{ shown: boolean; reason?: string }>;
+  isNotificationsPaused?: () => Promise<boolean>;
+  setNotificationsPaused?: (paused: boolean) => Promise<{ success: boolean; paused: boolean }>;
+  openExternal?: (url: string) => Promise<{ success: boolean; error?: string }>;
+  saveFile?: (options: {
+    defaultFilename: string;
+    buffer: Uint8Array | number[];
+    mimeType?: string;
+  }) => Promise<{ canceled: boolean; filePath?: string; error?: string }>;
 }
 
 declare global {
