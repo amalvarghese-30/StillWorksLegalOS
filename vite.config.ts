@@ -49,7 +49,7 @@ export default defineConfig({
       },
     },
     watch: {
-      ignored: ["**/*.zip", "**/dist-electron.zip"],
+      ignored: ["**/*.zip", "**/dist-electron.zip", "**/release/**", "**/dist-electron/**", "**/dist/**"],
     },
   },
   build: {
