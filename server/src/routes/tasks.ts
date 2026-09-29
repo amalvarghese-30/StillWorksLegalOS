@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { Task } from "../models/Task.js";
+import { Reminder } from "../models/Reminder.js";
 import { Case } from "../models/Case.js";
 import { Client } from "../models/Client.js";
 import { AuditLog } from "../models/AuditLog.js";
@@ -351,6 +352,35 @@ router.post("/", async (req: Request, res: Response) => {
       }
     }
 
+    // Validate deadline format if provided
+    let parsedDeadline: Date | null = null;
+    if (deadline) {
+      parsedDeadline = new Date(deadline);
+      if (isNaN(parsedDeadline.getTime())) {
+        res.status(400).json({ message: "Invalid deadline date format" });
+        return;
+      }
+    }
+
+    // Validate callReminder fields if provided
+    let parsedCallReminder: { clientName: string; phone: string; scheduledAt: Date; notes: string; completed: boolean } | undefined = undefined;
+    if (callReminder && typeof callReminder === "object") {
+      const clientName = String(callReminder.clientName ?? "").trim();
+      if (clientName) {
+        if (!callReminder.scheduledAt || isNaN(new Date(callReminder.scheduledAt).getTime())) {
+          res.status(400).json({ message: "Please select a date and time for the reminder." });
+          return;
+        }
+        parsedCallReminder = {
+          clientName,
+          phone: String(callReminder.phone ?? "").trim(),
+          scheduledAt: new Date(callReminder.scheduledAt),
+          notes: String(callReminder.notes ?? "").trim(),
+          completed: Boolean(callReminder.completed ?? false),
+        };
+      }
+    }
+
     // Non-admins can only assign to themselves
     const finalAssignedTo = req.user!.role === "admin" ? (assignedTo ?? null) : req.userId;
 
@@ -360,20 +390,12 @@ router.post("/", async (req: Request, res: Response) => {
       category: category ?? "Other Work",
       priority: priority ?? "Medium",
       status: "pending",
-      deadline: deadline ? new Date(deadline) : null,
+      deadline: parsedDeadline,
       assignedTo: finalAssignedTo,
       caseId: cleanCaseId,
       clientId: cleanClientId,
       checklist: checklist ?? [],
-      callReminder: callReminder?.clientName
-        ? {
-            clientName: String(callReminder.clientName).trim(),
-            phone: String(callReminder.phone ?? "").trim(),
-            scheduledAt: callReminder.scheduledAt ? new Date(callReminder.scheduledAt) : new Date(),
-            notes: String(callReminder.notes ?? "").trim(),
-            completed: Boolean(callReminder.completed ?? false),
-          }
-        : undefined,
+      callReminder: parsedCallReminder,
       agent: agent ?? "",
       isCall: Boolean(isCall),
       createdBy: req.userId,
@@ -412,18 +434,21 @@ router.post("/", async (req: Request, res: Response) => {
 
     // Create synchronized Reminder document if callReminder is present
     if (task.callReminder && task.callReminder.clientName) {
-      import("../models/Reminder.js").then(({ Reminder }) => {
-        Reminder.create({
-          userId: task.assignedTo || task.createdBy,
+      const ownerId = task.assignedTo || task.createdBy || req.userId;
+      try {
+        await Reminder.create({
+          userId: ownerId,
           sourceType: "task",
           sourceId: task._id,
-          clientName: task.callReminder!.clientName,
-          phone: task.callReminder!.phone || "",
-          notes: task.callReminder!.notes || "",
-          scheduledAt: task.callReminder!.scheduledAt || new Date(),
-          status: task.callReminder!.completed ? "completed" : "scheduled",
-        }).catch(() => {});
-      });
+          clientName: task.callReminder.clientName,
+          phone: task.callReminder.phone || "",
+          notes: task.callReminder.notes || "",
+          scheduledAt: task.callReminder.scheduledAt,
+          status: task.callReminder.completed ? "completed" : "scheduled",
+        });
+      } catch (remErr) {
+        console.error("[tasks] Failed to create synchronized reminder:", remErr);
+      }
     }
 
     const io = req.app.get("io");
@@ -454,16 +479,42 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     }
-    if (req.body["deadline"]) updates["deadline"] = new Date(req.body["deadline"]);
+    if (req.body["deadline"] !== undefined) {
+      if (req.body["deadline"] === null || req.body["deadline"] === "") {
+        updates["deadline"] = null;
+      } else {
+        const d = new Date(req.body["deadline"]);
+        if (isNaN(d.getTime())) {
+          res.status(400).json({ message: "Invalid deadline date format" });
+          return;
+        }
+        updates["deadline"] = d;
+      }
+    }
+
     if (req.body["callReminder"] !== undefined) {
-      if (req.body["callReminder"] === null) {
+      if (req.body["callReminder"] === null || req.body["callReminder"] === false) {
         updates["callReminder"] = undefined;
       } else if (typeof req.body["callReminder"] === "object") {
         const cr = req.body["callReminder"] as Record<string, unknown>;
+        const clientName = String(cr["clientName"] ?? "").trim();
+        if (!clientName) {
+          res.status(400).json({ message: "Client name is required for call reminder" });
+          return;
+        }
+        if (cr["scheduledAt"] === undefined || cr["scheduledAt"] === null || cr["scheduledAt"] === "") {
+          res.status(400).json({ message: "Please select a date and time for the reminder." });
+          return;
+        }
+        const schedDate = new Date(cr["scheduledAt"] as string);
+        if (isNaN(schedDate.getTime())) {
+          res.status(400).json({ message: "Invalid scheduled date/time for call reminder" });
+          return;
+        }
         updates["callReminder"] = {
-          clientName: String(cr["clientName"] ?? "").trim(),
+          clientName,
           phone: String(cr["phone"] ?? "").trim(),
-          scheduledAt: cr["scheduledAt"] ? new Date(cr["scheduledAt"] as string) : new Date(),
+          scheduledAt: schedDate,
           notes: String(cr["notes"] ?? "").trim(),
           completed: Boolean(cr["completed"]),
         };
@@ -580,33 +631,47 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
     }
 
     // Synchronize Reminder document if task has callReminder or status changed
-    if (task && (updates["callReminder"] !== undefined || updates["status"] !== undefined)) {
-      import("../models/Reminder.js").then(({ Reminder }) => {
+    if (task) {
+      if (req.body["callReminder"] === null || req.body["callReminder"] === false) {
+        try {
+          await Reminder.deleteMany({ sourceType: "task", sourceId: task._id });
+        } catch (remErr) {
+          console.error("[tasks] Failed to remove synchronized reminder:", remErr);
+        }
+      } else if (updates["callReminder"] !== undefined || updates["status"] !== undefined) {
         const isDone = task.status === "completed" || Boolean(task.callReminder?.completed);
-        const updateDoc: Record<string, unknown> = {};
+        const ownerId = (task.assignedTo as any)?._id || task.assignedTo || task.createdBy || req.userId;
+        const updateDoc: Record<string, unknown> = {
+          userId: ownerId,
+          sourceType: "task",
+          sourceId: task._id,
+          status: isDone ? "completed" : "scheduled",
+        };
         if (isDone) {
-          updateDoc["status"] = "completed";
           updateDoc["completedAt"] = new Date();
-        } else if (task.callReminder?.scheduledAt) {
-          updateDoc["status"] = "scheduled";
         }
         if (task.callReminder) {
           updateDoc["clientName"] = task.callReminder.clientName;
-          updateDoc["phone"] = task.callReminder.phone || "";
-          updateDoc["notes"] = task.callReminder.notes || "";
-          updateDoc["scheduledAt"] = task.callReminder.scheduledAt || new Date();
+          updateDoc["phone"] = task.callReminder.phone ?? "";
+          updateDoc["notes"] = task.callReminder.notes ?? "";
+          updateDoc["scheduledAt"] = task.callReminder.scheduledAt;
         }
-        if (task.assignedTo) {
-          updateDoc["userId"] = (task.assignedTo as any)._id || task.assignedTo;
+
+        if (task.callReminder?.clientName) {
+          try {
+            await Reminder.findOneAndUpdate(
+              { sourceType: "task", sourceId: task._id },
+              {
+                $set: updateDoc,
+                $setOnInsert: { createdAt: new Date() },
+              },
+              { upsert: true, new: true }
+            );
+          } catch (remErr) {
+            console.error("[tasks] Failed to synchronize reminder on update:", remErr);
+          }
         }
-        if (Object.keys(updateDoc).length > 0) {
-          Reminder.findOneAndUpdate(
-            { sourceType: "task", sourceId: task._id },
-            { $set: updateDoc },
-            { upsert: Boolean(task.callReminder?.clientName) }
-          ).catch(() => {});
-        }
-      });
+      }
     }
 
     // Notify assignee if task was assigned or reassigned to another user
@@ -822,6 +887,13 @@ router.delete("/:id", requireResourceAccess("task"), async (req: Request, res: R
     }
 
     await Task.findByIdAndDelete(task._id);
+
+    // Clean up associated reminders atomically
+    try {
+      await Reminder.deleteMany({ sourceType: "task", sourceId: task._id });
+    } catch (remErr) {
+      console.error("[tasks] Failed to delete synchronized reminders on task delete:", remErr);
+    }
 
     // Clean up any associated notifications and emit realtime notification:deleted
     const io = req.app.get("io");

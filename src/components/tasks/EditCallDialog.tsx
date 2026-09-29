@@ -154,8 +154,19 @@ export function EditCallDialog({ open, onClose, task }: EditCallDialogProps) {
       return;
     }
 
+    if (!scheduledAt || !scheduledAt.trim()) {
+      toast.error("Please select a date and time for the reminder.");
+      return;
+    }
+
+    const parsedDate = new Date(scheduledAt);
+    if (isNaN(parsedDate.getTime())) {
+      toast.error("Please enter a valid date and time.");
+      return;
+    }
+
     try {
-      const scheduledIso = scheduledAt ? new Date(scheduledAt).toISOString() : new Date().toISOString();
+      const scheduledIso = parsedDate.toISOString();
       await updateTask.mutateAsync({
         id: task._id,
         data: {
@@ -176,8 +187,9 @@ export function EditCallDialog({ open, onClose, task }: EditCallDialogProps) {
       });
       toast.success("Call reminder updated successfully");
       onClose();
-    } catch {
-      toast.error("Failed to save changes. Please try again.");
+    } catch (err: any) {
+      console.error("[EditCallDialog] Failed to update call reminder:", err);
+      toast.error(err?.message || "We couldn't update the reminder. Please try again.");
     }
   };
 

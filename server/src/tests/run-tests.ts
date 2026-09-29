@@ -19,11 +19,14 @@ const { Case } = await import("../models/Case.js");
 const { Client } = await import("../models/Client.js");
 const { Counter } = await import("../models/Counter.js");
 const { Task } = await import("../models/Task.js");
+const { Reminder } = await import("../models/Reminder.js");
+const { CalendarEvent } = await import("../models/CalendarEvent.js");
 const { default: adminRoutes } = await import("../routes/admin.js");
 const { default: calendarRoutes } = await import("../routes/calendar.js");
 const { default: casesRoutes } = await import("../routes/cases.js");
 const { default: clientsRoutes } = await import("../routes/clients.js");
 const { default: tasksRoutes } = await import("../routes/tasks.js");
+const { default: remindersRoutes } = await import("../routes/reminders.js");
 
 function buildApp() {
   const app = express();
@@ -34,6 +37,7 @@ function buildApp() {
   app.use("/api/cases", casesRoutes);
   app.use("/api/clients", clientsRoutes);
   app.use("/api/tasks", tasksRoutes);
+  app.use("/api/reminders", remindersRoutes);
   return app;
 }
 
@@ -386,6 +390,98 @@ async function run() {
       .set("Authorization", `Bearer ${adminToken}`);
     const taskApprovalAfter = approvalsAfterRes.body.approvals.find((a: any) => a._id === `task_${task._id}`);
     assert(!taskApprovalAfter, "TASK-APPR-009: Completed task cleared from approvals queue");
+  }
+
+  // ---------------------------------------------------------------------------
+  // Suite: Reminders & Call Synchronization
+  // ---------------------------------------------------------------------------
+  {
+    console.log(`\nSuite: Reminders & Call Synchronization`);
+
+    const adminUser = await createUser({ role: "admin", name: "Reminders Admin", email: "remadmin@test.com" });
+    const adminToken = await createToken(adminUser);
+    const employeeUser = await createUser({ role: "junior_advocate", name: "Reminders Employee", email: "rememp@test.com" });
+
+    // REM-001: Public health check returns 200 without auth
+    const healthRes = await request(app).get("/api/reminders/health");
+    assert(healthRes.status === 200, "REM-001: GET /api/reminders/health returns 200");
+    assert(healthRes.body.ok === true && healthRes.body.service === "reminders", "REM-002: Health check body contains ok:true and service:reminders");
+
+    // REM-003: Due reminders endpoint requires authentication
+    const unauthDueRes = await request(app).get("/api/reminders/due");
+    assert(unauthDueRes.status === 401, "REM-003: GET /api/reminders/due returns 401 without auth");
+
+    // REM-004: Due reminders endpoint succeeds with auth
+    const authDueRes = await request(app)
+      .get("/api/reminders/due")
+      .set("Authorization", `Bearer ${adminToken}`);
+    assert(authDueRes.status === 200, "REM-004: GET /api/reminders/due returns 200 with auth");
+    assert(Array.isArray(authDueRes.body.reminders), "REM-005: Returns reminders array");
+
+    // REM-006: Task creation rejects invalid scheduledAt
+    const invalidDateRes = await request(app)
+      .post("/api/tasks")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        title: "📞 CALL: Ramesh Kumar",
+        callReminder: {
+          clientName: "Ramesh Kumar",
+          scheduledAt: "invalid-date-string",
+        },
+      });
+    assert(invalidDateRes.status === 400, "REM-006: Rejects invalid scheduledAt with 400");
+
+    // REM-007: Task creation with valid callReminder creates synchronized Reminder with correct userId
+    const scheduledTime = new Date(Date.now() + 3600000).toISOString();
+    const taskRes = await request(app)
+      .post("/api/tasks")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        title: "📞 CALL: Ramesh Kumar",
+        assignedTo: employeeUser._id,
+        callReminder: {
+          clientName: "Ramesh Kumar",
+          phone: "+91-9876543210",
+          notes: "Initial consultation",
+          scheduledAt: scheduledTime,
+        },
+      });
+    assert(taskRes.status === 201, "REM-007: Task created successfully");
+    const createdTaskId = taskRes.body.task._id;
+
+    // Verify synchronized Reminder document in DB
+    const syncReminder = await Reminder.findOne({ sourceType: "task", sourceId: createdTaskId });
+    assert(Boolean(syncReminder), "REM-008: Synchronized Reminder document created in DB");
+    assert(syncReminder?.userId.toString() === employeeUser._id.toString(), "REM-009: Reminder assigned to correct userId");
+    assert(syncReminder?.clientName === "Ramesh Kumar", "REM-010: Reminder has clientName");
+    assert(syncReminder?.phone === "+91-9876543210", "REM-011: Reminder has phone");
+
+    // REM-012: Task update clears optional fields (notes and phone set to "") and updates scheduledAt
+    const newScheduledTime = new Date(Date.now() + 7200000).toISOString();
+    const updateRes = await request(app)
+      .patch(`/api/tasks/${createdTaskId}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        callReminder: {
+          clientName: "Ramesh Kumar Updated",
+          phone: "",
+          notes: "",
+          scheduledAt: newScheduledTime,
+        },
+      });
+    assert(updateRes.status === 200, "REM-012: Task update succeeds with cleared optional fields");
+    const updatedReminder = await Reminder.findOne({ sourceType: "task", sourceId: createdTaskId });
+    assert(updatedReminder?.clientName === "Ramesh Kumar Updated", "REM-013: Synchronized Reminder updated clientName");
+    assert(updatedReminder?.phone === "", "REM-014: Synchronized Reminder cleared phone");
+    assert(updatedReminder?.notes === "", "REM-015: Synchronized Reminder cleared notes");
+
+    // REM-016: Task deletion deletes synchronized Reminder
+    const deleteRes = await request(app)
+      .delete(`/api/tasks/${createdTaskId}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    assert(deleteRes.status === 200, "REM-016: Task deleted successfully");
+    const reminderAfterTaskDelete = await Reminder.findOne({ sourceType: "task", sourceId: createdTaskId });
+    assert(!reminderAfterTaskDelete, "REM-017: Synchronized Reminder deleted on task deletion");
   }
 
   await mongoose.disconnect();

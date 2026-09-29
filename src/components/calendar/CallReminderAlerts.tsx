@@ -1,28 +1,34 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { PhoneCall, BellRing, Clock, X, Check, Copy, PhoneForwarded } from "lucide-react";
+import { PhoneCall, Clock, Check, Copy, PhoneForwarded } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { useTasks, useUpdateTask, type TaskRecord } from "@/services/tasks";
-import { useCalendarEvents, type CalendarEvent } from "@/services/calendar";
+import { useTasks, useUpdateTask, taskKeys } from "@/services/tasks";
+import { useCalendarEvents, useUpdateEvent, calendarKeys } from "@/services/calendar";
 import {
   useDueReminders,
   useSnoozeReminder,
   useCompleteReminder,
   useDismissReminder,
+  useUpdateReminder,
+  reminderKeys,
 } from "@/services/reminders";
 import { useSocketEvent } from "@/lib/socket";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { notifications, externalLinks } from "@/platform";
 
 interface ActiveReminder {
   id: string;
-  source: "task" | "event";
+  source: "task" | "event" | "reminder";
   title: string;
   clientName: string;
   phone?: string;
   notes?: string;
   dueTime: Date;
   taskId?: string;
+  eventId?: string;
+  reminderId?: string;
+  deliveryId?: string;
 }
 
 /** Synthesize a pleasant, crisp attention-grabbing phone chime using Web Audio API */
@@ -31,7 +37,7 @@ function playReminderBeep() {
     const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!AudioContextClass) return;
     const ctx = new AudioContextClass();
-    
+
     const playTone = (freq: number, start: number, duration: number) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -60,9 +66,12 @@ function playReminderBeep() {
 }
 
 export function CallReminderAlerts() {
+  const queryClient = useQueryClient();
   const { data: taskData } = useTasks({ limit: "200" });
   const { data: calendarData } = useCalendarEvents();
   const updateTask = useUpdateTask();
+  const updateEvent = useUpdateEvent();
+  const updateReminder = useUpdateReminder();
 
   const [activeAlert, setActiveAlert] = useState<ActiveReminder | null>(null);
   const alertedIdsRef = useRef<Set<string>>(new Set());
@@ -70,7 +79,7 @@ export function CallReminderAlerts() {
   const nextTimerRef = useRef<NodeJS.Timeout | null>(null);
   const channelRef = useRef<BroadcastChannel | null>(null);
 
-  // Initialize BroadcastChannel for cross-tab synchronization
+  // Initialize BroadcastChannel for cross-tab and cross-window deduplication
   useEffect(() => {
     if (typeof window === "undefined" || !("BroadcastChannel" in window)) {
       return undefined;
@@ -80,17 +89,36 @@ export function CallReminderAlerts() {
     channelRef.current = bc;
 
     bc.onmessage = (event: MessageEvent) => {
-      const { type, id, snoozedUntil } = event.data || {};
-      if (type === "ALERT_TRIGGERED" && id) {
-        alertedIdsRef.current.add(id);
+      const { type, id, key, deliveryId, snoozedUntil } = event.data || {};
+      if (type === "ALERT_TRIGGERED") {
+        if (id) alertedIdsRef.current.add(id);
+        if (key) alertedIdsRef.current.add(key);
+        if (deliveryId) alertedIdsRef.current.add(deliveryId);
         // If we had this alert open in this tab too, close to avoid duplicate popups
-        setActiveAlert((curr) => (curr?.id === id ? null : curr));
-      } else if (type === "ALERT_DISMISSED" && id) {
-        if (snoozedUntil) snoozedUntilRef.current.set(id, snoozedUntil);
-        setActiveAlert((curr) => (curr?.id === id ? null : curr));
-      } else if (type === "ALERT_COMPLETED" && id) {
-        alertedIdsRef.current.add(id);
-        setActiveAlert((curr) => (curr?.id === id ? null : curr));
+        setActiveAlert((curr) => {
+          if (!curr) return null;
+          const currKey = `${curr.source}:${curr.taskId || curr.eventId || curr.reminderId || curr.id}`;
+          if (curr.id === id || currKey === key) return null;
+          return curr;
+        });
+      } else if (type === "ALERT_DISMISSED") {
+        if (id && snoozedUntil) snoozedUntilRef.current.set(id, snoozedUntil);
+        if (key && snoozedUntil) snoozedUntilRef.current.set(key, snoozedUntil);
+        setActiveAlert((curr) => {
+          if (!curr) return null;
+          const currKey = `${curr.source}:${curr.taskId || curr.eventId || curr.reminderId || curr.id}`;
+          if (curr.id === id || currKey === key) return null;
+          return curr;
+        });
+      } else if (type === "ALERT_COMPLETED") {
+        if (id) alertedIdsRef.current.add(id);
+        if (key) alertedIdsRef.current.add(key);
+        setActiveAlert((curr) => {
+          if (!curr) return null;
+          const currKey = `${curr.source}:${curr.taskId || curr.eventId || curr.reminderId || curr.id}`;
+          if (curr.id === id || currKey === key) return null;
+          return curr;
+        });
       }
     };
 
@@ -104,13 +132,30 @@ export function CallReminderAlerts() {
     notifications.requestPermission().catch(() => {});
   }, []);
 
-  const triggerAlert = useCallback((reminder: ActiveReminder) => {
+  const triggerAlert = useCallback((reminder: ActiveReminder, deliveryId?: string) => {
+    const sourceKey = `${reminder.source}:${reminder.taskId || reminder.eventId || reminder.reminderId || reminder.id}`;
+
+    if (alertedIdsRef.current.has(reminder.id) || alertedIdsRef.current.has(sourceKey)) {
+      return;
+    }
+    if (deliveryId && alertedIdsRef.current.has(deliveryId)) {
+      return;
+    }
+
     setActiveAlert(reminder);
     alertedIdsRef.current.add(reminder.id);
+    alertedIdsRef.current.add(sourceKey);
+    if (deliveryId) alertedIdsRef.current.add(deliveryId);
+
     playReminderBeep();
 
     // Broadcast to other tabs so they don't fire duplicate audio or modal
-    channelRef.current?.postMessage({ type: "ALERT_TRIGGERED", id: reminder.id });
+    channelRef.current?.postMessage({
+      type: "ALERT_TRIGGERED",
+      id: reminder.id,
+      key: sourceKey,
+      deliveryId,
+    });
 
     // Show platform-appropriate notification (Browser push or Windows native toast)
     notifications.show({
@@ -123,7 +168,7 @@ export function CallReminderAlerts() {
     });
   }, []);
 
-  // Exact-time scheduling and periodic reconciliation
+  // Client reconciliation fallback for scheduled dates
   useEffect(() => {
     const tasks = taskData?.tasks ?? [];
     const events = calendarData?.events ?? [];
@@ -163,15 +208,21 @@ export function CallReminderAlerts() {
           id: `event-${ev._id}`,
           source: "event",
           title: ev.title,
-          clientName: ev.clientName || ev.title,
+          clientName: ev.clientName || ev.title.replace(/^📞\s*(CALL:\s*)?/i, ""),
           notes: ev.description,
           dueTime: new Date(due),
+          eventId: ev._id,
         });
       }
 
       for (const cand of candidates) {
+        const sourceKey = `${cand.source}:${cand.taskId || cand.eventId || cand.id}`;
+        if (alertedIdsRef.current.has(cand.id) || alertedIdsRef.current.has(sourceKey)) {
+          continue;
+        }
+
         const dueMs = cand.dueTime.getTime();
-        const snoozedUntil = snoozedUntilRef.current.get(cand.id);
+        const snoozedUntil = snoozedUntilRef.current.get(cand.id) || snoozedUntilRef.current.get(sourceKey);
 
         if (snoozedUntil && now < snoozedUntil) continue;
 
@@ -185,7 +236,7 @@ export function CallReminderAlerts() {
         } else if (dueMs > now) {
           // Future reminder: calculate delay to exact millisecond
           const delayMs = dueMs - now;
-          if (delayMs <= 24 * 60 * 60 * 1000) { // within 24 hours
+          if (delayMs <= 24 * 60 * 60 * 1000) {
             if (!nextDueReminder || delayMs < nextDueReminder.delayMs) {
               nextDueReminder = { reminder: cand, delayMs };
             }
@@ -218,52 +269,63 @@ export function CallReminderAlerts() {
   const completeMutation = useCompleteReminder();
   const dismissMutation = useDismissReminder();
 
-  // Socket.IO real-time listener for reminder triggers from server scheduler
+  // Socket.IO real-time listener for reminder triggers from authoritative server scheduler
   useSocketEvent("reminder:due", (payload: any) => {
     if (!payload || !payload.id) return;
     const reminderId = String(payload.id);
-    if (alertedIdsRef.current.has(reminderId)) return;
+    const sourceKey = `${payload.sourceType || "custom"}:${payload.sourceId || reminderId}`;
+
+    if (alertedIdsRef.current.has(reminderId) || alertedIdsRef.current.has(sourceKey)) return;
+    if (payload.deliveryId && alertedIdsRef.current.has(payload.deliveryId)) return;
 
     const cand: ActiveReminder = {
       id: reminderId,
-      source: payload.sourceType === "task" ? "task" : "event",
+      source: payload.sourceType === "task" ? "task" : payload.sourceType === "event" ? "event" : "reminder",
       title: `📞 CALL: ${payload.clientName || "Call Reminder"}`,
       clientName: payload.clientName || "Call Reminder",
       phone: payload.phone,
       notes: payload.notes,
       dueTime: payload.scheduledAt ? new Date(payload.scheduledAt) : new Date(),
       taskId: payload.sourceType === "task" ? payload.sourceId : undefined,
+      eventId: payload.sourceType === "event" ? payload.sourceId : undefined,
+      reminderId,
+      deliveryId: payload.deliveryId,
     };
-    triggerAlert(cand);
+    triggerAlert(cand, payload.deliveryId);
   });
 
-  // Reconcile missed/due reminders returned by server API on load
+  // Reconcile missed/due reminders returned by server API on load / reconnect
   useEffect(() => {
     const list = dueRemindersQuery.data?.reminders;
     if (!list || list.length === 0) return;
     for (const r of list) {
       const reminderId = String(r._id);
-      if (alertedIdsRef.current.has(reminderId)) continue;
+      const sourceKey = `${r.sourceType || "custom"}:${r.sourceId || reminderId}`;
+      if (alertedIdsRef.current.has(reminderId) || alertedIdsRef.current.has(sourceKey)) continue;
       const snoozedUntil = r.snoozedUntil ? new Date(r.snoozedUntil).getTime() : null;
       if (snoozedUntil && Date.now() < snoozedUntil) continue;
 
       const cand: ActiveReminder = {
         id: reminderId,
-        source: r.sourceType === "task" ? "task" : "event",
+        source: r.sourceType === "task" ? "task" : r.sourceType === "event" ? "event" : "reminder",
         title: `📞 CALL: ${r.clientName || "Call Reminder"}`,
         clientName: r.clientName || "Call Reminder",
         phone: r.phone,
         notes: r.notes,
         dueTime: r.scheduledAt ? new Date(r.scheduledAt) : new Date(),
         taskId: r.sourceType === "task" ? r.sourceId : undefined,
+        eventId: r.sourceType === "event" ? r.sourceId : undefined,
+        reminderId,
+        deliveryId: r.deliveryId,
       };
-      triggerAlert(cand);
+      triggerAlert(cand, r.deliveryId);
       break; // Show one at a time to prevent popup floods
     }
   }, [dueRemindersQuery.data, triggerAlert]);
 
   // Inline edit state when editing from the popup alert
   const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [editName, setEditName] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [editSchedule, setEditSchedule] = useState("");
@@ -289,58 +351,112 @@ export function CallReminderAlerts() {
     setEditSchedule(localIso);
   };
 
-  const handleSaveReschedule = () => {
+  const handleSaveReschedule = async () => {
     if (!activeAlert) return;
-    if (!editName.trim()) {
-      toast.error("Contact name is required");
+    const trimmedName = editName.trim();
+    if (!trimmedName) {
+      toast.error("Contact / Client name is required");
       return;
     }
-    const newScheduledIso = editSchedule ? new Date(editSchedule).toISOString() : new Date().toISOString();
 
-    if (activeAlert.taskId) {
-      updateTask.mutate({
-        id: activeAlert.taskId,
-        data: {
-          title: `📞 CALL: ${editName.trim()}`,
-          deadline: newScheduledIso,
-          callReminder: {
-            clientName: editName.trim(),
-            phone: editPhone.trim(),
-            scheduledAt: newScheduledIso,
-            notes: editNotes.trim(),
-            completed: false,
-          },
-        },
-      });
-      toast.success("Call reminder updated and rescheduled!");
-    } else {
-      toast.info("Rescheduled");
+    if (!editSchedule || !editSchedule.trim()) {
+      toast.error("Please select a date and time for the reminder.");
+      return;
     }
 
-    channelRef.current?.postMessage({
-      type: "ALERT_DISMISSED",
-      id: activeAlert.id,
-      snoozedUntil: new Date(newScheduledIso).getTime(),
-    });
-    setIsEditing(false);
-    setActiveAlert(null);
+    const parsedDate = new Date(editSchedule);
+    if (isNaN(parsedDate.getTime())) {
+      toast.error("Please enter a valid date and time.");
+      return;
+    }
+
+    const newScheduledIso = parsedDate.toISOString();
+    setIsSaving(true);
+
+    try {
+      if (activeAlert.taskId) {
+        await updateTask.mutateAsync({
+          id: activeAlert.taskId,
+          data: {
+            title: `📞 CALL: ${trimmedName}`,
+            deadline: newScheduledIso,
+            callReminder: {
+              clientName: trimmedName,
+              phone: editPhone.trim(), // Optional: empty string is valid and clears
+              scheduledAt: newScheduledIso,
+              notes: editNotes.trim(), // Optional: empty string is valid and clears
+              completed: false,
+            },
+          },
+        });
+      } else if (activeAlert.eventId) {
+        await updateEvent.mutateAsync({
+          id: activeAlert.eventId,
+          data: {
+            title: `📞 CALL: ${trimmedName}`,
+            start: newScheduledIso,
+            description: editNotes.trim(),
+          },
+        });
+      } else if (activeAlert.reminderId || (!activeAlert.id.startsWith("task-") && !activeAlert.id.startsWith("event-"))) {
+        const remId = activeAlert.reminderId || activeAlert.id;
+        await updateReminder.mutateAsync({
+          id: remId,
+          data: {
+            clientName: trimmedName,
+            phone: editPhone.trim(),
+            notes: editNotes.trim(),
+            scheduledAt: newScheduledIso,
+          },
+        });
+      }
+
+      await queryClient.invalidateQueries({ queryKey: reminderKeys.all });
+      await queryClient.invalidateQueries({ queryKey: taskKeys.all });
+      await queryClient.invalidateQueries({ queryKey: calendarKeys.all });
+
+      const sourceKey = `${activeAlert.source}:${activeAlert.taskId || activeAlert.eventId || activeAlert.reminderId || activeAlert.id}`;
+      channelRef.current?.postMessage({
+        type: "ALERT_DISMISSED",
+        id: activeAlert.id,
+        key: sourceKey,
+        snoozedUntil: parsedDate.getTime(),
+      });
+
+      toast.success("Call reminder updated successfully.");
+      setIsEditing(false);
+      setActiveAlert(null);
+    } catch (err: any) {
+      console.error("[CallReminderAlerts] Failed to update reminder:", err);
+      toast.error(err?.message || "We couldn't update the reminder. Please try again.");
+      // Keeps the dialog open on failure so the user can correct or retry
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  if (!activeAlert) return null;
-
-  const handleSnooze = (minutes = 5) => {
+  const handleSnooze = async (minutes = 5) => {
     if (!activeAlert) return;
     const snoozeTime = Date.now() + minutes * 60 * 1000;
-    snoozedUntilRef.current.set(activeAlert.id, snoozeTime);
+    const sourceKey = `${activeAlert.source}:${activeAlert.taskId || activeAlert.eventId || activeAlert.reminderId || activeAlert.id}`;
 
-    // Call server snooze if it's a server reminder ID
-    if (!activeAlert.id.startsWith("task-") && !activeAlert.id.startsWith("event-")) {
-      snoozeMutation.mutate({ id: activeAlert.id, minutes });
+    snoozedUntilRef.current.set(activeAlert.id, snoozeTime);
+    snoozedUntilRef.current.set(sourceKey, snoozeTime);
+
+    // Call server snooze if it's a server reminder
+    const remId = activeAlert.reminderId || (!activeAlert.id.startsWith("task-") && !activeAlert.id.startsWith("event-") ? activeAlert.id : null);
+    if (remId) {
+      try {
+        await snoozeMutation.mutateAsync({ id: remId, minutes });
+      } catch (err) {
+        console.error("[CallReminderAlerts] Server snooze error:", err);
+      }
     }
 
     channelRef.current?.postMessage({
       type: "ALERT_DISMISSED",
       id: activeAlert.id,
+      key: sourceKey,
       snoozedUntil: snoozeTime,
     });
     toast.info(`Call reminder snoozed for ${minutes} minutes`);
@@ -348,64 +464,84 @@ export function CallReminderAlerts() {
     setActiveAlert(null);
   };
 
-  const handleMarkDone = () => {
-    if (activeAlert.taskId) {
-      updateTask.mutate({
-        id: activeAlert.taskId,
-        data: {
-          status: "completed",
-          callReminder: {
-            clientName: activeAlert.clientName,
-            phone: activeAlert.phone || "",
-            scheduledAt: activeAlert.dueTime.toISOString(),
-            notes: activeAlert.notes || "",
-            completed: true,
+  const handleMarkDone = async () => {
+    if (!activeAlert) return;
+    const sourceKey = `${activeAlert.source}:${activeAlert.taskId || activeAlert.eventId || activeAlert.reminderId || activeAlert.id}`;
+
+    try {
+      if (activeAlert.taskId) {
+        await updateTask.mutateAsync({
+          id: activeAlert.taskId,
+          data: {
+            status: "completed",
+            callReminder: {
+              clientName: activeAlert.clientName,
+              phone: activeAlert.phone || "",
+              scheduledAt: activeAlert.dueTime.toISOString(),
+              notes: activeAlert.notes || "",
+              completed: true,
+            },
           },
-        },
+        });
+        toast.success("Call marked as completed!");
+      } else {
+        toast.success("Call acknowledged");
+      }
+
+      const remId = activeAlert.reminderId || (!activeAlert.id.startsWith("task-") && !activeAlert.id.startsWith("event-") ? activeAlert.id : null);
+      if (remId) {
+        await completeMutation.mutateAsync(remId);
+      }
+
+      channelRef.current?.postMessage({
+        type: "ALERT_COMPLETED",
+        id: activeAlert.id,
+        key: sourceKey,
       });
-      toast.success("Call marked as completed!");
-    } else {
-      toast.success("Call acknowledged");
+      setIsEditing(false);
+      setActiveAlert(null);
+    } catch (err: any) {
+      console.error("[CallReminderAlerts] Failed to mark completed:", err);
+      toast.error("Failed to complete call reminder");
     }
-
-    // Call server complete mutation
-    if (!activeAlert.id.startsWith("task-") && !activeAlert.id.startsWith("event-")) {
-      completeMutation.mutate(activeAlert.id);
-    }
-
-    channelRef.current?.postMessage({
-      type: "ALERT_COMPLETED",
-      id: activeAlert.id,
-    });
-    setIsEditing(false);
-    setActiveAlert(null);
   };
 
-  const handleDismiss = () => {
+  const handleDismiss = async () => {
     if (!activeAlert) return;
-    if (!activeAlert.id.startsWith("task-") && !activeAlert.id.startsWith("event-")) {
-      dismissMutation.mutate(activeAlert.id);
+    const sourceKey = `${activeAlert.source}:${activeAlert.taskId || activeAlert.eventId || activeAlert.reminderId || activeAlert.id}`;
+
+    const remId = activeAlert.reminderId || (!activeAlert.id.startsWith("task-") && !activeAlert.id.startsWith("event-") ? activeAlert.id : null);
+    if (remId) {
+      try {
+        await dismissMutation.mutateAsync(remId);
+      } catch (err) {
+        console.error("[CallReminderAlerts] Server dismiss error:", err);
+      }
     }
+
     channelRef.current?.postMessage({
       type: "ALERT_DISMISSED",
       id: activeAlert.id,
+      key: sourceKey,
     });
     setIsEditing(false);
     setActiveAlert(null);
   };
 
   const copyPhone = async () => {
-    if (activeAlert.phone) {
+    if (activeAlert?.phone) {
       await externalLinks.dialPhone(activeAlert.phone);
       toast.success("Phone number copied to clipboard");
     }
   };
 
+  if (!activeAlert) return null;
+
   return (
     <Dialog
       open={Boolean(activeAlert)}
       onOpenChange={(open) => {
-        if (!open) {
+        if (!open && !isSaving) {
           setIsEditing(false);
           setActiveAlert(null);
         }
@@ -442,53 +578,67 @@ export function CallReminderAlerts() {
           /* Inline Edit / Reschedule Form */
           <div className="my-2 space-y-3.5 border-t border-b border-border/70 py-3">
             <div className="space-y-1">
-              <label className="text-[11px] font-medium text-foreground">Contact / Client Name</label>
+              <label className="text-[11px] font-medium text-foreground">
+                Contact / Client Name <span className="text-destructive">*</span>
+              </label>
               <input
                 type="text"
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                placeholder="Client Name"
+                disabled={isSaving}
+                className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
               />
             </div>
 
             <div className="space-y-1">
-              <label className="text-[11px] font-medium text-foreground">Phone Number</label>
+              <label className="text-[11px] font-medium text-foreground">
+                Phone Number <span className="text-muted-foreground font-normal">(Optional)</span>
+              </label>
               <input
                 type="text"
                 value={editPhone}
                 onChange={(e) => setEditPhone(e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                placeholder="Optional phone number"
+                disabled={isSaving}
+                className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
               />
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[11px] font-medium text-foreground">Reschedule Date & Time</label>
+              <label className="text-[11px] font-medium text-foreground">
+                Reschedule Date & Time <span className="text-destructive">*</span>
+              </label>
               <input
                 type="datetime-local"
                 value={editSchedule}
                 onChange={(e) => setEditSchedule(e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                disabled={isSaving}
+                className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
               />
               <div className="flex items-center gap-1.5 pt-0.5">
                 <span className="text-[10px] text-muted-foreground">Quick:</span>
                 <button
                   type="button"
+                  disabled={isSaving}
                   onClick={() => applyQuickReschedule(15)}
-                  className="rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] hover:border-primary/50"
+                  className="rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] hover:border-primary/50 disabled:opacity-50"
                 >
                   +15m
                 </button>
                 <button
                   type="button"
+                  disabled={isSaving}
                   onClick={() => applyQuickReschedule(60)}
-                  className="rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] hover:border-primary/50"
+                  className="rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] hover:border-primary/50 disabled:opacity-50"
                 >
                   +1h
                 </button>
                 <button
                   type="button"
+                  disabled={isSaving}
                   onClick={() => applyQuickReschedule(180)}
-                  className="rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] hover:border-primary/50"
+                  className="rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] hover:border-primary/50 disabled:opacity-50"
                 >
                   +3h
                 </button>
@@ -496,13 +646,16 @@ export function CallReminderAlerts() {
             </div>
 
             <div className="space-y-1">
-              <label className="text-[11px] font-medium text-foreground">Notes / Agenda</label>
+              <label className="text-[11px] font-medium text-foreground">
+                Notes / Agenda <span className="text-muted-foreground font-normal">(Optional)</span>
+              </label>
               <textarea
                 value={editNotes}
                 onChange={(e) => setEditNotes(e.target.value)}
                 rows={2}
+                disabled={isSaving}
                 placeholder="What to discuss..."
-                className="w-full rounded-md border border-input bg-background p-2 text-xs text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary"
+                className="w-full rounded-md border border-input bg-background p-2 text-xs text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
               />
             </div>
           </div>
@@ -534,15 +687,31 @@ export function CallReminderAlerts() {
         <DialogFooter className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-between">
           {isEditing ? (
             <div className="flex w-full justify-between items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setIsEditing(false)} className="text-xs">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={isSaving}
+                onClick={() => setIsEditing(false)}
+                className="text-xs"
+              >
                 Back
               </Button>
               <Button
                 size="sm"
                 onClick={handleSaveReschedule}
+                disabled={isSaving}
                 className="gradient-primary text-primary-foreground text-xs shadow-soft"
               >
-                <Check size={14} className="mr-1" /> Save & Reschedule
+                {isSaving ? (
+                  <>
+                    <span className="size-3.5 mr-1.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    Saving…
+                  </>
+                ) : (
+                  <>
+                    <Check size={14} className="mr-1" /> Save Changes
+                  </>
+                )}
               </Button>
             </div>
           ) : (

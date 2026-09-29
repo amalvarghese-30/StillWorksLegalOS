@@ -50,7 +50,18 @@ export function QuickCallDialog({ open, onClose }: QuickCallDialogProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name.trim()) return;
+    if (!form.name.trim()) {
+      return;
+    }
+
+    if (!form.scheduledAt || !form.scheduledAt.trim()) {
+      return;
+    }
+
+    const parsedDate = new Date(form.scheduledAt);
+    if (isNaN(parsedDate.getTime())) {
+      return;
+    }
 
     const payload: CreateTaskPayload = {
       title: `📞 CALL: ${form.name.trim()}`,
@@ -59,7 +70,7 @@ export function QuickCallDialog({ open, onClose }: QuickCallDialogProps) {
       callReminder: {
         clientName: form.name.trim(),
         phone: form.phone.trim(),
-        scheduledAt: form.scheduledAt || new Date().toISOString(),
+        scheduledAt: parsedDate.toISOString(),
         notes: form.note.trim(),
       },
     };

@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { Types } from "mongoose";
 import { CalendarEvent } from "../models/CalendarEvent.js";
+import { Reminder } from "../models/Reminder.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { requireAuth, requireAdminOrPermission } from "../middleware/auth.js";
 import { canAccessCalendarEvent, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
@@ -138,6 +139,19 @@ router.post("/events", async (req: Request, res: Response) => {
       res.status(400).json({ message: "Start date is required" });
       return;
     }
+    const parsedStart = new Date(startStr);
+    if (isNaN(parsedStart.getTime())) {
+      res.status(400).json({ message: "Invalid start date format" });
+      return;
+    }
+    let parsedEnd: Date | undefined = undefined;
+    if (endStr) {
+      parsedEnd = new Date(endStr);
+      if (isNaN(parsedEnd.getTime())) {
+        res.status(400).json({ message: "Invalid end date format" });
+        return;
+      }
+    }
 
     // Validate case access if caseId provided
     if (caseId && req.user!.role !== "admin") {
@@ -158,8 +172,8 @@ router.post("/events", async (req: Request, res: Response) => {
       title: title.trim(),
       description: description ?? "",
       type: type ?? "personal",
-      start: new Date(startStr),
-      end: endStr ? new Date(endStr) : undefined,
+      start: parsedStart,
+      end: parsedEnd,
       allDay: allDay ?? false,
       caseId: caseId ?? null,
       clientId: clientId ?? null,
@@ -167,6 +181,25 @@ router.post("/events", async (req: Request, res: Response) => {
       assignedTo: finalAssignedTo,
       color: color ?? "",
     });
+
+    // Synchronize Reminder document if event is a call_reminder
+    if (event.type === "call_reminder") {
+      const ownerId = (event.assignedTo && event.assignedTo[0]) || event.createdBy || req.userId;
+      try {
+        await Reminder.create({
+          userId: ownerId,
+          sourceType: "event",
+          sourceId: event._id,
+          clientName: event.title.replace(/^📞\s*(CALL:\s*)?/i, "").trim() || event.title,
+          phone: "",
+          notes: event.description || "",
+          scheduledAt: event.start,
+          status: "scheduled",
+        });
+      } catch (remErr) {
+        console.error("[calendar] Failed to create synchronized reminder:", remErr);
+      }
+    }
 
     await AuditLog.create({
       userId: req.userId,
@@ -217,8 +250,22 @@ router.patch("/events/:id", requireResourceAccess("calendarEvent"), async (req: 
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     }
-    if (req.body["start"]) updates["start"] = new Date(req.body["start"]);
-    if (req.body["end"]) updates["end"] = new Date(req.body["end"]);
+    if (req.body["start"]) {
+      const parsedStart = new Date(req.body["start"]);
+      if (isNaN(parsedStart.getTime())) {
+        res.status(400).json({ message: "Invalid start date format" });
+        return;
+      }
+      updates["start"] = parsedStart;
+    }
+    if (req.body["end"]) {
+      const parsedEnd = new Date(req.body["end"]);
+      if (isNaN(parsedEnd.getTime())) {
+        res.status(400).json({ message: "Invalid end date format" });
+        return;
+      }
+      updates["end"] = parsedEnd;
+    }
 
     // Non-admins cannot reassign to others
     if (req.user!.role !== "admin" && updates["assignedTo"]) {
@@ -249,6 +296,34 @@ router.patch("/events/:id", requireResourceAccess("calendarEvent"), async (req: 
       return;
     }
 
+    // Synchronize Reminder document if event is a call_reminder
+    if (event.type === "call_reminder") {
+      const ownerId = (event.assignedTo && event.assignedTo[0]) || event.createdBy || req.userId;
+      try {
+        await Reminder.findOneAndUpdate(
+          { sourceType: "event", sourceId: event._id },
+          {
+            $set: {
+              userId: ownerId,
+              clientName: event.title.replace(/^📞\s*(CALL:\s*)?/i, "").trim() || event.title,
+              notes: event.description || "",
+              scheduledAt: event.start,
+              status: "scheduled",
+            },
+            $setOnInsert: {
+              sourceType: "event",
+              sourceId: event._id,
+              phone: "",
+              createdAt: new Date(),
+            },
+          },
+          { upsert: true, new: true }
+        );
+      } catch (remErr) {
+        console.error("[calendar] Failed to update synchronized reminder:", remErr);
+      }
+    }
+
     await AuditLog.create({
       userId: req.userId,
       userName: req.user?.name ?? "Unknown",
@@ -277,6 +352,13 @@ router.delete("/events/:id", requireResourceAccess("calendarEvent"), async (req:
     if (!event) {
       res.status(404).json({ message: "Event not found" });
       return;
+    }
+
+    // Clean up associated reminders atomically
+    try {
+      await Reminder.deleteMany({ sourceType: "event", sourceId: event._id });
+    } catch (remErr) {
+      console.error("[calendar] Failed to delete synchronized reminder on event delete:", remErr);
     }
 
     await AuditLog.create({
