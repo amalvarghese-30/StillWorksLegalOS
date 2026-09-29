@@ -21,6 +21,7 @@
     "preview": "vite preview",
     "dist": "npm run build:client && electron-builder --config electron-builder.json",
     "release:verify": "node scripts/release-verify.cjs",
+    "smoke:test": "node scripts/smoke-test.cjs",
     "lint": "eslint .",
     "format": "prettier --write .",
     "postinstall": "cd server && npm install"

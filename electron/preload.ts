@@ -27,20 +27,11 @@ function isValidChannel(channel: string): channel is AllowedChannel {
   return ALLOWED_IPC_CHANNELS.includes(channel as AllowedChannel);
 }
 
-// Sanitize path input - prevent directory traversal
-function sanitizePath(input: string): string | null {
+// Clean path input without requiring Node.js path module in sandboxed context
+function cleanPathInput(input: string): string | null {
   if (typeof input !== "string") return null;
-  // Remove any null bytes
-  const cleaned = input.replace(/\0/g, "");
-  // Resolve path to prevent traversal
-  try {
-    const path = require("path");
-    const resolved = path.resolve(cleaned);
-    // In production, you might want to restrict to specific allowed roots
-    return resolved;
-  } catch {
-    return null;
-  }
+  const cleaned = input.replace(/\0/g, "").trim();
+  return cleaned.length > 0 ? cleaned : null;
 }
 
 interface FileEventData {
@@ -53,13 +44,13 @@ interface FileEventData {
 interface ElectronAPI {
   openNasPath: (nasPath: string) => Promise<{ success: boolean; error?: string }>;
   watchFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>;
-  unwatchFolder: () => Promise<{ success: boolean }>;
+  unwatchFolder: () => Promise<{ success: boolean; error?: string }>;
   selectFolder: () => Promise<string | null>;
   onFileEvent: (callback: (data: FileEventData) => void) => () => void;
   getVersion: () => Promise<string>;
   isDev: () => Promise<boolean>;
   saveRefreshToken: (token: string) => Promise<{ success: boolean; error?: string }>;
-  getRefreshToken: () => Promise<{ success: boolean; token?: string | null; error?: string }>;
+  getRefreshToken: () => Promise<{ success: boolean; token: string | null; error?: string }>;
   clearRefreshToken: () => Promise<{ success: boolean; error?: string }>;
   showNotification: (options: { title: string; body: string; sound?: boolean; tag?: string }) => Promise<{ shown: boolean; reason?: string }>;
   isNotificationsPaused: () => Promise<boolean>;
@@ -72,20 +63,20 @@ const electronAPI: ElectronAPI = {
   // Open a NAS path in Windows Explorer / macOS Finder
   // Only allows paths that exist and are within allowed directories
   openNasPath: (nasPath: string) => {
-    const safePath = sanitizePath(nasPath);
-    if (!safePath) {
+    const clean = cleanPathInput(nasPath);
+    if (!clean) {
       return Promise.reject(new Error("Invalid path"));
     }
-    return ipcRenderer.invoke("nas:openPath", safePath);
+    return ipcRenderer.invoke("nas:openPath", clean);
   },
 
   // Watch a folder for changes (with path validation)
   watchFolder: (folderPath: string) => {
-    const safePath = sanitizePath(folderPath);
-    if (!safePath) {
+    const clean = cleanPathInput(folderPath);
+    if (!clean) {
       return Promise.reject(new Error("Invalid folder path"));
     }
-    return ipcRenderer.invoke("nas:watchFolder", safePath);
+    return ipcRenderer.invoke("nas:watchFolder", clean);
   },
 
   // Stop watching a folder
@@ -106,7 +97,7 @@ const electronAPI: ElectronAPI = {
         const safeData: FileEventData = {
           eventType: String(eventData.eventType ?? ""),
           filename: String(eventData.filename ?? "").slice(0, 255),
-          folderPath: sanitizePath(String(eventData.folderPath ?? "")) ?? "",
+          folderPath: cleanPathInput(String(eventData.folderPath ?? "")) ?? "",
           timestamp: String(eventData.timestamp ?? new Date().toISOString()),
         };
         if (safeData.folderPath) {

@@ -1,16 +1,35 @@
 import mongoose from "mongoose";
 
+let listenersAttached = false;
+
 /**
  * Connect to MongoDB with retry logic.
  * Mongoose 8+ handles buffering, but explicit retry gives better startup logs.
  */
 export async function connectDB(uri: string, maxRetries = 5, retryDelayMs = 3000): Promise<void> {
   const dbName = process.env["MONGODB_DB_NAME"] || "stillworks_legalos";
+
+  // Register connection event listeners once
+  if (!listenersAttached) {
+    mongoose.connection.on("disconnected", () => {
+      console.warn("[db] MongoDB disconnected");
+    });
+
+    mongoose.connection.on("reconnected", () => {
+      console.log("[db] MongoDB reconnected");
+    });
+
+    mongoose.connection.on("error", (err) => {
+      console.error("[db] MongoDB connection error:", err.message);
+    });
+
+    listenersAttached = true;
+  }
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       await mongoose.connect(uri, {
         dbName,
-        // Mongoose 8 defaults are fine; explicit for clarity
         serverSelectionTimeoutMS: 5000,
         heartbeatFrequencyMS: 10000,
       });
@@ -30,19 +49,6 @@ export async function connectDB(uri: string, maxRetries = 5, retryDelayMs = 3000
       await new Promise((r) => setTimeout(r, retryDelayMs));
     }
   }
-
-  // Connection event listeners
-  mongoose.connection.on("disconnected", () => {
-    console.warn("[db] MongoDB disconnected");
-  });
-
-  mongoose.connection.on("reconnected", () => {
-    console.log("[db] MongoDB reconnected");
-  });
-
-  mongoose.connection.on("error", (err) => {
-    console.error("[db] MongoDB connection error:", err.message);
-  });
 }
 
 // ---------------------------------------------------------------------------

@@ -1,15 +1,15 @@
-# StillWorks LegalOS — Production Hardening & Release Verification Report
+# StillWorks LegalOS — Final Production Hardening & Release Verification Report
 
 **Firm:** S & S Associates Legal-Tech LLP  
 **Repository:** `amalvarghese-30/StillWorksLegalOS`  
 **Targets:** Hosted Web Application (`https://legalos.stillworks.in`) & Windows Desktop EXE (`S & S Legal-Tech LLP Setup 1.0.0.exe`)  
-**Status:** **RELEASE-READY (Zero Regressions, 68/68 Automated Tests Passing)**
+**Status:** **RELEASE-READY & SIGNED-OFF (Zero Regressions, 87/87 Automated Tests Passing, 9/9 Smoke Tests Passing)**
 
 ---
 
 ## Executive Summary
 
-This hardening release systematically resolves all P0, P1, and P2 production blockers across the web application and Windows desktop client for StillWorks LegalOS. The platform preserves unified backend authoritative models, zero schema drift, strict non-blocking Electron adapters, and complete security isolation between web renderer, desktop renderer, and backend services.
+This final remediation pass systematically audits, hardens, and verifies all production release gates across both **Web** and **Windows Desktop Electron** clients for StillWorks LegalOS. The platform preserves unified backend authoritative models, zero schema drift, strict non-blocking Electron adapters, and complete security isolation between web renderer, desktop renderer, and backend services.
 
 No two-factor authentication (2FA) was introduced; user authentication flows remain fast, single-step, and strictly compliant with law firm operations.
 
@@ -17,67 +17,47 @@ No two-factor authentication (2FA) was introduced; user authentication flows rem
 
 ## Remediation & Hardening Matrix
 
-### 1. Authentication & Session Lifecycles
+### 1. Reminders Authoritative Architecture & State Machine
 
 | Area | Root Cause | Implementation / Remediation | Verification |
 | :--- | :--- | :--- | :--- |
-| **Logout & Inactivity Ordering** | Session cleanup cleared local state before sending logout request or relied on `apiFetch` which triggered recursive token refreshes. | Implemented standalone `performServerLogout(token)` with strict 4s abort timeout and bypassed token refreshes. `signOut` and `handleTimeout` invoke server revocation first before purging local credentials in guaranteed `finally` blocks. | `AUTH-006` (Logout returns 200), `AUTH-007` (Session marked `isRevoked:true`), `AUTH-008` (Old token yields 401 on protected endpoints). |
-| **Electron Remember Me Semantics** | In Electron, refresh tokens were indiscriminately persisted to `safeStorage` regardless of the user's "Remember Me" checkbox selection. | Updated `persistTokens`: When `rememberMe === false`, refresh token is kept in memory (`sessionRefreshToken`) for session rotation and erased from OS `safeStorage`. Stored tokens are loaded on startup only when `rememberMe === true`. | Tested in `src/services/api.ts` & `src/lib/auth.tsx`. |
-| **Password Reset OTP Delivery** | OTP was logged to console with no actual outbound delivery mechanism, or masked failure by returning fake success. | Implemented `StandardPasswordResetDeliveryProvider` (`server/src/services/passwordResetDelivery.ts`) supporting HTTP webhook/email delivery (`OTP_DELIVERY_WEBHOOK_URL`). If delivery fails, stored OTP is revoked and 500 is returned. Added testing capture buffer `deliveredOtpsForTesting`. | `AUTH-009` (forgot-password), `AUTH-010` (real OTP dispatched), `AUTH-011` (invalid OTP rejected), `AUTH-012` (reset succeeds), `AUTH-013` (old password rejected), `AUTH-014` (new password works). |
-| **Production Setup Password Masking** | `server/src/scripts/production-setup.ts` had dummy `promptHidden` that echoed cleartext passwords on the terminal. | Implemented raw-mode keystroke masking via `process.stdin.setRawMode(true)` rendering `*` asterisks with backspace and Ctrl+C interrupt handling. Falls back gracefully when non-TTY. | Validated in `server/src/scripts/production-setup.ts`. |
+| **Client-Side 404 Resiliency** | Frontend polling of `/api/reminders/due` spammed console with 404s when endpoint was temporarily unmounted. | Replaced mutable module-level state with React Query graceful degradation. Returns `{ reminders: [] }` on 404, throttles polling to 60s without UI crashes, and automatically resumes 15s intervals once available. | Verified in `src/services/reminders.ts`. |
+| **Reminder State Machine** | Terminal states (`completed`, `dismissed`, `cancelled`) could be transitioned back to active states or snoozed, leading to orphaned notifications. | Enforced explicit state transitions with `VALID_TRANSITIONS` table. Attempts to snooze, acknowledge, complete, or dismiss already terminal reminders immediately reject with **409 Conflict**. | `REM-STM-001` (Snooze rejected with 409), `REM-STM-002` (Acknowledge rejected with 409). |
+| **Rescheduling & Metadata Updates** | Rescheduling a completed reminder revived stale tasks. Updating notes/client name accidentally overwrote or reset reminder status. | In `PATCH /api/reminders/:id`: Rejects rescheduling terminal reminders with 409 Conflict. When updating metadata without `scheduledAt`, `status` is strictly preserved. | `REM-STM-003` (Reschedule 409), `REM-STM-004` to `REM-STM-006` (Metadata update preserves status). |
+| **Scheduler Concurrency & Testability** | `checkDueReminders` was an internal unexported timer loop, preventing direct clock-mocked testing. | Extracted `processDueReminders(io?, referenceTime?)` returning claimed count. Leverages atomic `findOneAndUpdate` with unique `deliveryId` for single-execution guarantees across worker instances. | `REM-024` (Atomic concurrency claim), `REM-SCHED-001` to `REM-SCHED-003` (Clock simulation claim). |
 
 ---
 
-### 2. Autoritative Reminders & Synchronization
+### 2. Document Security & Cryptographic Integrity
 
 | Area | Root Cause | Implementation / Remediation | Verification |
 | :--- | :--- | :--- | :--- |
-| **Scheduler Multi-Instance Claim** | Reminder scheduler queried due reminders and looped with sequential `.save()`, allowing race conditions and duplicate alerts across server instances. | Converted claim logic to atomic `findOneAndUpdate` with matching status (`scheduled` / `snoozed`) and due conditions (`scheduledAt` or `snoozedUntil` in the past), immediately setting status to `notified`. Only the winning worker emits Socket.IO events and sends notifications. | `REM-024` (Atomic concurrency test with 5 competing workers: exactly 1 worker claims). |
-| **Reminder Snooze & Complete** | Frontend snooze and complete actions required persistent database state and task synchronization. | Added explicit handlers for `POST /api/reminders/:id/snooze` and `POST /api/reminders/:id/complete` updating DB fields (`snoozedUntil`, `completedAt`) and synchronizing linked tasks. | `REM-018` to `REM-023` in backend test suite. |
-| **Calendar Event Synchronization** | Calendar events of type `call_reminder` needed automatic reflection in authoritative Reminder collections. | Synchronized creation, updates, and deletion between `CalendarEvent` and `Reminder` documents. | `REM-025` to `REM-028` in test suite. |
+| **Path Traversal / PATCH Injection** | `PATCH /api/documents/:id` allowed updating `"nasPath"` and `"nasFolder"`, allowing client path manipulation. | Stripped `"nasPath"` and `"nasFolder"` from the allowed patch fields. Only `"name"` and `"state"` are permissible updates. | `DOC-SEC-001` to `DOC-SEC-003` (Client cannot modify `nasPath`). |
+| **File Integrity Verification** | `POST /api/documents/:id/verify` returned a dummy message advising client-side verification. | Implemented server-side streaming SHA-256 byte hashing on `downloadStream(document.nasPath)`. Updates `FileIntegrity` collection with audit trail and reports `"verified"`, `"tampered"`, or `"missing"`. | `DOC-INT-001` to `DOC-INT-004` (Verification returns real hash and status). |
 
 ---
 
-### 3. Web Application Security & Production Readiness
+### 3. Desktop Electron Hardening & IPC Security
 
 | Area | Root Cause | Implementation / Remediation | Verification |
 | :--- | :--- | :--- | :--- |
-| **Content Security Policy** | Missing Helmet CSP configuration left web endpoints vulnerable to unauthorized inline scripts or injection. | Configured Helmet CSP with strict directives: `default-src 'self'`, `font-src https://fonts.gstatic.com`, `img-src 'self' data: blob: https:`, `connect-src 'self' https: wss:`, and `frame-ancestors 'none'`. | Verified in `server/src/index.ts`. |
-| **Database Fail-Fast** | Server would start up against localhost MongoDB even when `NODE_ENV === "production"`. | Enforced fail-fast startup: if `NODE_ENV === "production"`, `MONGODB_URI` is validated to ensure it points to an external cloud database cluster (rejecting `localhost` and `127.0.0.1`). | Startup gate in `server/src/index.ts`. |
-| **Safe Release Health Metadata** | `/api/health` lacked build and service health confirmation. | Enhanced `/api/health` to return `status`, `version`, `commit`, database connectivity state, and scheduler status. | Endpoint verified. |
+| **Sandbox Preload Node Contamination** | `electron/preload.ts` invoked `require("path")`, throwing `module not found` errors in sandboxed context. | Removed all Node.js imports from preload. Sanitized inputs with pure string primitives (`cleanPathInput`). All canonical path resolution is delegated strictly to the Node.js main process. | Built and validated via `scripts/build-preload.cjs` and smoke test suite. |
+| **Token Contract Parity** | `safeStorage` read returned raw string while frontend expected `{ success: boolean, token?: string }`. | Aligned `auth:saveRefreshToken`, `auth:getRefreshToken`, and `auth:clearRefreshToken` to return uniform `{ success: boolean, token?: string, error?: string }` objects. | Fully typed and verified across `main.ts`, `preload.ts`, and `src/services/api.ts`. |
+| **4-Level IPC Sender Validation** | IPC handlers performed basic URL origin checks. | Upgraded to 4-level validation: (1) sender exists, (2) sender matches `mainWindow.webContents`, (3) sender is top-level main frame (`senderFrame.parent === null`), (4) URL matches packaged `file:`/`app:` or dev server localhost. | Enforced on all IPC channels in `electron/main.ts`. |
 
 ---
 
-### 4. Windows Desktop EXE & Electron Security
+### 4. Real-Time Socket Presence & Truthful Health
 
 | Area | Root Cause | Implementation / Remediation | Verification |
 | :--- | :--- | :--- | :--- |
-| **Preload Script Dual Drift** | Repository had separate `electron/preload.ts` and `electron/preload.cjs` with divergent APIs. | Removed duplicate `electron/preload.cjs`. Established `electron/preload.ts` as the single authoritative source, built into `dist-electron/preload.cjs` via `scripts/build-preload.cjs` using Vite. | `npm run electron:build` compiles preload cleanly in ~190ms. |
-| **IPC Sender Validation** | IPC handlers executed privileged OS functions (NAS traversal, credential store, dialogs) without origin checks. | Implemented `validateIpcSender(event)` on all 14 IPC handlers, validating sender frame origin against dev servers or packaged app (`file://`/`app://`). | Enforced across all IPC channels in `electron/main.ts`. |
-| **Navigation & Popups** | Redundant `setWindowOpenHandler` calls caused inconsistent external link handling. | Unified into a single handler that validates protocols (`https:`, `http:`, `mailto:`, `tel:`) and delegates exclusively to system browser via `shell.openExternal`. All renderer popup requests denied (`deny`). | Tested in `electron/main.ts`. |
-| **Permission Request Boundaries** | Microphone and notification permissions were not restricted via explicit session handlers. | Added `session.defaultSession.setPermissionRequestHandler` strictly granting `"media"` and `"notifications"` only to authorized app origins. | Configured in `electron/main.ts`. |
-| **Tray & Background Persistence** | Closing the window on Windows terminated the process, breaking desktop reminder toasts. | Implemented `isQuitting` state: window `close` event intercepts and hides the window (`win.hide()`) unless the user explicitly selects "Quit LegalOS" from the system tray menu. | Verified in `electron/main.ts`. |
-| **Phone Dialing Return Value** | `src/platform/externalLinks.ts` line 125 returned `{ success: opened || true }`, falsely reporting success when the dialer failed. | Changed to `return { success: opened, copiedToClipboard: copied, error: openError };`. | Verified in `src/platform/externalLinks.ts`. |
+| **Multi-Session Presence Flapping** | Closing one browser tab immediately broadcast `user:offline`, marking the user offline even if other tabs or the desktop EXE were open. | Implemented `activeSocketsPerUser = new Map<string, Set<string>>()`. Status is marked online on first connection, and offline only when all sockets for that user disconnect. | Implemented in `server/src/index.ts`. |
+| **Socket Telemetry Spoofing** | In `activity` socket event, `...data` was spread after `userId`, allowing client payloads to forge user identity. | Reordered payload to place `userId: socket.data.userId` after the spread, guaranteeing authoritative identity. | Implemented in `server/src/index.ts`. |
+| **Truthful Health & Readiness** | `/api/health` hardcoded database as `"connected"`. Lacked dedicated readiness probe for deployment orchestrators. | `/api/health` reports true MongoDB `readyState` (`ok` vs `degraded`). Added `/api/ready` returning HTTP 200 when DB is connected, or HTTP 503 when disconnected. | `HEALTH-READY-001` to `HEALTH-READY-003` in test suite; verified in smoke tests. |
 
 ---
 
-### 5. Windows Code Signing & Release Verification
-
-1. **Windows Authenticode Signing Configuration (`electron-builder.json`):**
-   - Configured `signingHashAlgorithms: ["sha256"]`.
-   - Automatic integration with standard CI environment variables (`CSC_LINK`, `WIN_CSC_LINK`, `CSC_KEY_PASSWORD`).
-
-2. **Automated Release Verification Pipeline (`npm run release:verify`):**
-   - Step 1: Runs 68/68 backend integration and security tests.
-   - Step 2: Compiles backend server (`tsc`).
-   - Step 3: Compiles Web SPA (`vite build`).
-   - Step 4: Compiles Electron desktop artifacts (`tsc -p electron/tsconfig.json` & `scripts/build-preload.cjs`).
-   - Step 5: Validates required release files (`dist/index.html`, `dist-electron/main.js`, `dist-electron/preload.cjs`, `server/dist/index.js`).
-   - Step 6: Scans bundles for accidental secret leaks.
-
----
-
-## Test Matrix Execution Summary
+## Test Execution Summary (87/87 Automated Tests Passing)
 
 ```text
 ==================================================
@@ -172,15 +152,72 @@ Suite: Reminders Lifecycle, Snooze, Complete, Atomic Claim & Calendar Sync
   ✓ REM-027: Calendar event deleted successfully
   ✓ REM-028: Synchronized Reminder deleted on calendar event deletion
 
+Suite 11: Reminder State Machine & Concurrency
+  ✓ REM-STM-001: Snoozing a completed reminder returns 409 Conflict
+  ✓ REM-STM-002: Acknowledging a completed reminder returns 409 Conflict
+  ✓ REM-STM-003: Rescheduling a completed reminder returns 409 Conflict
+  ✓ REM-STM-004: Updating notes returns 200
+  ✓ REM-STM-005: Notes updated in DB
+  ✓ REM-STM-006: Status remained 'acknowledged' after metadata update
+  ✓ REM-SCHED-001: processDueReminders claimed at least 1 due reminder
+  ✓ REM-SCHED-002: Due reminder status transitioned to 'triggered'
+  ✓ REM-SCHED-003: Delivery ID attached to claimed reminder
+
+Suite 12: Health & Readiness Endpoints
+  ✓ HEALTH-READY-001: GET /api/ready returns 200 when connected to DB
+  ✓ HEALTH-READY-002: Response reports ready: true
+  ✓ HEALTH-READY-003: Response reports database: connected
+
+Suite 13: Document Security & Integrity
+  ✓ DOC-SEC-001: PATCH /api/documents/:id returns 200 for valid name update
+  ✓ DOC-SEC-002: Document name was updated
+  ✓ DOC-SEC-003: nasPath was NOT modified by client PATCH
+  ✓ DOC-INT-001: POST /api/documents/:id/verify returns 200
+  ✓ DOC-INT-002: Response has documentId
+  ✓ DOC-INT-003: Response has expectedHash
+  ✓ DOC-INT-004: Status is valid integrity state
+
 ========================================
-Total: 68 | Passed: 68 | Failed: 0
+Total: 87 | Passed: 87 | Failed: 0
 ========================================
 ```
 
 ---
 
-## Production Verification & Deployment Readiness
+## Automated Smoke Test Results (9/9 Passing)
 
-- **Web Target:** Fully compliant with HTTPS, WSS, Helmet CSP headers, and centralized cloud backend connectivity.
-- **Windows EXE Target:** Electron sandbox active, context isolation active, single-source preload, safeStorage OS-level credential vault, IPC sender validation, system tray background persistence, and Authenticode SHA-256 signing support.
-- **Backend Target:** Zero schema drift, atomic claim concurrency, fail-fast production database validation, real OTP delivery dispatch, and clean session lifecycle ordering.
+```text
+==================================================
+  STILLWORKS LEGALOS — SMOKE TEST SUITE
+  Target: http://localhost:3001
+==================================================
+
+[Suite 1] API Health & Readiness Checks
+  ✓ GET /api/health returned 200 OK
+  ✓ GET /api/ready returned 200 Ready
+  ✓ GET /api/reminders/health returned 200 OK
+
+[Suite 2] Authorization & Security Gates
+  ✓ GET /api/reminders/due correctly rejects unauthenticated requests with 401
+  ✓ GET /api/cases correctly rejects unauthenticated requests with 401
+  ✓ POST /api/auth/login rejects invalid credentials with 401
+
+[Suite 3] Electron Sandboxed Preload & Contract Audit
+  ✓ dist-electron/preload.cjs has NO forbidden require('path') calls
+  ✓ dist-electron/preload.cjs properly exposes electronAPI with auth token contract
+
+[Suite 4] Web Client Distribution Audit
+  ✓ dist/index.html is intact with root mount and asset references
+
+==================================================
+Smoke Test Results: 9 Passed, 0 Failed
+==================================================
+```
+
+---
+
+## Release Verification Sign-Off
+
+- [x] **Web Application:** Production-built, tested, CSP-isolated, zero unauthenticated route leakage.
+- [x] **Windows Desktop EXE:** Sandboxed preload, OS-level `safeStorage` token contract, 4-level IPC sender assertion, tray background persistence.
+- [x] **Backend Services:** 87 automated integration tests passing, state machine transitions strictly validated (409 Conflict), truthful health & readiness probes active, zero hardcoded credentials detected in distribution builds.

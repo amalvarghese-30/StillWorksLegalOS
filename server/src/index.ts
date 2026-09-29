@@ -8,6 +8,7 @@ import dotenv from "dotenv";
 import path from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import mongoose from "mongoose";
 import { connectDB } from "./db.js";
 import authRoutes from "./routes/auth.js";
 import clientsRoutes from "./routes/clients.js";
@@ -261,8 +262,9 @@ app.use("/api/documents", documentLimiter);
 
 // Health check (no auth, no rate limit)
 app.get("/api/health", (_req, res) => {
+  const isDbConnected = mongoose.connection.readyState === 1;
   res.json({
-    status: "ok",
+    status: isDbConnected ? "ok" : "degraded",
     version: process.env["npm_package_version"] || "1.0.0",
     commit: process.env["GIT_COMMIT_SHA"] || process.env["RENDER_GIT_COMMIT"] || "production-main",
     uptime: process.uptime(),
@@ -270,9 +272,19 @@ app.get("/api/health", (_req, res) => {
     services: {
       reminders: "active",
       socket: "active",
-      database: "connected",
+      database: isDbConnected ? "connected" : "disconnected",
     },
   });
+});
+
+// Readiness check (no auth, no rate limit) — returns 200 if ready, 503 if not ready
+app.get("/api/ready", (_req, res) => {
+  const isDbConnected = mongoose.connection.readyState === 1;
+  if (isDbConnected) {
+    res.json({ ready: true, database: "connected" });
+  } else {
+    res.status(503).json({ ready: false, database: "disconnected" });
+  }
 });
 
 // Routes
@@ -430,27 +442,44 @@ function allowSocketEvent(userId: string, limit: number, windowMs: number): bool
   return true;
 }
 
+// Multi-session tracking for socket presence
+const activeSocketsPerUser = new Map<string, Set<string>>();
+
 io.on("connection", (socket) => {
   console.log(`[socket] connected: ${socket.id} (${socket.data.userId})`);
 
-  // Resolve the user's display name once (used for typing indicators) and
-  // persist presence so the chat UI can show "online / last seen" correctly.
-  User.findById(socket.data.userId)
-    .select("name")
-    .then((user) => {
-      socket.data.userName = user?.name ?? "Unknown";
-      return User.updateOne(
-        { _id: socket.data.userId },
-        { status: "online" },
-      );
-    })
-    .catch((err) => console.error("[socket] presence init error:", err));
+  const userId = socket.data.userId;
+  if (userId) {
+    const userSockets = activeSocketsPerUser.get(userId) ?? new Set<string>();
+    userSockets.add(socket.id);
+    activeSocketsPerUser.set(userId, userSockets);
 
-  // Broadcast online status to others
-  socket.broadcast.emit("user:online", {
-    userId: socket.data.userId,
-    status: "online",
-  });
+    // Only update DB and broadcast online when this is the user's first active socket
+    if (userSockets.size === 1) {
+      User.findById(userId)
+        .select("name")
+        .then((user) => {
+          socket.data.userName = user?.name ?? "Unknown";
+          return User.updateOne(
+            { _id: userId },
+            { status: "online" },
+          );
+        })
+        .catch((err) => console.error("[socket] presence init error:", err));
+
+      socket.broadcast.emit("user:online", {
+        userId,
+        status: "online",
+      });
+    } else {
+      User.findById(userId)
+        .select("name")
+        .then((user) => {
+          socket.data.userName = user?.name ?? "Unknown";
+        })
+        .catch(() => {});
+    }
+  }
 
   // Join/leave chat rooms WITH authorization check
   socket.on("chat:join", async (roomId: string) => {
@@ -493,12 +522,12 @@ io.on("connection", (socket) => {
   // The socket only broadcasts real-time events (typing, presence, deletes,
   // reactions) so there is a single source of truth for message persistence.
 
-  // Live activity telemetry
+  // Live activity telemetry (place userId after spread to prevent spoofing)
   socket.on("activity", (data: { action: string; resourceId?: string }) => {
     if (socket.data.userId && allowSocketEvent(socket.data.userId, 20, 60_000)) {
       io.to("admin:live-feed").emit("activity:event", {
-        userId: socket.data.userId,
         ...data,
+        userId: socket.data.userId,
         timestamp: new Date().toISOString(),
       });
     }
@@ -597,17 +626,25 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    if (socket.data.userId) {
-      // Persist offline presence + last seen timestamp
-      User.updateOne(
-        { _id: socket.data.userId },
-        { status: "offline", lastActiveAt: new Date() },
-      ).catch((err) => console.error("[socket] presence clear error:", err));
+    const userId = socket.data.userId;
+    if (userId) {
+      const userSockets = activeSocketsPerUser.get(userId);
+      if (userSockets) {
+        userSockets.delete(socket.id);
+        if (userSockets.size === 0) {
+          activeSocketsPerUser.delete(userId);
+          // Only persist offline status and broadcast when all sessions for this user are disconnected
+          User.updateOne(
+            { _id: userId },
+            { status: "offline", lastActiveAt: new Date() },
+          ).catch((err) => console.error("[socket] presence clear error:", err));
 
-      socket.broadcast.emit("user:offline", {
-        userId: socket.data.userId,
-        status: "offline",
-      });
+          socket.broadcast.emit("user:offline", {
+            userId,
+            status: "offline",
+          });
+        }
+      }
     }
     console.log(`[socket] disconnected: ${socket.id} (${socket.data.userId})`);
   });

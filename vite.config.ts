@@ -1,57 +1,70 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
 import path from "node:path";
 
-export default defineConfig({
-  plugins: [TanStackRouterVite(), tailwindcss(), react()],
-  resolve: {
-    alias: {
-      "@": path.resolve(import.meta.dirname, "src"),
-    },
-  },
-  server: {
-    host: true,
-    port: 5174,
-    strictPort: true,
-    cors: true,
-    proxy: {
-      "/api": {
-        target: "https://legalos.stillworks.in",
-        changeOrigin: true,
-        secure: true,
-        headers: {
-          origin: "https://legalos.stillworks.in",
-          referer: "https://legalos.stillworks.in/",
-        },
-        configure: (proxy) => {
-          proxy.on("proxyReq", (proxyReq) => {
-            proxyReq.setHeader("origin", "https://legalos.stillworks.in");
-            proxyReq.setHeader("referer", "https://legalos.stillworks.in/");
-          });
-        },
-      },
-      "/socket.io": {
-        target: "https://legalos.stillworks.in",
-        ws: true,
-        changeOrigin: true,
-        headers: {
-          origin: "https://legalos.stillworks.in",
-          referer: "https://legalos.stillworks.in/",
-        },
-        configure: (proxy) => {
-          proxy.on("proxyReq", (proxyReq) => {
-            proxyReq.setHeader("origin", "https://legalos.stillworks.in");
-            proxyReq.setHeader("referer", "https://legalos.stillworks.in/");
-          });
-        },
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), "");
+  const apiTarget = env.VITE_API_PROXY_TARGET || "http://localhost:3001";
+  const isCloudProxy = apiTarget.startsWith("https://");
+
+  return {
+    plugins: [TanStackRouterVite(), tailwindcss(), react()],
+    resolve: {
+      alias: {
+        "@": path.resolve(import.meta.dirname, "src"),
       },
     },
-    watch: {
-      ignored: ["**/*.zip", "**/dist-electron.zip", "**/release/**", "**/dist-electron/**", "**/dist/**"],
+    server: {
+      host: true,
+      port: 5174,
+      strictPort: true,
+      cors: true,
+      proxy: {
+        "/api": {
+          target: apiTarget,
+          changeOrigin: true,
+          secure: isCloudProxy,
+          ...(isCloudProxy
+            ? {
+                headers: {
+                  origin: apiTarget,
+                  referer: `${apiTarget}/`,
+                },
+                configure: (proxy: any) => {
+                  proxy.on("proxyReq", (proxyReq: any) => {
+                    proxyReq.setHeader("origin", apiTarget);
+                    proxyReq.setHeader("referer", `${apiTarget}/`);
+                  });
+                },
+              }
+            : {}),
+        },
+        "/socket.io": {
+          target: apiTarget,
+          ws: true,
+          changeOrigin: true,
+          ...(isCloudProxy
+            ? {
+                headers: {
+                  origin: apiTarget,
+                  referer: `${apiTarget}/`,
+                },
+                configure: (proxy: any) => {
+                  proxy.on("proxyReq", (proxyReq: any) => {
+                    proxyReq.setHeader("origin", apiTarget);
+                    proxyReq.setHeader("referer", `${apiTarget}/`);
+                  });
+                },
+              }
+            : {}),
+        },
+      },
+      watch: {
+        ignored: ["**/*.zip", "**/dist-electron.zip", "**/release/**", "**/dist-electron/**", "**/dist/**"],
+      },
     },
-  },
   build: {
     outDir: "dist",
     emptyOutDir: true,
@@ -102,4 +115,5 @@ export default defineConfig({
     },
   },
   base: "./",
+};
 });

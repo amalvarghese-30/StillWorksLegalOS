@@ -29,11 +29,24 @@ const { default: casesRoutes } = await import("../routes/cases.js");
 const { default: clientsRoutes } = await import("../routes/clients.js");
 const { default: tasksRoutes } = await import("../routes/tasks.js");
 const { default: remindersRoutes } = await import("../routes/reminders.js");
+const { default: documentsRoutes } = await import("../routes/documents.js");
+const { DocumentModel } = await import("../models/Document.js");
+const { processDueReminders } = await import("../services/reminderScheduler.js");
 
 function buildApp() {
   const app = express();
   app.use(express.json());
   app.set("io", null);
+
+  app.get("/api/ready", (_req, res) => {
+    const isDbConnected = mongoose.connection.readyState === 1;
+    if (isDbConnected) {
+      res.json({ ready: true, database: "connected" });
+    } else {
+      res.status(503).json({ ready: false, database: "disconnected" });
+    }
+  });
+
   app.use("/api/admin", adminRoutes);
   app.use("/api/auth", authRoutes);
   app.use("/api/calendar", calendarRoutes);
@@ -41,6 +54,7 @@ function buildApp() {
   app.use("/api/clients", clientsRoutes);
   app.use("/api/tasks", tasksRoutes);
   app.use("/api/reminders", remindersRoutes);
+  app.use("/api/documents", documentsRoutes);
   return app;
 }
 
@@ -668,6 +682,130 @@ async function run() {
     assert(delCalEventRes.status === 200, "REM-027: Calendar event deleted successfully");
     const calReminderAfterDelete = await Reminder.findOne({ sourceType: "event", sourceId: createdEventId });
     assert(!calReminderAfterDelete, "REM-028: Synchronized Reminder deleted on calendar event deletion");
+
+    // =========================================================================
+    // Test suite 11: Reminder State Machine (409 Conflict) & Metadata Updates
+    // =========================================================================
+    console.log("\n--- Suite 11: Reminder State Machine & Concurrency ---");
+    const stmReminder = await Reminder.create({
+      userId: remUser._id,
+      sourceType: "custom",
+      clientName: "State Machine Client",
+      scheduledAt: new Date(),
+      status: "completed",
+    });
+
+    // REM-STM-001: Cannot snooze a completed reminder -> 409 Conflict
+    const snoozeConflictRes = await request(app)
+      .post(`/api/reminders/${stmReminder._id}/snooze`)
+      .set("Authorization", `Bearer ${remToken}`)
+      .send({ minutes: 10 });
+    assert(snoozeConflictRes.status === 409, "REM-STM-001: Snoozing a completed reminder returns 409 Conflict");
+
+    // REM-STM-002: Cannot acknowledge a completed reminder -> 409 Conflict
+    const ackConflictRes = await request(app)
+      .post(`/api/reminders/${stmReminder._id}/acknowledge`)
+      .set("Authorization", `Bearer ${remToken}`)
+      .send();
+    assert(ackConflictRes.status === 409, "REM-STM-002: Acknowledging a completed reminder returns 409 Conflict");
+
+    // REM-STM-003: Rescheduling a completed reminder returns 409 Conflict
+    const rescheduleConflictRes = await request(app)
+      .patch(`/api/reminders/${stmReminder._id}`)
+      .set("Authorization", `Bearer ${remToken}`)
+      .send({ scheduledAt: new Date(Date.now() + 600000).toISOString() });
+    assert(rescheduleConflictRes.status === 409, "REM-STM-003: Rescheduling a completed reminder returns 409 Conflict");
+
+    // REM-STM-004: Updating metadata on active reminder does not alter status
+    const metaReminder = await Reminder.create({
+      userId: remUser._id,
+      sourceType: "custom",
+      clientName: "Initial Client",
+      notes: "Initial notes",
+      scheduledAt: new Date(Date.now() + 3600000),
+      status: "acknowledged",
+    });
+    const metaUpdateRes = await request(app)
+      .patch(`/api/reminders/${metaReminder._id}`)
+      .set("Authorization", `Bearer ${remToken}`)
+      .send({ notes: "Updated call notes only" });
+    assert(metaUpdateRes.status === 200, "REM-STM-004: Updating notes returns 200");
+    const metaDoc = await Reminder.findById(metaReminder._id);
+    assert(metaDoc?.notes === "Updated call notes only", "REM-STM-005: Notes updated in DB");
+    assert(metaDoc?.status === "acknowledged", "REM-STM-006: Status remained 'acknowledged' after metadata update");
+
+    // REM-SCHED-001: Direct test of processDueReminders with mock time
+    const schedReminder = await Reminder.create({
+      userId: remUser._id,
+      sourceType: "custom",
+      clientName: "Scheduler Test Client",
+      scheduledAt: new Date(Date.now() - 5000),
+      status: "scheduled",
+    });
+    const claimedCount = await processDueReminders(null, new Date());
+    assert(claimedCount >= 1, "REM-SCHED-001: processDueReminders claimed at least 1 due reminder");
+    const claimedDoc = await Reminder.findById(schedReminder._id);
+    assert(claimedDoc?.status === "triggered", "REM-SCHED-002: Due reminder status transitioned to 'triggered'");
+    assert(Boolean(claimedDoc?.deliveryId), "REM-SCHED-003: Delivery ID attached to claimed reminder");
+
+    // =========================================================================
+    // Test suite 12: Truthful Health / Ready Endpoints
+    // =========================================================================
+    console.log("\n--- Suite 12: Health & Readiness Endpoints ---");
+    const readyRes = await request(app).get("/api/ready");
+    assert(readyRes.status === 200, "HEALTH-READY-001: GET /api/ready returns 200 when connected to DB");
+    assert(readyRes.body.ready === true, "HEALTH-READY-002: Response reports ready: true");
+    assert(readyRes.body.database === "connected", "HEALTH-READY-003: Response reports database: connected");
+
+    // =========================================================================
+    // Test suite 13: Document Security & Integrity
+    // =========================================================================
+    console.log("\n--- Suite 13: Document Security & Integrity ---");
+    const docCase = await Case.create({
+      title: "Doc Test Case",
+      number: "SW-2026-9999",
+      client: (await Client.create({ name: "Doc Client", createdBy: remUser._id }))._id,
+      assignedLawyer: remUser._id,
+      assignedTeam: [remUser._id],
+      status: "Active",
+    });
+
+    const testDoc = await DocumentModel.create({
+      name: "Secret Contract.pdf",
+      originalName: "Secret Contract.pdf",
+      kind: "pdf",
+      sizeFormatted: "1 KB",
+      caseId: docCase._id,
+      uploadedBy: remUser._id,
+      nasPath: "cases/SW-2026-9999/Secret Contract.pdf",
+      nasFolder: "cases/SW-2026-9999",
+      size: 1024,
+      mimeType: "application/pdf",
+      sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      state: "Pending",
+    });
+
+    // DOC-SEC-001: Client cannot modify nasPath via PATCH /api/documents/:id
+    const patchDocRes = await request(app)
+      .patch(`/api/documents/${testDoc._id}`)
+      .set("Authorization", `Bearer ${remToken}`)
+      .send({
+        name: "Renamed Contract.pdf",
+        nasPath: "malicious/traversal/path/contract.pdf",
+      });
+    assert(patchDocRes.status === 200, "DOC-SEC-001: PATCH /api/documents/:id returns 200 for valid name update");
+    const refreshedDoc = await DocumentModel.findById(testDoc._id);
+    assert(refreshedDoc?.name === "Renamed Contract.pdf", "DOC-SEC-002: Document name was updated");
+    assert(refreshedDoc?.nasPath === "cases/SW-2026-9999/Secret Contract.pdf", "DOC-SEC-003: nasPath was NOT modified by client PATCH");
+
+    // DOC-INT-001: POST /api/documents/:id/verify returns verification payload
+    const verifyDocRes = await request(app)
+      .post(`/api/documents/${testDoc._id}/verify`)
+      .set("Authorization", `Bearer ${remToken}`);
+    assert(verifyDocRes.status === 200, "DOC-INT-001: POST /api/documents/:id/verify returns 200");
+    assert(verifyDocRes.body.documentId === testDoc._id.toString(), "DOC-INT-002: Response has documentId");
+    assert(Boolean(verifyDocRes.body.expectedHash), "DOC-INT-003: Response has expectedHash");
+    assert(["verified", "tampered", "missing"].includes(verifyDocRes.body.status), "DOC-INT-004: Status is valid integrity state");
   }
 
   await mongoose.disconnect();

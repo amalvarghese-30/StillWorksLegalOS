@@ -1,6 +1,7 @@
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
 import { searchKeys } from "./query-keys";
+import { api } from "@/services/api";
 
 export interface SearchCase {
   _id: string;
@@ -86,13 +87,7 @@ export function useSearch(
       if (!debouncedTerm.trim()) {
         return emptyResults;
       }
-      const res = await fetch(`/api/search?q=${encodeURIComponent(debouncedTerm)}&limit=${limit}`, {
-        credentials: "include",
-      });
-      if (!res.ok) {
-        throw new Error(`Search failed: ${res.status}`);
-      }
-      return res.json();
+      return api.get<SearchResults>(`/search?q=${encodeURIComponent(debouncedTerm)}&limit=${limit}`);
     },
     placeholderData: keepPreviousData,
   });

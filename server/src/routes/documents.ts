@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import type { Readable } from "node:stream";
+import { createHash } from "node:crypto";
 import busboy from "busboy";
 import { DocumentModel, type IDocument } from "../models/Document.js";
 import { Case } from "../models/Case.js";
@@ -261,10 +262,53 @@ router.post("/:id/verify", requireResourceAccess("document"), async (req: Reques
       return;
     }
 
+    let actualHash = "";
+    let status: "verified" | "tampered" | "missing" = "missing";
+
+    try {
+      const stream = await downloadStream(document.nasPath);
+      if (stream) {
+        const hash = createHash("sha256");
+        await new Promise<void>((resolve, reject) => {
+          stream.on("data", (chunk: Buffer) => hash.update(chunk));
+          stream.on("end", () => resolve());
+          stream.on("error", (err: unknown) => reject(err));
+        });
+        actualHash = hash.digest("hex");
+        status = actualHash.toLowerCase() === document.sha256.toLowerCase() ? "verified" : "tampered";
+      }
+    } catch (streamErr) {
+      console.warn(`[documents] Verify stream error for ${document._id}:`, streamErr);
+      status = "missing";
+    }
+
+    const verifiedAt = new Date();
+
+    try {
+      const fileIntegrity = await FileIntegrity.findOne({ documentId: document._id });
+      if (fileIntegrity) {
+        fileIntegrity.status = status;
+        fileIntegrity.lastVerifiedAt = verifiedAt;
+        if (req.user?._id) {
+          fileIntegrity.verifications.push({
+            verifiedAt,
+            verifiedBy: req.user._id,
+            status,
+            computedHash: actualHash,
+          });
+        }
+        await fileIntegrity.save();
+      }
+    } catch (fiErr) {
+      console.warn(`[documents] FileIntegrity update error:`, fiErr);
+    }
+
     res.json({
       documentId: document._id.toString(),
+      status,
+      actualHash,
       expectedHash: document.sha256,
-      message: "Use client-side verification or implement server-side streaming verification",
+      verifiedAt,
     });
   } catch (err) {
     console.error("[documents] Verify error:", err);
@@ -518,7 +562,7 @@ router.post("/upload", async (req: Request, res: Response) => {
 router.patch("/:id", requireResourceAccess("document"), async (req: Request, res: Response) => {
   try {
     const updates: Record<string, unknown> = {};
-    const allowed = ["name", "nasPath", "nasFolder", "state"];
+    const allowed = ["name", "state"];
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     }

@@ -68,10 +68,14 @@ async function verifyRelease() {
   verifyFileExists("server/dist/index.js");
 
   // 5. Secret Leak Audit
-  console.log("\n[Audit] Checking output bundles for accidental credentials...");
+  console.log("\n[Step 5/6] Checking output bundles for accidental credentials...");
   auditForHardcodedSecrets(path.resolve(process.cwd(), "dist"));
   auditForHardcodedSecrets(path.resolve(process.cwd(), "dist-electron"));
   console.log("✓ No hardcoded secrets detected in build artifacts");
+
+  // 6. Automated Smoke Test
+  console.log("\n[Step 6/6] Running Automated Smoke Test Suite...");
+  run("node scripts/smoke-test.cjs");
 
   console.log("\n==================================================");
   console.log("✓ ALL RELEASE VERIFICATION CHECKS PASSED CLEANLY!");

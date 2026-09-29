@@ -28,44 +28,41 @@ export const reminderKeys = {
   list: (status?: string) => ["reminders", "list", status] as const,
 };
 
-let reminderEndpointAvailable: boolean | null = null;
-
 export function useDueReminders() {
   return useQuery<{ reminders: ReminderRecord[] }>({
     queryKey: reminderKeys.due,
     queryFn: async () => {
-      // If we previously detected that the backend does not have this route (404),
-      // do not make further network requests to avoid console 404 spam.
-      if (reminderEndpointAvailable === false) {
-        return { reminders: [] };
-      }
       try {
         const result = await api.get<{ reminders: ReminderRecord[] }>("/reminders/due");
-        reminderEndpointAvailable = true;
         return result;
       } catch (err: any) {
         if (err?.status === 404) {
-          // Deployed server build has not mounted /api/reminders yet; gracefully degrade
-          reminderEndpointAvailable = false;
+          if (import.meta.env.DEV) {
+            console.warn("[reminders] GET /api/reminders/due returned 404; route may be pending deployment on target backend");
+          }
           return { reminders: [] };
         }
         throw err;
       }
     },
-    enabled: reminderEndpointAvailable !== false,
-    retry: false,
-    refetchInterval: (query) => {
-      if (reminderEndpointAvailable === false) {
+    retry: (failureCount, err: any) => {
+      if (err?.status === 404 || err?.status === 401) {
         return false;
       }
+      return failureCount < 2;
+    },
+    refetchInterval: (query) => {
       const err = query.state.error as any;
       const status = err?.status || err?.response?.status;
-      if (status === 404 || status === 401) {
+      if (status === 401 || status === 403) {
         return false;
       }
-      return 30_000;
+      if (status === 404) {
+        return 60_000;
+      }
+      return 15_000;
     },
-    staleTime: 15_000,
+    staleTime: 10_000,
   });
 }
 

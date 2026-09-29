@@ -397,7 +397,23 @@ app.on("activate", () => {
 // ---------------------------------------------------------------------------
 
 // Validate that IPC messages originate from trusted app windows
-function validateIpcSender(event: Electron.IpcMainInvokeEvent): void {
+function assertTrustedIpcSender(event: Electron.IpcMainInvokeEvent): void {
+  // 1. Sender exists
+  if (!event.sender) {
+    throw new Error("Unauthorized IPC invocation: missing sender");
+  }
+
+  // 2. Sender matches application window
+  if (mainWindow && event.sender !== mainWindow.webContents) {
+    throw new Error("Unauthorized IPC invocation: sender does not match main window");
+  }
+
+  // 3. Sender is top-level main frame
+  if (event.senderFrame && event.senderFrame.parent !== null) {
+    throw new Error("Unauthorized IPC invocation: sender is not main frame");
+  }
+
+  // 4. Validate URL / origin
   const url = event.senderFrame?.url || event.sender.getURL();
   if (!url) {
     throw new Error("Unauthorized IPC invocation: missing sender URL");
@@ -460,7 +476,7 @@ function validateAndResolvePath(inputPath: string): string {
 
 // Open a path in Windows Explorer / macOS Finder
 ipcMain.handle("nas:openPath", async (event: Electron.IpcMainInvokeEvent, nasPath: string) => {
-  validateIpcSender(event);
+  assertTrustedIpcSender(event);
   try {
     const safePath = validateAndResolvePath(nasPath);
     const error = await shell.openPath(safePath);
@@ -482,7 +498,7 @@ ipcMain.handle("nas:openPath", async (event: Electron.IpcMainInvokeEvent, nasPat
 
 // Watch a NAS folder for changes
 ipcMain.handle("nas:watchFolder", async (event: Electron.IpcMainInvokeEvent, folderPath: string) => {
-  validateIpcSender(event);
+  assertTrustedIpcSender(event);
   try {
     const safePath = validateAndResolvePath(folderPath);
     const watcher = fs.watch(safePath, { recursive: false }, (eventType, filename) => {
@@ -509,7 +525,7 @@ ipcMain.handle("nas:watchFolder", async (event: Electron.IpcMainInvokeEvent, fol
 
 // Stop watching a folder
 ipcMain.handle("nas:unwatchFolder", async (event: Electron.IpcMainInvokeEvent) => {
-  validateIpcSender(event);
+  assertTrustedIpcSender(event);
   const watcher = mainWindow?.__nasWatcher;
   if (watcher) {
     watcher.close();
@@ -522,7 +538,7 @@ ipcMain.handle("nas:unwatchFolder", async (event: Electron.IpcMainInvokeEvent) =
 
 // Select a folder dialog — used for admin to link NAS case folders
 ipcMain.handle("nas:selectFolder", async (event: Electron.IpcMainInvokeEvent) => {
-  validateIpcSender(event);
+  assertTrustedIpcSender(event);
   if (!mainWindow) return null;
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ["openDirectory"],
@@ -540,64 +556,66 @@ ipcMain.handle("nas:selectFolder", async (event: Electron.IpcMainInvokeEvent) =>
 
 // App info
 ipcMain.handle("app:getVersion", (event: Electron.IpcMainInvokeEvent) => {
-  validateIpcSender(event);
+  assertTrustedIpcSender(event);
   return app.getVersion();
 });
 ipcMain.handle("app:isDev", (event: Electron.IpcMainInvokeEvent) => {
-  validateIpcSender(event);
+  assertTrustedIpcSender(event);
   return isDev;
 });
 
 // Secure token storage IPC handlers (using OS-level safeStorage encryption)
 const sessionFilePath = path.join(app.getPath("userData"), "session.dat");
 
-ipcMain.handle("auth:saveRefreshToken", async (event: Electron.IpcMainInvokeEvent, token: string) => {
-  validateIpcSender(event);
+ipcMain.handle("auth:saveRefreshToken", async (event: Electron.IpcMainInvokeEvent, token: string): Promise<{ success: boolean; error?: string }> => {
+  assertTrustedIpcSender(event);
   try {
+    if (!token || typeof token !== "string") {
+      return { success: false, error: "invalid_token" };
+    }
     if (!safeStorage.isEncryptionAvailable()) {
-      // OS-level secure storage is unavailable (e.g., running in headless CI).
-      // Do NOT store the token in plaintext — silently skip persistence.
-      // The user will need to re-authenticate on next launch.
       console.warn("[IPC auth:saveRefreshToken] OS safeStorage unavailable — token not persisted (security policy)");
-      return { encrypted: false };
+      return { success: false, error: "safe_storage_unavailable" };
     }
     const encrypted = safeStorage.encryptString(token);
     fs.writeFileSync(sessionFilePath, encrypted);
-    return { encrypted: true };
+    return { success: true };
   } catch (err) {
     console.error("[IPC auth:saveRefreshToken] Encryption failed:", err);
-    throw err;
+    return { success: false, error: (err as Error).message };
   }
 });
 
-ipcMain.handle("auth:getRefreshToken", async (event: Electron.IpcMainInvokeEvent) => {
-  validateIpcSender(event);
+ipcMain.handle("auth:getRefreshToken", async (event: Electron.IpcMainInvokeEvent): Promise<{ success: boolean; token: string | null; error?: string }> => {
+  assertTrustedIpcSender(event);
   try {
-    if (!fs.existsSync(sessionFilePath)) return null;
+    if (!fs.existsSync(sessionFilePath)) {
+      return { success: true, token: null };
+    }
     if (!safeStorage.isEncryptionAvailable()) {
-      // Encryption not available — cannot decrypt any stored token.
-      // Delete any stale file (which may have been written unencrypted previously).
       try { fs.unlinkSync(sessionFilePath); } catch {}
-      return null;
+      return { success: false, token: null, error: "safe_storage_unavailable" };
     }
     const encrypted = fs.readFileSync(sessionFilePath);
-    return safeStorage.decryptString(encrypted);
+    const token = safeStorage.decryptString(encrypted);
+    return { success: true, token };
   } catch (err) {
     console.error("[IPC auth:getRefreshToken] Decryption failed:", err);
-    // Delete corrupt token
     try { fs.unlinkSync(sessionFilePath); } catch {}
-    return null;
+    return { success: false, token: null, error: (err as Error).message };
   }
 });
 
-ipcMain.handle("auth:clearRefreshToken", async (event: Electron.IpcMainInvokeEvent) => {
-  validateIpcSender(event);
+ipcMain.handle("auth:clearRefreshToken", async (event: Electron.IpcMainInvokeEvent): Promise<{ success: boolean; error?: string }> => {
+  assertTrustedIpcSender(event);
   try {
     if (fs.existsSync(sessionFilePath)) {
       fs.unlinkSync(sessionFilePath);
     }
+    return { success: true };
   } catch (err) {
     console.error("[IPC auth:clearRefreshToken] Clear failed:", err);
+    return { success: false, error: (err as Error).message };
   }
 });
 
@@ -607,7 +625,7 @@ ipcMain.handle("auth:clearRefreshToken", async (event: Electron.IpcMainInvokeEve
 
 // Native Windows Toast Notification
 ipcMain.handle("notification:show", async (event: Electron.IpcMainInvokeEvent, options: { title: string; body: string; sound?: boolean; tag?: string }) => {
-  validateIpcSender(event);
+  assertTrustedIpcSender(event);
   if (notificationsPaused) {
     return { shown: false, reason: "notifications_paused" };
   }
@@ -638,12 +656,12 @@ ipcMain.handle("notification:show", async (event: Electron.IpcMainInvokeEvent, o
 });
 
 ipcMain.handle("notification:isPaused", (event: Electron.IpcMainInvokeEvent) => {
-  validateIpcSender(event);
+  assertTrustedIpcSender(event);
   return notificationsPaused;
 });
 
 ipcMain.handle("notification:setPaused", (event: Electron.IpcMainInvokeEvent, paused: boolean) => {
-  validateIpcSender(event);
+  assertTrustedIpcSender(event);
   notificationsPaused = Boolean(paused);
   updateTrayMenu();
   return { success: true, paused: notificationsPaused };
@@ -651,7 +669,7 @@ ipcMain.handle("notification:setPaused", (event: Electron.IpcMainInvokeEvent, pa
 
 // Safe External Link / Phone Opener
 ipcMain.handle("shell:openExternal", async (event: Electron.IpcMainInvokeEvent, rawUrl: string) => {
-  validateIpcSender(event);
+  assertTrustedIpcSender(event);
   try {
     if (!rawUrl || typeof rawUrl !== "string") {
       return { success: false, error: "Invalid URL string" };
@@ -671,7 +689,7 @@ ipcMain.handle("shell:openExternal", async (event: Electron.IpcMainInvokeEvent, 
 
 // Native Windows Save Dialog & File Downloader
 ipcMain.handle("dialog:saveFile", async (event: Electron.IpcMainInvokeEvent, options: { defaultFilename: string; buffer: Uint8Array | number[]; mimeType?: string }) => {
-  validateIpcSender(event);
+  assertTrustedIpcSender(event);
   if (!mainWindow) return { canceled: true, error: "Window not available" };
   try {
     const result = await dialog.showSaveDialog(mainWindow, {
