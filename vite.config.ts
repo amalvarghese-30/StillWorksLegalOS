@@ -21,11 +21,31 @@ export default defineConfig({
         target: "https://legalos.stillworks.in",
         changeOrigin: true,
         secure: true,
+        headers: {
+          origin: "https://legalos.stillworks.in",
+          referer: "https://legalos.stillworks.in/",
+        },
+        configure: (proxy) => {
+          proxy.on("proxyReq", (proxyReq) => {
+            proxyReq.setHeader("origin", "https://legalos.stillworks.in");
+            proxyReq.setHeader("referer", "https://legalos.stillworks.in/");
+          });
+        },
       },
       "/socket.io": {
         target: "https://legalos.stillworks.in",
         ws: true,
         changeOrigin: true,
+        headers: {
+          origin: "https://legalos.stillworks.in",
+          referer: "https://legalos.stillworks.in/",
+        },
+        configure: (proxy) => {
+          proxy.on("proxyReq", (proxyReq) => {
+            proxyReq.setHeader("origin", "https://legalos.stillworks.in");
+            proxyReq.setHeader("referer", "https://legalos.stillworks.in/");
+          });
+        },
       },
     },
     watch: {
