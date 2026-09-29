@@ -48,13 +48,63 @@ async function prompt(question: string): Promise<string> {
 }
 
 async function promptHidden(question: string): Promise<string> {
-  // For hidden input, we'll use a workaround since Node's readline doesn't support hidden
-  // In production, consider using a library like 'prompt-sync' or 'inquirer'
-  const rl = readline.createInterface({ input, output });
-  // This will echo - for a real implementation, use a proper hidden input library
-  const answer = await rl.question(question);
-  rl.close();
-  return answer.trim();
+  if (!process.stdin.isTTY) {
+    const rl = readline.createInterface({ input, output });
+    const answer = await rl.question(question);
+    rl.close();
+    return answer.trim();
+  }
+
+  return new Promise((resolve) => {
+    output.write(question);
+    const stdin = process.stdin;
+    const wasRaw = stdin.isRaw;
+    let password = "";
+
+    if (stdin.setRawMode) {
+      stdin.setRawMode(true);
+    }
+    stdin.resume();
+    stdin.setEncoding("utf8");
+
+    const onData = (ch: string) => {
+      ch = String(ch);
+      switch (ch) {
+        case "\n":
+        case "\r":
+        case "\u0004":
+          if (stdin.setRawMode) {
+            stdin.setRawMode(wasRaw ?? false);
+          }
+          stdin.pause();
+          stdin.removeListener("data", onData);
+          output.write("\n");
+          resolve(password.trim());
+          break;
+        case "\u0003":
+          // Ctrl+C
+          if (stdin.setRawMode) {
+            stdin.setRawMode(wasRaw ?? false);
+          }
+          process.exit(1);
+          break;
+        case "\u0008":
+        case "\x7f":
+          // Backspace
+          if (password.length > 0) {
+            password = password.slice(0, -1);
+            output.write("\b \b");
+          }
+          break;
+        default:
+          password += ch;
+          output.write("*");
+          break;
+      }
+    };
+
+    stdin.on("data", onData);
+  });
 }
 
 function validatePassword(password: string): { valid: boolean; message?: string } {

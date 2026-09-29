@@ -102,6 +102,7 @@ if (protocol.registerSchemesAsPrivileged) {
 // ---------------------------------------------------------------------------
 let mainWindow: BrowserWindow | null = null;
 let serverProcess: ReturnType<typeof spawn> | null = null;
+let isQuitting = false;
 
 // Start the Express server in production mode
 function startServer(): Promise<void> {
@@ -119,9 +120,7 @@ function createWindow(): BrowserWindow {
     icon: path.join(__dirname, "..", "public", "icon.png"),
     webPreferences: {
       // Preload script (CommonJS for Electron compatibility)
-      preload: fs.existsSync(path.join(__dirname, "preload.cjs"))
-        ? path.join(__dirname, "preload.cjs")
-        : path.join(__dirname, "preload.js"),
+      preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true, // REQUIRED for security
       nodeIntegration: false, // REQUIRED for security
       sandbox: true,
@@ -175,15 +174,17 @@ function createWindow(): BrowserWindow {
   win.webContents.on("will-navigate", handleRedirect);
   win.webContents.on("will-redirect", handleRedirect);
 
-  // DevTools can be toggled via Ctrl+Shift+I if needed for debugging
-
   // -------------------------------------------------------------------------
-  // Security: Handle new window creation (block popups)
+  // Security: Handle new window creation (unified external link handler)
   // -------------------------------------------------------------------------
   win.webContents.setWindowOpenHandler(({ url }) => {
-    // Allow only https external links to open in system browser
-    if (url.startsWith("https://")) {
-      shell.openExternal(url);
+    try {
+      const parsed = new URL(url);
+      if (["https:", "http:", "mailto:", "tel:"].includes(parsed.protocol)) {
+        shell.openExternal(url);
+      }
+    } catch {
+      // Ignored malformed URL
     }
     return { action: "deny" };
   });
@@ -202,16 +203,17 @@ function createWindow(): BrowserWindow {
     }
   });
 
-  win.once("ready-to-show", () => {
-    win.show();
+  // Hide window instead of closing so background reminders and tray remain active
+  win.on("close", (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      win.hide();
+      return false;
+    }
   });
 
-  // Open external links in the system browser, not Electron
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith("http://") || url.startsWith("https://")) {
-      shell.openExternal(url);
-    }
-    return { action: "deny" };
+  win.once("ready-to-show", () => {
+    win.show();
   });
 
   return win;
@@ -295,6 +297,7 @@ function updateTrayMenu(): void {
     {
       label: "Quit LegalOS",
       click: () => {
+        isQuitting = true;
         app.quit();
       },
     },
@@ -313,7 +316,7 @@ function createTray(): void {
       appTray.on("double-click", () => {
         if (mainWindow) {
           if (mainWindow.isMinimized()) mainWindow.restore();
-          if (!mainWindow.isVisible()) mainWindow.show();
+          mainWindow.show();
           mainWindow.focus();
         }
       });
@@ -327,6 +330,19 @@ function createTray(): void {
 // App lifecycle
 // ---------------------------------------------------------------------------
 app.whenReady().then(async () => {
+  // Explicit permission boundaries: grant notifications and microphone (media) only to app origins
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    const url = webContents.getURL();
+    const isAppOrigin = isDev
+      ? url.startsWith("http://localhost:") || url.startsWith("http://127.0.0.1:")
+      : url.startsWith("file:") || url.startsWith("app:");
+
+    if (isAppOrigin && (permission === "notifications" || permission === "media")) {
+      return callback(true);
+    }
+    return callback(false);
+  });
+
   await startServer();
   mainWindow = createWindow();
   createTray();
@@ -348,14 +364,17 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
-  if (serverProcess) {
-    serverProcess.kill();
-    serverProcess = null;
+  if (isQuitting) {
+    if (serverProcess) {
+      serverProcess.kill();
+      serverProcess = null;
+    }
+    if (process.platform !== "darwin") app.quit();
   }
-  if (process.platform !== "darwin") app.quit();
 });
 
 app.on("before-quit", () => {
+  isQuitting = true;
   if (serverProcess) {
     serverProcess.kill();
     serverProcess = null;
@@ -376,6 +395,31 @@ app.on("activate", () => {
 // ---------------------------------------------------------------------------
 // Security: IPC Handlers with validation
 // ---------------------------------------------------------------------------
+
+// Validate that IPC messages originate from trusted app windows
+function validateIpcSender(event: Electron.IpcMainInvokeEvent): void {
+  const url = event.senderFrame?.url || event.sender.getURL();
+  if (!url) {
+    throw new Error("Unauthorized IPC invocation: missing sender URL");
+  }
+  try {
+    const parsed = new URL(url);
+    if (isDev) {
+      if (parsed.protocol === "http:" && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")) {
+        return;
+      }
+    }
+    if (parsed.protocol === "file:" || parsed.protocol === "app:") {
+      return;
+    }
+  } catch {
+    // Non-URL parseable paths
+  }
+  if (url.startsWith("file:") || url.startsWith("app:")) {
+    return;
+  }
+  throw new Error(`Unauthorized IPC invocation from origin: ${url}`);
+}
 
 // Helper to validate paths - prevent directory traversal
 function validateAndResolvePath(inputPath: string): string {
@@ -415,7 +459,8 @@ function validateAndResolvePath(inputPath: string): string {
 }
 
 // Open a path in Windows Explorer / macOS Finder
-ipcMain.handle("nas:openPath", async (_event: Electron.IpcMainInvokeEvent, nasPath: string) => {
+ipcMain.handle("nas:openPath", async (event: Electron.IpcMainInvokeEvent, nasPath: string) => {
+  validateIpcSender(event);
   try {
     const safePath = validateAndResolvePath(nasPath);
     const error = await shell.openPath(safePath);
@@ -436,7 +481,8 @@ ipcMain.handle("nas:openPath", async (_event: Electron.IpcMainInvokeEvent, nasPa
 });
 
 // Watch a NAS folder for changes
-ipcMain.handle("nas:watchFolder", async (_event: Electron.IpcMainInvokeEvent, folderPath: string) => {
+ipcMain.handle("nas:watchFolder", async (event: Electron.IpcMainInvokeEvent, folderPath: string) => {
+  validateIpcSender(event);
   try {
     const safePath = validateAndResolvePath(folderPath);
     const watcher = fs.watch(safePath, { recursive: false }, (eventType, filename) => {
@@ -462,7 +508,8 @@ ipcMain.handle("nas:watchFolder", async (_event: Electron.IpcMainInvokeEvent, fo
 });
 
 // Stop watching a folder
-ipcMain.handle("nas:unwatchFolder", async () => {
+ipcMain.handle("nas:unwatchFolder", async (event: Electron.IpcMainInvokeEvent) => {
+  validateIpcSender(event);
   const watcher = mainWindow?.__nasWatcher;
   if (watcher) {
     watcher.close();
@@ -474,7 +521,8 @@ ipcMain.handle("nas:unwatchFolder", async () => {
 });
 
 // Select a folder dialog — used for admin to link NAS case folders
-ipcMain.handle("nas:selectFolder", async () => {
+ipcMain.handle("nas:selectFolder", async (event: Electron.IpcMainInvokeEvent) => {
+  validateIpcSender(event);
   if (!mainWindow) return null;
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ["openDirectory"],
@@ -491,13 +539,20 @@ ipcMain.handle("nas:selectFolder", async () => {
 });
 
 // App info
-ipcMain.handle("app:getVersion", () => app.getVersion());
-ipcMain.handle("app:isDev", () => isDev);
+ipcMain.handle("app:getVersion", (event: Electron.IpcMainInvokeEvent) => {
+  validateIpcSender(event);
+  return app.getVersion();
+});
+ipcMain.handle("app:isDev", (event: Electron.IpcMainInvokeEvent) => {
+  validateIpcSender(event);
+  return isDev;
+});
 
 // Secure token storage IPC handlers (using OS-level safeStorage encryption)
 const sessionFilePath = path.join(app.getPath("userData"), "session.dat");
 
-ipcMain.handle("auth:saveRefreshToken", async (_event: Electron.IpcMainInvokeEvent, token: string) => {
+ipcMain.handle("auth:saveRefreshToken", async (event: Electron.IpcMainInvokeEvent, token: string) => {
+  validateIpcSender(event);
   try {
     if (!safeStorage.isEncryptionAvailable()) {
       // OS-level secure storage is unavailable (e.g., running in headless CI).
@@ -515,7 +570,8 @@ ipcMain.handle("auth:saveRefreshToken", async (_event: Electron.IpcMainInvokeEve
   }
 });
 
-ipcMain.handle("auth:getRefreshToken", async () => {
+ipcMain.handle("auth:getRefreshToken", async (event: Electron.IpcMainInvokeEvent) => {
+  validateIpcSender(event);
   try {
     if (!fs.existsSync(sessionFilePath)) return null;
     if (!safeStorage.isEncryptionAvailable()) {
@@ -534,7 +590,8 @@ ipcMain.handle("auth:getRefreshToken", async () => {
   }
 });
 
-ipcMain.handle("auth:clearRefreshToken", async () => {
+ipcMain.handle("auth:clearRefreshToken", async (event: Electron.IpcMainInvokeEvent) => {
+  validateIpcSender(event);
   try {
     if (fs.existsSync(sessionFilePath)) {
       fs.unlinkSync(sessionFilePath);
@@ -549,7 +606,8 @@ ipcMain.handle("auth:clearRefreshToken", async () => {
 // ---------------------------------------------------------------------------
 
 // Native Windows Toast Notification
-ipcMain.handle("notification:show", async (_event, options: { title: string; body: string; sound?: boolean; tag?: string }) => {
+ipcMain.handle("notification:show", async (event: Electron.IpcMainInvokeEvent, options: { title: string; body: string; sound?: boolean; tag?: string }) => {
+  validateIpcSender(event);
   if (notificationsPaused) {
     return { shown: false, reason: "notifications_paused" };
   }
@@ -567,7 +625,7 @@ ipcMain.handle("notification:show", async (_event, options: { title: string; bod
     notif.on("click", () => {
       if (mainWindow) {
         if (mainWindow.isMinimized()) mainWindow.restore();
-        if (!mainWindow.isVisible()) mainWindow.show();
+        mainWindow.show();
         mainWindow.focus();
       }
     });
@@ -579,16 +637,21 @@ ipcMain.handle("notification:show", async (_event, options: { title: string; bod
   }
 });
 
-ipcMain.handle("notification:isPaused", () => notificationsPaused);
+ipcMain.handle("notification:isPaused", (event: Electron.IpcMainInvokeEvent) => {
+  validateIpcSender(event);
+  return notificationsPaused;
+});
 
-ipcMain.handle("notification:setPaused", (_event, paused: boolean) => {
+ipcMain.handle("notification:setPaused", (event: Electron.IpcMainInvokeEvent, paused: boolean) => {
+  validateIpcSender(event);
   notificationsPaused = Boolean(paused);
   updateTrayMenu();
   return { success: true, paused: notificationsPaused };
 });
 
 // Safe External Link / Phone Opener
-ipcMain.handle("shell:openExternal", async (_event, rawUrl: string) => {
+ipcMain.handle("shell:openExternal", async (event: Electron.IpcMainInvokeEvent, rawUrl: string) => {
+  validateIpcSender(event);
   try {
     if (!rawUrl || typeof rawUrl !== "string") {
       return { success: false, error: "Invalid URL string" };
@@ -607,7 +670,8 @@ ipcMain.handle("shell:openExternal", async (_event, rawUrl: string) => {
 });
 
 // Native Windows Save Dialog & File Downloader
-ipcMain.handle("dialog:saveFile", async (_event, options: { defaultFilename: string; buffer: Uint8Array | number[]; mimeType?: string }) => {
+ipcMain.handle("dialog:saveFile", async (event: Electron.IpcMainInvokeEvent, options: { defaultFilename: string; buffer: Uint8Array | number[]; mimeType?: string }) => {
+  validateIpcSender(event);
   if (!mainWindow) return { canceled: true, error: "Window not available" };
   try {
     const result = await dialog.showSaveDialog(mainWindow, {

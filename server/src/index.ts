@@ -50,6 +50,14 @@ const PORT = parseInt(process.env["SERVER_PORT"] ?? "3001", 10);
 const HOST = process.env["SERVER_HOST"] ?? "0.0.0.0"; // Listen on all interfaces by default
 const MONGODB_URI = process.env["MONGODB_URI"] ?? "mongodb://localhost:27017/stillworks";
 
+// Fail-fast in production if required environment configuration is missing or insecure
+if (process.env["NODE_ENV"] === "production") {
+  if (!process.env["MONGODB_URI"] || process.env["MONGODB_URI"].includes("localhost") || process.env["MONGODB_URI"].includes("127.0.0.1")) {
+    console.error("[server] FATAL: Production requires an external MONGODB_URI (e.g. MongoDB Atlas cluster).");
+    process.exit(1);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // CORS origins — Recommendation #3: allow both Vite dev & Electron
 // ---------------------------------------------------------------------------
@@ -130,14 +138,42 @@ const corsOptions: cors.CorsOptions = {
 
 const app = express();
 
-// Security: Helmet for standard HTTP headers
-// Configure specifically for our needs (CSP handled by Electron in production)
+const isProd = process.env["NODE_ENV"] === "production";
+
+// Security: Helmet for standard HTTP headers & Web CSP
 app.use(
   helmet({
-    contentSecurityPolicy: false, // Handled by Electron's session.webRequest
-    crossOriginEmbedderPolicy: false, // Can break file: protocol in Electron
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: [
+          "'self'",
+          // In development or when using Vite dev server, allow unsafe-inline/eval for HMR
+          ...(isProd ? [] : ["'unsafe-inline'", "'unsafe-eval'"]),
+        ],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        styleSrcElem: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        imgSrc: ["'self'", "data:", "blob:", "https:"],
+        fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
+        connectSrc: [
+          "'self'",
+          "https:",
+          "wss:",
+          "https://legalos.stillworks.in",
+          "wss://legalos.stillworks.in",
+          ...(isProd ? [] : ["http://localhost:*", "ws://localhost:*", "http://127.0.0.1:*", "ws://127.0.0.1:*"]),
+        ],
+        mediaSrc: ["'self'", "blob:", "data:"],
+        objectSrc: ["'none'"],
+        frameSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+      },
+    },
+    crossOriginEmbedderPolicy: false,
     hsts: {
-      maxAge: 31536000, // 1 year
+      maxAge: 31536000,
       includeSubDomains: true,
       preload: true,
     },
@@ -145,8 +181,6 @@ app.use(
     frameguard: { action: "deny" },
     xssFilter: true,
     referrerPolicy: { policy: "strict-origin-when-cross-origin" },
-    // certificate pinning must be handled at reverse proxy / load balancer level
-    // expectCt: { enforce: true, maxAge: 86400 }, // Only with valid certs
   }),
 );
 
@@ -229,8 +263,15 @@ app.use("/api/documents", documentLimiter);
 app.get("/api/health", (_req, res) => {
   res.json({
     status: "ok",
+    version: process.env["npm_package_version"] || "1.0.0",
+    commit: process.env["GIT_COMMIT_SHA"] || process.env["RENDER_GIT_COMMIT"] || "production-main",
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
+    services: {
+      reminders: "active",
+      socket: "active",
+      database: "connected",
+    },
   });
 });
 

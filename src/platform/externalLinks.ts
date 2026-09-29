@@ -115,14 +115,15 @@ class ElectronExternalLinkProvider implements ExternalLinkProvider {
     if (!cleaned) return { success: false, error: "Invalid phone number" };
     const telUrl = `tel:${cleaned}`;
     const electronApi = typeof window !== "undefined" ? window.electronAPI : undefined;
-    let opened = false;
+    let openError: string | undefined;
     if (electronApi?.openExternal) {
       const res = await electronApi.openExternal(telUrl);
       opened = res.success;
+      openError = res.error;
     }
     // Always copy to clipboard on desktop so the user can easily paste it into softphone/WhatsApp
-    await this.copyToClipboard(cleaned);
-    return { success: opened || true, copiedToClipboard: true };
+    const copied = await this.copyToClipboard(cleaned);
+    return { success: opened, copiedToClipboard: copied, error: openError };
   }
 }
 

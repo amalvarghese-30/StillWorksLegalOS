@@ -22,6 +22,8 @@ const { Task } = await import("../models/Task.js");
 const { Reminder } = await import("../models/Reminder.js");
 const { CalendarEvent } = await import("../models/CalendarEvent.js");
 const { default: adminRoutes } = await import("../routes/admin.js");
+const { default: authRoutes } = await import("../routes/auth.js");
+const { deliveredOtpsForTesting } = await import("../services/passwordResetDelivery.js");
 const { default: calendarRoutes } = await import("../routes/calendar.js");
 const { default: casesRoutes } = await import("../routes/cases.js");
 const { default: clientsRoutes } = await import("../routes/clients.js");
@@ -33,6 +35,7 @@ function buildApp() {
   app.use(express.json());
   app.set("io", null);
   app.use("/api/admin", adminRoutes);
+  app.use("/api/auth", authRoutes);
   app.use("/api/calendar", calendarRoutes);
   app.use("/api/cases", casesRoutes);
   app.use("/api/clients", clientsRoutes);
@@ -482,6 +485,189 @@ async function run() {
     assert(deleteRes.status === 200, "REM-016: Task deleted successfully");
     const reminderAfterTaskDelete = await Reminder.findOne({ sourceType: "task", sourceId: createdTaskId });
     assert(!reminderAfterTaskDelete, "REM-017: Synchronized Reminder deleted on task deletion");
+  }
+
+  // Test suite: Authentication, Session Revocation & Password Reset Delivery
+  console.log("\nSuite: Authentication, Session Revocation & Password Reset Delivery");
+  {
+    const authUser = await createUser({
+      name: "Auth Test User",
+      email: "authuser@stillworks.legal",
+      role: "junior_advocate",
+    });
+    const authToken = await createToken(authUser);
+
+    // AUTH-006: POST /api/auth/logout with valid token revokes session in DB
+    const logoutRes = await request(app)
+      .post("/api/auth/logout")
+      .set("Authorization", `Bearer ${authToken}`)
+      .send();
+    assert(logoutRes.status === 200, "AUTH-006: POST /api/auth/logout returns 200");
+    const sessionInDb = await Session.findOne({ token: authToken });
+    assert(sessionInDb?.isRevoked === true, "AUTH-007: Session marked isRevoked:true in MongoDB");
+
+    // AUTH-008: Revoked token cannot access protected endpoint
+    const postLogoutAccess = await request(app)
+      .get("/api/reminders/due")
+      .set("Authorization", `Bearer ${authToken}`);
+    assert(postLogoutAccess.status === 401, "AUTH-008: Revoked session yields 401 on protected endpoint");
+
+    // AUTH-009: POST /api/auth/forgot-password sends OTP via provider
+    const forgotRes = await request(app)
+      .post("/api/auth/forgot-password")
+      .send({ email: "authuser@stillworks.legal" });
+    assert(forgotRes.status === 200, "AUTH-009: POST /api/auth/forgot-password returns 200");
+    const deliveredRecord = deliveredOtpsForTesting.find((d) => d.destination === "authuser@stillworks.legal");
+    assert(Boolean(deliveredRecord?.otp), "AUTH-010: Real OTP was dispatched and captured by provider");
+    const validOtp = deliveredRecord!.otp;
+
+    // AUTH-011: POST /api/auth/reset-password rejects invalid OTP
+    const invalidResetRes = await request(app)
+      .post("/api/auth/reset-password")
+      .send({
+        email: "authuser@stillworks.legal",
+        otp: "000000",
+        newPassword: "BrandNewSecurePassword123!",
+      });
+    assert(invalidResetRes.status === 400, "AUTH-011: Rejects invalid OTP with 400");
+
+    // AUTH-012: POST /api/auth/reset-password with valid OTP succeeds
+    const validResetRes = await request(app)
+      .post("/api/auth/reset-password")
+      .send({
+        email: "authuser@stillworks.legal",
+        otp: validOtp,
+        newPassword: "BrandNewSecurePassword123!",
+      });
+    assert(validResetRes.status === 200, "AUTH-012: Resets password successfully with valid OTP");
+
+    // AUTH-013: Login with old password fails
+    const oldLoginRes = await request(app)
+      .post("/api/auth/login")
+      .send({
+        email: "authuser@stillworks.legal",
+        password: "SecurePass1!",
+      });
+    assert(oldLoginRes.status === 401, "AUTH-013: Login with old password rejected with 401");
+
+    // AUTH-014: Login with new password succeeds
+    const newLoginRes = await request(app)
+      .post("/api/auth/login")
+      .send({
+        email: "authuser@stillworks.legal",
+        password: "BrandNewSecurePassword123!",
+      });
+    assert(newLoginRes.status === 200 && Boolean(newLoginRes.body.accessToken), "AUTH-014: Login with new password succeeds and returns access token");
+  }
+
+  // Test suite: Reminders Lifecycle, Snooze, Complete, Atomic Claim & Calendar Sync
+  console.log("\nSuite: Reminders Lifecycle, Snooze, Complete, Atomic Claim & Calendar Sync");
+  {
+    const remUser = await createUser({
+      name: "Reminder Lifecycle User",
+      email: "remlifecycle@stillworks.legal",
+      role: "admin",
+      permissions: {
+        calendar: true,
+        tasks: true,
+        dashboard: true,
+        clients: true,
+        cases: true,
+        documents: true,
+        chat: true,
+        reports: true,
+        employees: true,
+        approvals: true,
+        auditLogs: true,
+        settings: true,
+      },
+    });
+    const remToken = await createToken(remUser);
+
+    // Create a standalone reminder
+    const testReminder = await Reminder.create({
+      userId: remUser._id,
+      sourceType: "custom",
+      sourceId: null,
+      clientName: "Snooze Test Client",
+      phone: "+91-9999888877",
+      notes: "Follow up call",
+      scheduledAt: new Date(Date.now() - 5000),
+      status: "scheduled",
+    });
+
+    // REM-018: POST /api/reminders/:id/snooze updates status to snoozed and sets snoozedUntil
+    const snoozeRes = await request(app)
+      .post(`/api/reminders/${testReminder._id}/snooze`)
+      .set("Authorization", `Bearer ${remToken}`)
+      .send({ minutes: 15 });
+    assert(snoozeRes.status === 200, "REM-018: POST /api/reminders/:id/snooze returns 200");
+    const snoozedDoc = await Reminder.findById(testReminder._id);
+    assert(snoozedDoc?.status === "snoozed", "REM-019: Reminder status changed to snoozed in DB");
+    assert(Boolean(snoozedDoc?.snoozedUntil), "REM-020: Reminder snoozedUntil is set in DB");
+
+    // REM-021: POST /api/reminders/:id/complete updates status to completed
+    const completeRes = await request(app)
+      .post(`/api/reminders/${testReminder._id}/complete`)
+      .set("Authorization", `Bearer ${remToken}`)
+      .send();
+    assert(completeRes.status === 200, "REM-021: POST /api/reminders/:id/complete returns 200");
+    const completedDoc = await Reminder.findById(testReminder._id);
+    assert(completedDoc?.status === "completed", "REM-022: Reminder status changed to completed in DB");
+    assert(Boolean(completedDoc?.completedAt), "REM-023: Reminder completedAt timestamp recorded in DB");
+
+    // REM-024: Atomic claim concurrency test
+    const dueReminder = await Reminder.create({
+      userId: remUser._id,
+      sourceType: "custom",
+      sourceId: null,
+      clientName: "Concurrency Client",
+      scheduledAt: new Date(Date.now() - 10000),
+      status: "scheduled",
+    });
+
+    // Simulate 5 simultaneous worker threads trying to atomically claim this due reminder
+    const claimPromises = Array.from({ length: 5 }, () =>
+      Reminder.findOneAndUpdate(
+        {
+          _id: dueReminder._id,
+          status: { $in: ["scheduled", "snoozed"] },
+        },
+        {
+          $set: {
+            status: "notified",
+            notifiedAt: new Date(),
+          },
+        },
+        { new: true }
+      )
+    );
+    const claimResults = await Promise.all(claimPromises);
+    const successfulClaims = claimResults.filter(Boolean);
+    assert(successfulClaims.length === 1, "REM-024: Atomic claim ensures exactly ONE scheduler worker claims due reminder");
+
+    // REM-025: Calendar event with type 'call_reminder' creates synchronized Reminder document
+    const calEventRes = await request(app)
+      .post("/api/calendar/events")
+      .set("Authorization", `Bearer ${remToken}`)
+      .send({
+        title: "📞 CALL: Advocate Sharma",
+        description: "Review case strategy",
+        type: "call_reminder",
+        start: new Date(Date.now() + 1800000).toISOString(),
+      });
+    assert(calEventRes.status === 201, "REM-025: Calendar call_reminder event created successfully");
+    const createdEventId = calEventRes.body.event._id;
+    const syncCalReminder = await Reminder.findOne({ sourceType: "event", sourceId: createdEventId });
+    assert(Boolean(syncCalReminder), "REM-026: Synchronized Reminder created for calendar call_reminder event");
+
+    // REM-027: Deleting calendar event deletes synchronized Reminder
+    const delCalEventRes = await request(app)
+      .delete(`/api/calendar/events/${createdEventId}`)
+      .set("Authorization", `Bearer ${remToken}`);
+    assert(delCalEventRes.status === 200, "REM-027: Calendar event deleted successfully");
+    const calReminderAfterDelete = await Reminder.findOne({ sourceType: "event", sourceId: createdEventId });
+    assert(!calReminderAfterDelete, "REM-028: Synchronized Reminder deleted on calendar event deletion");
   }
 
   await mongoose.disconnect();

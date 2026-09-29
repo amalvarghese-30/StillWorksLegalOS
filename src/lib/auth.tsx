@@ -6,6 +6,7 @@ import {
   clearTokens,
   getAccessToken,
   refreshAccessToken,
+  performServerLogout,
   clientTypeHeaders,
   ApiError,
   isElectron,
@@ -165,18 +166,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let timeoutId: ReturnType<typeof setTimeout>;
 
     const handleTimeout = async () => {
-      setUser(null);
-      window.localStorage.removeItem(STORAGE_KEY);
-      window.sessionStorage.removeItem(STORAGE_KEY);
-      await clearTokens();
-      queryClient.cancelQueries();
-      queryClient.clear();
+      const currentToken = getAccessToken();
       try {
-        await apiFetch("/auth/logout", { method: "POST" });
-      } catch {
-        /* ignore */
+        if (currentToken) {
+          await performServerLogout(currentToken);
+        }
+      } finally {
+        setUser(null);
+        window.localStorage.removeItem(STORAGE_KEY);
+        window.sessionStorage.removeItem(STORAGE_KEY);
+        window.localStorage.removeItem("stillworks_session");
+        await clearTokens();
+        queryClient.cancelQueries();
+        queryClient.clear();
+        window.dispatchEvent(new CustomEvent("session-expired", { detail: { reason: "inactivity" } }));
       }
-      window.dispatchEvent(new CustomEvent("session-expired", { detail: { reason: "inactivity" } }));
     };
 
     const resetTimer = () => {
@@ -206,7 +210,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             headers: clientTypeHeaders(),
           });
 
-          await persistTokens(res.accessToken, res.refreshToken);
+          await persistTokens(res.accessToken, res.refreshToken, rememberMe);
 
           const sessionUser = toSessionUser(res.user);
           setUser(sessionUser);
@@ -237,21 +241,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       },
       signOut: async () => {
-        // 1. Clear local session immediately so React components unmount & stop querying
-        setUser(null);
-        window.localStorage.removeItem(STORAGE_KEY);
-        window.sessionStorage.removeItem(STORAGE_KEY);
-        await clearTokens();
+        // 1. Capture current access token before local cleanup
+        const currentToken = getAccessToken();
 
-        // 2. Cancel all pending in-flight queries and clear cache
-        queryClient.cancelQueries();
-        queryClient.clear();
-
-        // 3. Notify the server to revoke the session in DB & clear the refresh cookie
+        // 2. Notify the server to revoke the session in DB & clear the refresh cookie
         try {
-          await apiFetch("/auth/logout", { method: "POST" });
-        } catch {
-          /* Ignore — local session is already cleared */
+          if (currentToken) {
+            await performServerLogout(currentToken);
+          }
+        } finally {
+          // 3. Guaranteed local cleanup: unmount session, clear tokens, and cancel queries
+          setUser(null);
+          window.localStorage.removeItem(STORAGE_KEY);
+          window.sessionStorage.removeItem(STORAGE_KEY);
+          window.localStorage.removeItem("stillworks_session");
+          await clearTokens();
+          queryClient.cancelQueries();
+          queryClient.clear();
         }
       },
     }),

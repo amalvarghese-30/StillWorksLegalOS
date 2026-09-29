@@ -5,6 +5,7 @@ import { User } from "../models/User.js";
 import { Session } from "../models/Session.js";
 import { signToken, signRefreshToken, verifyToken, requireAuth, requireAdmin } from "../middleware/auth.js";
 import { validatePasswordStrength } from "../services/passwordPolicy.js";
+import { getPasswordResetDeliveryProvider } from "../services/passwordResetDelivery.js";
 
 const router = Router();
 
@@ -583,10 +584,32 @@ router.post("/forgot-password", async (req: Request, res: Response) => {
 
     // Cryptographically secure 6-digit numeric OTP
     const otp = randomInt(100000, 1000000).toString();
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
     user.resetOtpHash = await bcrypt.hash(otp, 12);
-    user.resetOtpExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+    user.resetOtpExpires = expiresAt;
     user.resetOtpAttempts = 0;
     await user.save();
+
+    // Actual OTP delivery through configured provider
+    try {
+      const destination = isEmail ? user.email : (user.phone || user.email);
+      await getPasswordResetDeliveryProvider().sendOtp({
+        destination,
+        otp,
+        expiresAt,
+        channel: isEmail ? "email" : "sms",
+      });
+    } catch (deliveryErr) {
+      // Invalidate the saved OTP so an undelivered code cannot be used
+      user.resetOtpHash = undefined;
+      user.resetOtpExpires = undefined;
+      await user.save();
+      console.error("[auth] Failed to deliver password reset OTP:", (deliveryErr as Error).message);
+      res.status(500).json({
+        message: "Failed to dispatch verification code. Please try again or contact your administrator.",
+      });
+      return;
+    }
 
     // Mask phone/email for privacy display without leaking full data
     const rawPhone = user.phone || "";

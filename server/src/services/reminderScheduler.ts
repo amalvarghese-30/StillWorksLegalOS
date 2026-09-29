@@ -24,45 +24,65 @@ export function startReminderScheduler(io?: any): void {
         ],
       });
 
-      for (const reminder of dueReminders) {
+      for (const candidate of dueReminders) {
         const deliveryId = randomUUID();
-        reminder.status = "triggered";
-        reminder.triggeredAt = now;
-        reminder.deliveryId = deliveryId;
-        await reminder.save();
+        // Atomic claim: guarantees that only one worker instance triggers and delivers this reminder
+        const claimed = await Reminder.findOneAndUpdate(
+          {
+            _id: candidate._id,
+            status: candidate.status,
+            $or: [
+              { status: "scheduled", scheduledAt: { $lte: now } },
+              { status: "snoozed", snoozedUntil: { $lte: now } },
+            ],
+          },
+          {
+            $set: {
+              status: "triggered",
+              triggeredAt: now,
+              deliveryId,
+            },
+          },
+          { new: true }
+        );
+
+        if (!claimed) {
+          // Concurrently claimed by another worker instance
+          continue;
+        }
 
         const payload = {
-          _id: reminder._id.toString(),
-          id: reminder._id.toString(),
-          userId: reminder.userId.toString(),
-          sourceType: reminder.sourceType,
-          sourceId: reminder.sourceId ? reminder.sourceId.toString() : undefined,
-          clientName: reminder.clientName,
-          phone: reminder.phone,
-          notes: reminder.notes,
-          scheduledAt: reminder.scheduledAt.toISOString(),
-          status: reminder.status,
+          _id: claimed._id.toString(),
+          id: claimed._id.toString(),
+          userId: claimed.userId.toString(),
+          sourceType: claimed.sourceType,
+          sourceId: claimed.sourceId ? claimed.sourceId.toString() : undefined,
+          clientName: claimed.clientName,
+          phone: claimed.phone,
+          notes: claimed.notes,
+          scheduledAt: claimed.scheduledAt.toISOString(),
+          status: claimed.status,
           deliveryId,
         };
 
         if (io) {
-          io.to(`user:${reminder.userId.toString()}`).emit("reminder:due", payload);
+          io.to(`user:${claimed.userId.toString()}`).emit("reminder:due", payload);
         }
 
         // Also create an in-app notification honoring preferences
         await NotificationService.createNotification(
           {
-            userId: reminder.userId,
+            userId: claimed.userId,
             type: "CUSTOM",
-            title: `Call Reminder: ${reminder.clientName}`,
-            message: `Scheduled call with ${reminder.clientName} (${reminder.phone || "No phone"}) is due now.`,
-            relatedId: reminder._id,
+            title: `Call Reminder: ${claimed.clientName}`,
+            message: `Scheduled call with ${claimed.clientName} (${claimed.phone || "No phone"}) is due now.`,
+            relatedId: claimed._id,
             relatedModel: "Reminder",
             metadata: {
               subType: "call_reminder",
-              reminderId: reminder._id.toString(),
-              phone: reminder.phone,
-              clientName: reminder.clientName,
+              reminderId: claimed._id.toString(),
+              phone: claimed.phone,
+              clientName: claimed.clientName,
               deliveryId,
             },
           },

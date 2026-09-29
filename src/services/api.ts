@@ -43,6 +43,7 @@ export function clientTypeHeaders(): Record<string, string> {
 
 // Access token is in-memory only.
 let accessToken: string | null = null;
+let sessionRefreshToken: string | null = null; // In-memory runtime refresh token for Electron when rememberMe=false
 
 export function getAccessToken(): string | null {
   return accessToken;
@@ -52,19 +53,41 @@ export function setAccessToken(token: string | null): void {
   accessToken = token;
 }
 
+const REMEMBER_ME_KEY = "stillworks.remember_me";
 const REFRESH_STORAGE_KEY = "stillworks.refresh_token";
 
 // Persist tokens after login/refresh.
 // - access token: in-memory only.
-// - refresh token: Electron -> safeStorage OS vault; web -> httpOnly cookie (never exposed to JS).
+// - refresh token: Electron -> safeStorage OS vault (if rememberMe); web -> httpOnly cookie (never exposed to JS).
 export async function persistTokens(
   newAccessToken: string,
-  newRefreshToken?: string
+  newRefreshToken?: string,
+  rememberMe?: boolean
 ): Promise<void> {
   accessToken = newAccessToken;
-  if (isElectron() && newRefreshToken) {
-    await electronApi()?.saveRefreshToken(newRefreshToken);
+
+  if (isElectron()) {
+    if (rememberMe !== undefined) {
+      if (rememberMe) {
+        window.localStorage.setItem(REMEMBER_ME_KEY, "true");
+      } else {
+        window.localStorage.removeItem(REMEMBER_ME_KEY);
+      }
+    }
+
+    const shouldPersist = rememberMe ?? (window.localStorage.getItem(REMEMBER_ME_KEY) === "true");
+
+    if (newRefreshToken) {
+      sessionRefreshToken = newRefreshToken;
+      if (shouldPersist) {
+        await electronApi()?.saveRefreshToken(newRefreshToken);
+      } else {
+        // Must not survive app restart — clear from safeStorage
+        await electronApi()?.clearRefreshToken();
+      }
+    }
   }
+
   // Security hardening: remove any residual refresh tokens from browser localStorage
   if (typeof window !== "undefined") {
     try {
@@ -77,8 +100,12 @@ export async function persistTokens(
 
 export async function clearTokens(): Promise<void> {
   accessToken = null;
+  sessionRefreshToken = null;
   if (isElectron()) {
     await electronApi()?.clearRefreshToken();
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(REMEMBER_ME_KEY);
+    }
   }
   if (typeof window !== "undefined") {
     try {
@@ -86,6 +113,36 @@ export async function clearTokens(): Promise<void> {
     } catch {
       /* ignore */
     }
+  }
+}
+
+/**
+ * Direct authenticated server logout with network timeout.
+ * Does not use apiFetch to avoid triggering refresh token recursion.
+ */
+export async function performServerLogout(tokenToRevoke?: string | null): Promise<void> {
+  const token = tokenToRevoke || accessToken;
+  if (!token) return;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+  try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...clientTypeHeaders(),
+    };
+    await fetch(`${API_BASE}/auth/logout`, {
+      method: "POST",
+      headers,
+      credentials: isElectron() ? "omit" : "include",
+      signal: controller.signal,
+    });
+  } catch {
+    /* Ignore network/timeout errors — local cleanup is authoritative */
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -115,8 +172,11 @@ export async function refreshAccessToken(): Promise<string | null> {
   refreshPromise = (async () => {
     try {
       if (isElectron()) {
-        const result = await electronApi()?.getRefreshToken();
-        const refreshToken = result?.token ?? null;
+        let refreshToken = sessionRefreshToken;
+        if (!refreshToken) {
+          const result = await electronApi()?.getRefreshToken();
+          refreshToken = result?.token ?? null;
+        }
         if (!refreshToken) return null;
 
         const res = await fetch(`${API_BASE}/auth/refresh`, {
