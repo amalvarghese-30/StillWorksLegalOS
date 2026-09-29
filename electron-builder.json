@@ -16,10 +16,7 @@
   "win": {
     "target": "nsis",
     "icon": "public/icon.png",
-    "executableName": "S & S Legal-Tech LLP",
-    "signingHashAlgorithms": [
-      "sha256"
-    ]
+    "executableName": "S & S Legal-Tech LLP"
   },
   "nsis": {
     "oneClick": true,
