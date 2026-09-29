@@ -271,16 +271,18 @@ router.post("/", async (req: Request, res: Response) => {
     }
 
     const sanitizedParties = Array.isArray(parties)
-      ? parties.map((p: any) => ({
-          name: p.name?.trim() || "",
-          role: p.role?.trim() || "Party",
-          type: ["client", "sub_client", "opposing_party", "counsel", "other"].includes(p.type)
-            ? p.type
-            : "client",
-          ...(p.clientId && mongoose.Types.ObjectId.isValid(p.clientId)
-            ? { clientId: new mongoose.Types.ObjectId(p.clientId) }
-            : {}),
-        }))
+      ? parties
+          .filter((p: any) => p && typeof p === "object" && p.name && String(p.name).trim().length > 0)
+          .map((p: any) => ({
+            name: String(p.name).trim(),
+            role: String(p.role || "Party").trim(),
+            type: ["client", "sub_client", "opposing_party", "counsel", "other"].includes(p.type)
+              ? p.type
+              : "client",
+            ...(p.clientId && mongoose.Types.ObjectId.isValid(p.clientId)
+              ? { clientId: new mongoose.Types.ObjectId(p.clientId) }
+              : {}),
+          }))
       : [];
 
     const timelineEntry = {
@@ -308,19 +310,25 @@ router.post("/", async (req: Request, res: Response) => {
 
     await record.populate(["assignedTo", "createdBy"]);
 
-    await AuditLog.logWithActivity(
-      {
-        userId: new mongoose.Types.ObjectId(req.userId!),
-        userName: req.user?.name ?? "Unknown",
-        action: "create",
-        resource: "case",
-        resourceId: record._id.toString(),
-        resourceName: record.title,
-        ip: req.ip,
-        userAgent: req.headers["user-agent"],
-      },
-      req.app.get("io")
-    );
+    try {
+      if (req.userId) {
+        await AuditLog.logWithActivity(
+          {
+            userId: new mongoose.Types.ObjectId(req.userId),
+            userName: req.user?.name ?? "Unknown",
+            action: "create",
+            resource: "case",
+            resourceId: record._id.toString(),
+            resourceName: record.title,
+            ip: req.ip,
+            userAgent: req.headers["user-agent"],
+          },
+          req.app.get("io")
+        );
+      }
+    } catch (auditErr) {
+      console.warn("[cases] Non-fatal audit log error during case creation:", auditErr);
+    }
 
     res.status(201).json({ case: record });
   } catch (err: any) {
