@@ -177,7 +177,7 @@ export function useSocket(): SocketContextValue {
 export function useSocketEvent<T = unknown>(
   event: string | null,
   handler: (data: T) => void,
-  deps: unknown[] = [],
+  deps?: unknown[],
 ) {
   const { socket } = useSocket();
   const handlerRef = useRef(handler);
@@ -193,7 +193,7 @@ export function useSocketEvent<T = unknown>(
       socket.off(event, listener);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [socket, event, ...deps]);
+  }, [socket, event, ...(deps ?? [])]);
 }
 
 /**

@@ -65,15 +65,30 @@ function playReminderBeep() {
   }
 }
 
+const TASK_QUERY_FILTERS = { limit: "200" };
+const CALENDAR_QUERY_FILTERS = {};
+
 export function CallReminderAlerts() {
   const queryClient = useQueryClient();
-  const { data: taskData } = useTasks({ limit: "200" });
-  const { data: calendarData } = useCalendarEvents();
+  const { data: taskData } = useTasks(TASK_QUERY_FILTERS);
+  const { data: calendarData } = useCalendarEvents(CALENDAR_QUERY_FILTERS);
   const updateTask = useUpdateTask();
   const updateEvent = useUpdateEvent();
   const updateReminder = useUpdateReminder();
 
+  const dueRemindersQuery = useDueReminders();
+  const snoozeMutation = useSnoozeReminder();
+  const completeMutation = useCompleteReminder();
+  const dismissMutation = useDismissReminder();
+
   const [activeAlert, setActiveAlert] = useState<ActiveReminder | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editSchedule, setEditSchedule] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+
   const alertedIdsRef = useRef<Set<string>>(new Set());
   const snoozedUntilRef = useRef<Map<string, number>>(new Map());
   const nextTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -264,11 +279,6 @@ export function CallReminderAlerts() {
     };
   }, [taskData, calendarData, triggerAlert]);
 
-  const dueRemindersQuery = useDueReminders();
-  const snoozeMutation = useSnoozeReminder();
-  const completeMutation = useCompleteReminder();
-  const dismissMutation = useDismissReminder();
-
   // Socket.IO real-time listener for reminder triggers from authoritative server scheduler
   useSocketEvent("reminder:due", (payload: any) => {
     if (!payload || !payload.id) return;
@@ -322,14 +332,6 @@ export function CallReminderAlerts() {
       break; // Show one at a time to prevent popup floods
     }
   }, [dueRemindersQuery.data, triggerAlert]);
-
-  // Inline edit state when editing from the popup alert
-  const [isEditing, setIsEditing] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [editName, setEditName] = useState("");
-  const [editPhone, setEditPhone] = useState("");
-  const [editSchedule, setEditSchedule] = useState("");
-  const [editNotes, setEditNotes] = useState("");
 
   const startEdit = () => {
     if (!activeAlert) return;

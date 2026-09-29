@@ -9,7 +9,7 @@ export type ReminderStatus =
   | "snoozed"
   | "cancelled";
 
-export type ReminderSourceType = "task" | "case" | "custom";
+export type ReminderSourceType = "task" | "case" | "event" | "custom";
 
 export interface IReminder extends Document {
   userId: Types.ObjectId;
@@ -35,7 +35,7 @@ const ReminderSchema = new Schema<IReminder>(
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     sourceType: {
       type: String,
-      enum: ["task", "case", "custom"],
+      enum: ["task", "case", "event", "custom"],
       default: "task",
       required: true,
     },
