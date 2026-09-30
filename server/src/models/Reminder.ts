@@ -79,5 +79,9 @@ const ReminderSchema = new Schema<IReminder>(
 // Compound indexes for high-throughput scheduler polling and user retrieval
 ReminderSchema.index({ status: 1, scheduledAt: 1, snoozedUntil: 1 });
 ReminderSchema.index({ userId: 1, status: 1, scheduledAt: 1 });
+ReminderSchema.index(
+  { sourceType: 1, sourceId: 1, userId: 1 },
+  { unique: true, partialFilterExpression: { sourceId: { $exists: true, $type: "objectId" } } }
+);
 
 export const Reminder = mongoose.model<IReminder>("Reminder", ReminderSchema);

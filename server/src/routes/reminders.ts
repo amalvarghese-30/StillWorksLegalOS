@@ -346,6 +346,25 @@ router.patch("/:id", async (req: Request, res: Response) => {
       }
     }
 
+    // Synchronize sibling reminders for other assigned colleagues
+    if (reminder.sourceId && (reminder.sourceType === "task" || reminder.sourceType === "event")) {
+      const siblingUpdate: Record<string, unknown> = {};
+      if (clientName !== undefined) siblingUpdate["clientName"] = reminder.clientName;
+      if (phone !== undefined) siblingUpdate["phone"] = reminder.phone;
+      if (notes !== undefined) siblingUpdate["notes"] = reminder.notes;
+      if (scheduledAt !== undefined) {
+        siblingUpdate["scheduledAt"] = reminder.scheduledAt;
+        siblingUpdate["status"] = "scheduled";
+        siblingUpdate["snoozedUntil"] = null;
+      }
+      if (Object.keys(siblingUpdate).length > 0) {
+        await Reminder.updateMany(
+          { sourceType: reminder.sourceType, sourceId: reminder.sourceId, _id: { $ne: reminder._id } },
+          { $set: siblingUpdate }
+        );
+      }
+    }
+
     res.json({ reminder });
   } catch (err) {
     console.error("[reminders] Update error:", err);

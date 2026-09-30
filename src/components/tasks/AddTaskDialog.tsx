@@ -372,7 +372,8 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
                         const matchedCase = cases.find((c) => c._id === selectedId);
                         const primaryParty = matchedCase?.parties?.find((p) => p.clientId);
                         if (primaryParty?.clientId) {
-                          update("clientId", primaryParty.clientId);
+                          const cid = typeof primaryParty.clientId === "object" ? primaryParty.clientId._id : primaryParty.clientId;
+                          update("clientId", cid);
                         }
                       }
                     }

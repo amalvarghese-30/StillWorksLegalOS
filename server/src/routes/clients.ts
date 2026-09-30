@@ -1,8 +1,17 @@
 import { Router, type Request, type Response } from "express";
+import { Types } from "mongoose";
 import { Client } from "../models/Client.js";
+import { Case } from "../models/Case.js";
+import { DocumentModel } from "../models/Document.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { requireAuth } from "../middleware/auth.js";
-import { canAccessClient, requireResourceAccess, getAccessibleClientIds } from "../middleware/authorization.js";
+import {
+  canAccessClient,
+  canAccessCase,
+  canAccessDocument,
+  requireResourceAccess,
+  getAccessibleClientIds,
+} from "../middleware/authorization.js";
 
 const router = Router();
 
@@ -130,6 +139,166 @@ router.get("/:id", requireResourceAccess("client"), async (req: Request, res: Re
     res.json({ client });
   } catch (err) {
     console.error("[clients] Get error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/clients/:clientId/cases — list authorized cases for a client
+// ---------------------------------------------------------------------------
+
+router.get("/:clientId/cases", requireResourceAccess("client", "clientId"), async (req: Request, res: Response) => {
+  try {
+    const clientId = req.params["clientId"];
+    if (!clientId || typeof clientId !== "string" || !Types.ObjectId.isValid(clientId)) {
+      res.status(400).json({ message: "Invalid client ID format" });
+      return;
+    }
+
+    const clientObjId = new Types.ObjectId(clientId);
+    const client = await Client.findById(clientObjId).select("_id name").lean();
+    if (!client) {
+      res.status(404).json({ message: "Client not found" });
+      return;
+    }
+
+    // Match cases where client is listed in parties by clientId or exact name
+    const partyQueries: Record<string, unknown>[] = [
+      { "parties.clientId": clientObjId },
+    ];
+    if (client.name) {
+      partyQueries.push({ "parties.name": client.name, "parties.type": "client" });
+    }
+
+    const cases = await Case.find({
+      $or: partyQueries,
+      status: { $ne: "Archived" },
+    })
+      .populate("assignedTo", "name email title")
+      .populate("parties.clientId", "name email phone")
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    // Enforce case-level authorization (non-admins only see cases they have permission to access)
+    const authorizedCases: any[] = [];
+    for (const c of cases) {
+      const allowed = await canAccessCase(req.userId!, req.user!.role, c._id.toString(), req.user?.permissions);
+      if (allowed) {
+        authorizedCases.push({
+          _id: c._id.toString(),
+          id: c._id.toString(),
+          number: c.number,
+          courtCaseId: c.courtCaseId ?? "",
+          title: c.title,
+          practice: c.practice,
+          court: c.court ?? "",
+          status: c.status,
+          priority: c.priority,
+          assignedTo: c.assignedTo ? {
+            _id: (c.assignedTo as any)._id?.toString(),
+            name: (c.assignedTo as any).name,
+            email: (c.assignedTo as any).email,
+          } : null,
+          nextHearing: c.nextHearing ?? null,
+          parties: (c.parties || []).map((p: any) => ({
+            name: p.name,
+            role: p.role,
+            type: p.type,
+            clientId: p.clientId ? (p.clientId._id?.toString() || p.clientId.toString()) : undefined,
+          })),
+          createdAt: c.createdAt,
+          updatedAt: c.updatedAt,
+        });
+      }
+    }
+
+    res.json({ cases: authorizedCases });
+  } catch (err) {
+    console.error("[clients] Get client cases error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/clients/:clientId/documents — list authorized documents for a client
+// ---------------------------------------------------------------------------
+
+router.get("/:clientId/documents", requireResourceAccess("client", "clientId"), async (req: Request, res: Response) => {
+  try {
+    const clientId = req.params["clientId"];
+    if (!clientId || typeof clientId !== "string" || !Types.ObjectId.isValid(clientId)) {
+      res.status(400).json({ message: "Invalid client ID format" });
+      return;
+    }
+
+    const clientObjId = new Types.ObjectId(clientId);
+    const client = await Client.findById(clientObjId).select("_id name").lean();
+    if (!client) {
+      res.status(404).json({ message: "Client not found" });
+      return;
+    }
+
+    // Find all active cases associated with this client
+    const linkedCases = await Case.find({
+      $or: [
+        { "parties.clientId": clientObjId },
+        ...(client.name ? [{ "parties.name": client.name, "parties.type": "client" }] : []),
+      ],
+      status: { $ne: "Archived" },
+    })
+      .select("_id")
+      .lean();
+
+    const caseIds = linkedCases.map((c) => c._id);
+
+    // Find candidate documents linked directly to this client OR to client's cases
+    const candidateDocs = await DocumentModel.find({
+      $or: [
+        { clientId: clientObjId },
+        ...(caseIds.length > 0 ? [{ caseId: { $in: caseIds } }] : []),
+      ],
+    })
+      .populate("caseId", "title number")
+      .populate("uploadedBy", "name")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Enforce strict BOLA authorization via canAccessDocument:
+    // Only documents the user is authorized to access (uploader, case member, or approved grant)
+    // are returned. Storage paths (nasPath, physical disk paths) are strictly omitted.
+    const authorizedDocs: any[] = [];
+    for (const d of candidateDocs) {
+      const allowed = await canAccessDocument(req.userId!, req.user!.role, d._id.toString(), req.user?.permissions);
+      if (allowed) {
+        authorizedDocs.push({
+          _id: d._id.toString(),
+          id: d._id.toString(),
+          name: d.name,
+          originalName: d.originalName,
+          kind: d.kind,
+          mimeType: d.mimeType,
+          size: d.size,
+          sizeFormatted: d.sizeFormatted,
+          version: d.version,
+          state: d.state,
+          caseId: d.caseId ? {
+            _id: (d.caseId as any)._id?.toString(),
+            number: (d.caseId as any).number,
+            title: (d.caseId as any).title,
+          } : null,
+          uploadedBy: d.uploadedBy ? {
+            _id: (d.uploadedBy as any)._id?.toString(),
+            name: (d.uploadedBy as any).name,
+          } : null,
+          createdAt: d.createdAt,
+          updatedAt: d.updatedAt,
+        });
+      }
+    }
+
+    res.json({ documents: authorizedDocs });
+  } catch (err) {
+    console.error("[clients] Get client documents error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 });

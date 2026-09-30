@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   X,
   Plus,
@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useCreateCase, type CreateCasePayload } from "@/services/cases";
+import { useClients } from "@/services/clients";
 import {
   Dialog,
   DialogContent,
@@ -28,6 +29,7 @@ interface PartyEntry {
   name: string;
   role: string;
   type: "client" | "sub_client" | "opposing_party" | "counsel" | "other";
+  clientId?: string | undefined;
 }
 
 interface FormState {
@@ -94,16 +96,42 @@ const COURTS = [
 interface AddCaseDialogProps {
   open: boolean;
   onClose: () => void;
+  preselectedClientId?: string;
+  preselectedClientName?: string;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function AddCaseDialog({ open, onClose }: AddCaseDialogProps) {
+export function AddCaseDialog({
+  open,
+  onClose,
+  preselectedClientId,
+  preselectedClientName,
+}: AddCaseDialogProps) {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [parties, setParties] = useState<PartyEntry[]>([]);
   const [tagInput, setTagInput] = useState("");
+
+  const { data: clientsData } = useClients({ limit: "100" });
+
+  useEffect(() => {
+    if (open) {
+      if (preselectedClientId) {
+        setParties([
+          {
+            name: preselectedClientName || "",
+            role: "Primary Client",
+            type: "client",
+            clientId: preselectedClientId,
+          },
+        ]);
+      } else {
+        setParties([]);
+      }
+    }
+  }, [open, preselectedClientId, preselectedClientName]);
 
   const createCase = useCreateCase();
   const isPending = createCase.isPending;
@@ -121,7 +149,7 @@ export function AddCaseDialog({ open, onClose }: AddCaseDialogProps) {
     ]);
   };
 
-  const updateParty = (idx: number, key: keyof PartyEntry, value: string) => {
+  const updateParty = <K extends keyof PartyEntry>(idx: number, key: K, value: PartyEntry[K]) => {
     setParties((prev) =>
       prev.map((p, i) => (i === idx ? { ...p, [key]: value } : p)),
     );
@@ -345,21 +373,6 @@ export function AddCaseDialog({ open, onClose }: AddCaseDialogProps) {
             )}
           </div>
 
-          {/* ── Document Storage Folder ── */}
-          <div className="space-y-1.5">
-            <Label htmlFor="case-nas" className="text-helper">Document Storage Folder</Label>
-            <Input
-              id="case-nas"
-              value={form.nasPath}
-              onChange={(e) => update("nasPath", e.target.value)}
-              placeholder="e.g. /Cases/SW-2026-0148/"
-              className="h-11 rounded-md"
-            />
-            <p className="text-caption text-muted-foreground">
-              Firm central storage folder where case documents and files are stored.
-            </p>
-          </div>
-
           {/* ── Parties ── */}
           <div className="rounded-lg border border-border">
             <div className="flex items-center justify-between px-4 py-3">
@@ -393,34 +406,18 @@ export function AddCaseDialog({ open, onClose }: AddCaseDialogProps) {
                       </button>
                     </div>
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="space-y-1.5 sm:col-span-2">
-                        <Label htmlFor={`party-name-${idx}`} className="text-helper">Name</Label>
-                        <Input
-                          id={`party-name-${idx}`}
-                          value={p.name}
-                          onChange={(e) => updateParty(idx, "name", e.target.value)}
-                          placeholder="Party name"
-                          className="h-10 rounded-md"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor={`party-role-${idx}`} className="text-helper">Role</Label>
-                        <Input
-                          id={`party-role-${idx}`}
-                          value={p.role}
-                          onChange={(e) => updateParty(idx, "role", e.target.value)}
-                          placeholder="Petitioner, Respondent, etc."
-                          className="h-10 rounded-md"
-                        />
-                      </div>
                       <div className="space-y-1.5">
                         <Label htmlFor={`party-type-${idx}`} className="text-helper">Type</Label>
                         <select
                           id={`party-type-${idx}`}
                           value={p.type}
-                          onChange={(e) =>
-                            updateParty(idx, "type", e.target.value as PartyEntry["type"])
-                          }
+                          onChange={(e) => {
+                            const newType = e.target.value as PartyEntry["type"];
+                            updateParty(idx, "type", newType);
+                            if (newType !== "client") {
+                              updateParty(idx, "clientId", undefined);
+                            }
+                          }}
                           className="h-10 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary"
                         >
                           <option value="client">Client</option>
@@ -429,6 +426,59 @@ export function AddCaseDialog({ open, onClose }: AddCaseDialogProps) {
                           <option value="counsel">Counsel</option>
                           <option value="other">Other</option>
                         </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`party-role-${idx}`} className="text-helper">Role</Label>
+                        <Input
+                          id={`party-role-${idx}`}
+                          value={p.role}
+                          onChange={(e) => updateParty(idx, "role", e.target.value)}
+                          placeholder="Primary Client, Petitioner, Respondent..."
+                          className="h-10 rounded-md"
+                        />
+                      </div>
+
+                      {p.type === "client" && (
+                        <div className="space-y-1.5 sm:col-span-2">
+                          <Label className="text-helper text-muted-foreground">Link Client Profile</Label>
+                          <select
+                            value={p.clientId || ""}
+                            onChange={(e) => {
+                              const selectedId = e.target.value;
+                              const selectedClient = clientsData?.clients.find((c) => c._id === selectedId);
+                              setParties((prev) =>
+                                prev.map((item, i) =>
+                                  i === idx
+                                    ? {
+                                        ...item,
+                                        clientId: selectedId || undefined,
+                                        name: selectedClient ? selectedClient.name : item.name,
+                                      }
+                                    : item
+                                )
+                              );
+                            }}
+                            className="h-10 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary"
+                          >
+                            <option value="">— Select an existing client or enter name below —</option>
+                            {clientsData?.clients.map((c) => (
+                              <option key={c._id} value={c._id}>
+                                {c.name} {c.phone ? `(${c.phone})` : ""} {c.kyc === "Verified" ? "✓" : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      <div className="space-y-1.5 sm:col-span-2">
+                        <Label htmlFor={`party-name-${idx}`} className="text-helper">Name *</Label>
+                        <Input
+                          id={`party-name-${idx}`}
+                          value={p.name}
+                          onChange={(e) => updateParty(idx, "name", e.target.value)}
+                          placeholder="Party name"
+                          className="h-10 rounded-md"
+                        />
                       </div>
                     </div>
                   </div>

@@ -80,6 +80,62 @@ export interface CreateClientPayload {
   subClients?: SubClient[];
 }
 
+export interface ClientCase {
+  _id: string;
+  number: string;
+  courtCaseId?: string;
+  title: string;
+  practice?: string;
+  status: string;
+  assignedTo?: {
+    _id: string;
+    name: string;
+    email: string;
+  } | null;
+  nextHearing?: string | null;
+  parties?: {
+    name: string;
+    role: string;
+    type: string;
+    clientId?: string;
+  }[];
+  createdAt: string;
+}
+
+export interface ClientCasesResponse {
+  cases: ClientCase[];
+  total: number;
+}
+
+export interface ClientDocument {
+  _id: string;
+  name: string;
+  kind?: string;
+  mimeType?: string;
+  size: number;
+  sizeFormatted?: string;
+  caseId?: {
+    _id: string;
+    number: string;
+    title: string;
+  } | string | null;
+  clientId?: string | null;
+  version?: number;
+  tags?: string[];
+  state?: string;
+  uploadedBy?: {
+    _id: string;
+    name: string;
+  } | string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface ClientDocumentsResponse {
+  documents: ClientDocument[];
+  total: number;
+}
+
 // ---------------------------------------------------------------------------
 // Query keys
 // ---------------------------------------------------------------------------
@@ -88,6 +144,8 @@ export const clientKeys = {
   all: ["clients"] as const,
   list: (filters: Record<string, string>) => ["clients", "list", filters] as const,
   detail: (id: string) => ["clients", id] as const,
+  cases: (clientId: string) => ["clients", clientId, "cases"] as const,
+  documents: (clientId: string) => ["clients", clientId, "documents"] as const,
 };
 
 // ---------------------------------------------------------------------------
@@ -107,6 +165,22 @@ export function useClient(id: string | undefined) {
     queryKey: clientKeys.detail(id!),
     queryFn: () => api.get(`/clients/${id}`),
     enabled: !!id,
+  });
+}
+
+export function useClientCases(clientId: string | undefined) {
+  return useQuery<ClientCasesResponse>({
+    queryKey: clientKeys.cases(clientId!),
+    queryFn: () => api.get(`/clients/${clientId}/cases`),
+    enabled: !!clientId,
+  });
+}
+
+export function useClientDocuments(clientId: string | undefined) {
+  return useQuery<ClientDocumentsResponse>({
+    queryKey: clientKeys.documents(clientId!),
+    queryFn: () => api.get(`/clients/${clientId}/documents`),
+    enabled: !!clientId,
   });
 }
 

@@ -12,8 +12,8 @@ const ALLOWED_PROTOCOLS = ["https:", "http:", "mailto:", "tel:"];
 
 export interface ExternalLinkResult {
   success: boolean;
-  copiedToClipboard?: boolean;
-  error?: string;
+  copiedToClipboard?: boolean | undefined;
+  error?: string | undefined;
 }
 
 export interface ExternalLinkProvider {
@@ -115,6 +115,7 @@ class ElectronExternalLinkProvider implements ExternalLinkProvider {
     if (!cleaned) return { success: false, error: "Invalid phone number" };
     const telUrl = `tel:${cleaned}`;
     const electronApi = typeof window !== "undefined" ? window.electronAPI : undefined;
+    let opened = false;
     let openError: string | undefined;
     if (electronApi?.openExternal) {
       const res = await electronApi.openExternal(telUrl);

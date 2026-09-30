@@ -1,13 +1,14 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useRef } from "react";
 import {
-  LayoutDashboard, FileBadge, Home, Users,
+  LayoutDashboard, FileBadge, Home, Users, Briefcase, Plus,
   Phone, Mail, MapPin, Loader2, Edit3, ChevronDown,
   Send, Check, X, UserPlus, Building2, FileText, Trash2, Archive,
+  Download, Eye, RefreshCw, ExternalLink,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
-import { StatusPill } from "@/components/common/StatusPill";
+import { StatusPill, toneForStatus } from "@/components/common/StatusPill";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,9 +24,14 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   useClient, useUpdateClient, useDeleteClient,
+  useClientCases, useClientDocuments,
   type ClientRecord,
 } from "@/services/clients";
 import { EditClientDialog } from "@/components/clients/EditClientDialog";
+import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
+import { downloadDocument } from "@/services/documents";
+import { DocumentPreviewModal } from "@/components/documents/DocumentPreviewModal";
+import type { ClientDocument } from "@/services/clients";
 
 export const Route = createFileRoute("/_shell/clients/$clientId")({
   head: () => ({
@@ -41,6 +47,8 @@ export const Route = createFileRoute("/_shell/clients/$clientId")({
 
 const sections = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "cases", label: "Cases", icon: Briefcase },
+  { id: "documents", label: "Documents", icon: FileText },
   { id: "kyc", label: "Identity Verification", icon: FileBadge },
   { id: "property", label: "Property", icon: Home },
   { id: "subclients", label: "Sub-clients", icon: Users },
@@ -146,7 +154,23 @@ function ClientProfile() {
   const deleteClient = useDeleteClient();
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showAddCaseDialog, setShowAddCaseDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState<ClientDocument | null>(null);
+
+  const {
+    data: casesData,
+    isLoading: isCasesLoading,
+    isError: isCasesError,
+    refetch: refetchCases,
+  } = useClientCases(clientId);
+
+  const {
+    data: docsData,
+    isLoading: isDocsLoading,
+    isError: isDocsError,
+    refetch: refetchDocs,
+  } = useClientDocuments(clientId);
 
   const handleDeleteClient = async () => {
     setIsDeleting(true);
@@ -304,6 +328,187 @@ function ClientProfile() {
             </SectionCard>
           )}
 
+          {/* ── Cases ── */}
+          {active === "cases" && (
+            <SectionCard
+              title="Linked Cases"
+              description="Matters and proceedings where this client is an active party."
+              icon={Briefcase}
+              action={
+                <Button
+                  size="sm"
+                  className="rounded-md gap-1.5"
+                  onClick={() => setShowAddCaseDialog(true)}
+                >
+                  <Plus size={14} /> Add Case
+                </Button>
+              }
+            >
+              {isCasesLoading ? (
+                <div className="flex justify-center py-12">
+                  <Loader2 size={28} className="animate-spin text-muted-foreground" />
+                </div>
+              ) : isCasesError ? (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-6 text-center">
+                  <p className="text-helper font-medium text-destructive">Failed to load client cases.</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3 gap-1.5 rounded-md"
+                    onClick={() => refetchCases()}
+                  >
+                    <RefreshCw size={14} /> Retry
+                  </Button>
+                </div>
+              ) : !casesData?.cases || casesData.cases.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-12 text-center">
+                  <Briefcase size={32} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
+                  <p className="mt-4 font-medium">No cases linked to this client</p>
+                  <p className="mt-1 text-helper text-muted-foreground">
+                    Create a case linked to this client or add this client to an existing matter.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-4 gap-1.5 rounded-md"
+                    onClick={() => setShowAddCaseDialog(true)}
+                  >
+                    <Plus size={14} /> Add first case
+                  </Button>
+                </div>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {casesData.cases.map((c) => (
+                    <div
+                      key={c._id}
+                      className="group flex flex-col justify-between rounded-lg border border-border p-4 transition-colors hover:border-primary/50 hover:bg-muted/30"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-caption text-muted-foreground font-semibold">
+                            {c.number}
+                          </span>
+                          <StatusPill tone={toneForStatus(c.status)}>
+                            {c.status}
+                          </StatusPill>
+                        </div>
+                        <Link
+                          to="/cases/$caseId"
+                          params={{ caseId: c._id }}
+                          className="mt-2 block font-semibold text-foreground group-hover:text-primary transition-colors"
+                        >
+                          {c.title}
+                        </Link>
+                        <p className="mt-1 text-caption text-muted-foreground">
+                          {c.practice || "General Practice"}
+                        </p>
+                      </div>
+
+                      <div className="mt-4 border-t border-border/60 pt-3 text-caption flex items-center justify-between text-muted-foreground">
+                        <span>Assigned: {c.assignedTo?.name || "Unassigned"}</span>
+                        <span>Hearing: {formatDate(c.nextHearing)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </SectionCard>
+          )}
+
+          {/* ── Documents ── */}
+          {active === "documents" && (
+            <SectionCard
+              title="Client Documents"
+              description="Legal briefs, evidence, filings, and contracts associated with this client."
+              icon={FileText}
+            >
+              {isDocsLoading ? (
+                <div className="flex justify-center py-12">
+                  <Loader2 size={28} className="animate-spin text-muted-foreground" />
+                </div>
+              ) : isDocsError ? (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-6 text-center">
+                  <p className="text-helper font-medium text-destructive">Failed to load client documents.</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3 gap-1.5 rounded-md"
+                    onClick={() => refetchDocs()}
+                  >
+                    <RefreshCw size={14} /> Retry
+                  </Button>
+                </div>
+              ) : !docsData?.documents || docsData.documents.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-12 text-center">
+                  <FileText size={32} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
+                  <p className="mt-4 font-medium">No documents linked to this client</p>
+                  <p className="mt-1 text-helper text-muted-foreground">
+                    Upload documents to matters linked to this client or via the document repository.
+                  </p>
+                </div>
+              ) : (
+                <ul className="divide-y divide-border/60">
+                  {docsData.documents.map((d) => {
+                    const caseInfo = typeof d.caseId === "object" && d.caseId !== null ? d.caseId : null;
+                    return (
+                      <li key={d._id} className="flex flex-wrap items-center justify-between gap-4 py-3.5">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="num grid size-10 shrink-0 place-items-center rounded-md bg-muted text-caption font-semibold text-muted-foreground">
+                            {(d.kind ?? "DOC").slice(0, 3).toUpperCase()}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="truncate text-helper font-medium text-foreground">{d.name}</p>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
+                              <span>{d.sizeFormatted || `${(d.size / 1024).toFixed(1)} KB`}</span>
+                              <span>•</span>
+                              <span>v{d.version || 1}</span>
+                              <span>•</span>
+                              <span>{formatDate(d.createdAt)}</span>
+                              {caseInfo && (
+                                <>
+                                  <span>•</span>
+                                  <Link
+                                    to="/cases/$caseId"
+                                    params={{ caseId: caseInfo._id }}
+                                    className="flex items-center gap-1 text-primary hover:underline"
+                                  >
+                                    <Briefcase size={12} />
+                                    <span>{caseInfo.number || caseInfo.title}</span>
+                                  </Link>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 rounded-md px-2 text-muted-foreground hover:text-foreground"
+                            onClick={() => setPreviewDoc(d)}
+                            title="Preview document"
+                          >
+                            <Eye size={15} />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 rounded-md px-2 text-muted-foreground hover:text-foreground"
+                            onClick={() => downloadDocument(d._id)}
+                            title="Download document"
+                          >
+                            <Download size={15} />
+                          </Button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </SectionCard>
+          )}
+
           {/* ── Identity Verification ── */}
           {active === "kyc" && (
             <SectionCard title="Identity Verification" description="Aadhaar, PAN and client identity credentials." icon={FileBadge}>
@@ -435,6 +640,13 @@ function ClientProfile() {
         record={record}
       />
 
+      <AddCaseDialog
+        open={showAddCaseDialog}
+        onClose={() => setShowAddCaseDialog(false)}
+        preselectedClientId={record._id}
+        preselectedClientName={record.name}
+      />
+
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
         <AlertDialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
           <AlertDialogHeader>
@@ -459,6 +671,17 @@ function ClientProfile() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {previewDoc && (
+        <DocumentPreviewModal
+          open={!!previewDoc}
+          onClose={() => setPreviewDoc(null)}
+          documentId={previewDoc._id}
+          documentName={previewDoc.name}
+          documentMimeType={previewDoc.mimeType}
+          documentSize={previewDoc.sizeFormatted ?? previewDoc.size}
+        />
+      )}
     </div>
   );
 }

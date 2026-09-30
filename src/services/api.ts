@@ -11,20 +11,21 @@ import { isElectron } from "@/platform";
 export { isElectron };
 
 function getApiBase(): string {
-  // Electron desktop app: ALWAYS connect directly to the production VPS API
-  if (isElectron()) {
-    return "https://legalos.stillworks.in/api";
-  }
-  if (typeof window !== "undefined") {
-    // Web browser: on localhost/LAN, relative /api is seamlessly forwarded to
-    // https://legalos.stillworks.in/api via the Vite dev server proxy without CORS issues.
-    // On the hosted web app, it resolves to https://legalos.stillworks.in/api natively.
-    return `${window.location.origin}/api`;
-  }
+  // 1. Explicit environment variable takes precedence (development or production)
   if (import.meta.env["VITE_API_URL"]) {
     return import.meta.env["VITE_API_URL"];
   }
-  return "https://legalos.stillworks.in/api";
+
+  // 2. Web browser: on localhost/LAN, relative /api is forwarded via Vite proxy or same-origin
+  if (typeof window !== "undefined" && window.location) {
+    if (window.location.origin && window.location.origin.startsWith("http")) {
+      return `${window.location.origin}/api`;
+    }
+  }
+
+  // 3. Fallback for Electron / local desktop development (default to localhost:3001)
+  const defaultPort = import.meta.env["VITE_BACKEND_PORT"] || "3001";
+  return `http://localhost:${defaultPort}/api`;
 }
 
 const API_BASE = getApiBase();

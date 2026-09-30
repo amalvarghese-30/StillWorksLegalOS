@@ -7,7 +7,7 @@ import { api } from "./api";
 
 export interface CaseParty {
   _id?: string;
-  clientId?: string;
+  clientId?: string | { _id: string; name?: string; email?: string; phone?: string } | undefined;
   name: string;
   role: string;
   type: "client" | "sub_client" | "opposing_party" | "counsel" | "other";

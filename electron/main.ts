@@ -40,7 +40,7 @@ const CSP_HEADER = [
   "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https://fonts.gstatic.com",
-  "connect-src 'self' https: wss: https://legalos.stillworks.in wss://legalos.stillworks.in http://localhost:3001 ws://localhost:3001",
+  "connect-src 'self' https: wss: http://localhost:3001 ws://localhost:3001 http://localhost:5173 http://localhost:5174 ws://localhost:5173 ws://localhost:5174",
   "frame-src 'none'",
   "object-src 'none'",
   "base-uri 'self'",
@@ -48,7 +48,7 @@ const CSP_HEADER = [
   "frame-ancestors 'none'",
 ].join("; ");
 
-// Connect-src for production
+// Connect-src for production / packaged desktop client
 const CSP_HEADER_PROD = [
   "default-src 'self'",
   "script-src 'self' 'sha256-IoxEYENdKH6o0Ay7Mpa5AqWJBfgNF1LnVUOx/uc2bMI='",
@@ -56,7 +56,7 @@ const CSP_HEADER_PROD = [
   "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https://fonts.gstatic.com",
-  "connect-src 'self' https: wss: https://legalos.stillworks.in wss://legalos.stillworks.in",
+  "connect-src 'self' https: wss: http://localhost:3001 ws://localhost:3001",
   "frame-src 'none'",
   "object-src 'none'",
   "base-uri 'self'",
@@ -68,7 +68,7 @@ const CSP_HEADER_PROD = [
 // Constants
 // ---------------------------------------------------------------------------
 const isDev = !app.isPackaged;
-const DEV_URL = "http://localhost:5173";
+const DEV_URL = process.env.VITE_DEV_SERVER_URL || "http://localhost:5174";
 const RETRY_INTERVAL_MS = 500;
 const RETRY_TIMEOUT_MS = 30_000; // 30 s total before showing error page
 const SERVER_PORT = process.env.SERVER_PORT ?? "3001";
@@ -124,7 +124,7 @@ function createWindow(): BrowserWindow {
       contextIsolation: true, // REQUIRED for security
       nodeIntegration: false, // REQUIRED for security
       sandbox: true,
-      // webSecurity: true — all API calls go to HTTPS (legalos.stillworks.in)
+      // webSecurity: true — all API calls go to configured backend (localhost in dev)
       // via the webRequest Origin interceptor below. Loading from file://
       // is fine with webSecurity enabled.
       webSecurity: true,
@@ -141,11 +141,19 @@ function createWindow(): BrowserWindow {
   });
 
   // -------------------------------------------------------------------------
-  // Cloud Origin: Attach remote origin for seamless VPS connectivity
+  // Origin Interceptor: Attach configured API origin when applicable
   // -------------------------------------------------------------------------
   win.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
-    if (details.url.includes("stillworks.in")) {
-      details.requestHeaders["Origin"] = "https://legalos.stillworks.in";
+    const configuredOrigin = process.env.VITE_API_ORIGIN;
+    if (configuredOrigin) {
+      try {
+        const targetHost = new URL(configuredOrigin).hostname;
+        if (details.url.includes(targetHost)) {
+          details.requestHeaders["Origin"] = configuredOrigin;
+        }
+      } catch {
+        // Ignore invalid URL
+      }
     }
     callback({ requestHeaders: details.requestHeaders });
   });
@@ -220,24 +228,33 @@ function createWindow(): BrowserWindow {
 }
 
 // ---------------------------------------------------------------------------
-// Dev-mode loader with retry loop
+// Dev-mode loader with retry loop (tries port 5174 and 5173)
 // ---------------------------------------------------------------------------
 async function loadDevWithRetry(win: BrowserWindow): Promise<void> {
+  const candidateUrls = [
+    process.env.VITE_DEV_SERVER_URL,
+    DEV_URL,
+    "http://localhost:5174",
+    "http://localhost:5173",
+  ].filter(Boolean) as string[];
+
   const start = Date.now();
   while (Date.now() - start < RETRY_TIMEOUT_MS) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 2000);
-      const res = await fetch(`${DEV_URL}/`, {
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      if (res.ok) {
-        await win.loadURL(DEV_URL);
-        return;
+    for (const url of candidateUrls) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 1500);
+        const res = await fetch(`${url}/`, {
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        if (res.ok) {
+          await win.loadURL(url);
+          return;
+        }
+      } catch {
+        // Continue checking candidates
       }
-    } catch {
-      // Vite not ready yet — retry
     }
     await new Promise((r) => setTimeout(r, RETRY_INTERVAL_MS));
   }

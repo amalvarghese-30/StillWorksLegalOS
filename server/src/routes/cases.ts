@@ -1,6 +1,10 @@
 import { Router, type Request, type Response } from "express";
 import mongoose from "mongoose";
+import { randomUUID } from "node:crypto";
 import { Case } from "../models/Case.js";
+import { Client } from "../models/Client.js";
+import { DocumentModel } from "../models/Document.js";
+import { initSequence } from "../models/Counter.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { requireAuth } from "../middleware/auth.js";
 import { canAccessCase, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
@@ -235,6 +239,10 @@ router.get("/:id", requireResourceAccess("case"), async (req: Request, res: Resp
 // ---------------------------------------------------------------------------
 
 router.post("/", async (req: Request, res: Response) => {
+  const corrId = (req.headers["x-correlation-id"] as string) || randomUUID();
+  const userId = req.userId!;
+  const userRole = req.user?.role ?? "employee";
+
   try {
     const {
       title,
@@ -247,20 +255,55 @@ router.post("/", async (req: Request, res: Response) => {
       nextHearing,
       parties,
       assignedTo,
-      nasPath,
       tags,
     } = req.body;
 
-    if (!title || !title.trim()) {
+    console.log(`[cases:create] [corrId: ${corrId}] [stage: start] [userId: ${userId}] [title: ${typeof title === "string" ? title.slice(0, 50) : "empty"}]`);
+
+    // 1. Validation Stage
+    if (!title || !String(title).trim()) {
+      console.warn(`[cases:create] [corrId: ${corrId}] [stage: validation_failed] Missing case title`);
       res.status(400).json({ message: "Case title is required" });
       return;
     }
 
+    const cleanTitle = String(title).trim();
+
+    // 2. Idempotency & Deduplication Stage
+    const idempotencyKey =
+      (req.headers["idempotency-key"] as string) ||
+      (req.headers["x-idempotency-key"] as string) ||
+      (req.body?.idempotencyKey ? String(req.body.idempotencyKey).trim() : undefined);
+
+    if (idempotencyKey) {
+      const existing = await Case.findOne({
+        idempotencyKey,
+        createdBy: userId,
+      }).populate(["assignedTo", "createdBy"]);
+      if (existing) {
+        console.log(`[cases:create] [corrId: ${corrId}] [stage: idempotent_hit] Returning existing case ${existing._id}`);
+        res.status(200).json({ case: existing, idempotent: true });
+        return;
+      }
+    } else {
+      // Automatic double-click suppressor: return existing case if identical submission created within 3 seconds
+      const recent = await Case.findOne({
+        createdBy: userId,
+        title: cleanTitle,
+        createdAt: { $gte: new Date(Date.now() - 3000) },
+      }).populate(["assignedTo", "createdBy"]);
+      if (recent) {
+        console.log(`[cases:create] [corrId: ${corrId}] [stage: double_click_suppressed] Returning existing case ${recent._id}`);
+        res.status(200).json({ case: recent, idempotent: true });
+        return;
+      }
+    }
+
     // Non-admins can only assign to themselves. Ensure valid ObjectId if specified.
     const finalAssignedTo =
-      req.user?.role === "admin" && assignedTo && mongoose.Types.ObjectId.isValid(assignedTo)
+      userRole === "admin" && assignedTo && mongoose.Types.ObjectId.isValid(assignedTo)
         ? assignedTo
-        : req.userId;
+        : userId;
 
     let parsedNextHearing: Date | null = null;
     if (nextHearing) {
@@ -270,20 +313,81 @@ router.post("/", async (req: Request, res: Response) => {
       }
     }
 
-    const sanitizedParties = Array.isArray(parties)
-      ? parties
-          .filter((p: any) => p && typeof p === "object" && p.name && String(p.name).trim().length > 0)
-          .map((p: any) => ({
-            name: String(p.name).trim(),
-            role: String(p.role || "Party").trim(),
-            type: ["client", "sub_client", "opposing_party", "counsel", "other"].includes(p.type)
-              ? p.type
-              : "client",
-            ...(p.clientId && mongoose.Types.ObjectId.isValid(p.clientId)
-              ? { clientId: new mongoose.Types.ObjectId(p.clientId) }
-              : {}),
-          }))
-      : [];
+    // 3. Parties Resolution & Client Relationship Integrity (Phase 6)
+    const sanitizedParties: Array<{
+      clientId?: mongoose.Types.ObjectId;
+      name: string;
+      role: string;
+      type: "client" | "sub_client" | "opposing_party" | "counsel" | "other";
+    }> = [];
+
+    if (Array.isArray(parties)) {
+      for (const p of parties) {
+        if (!p || typeof p !== "object" || !p.name || !String(p.name).trim()) continue;
+        const partyName = String(p.name).trim();
+        const partyRole = String(p.role || "Party").trim();
+        let partyType: "client" | "sub_client" | "opposing_party" | "counsel" | "other" =
+          ["client", "sub_client", "opposing_party", "counsel", "other"].includes(p.type)
+            ? p.type
+            : "client";
+        let linkedClientId: mongoose.Types.ObjectId | undefined;
+
+        if (p.clientId) {
+          if (!mongoose.Types.ObjectId.isValid(p.clientId)) {
+            res.status(400).json({ message: `Invalid client ID format: ${p.clientId}` });
+            return;
+          }
+          const realClient = await Client.findById(p.clientId).select("_id name").lean();
+          if (!realClient) {
+            res.status(400).json({ message: `Client not found with ID: ${p.clientId}` });
+            return;
+          }
+          linkedClientId = realClient._id as mongoose.Types.ObjectId;
+        } else if (partyType === "client" || partyType === "sub_client") {
+          // Attempt to find existing client by exact name
+          const matchingClient = await Client.findOne({
+            name: new RegExp(`^${partyName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i"),
+          })
+            .select("_id")
+            .lean();
+          if (matchingClient) {
+            linkedClientId = matchingClient._id as mongoose.Types.ObjectId;
+          } else if (partyType === "client") {
+            // Cannot masquerade as a relational client without a real client record
+            partyType = "other";
+          }
+        }
+
+        sanitizedParties.push({
+          name: partyName,
+          role: partyRole,
+          type: partyType,
+          ...(linkedClientId ? { clientId: linkedClientId } : {}),
+        });
+      }
+    }
+
+    // Support optional top-level clientId
+    if (req.body.clientId) {
+      if (!mongoose.Types.ObjectId.isValid(req.body.clientId)) {
+        res.status(400).json({ message: `Invalid client ID format: ${req.body.clientId}` });
+        return;
+      }
+      const topClient = await Client.findById(req.body.clientId).select("_id name").lean();
+      if (!topClient) {
+        res.status(400).json({ message: `Client not found with ID: ${req.body.clientId}` });
+        return;
+      }
+      const hasParty = sanitizedParties.some((p) => p.clientId?.toString() === topClient._id.toString());
+      if (!hasParty) {
+        sanitizedParties.unshift({
+          name: topClient.name,
+          role: "Primary Client",
+          type: "client",
+          clientId: topClient._id as mongoose.Types.ObjectId,
+        });
+      }
+    }
 
     const timelineEntry = {
       event: "Case created",
@@ -291,30 +395,69 @@ router.post("/", async (req: Request, res: Response) => {
       when: new Date(),
     };
 
-    const record = await Case.create({
-      title: title.trim(),
-      description: description ?? "",
-      practice: practice?.trim() || "Property",
-      court: court ?? "",
-      judge: judge ?? "",
-      status: status ?? "Active",
-      priority: priority ?? "Medium",
+    console.log(`[cases:create] [corrId: ${corrId}] [stage: db_create]`);
+
+    const caseData: Record<string, unknown> = {
+      title: cleanTitle,
+      description: typeof description === "string" ? description.trim() : "",
+      practice: typeof practice === "string" && practice.trim() ? practice.trim() : "Property",
+      court: typeof court === "string" ? court.trim() : "",
+      judge: typeof judge === "string" ? judge.trim() : "",
+      status: status || "Active",
+      priority: priority || "Medium",
       nextHearing: parsedNextHearing,
       parties: sanitizedParties,
       assignedTo: finalAssignedTo,
-      createdBy: req.userId,
-      nasPath: nasPath ?? "",
-      tags: tags ?? [],
+      createdBy: userId,
+      tags: Array.isArray(tags) ? tags.map((t) => String(t).trim()).filter(Boolean) : [],
       timeline: [timelineEntry],
-    });
+      ...(idempotencyKey ? { idempotencyKey } : {}),
+    };
+
+    let record;
+    try {
+      record = await Case.create(caseData);
+    } catch (createErr: any) {
+      // 4. Counter Collision Recovery: If E11000 duplicate key error on case number,
+      // resync counter to maximum database sequence and retry once atomically.
+      if (createErr.code === 11000 && createErr.message?.includes("number_1")) {
+        console.warn(`[cases:create] [corrId: ${corrId}] [stage: counter_collision] Resyncing case sequence counter...`);
+        const year = new Date().getFullYear();
+        const counterKey = `case-number-${year}`;
+        const prefix = `SW-${year}-`;
+        const existingCases = await Case.find(
+          { number: { $regex: `^${prefix}` } },
+          { number: 1 }
+        ).lean();
+        let maxCaseSeq = 0;
+        for (const c of existingCases) {
+          if (c.number && c.number.startsWith(prefix)) {
+            const numPart = parseInt(c.number.slice(prefix.length), 10);
+            if (!isNaN(numPart) && numPart > maxCaseSeq) maxCaseSeq = numPart;
+          }
+        }
+        await initSequence(counterKey, maxCaseSeq);
+        record = await Case.create(caseData);
+      } else {
+        throw createErr;
+      }
+    }
+
+    // Set server-controlled canonical storage path
+    const safeNumber = record.number.replace(/[^a-zA-Z0-9_-]/g, "_");
+    record.nasPath = `/Cases/${safeNumber}-${record._id}`;
+    await record.save();
+
+    console.log(`[cases:create] [corrId: ${corrId}] [stage: created] [caseId: ${record._id}] [number: ${record.number}]`);
 
     await record.populate(["assignedTo", "createdBy"]);
 
+    // 5. Non-Fatal Audit Logging
     try {
-      if (req.userId) {
+      if (userId) {
         await AuditLog.logWithActivity(
           {
-            userId: new mongoose.Types.ObjectId(req.userId),
+            userId: new mongoose.Types.ObjectId(userId),
             userName: req.user?.name ?? "Unknown",
             action: "create",
             resource: "case",
@@ -326,20 +469,20 @@ router.post("/", async (req: Request, res: Response) => {
           req.app.get("io")
         );
       }
-    } catch (auditErr) {
-      console.warn("[cases] Non-fatal audit log error during case creation:", auditErr);
+    } catch (auditErr: any) {
+      console.warn(`[cases:create] [corrId: ${corrId}] Non-fatal audit log error:`, auditErr?.message);
     }
 
     res.status(201).json({ case: record });
   } catch (err: any) {
-    console.error("[cases] Create error:", err);
+    console.error(`[cases:create] [corrId: ${corrId}] [stage: failed] Error:`, err);
     if (err.name === "ValidationError") {
       const messages = Object.values(err.errors || {}).map((e: any) => e.message);
       res.status(400).json({ message: messages.length > 0 ? messages.join(", ") : err.message });
       return;
     }
     if (err.code === 11000) {
-      res.status(409).json({ message: "A case with this number already exists" });
+      res.status(409).json({ message: "A case with this number or idempotency key already exists" });
       return;
     }
     if (err.name === "CastError") {
@@ -403,16 +546,76 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
       }
     }
 
+    // Parties validation stage for PATCH
+    if (updates["parties"] !== undefined && Array.isArray(updates["parties"])) {
+      const sanitizedParties: Array<{
+        clientId?: mongoose.Types.ObjectId;
+        name: string;
+        role: string;
+        type: "client" | "sub_client" | "opposing_party" | "counsel" | "other";
+      }> = [];
+
+      for (const p of updates["parties"] as any[]) {
+        if (!p || typeof p !== "object" || !p.name || !String(p.name).trim()) continue;
+        const partyName = String(p.name).trim();
+        const partyRole = String(p.role || "Party").trim();
+        let partyType: "client" | "sub_client" | "opposing_party" | "counsel" | "other" =
+          ["client", "sub_client", "opposing_party", "counsel", "other"].includes(p.type)
+            ? p.type
+            : "client";
+        let linkedClientId: mongoose.Types.ObjectId | undefined;
+
+        if (p.clientId) {
+          if (!mongoose.Types.ObjectId.isValid(p.clientId)) {
+            res.status(400).json({ message: `Invalid client ID format: ${p.clientId}` });
+            return;
+          }
+          const realClient = await Client.findById(p.clientId).select("_id name").lean();
+          if (!realClient) {
+            res.status(400).json({ message: `Client not found with ID: ${p.clientId}` });
+            return;
+          }
+          linkedClientId = realClient._id as mongoose.Types.ObjectId;
+        } else if (partyType === "client" || partyType === "sub_client") {
+          const matchingClient = await Client.findOne({
+            name: new RegExp(`^${partyName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i"),
+          })
+            .select("_id")
+            .lean();
+          if (matchingClient) {
+            linkedClientId = matchingClient._id as mongoose.Types.ObjectId;
+          } else if (partyType === "client") {
+            partyType = "other";
+          }
+        }
+
+        sanitizedParties.push({
+          name: partyName,
+          role: partyRole,
+          type: partyType,
+          ...(linkedClientId ? { clientId: linkedClientId } : {}),
+        });
+      }
+      updates["parties"] = sanitizedParties;
+    }
+
     const record = await Case.findByIdAndUpdate(req.params["id"], updates, {
       new: true,
       runValidators: true,
     })
       .populate("assignedTo", "name email title")
-      .populate("createdBy", "name");
+      .populate("createdBy", "name")
+      .populate("parties.clientId", "name email phone");
 
     if (!record) {
       res.status(404).json({ message: "Case not found" });
       return;
+    }
+
+    if (updates["parties"] !== undefined) {
+      const primaryClientParty = (record.parties || []).find((p: any) => (p.type === "client" || p.type === "sub_client") && p.clientId);
+      const newClientId = primaryClientParty ? (primaryClientParty.clientId as any)._id ?? primaryClientParty.clientId : null;
+      await DocumentModel.updateMany({ caseId: record._id }, { clientId: newClientId });
     }
 
     await AuditLog.logWithActivity(

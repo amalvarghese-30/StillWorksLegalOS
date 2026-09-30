@@ -567,7 +567,8 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
                             const matchedCase = cases.find((c) => c._id === val);
                             const primaryParty = matchedCase?.parties?.find((p) => p.clientId);
                             if (primaryParty?.clientId) {
-                              setClientId(primaryParty.clientId);
+                              const cid = typeof primaryParty.clientId === "object" ? primaryParty.clientId._id : primaryParty.clientId;
+                              setClientId(cid);
                             }
                           }
                         }

@@ -30,8 +30,14 @@ const { default: clientsRoutes } = await import("../routes/clients.js");
 const { default: tasksRoutes } = await import("../routes/tasks.js");
 const { default: remindersRoutes } = await import("../routes/reminders.js");
 const { default: documentsRoutes } = await import("../routes/documents.js");
+const { default: chatRoutes } = await import("../routes/chat.js");
+const { default: searchRoutes } = await import("../routes/search.js");
+const { ChatGroup, ChatMessage } = await import("../models/Chat.js");
+const { getLocalPath } = await import("../services/storage.js");
 const { DocumentModel } = await import("../models/Document.js");
 const { processDueReminders } = await import("../services/reminderScheduler.js");
+const { syncCallReminders, deleteCallReminders } = await import("../services/reminders.js");
+const { validateMimeType } = await import("../services/nas.js");
 
 function buildApp() {
   const app = express();
@@ -55,6 +61,8 @@ function buildApp() {
   app.use("/api/tasks", tasksRoutes);
   app.use("/api/reminders", remindersRoutes);
   app.use("/api/documents", documentsRoutes);
+  app.use("/api/chat", chatRoutes);
+  app.use("/api/search", searchRoutes);
   return app;
 }
 
@@ -104,10 +112,19 @@ function assert(condition: boolean, name: string) {
 }
 
 async function run() {
-  console.log("\n--- Starting In-Memory MongoDB ---");
-  const mongod = await MongoMemoryServer.create();
-  await mongoose.connect(mongod.getUri(), { dbName: "test_db" });
-  console.log("Connected to MongoDB Memory Server\n");
+  let mongod: any = null;
+  const testDbName = `legalos_test_${Date.now()}`;
+
+  // Try local MongoDB server first for immediate execution, fallback to MongoMemoryServer
+  try {
+    await mongoose.connect(`mongodb://127.0.0.1:27017/${testDbName}`, { serverSelectionTimeoutMS: 1500 });
+    console.log(`\nConnected to local MongoDB Server (database: ${testDbName})\n`);
+  } catch {
+    console.log("\n--- Starting In-Memory MongoDB ---");
+    mongod = await MongoMemoryServer.create();
+    await mongoose.connect(mongod.getUri(), { dbName: "test_db" });
+    console.log("Connected to MongoDB Memory Server\n");
+  }
 
   const app = buildApp();
 
@@ -808,8 +825,846 @@ async function run() {
     assert(["verified", "tampered", "missing"].includes(verifyDocRes.body.status), "DOC-INT-004: Status is valid integrity state");
   }
 
+  // --- Suite 14: Authorization Separation & Document BOLA (Phase 2 & 3) ---
+  console.log("\n--- Suite 14: Authorization Separation & Document BOLA ---");
+  {
+    // Create Employee A (uploader)
+    const userA = await createUser({
+      name: "Advocate Alice",
+      email: "alice@test.com",
+      role: "junior_advocate",
+      permissions: { documents: true, cases: true },
+    });
+    const tokenA = await createToken(userA);
+
+    // Create Employee B (unauthorized attacker / third party)
+    // Note: Employee B HAS documents: true and cases: true module permissions!
+    // But they must NOT be able to access Alice's private documents or cases.
+    const userB = await createUser({
+      name: "Advocate Bob",
+      email: "bob@test.com",
+      role: "junior_advocate",
+      permissions: { documents: true, cases: true },
+    });
+    const tokenB = await createToken(userB);
+
+    // Create Admin
+    const adminUser = await createUser({
+      name: "Senior Partner Admin",
+      email: "admin-doc@test.com",
+      role: "admin",
+    });
+    const adminToken = await createToken(adminUser);
+
+    // Document A belongs strictly to User A
+    const docA = await DocumentModel.create({
+      name: "Alice Confidential Document.pdf",
+      originalName: "Alice Confidential Document.pdf",
+      kind: "pdf",
+      size: 512,
+      sizeFormatted: "512 Bytes",
+      uploadedBy: userA._id,
+      nasPath: "General/alice-confidential.pdf",
+      nasFolder: "/General",
+      mimeType: "application/pdf",
+      sha256: "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
+      state: "Approved",
+    });
+
+    // AUTHZ-BOLA-001: User B attempts GET /api/documents/:id -> 403 Forbidden
+    const bGetRes = await request(app)
+      .get(`/api/documents/${docA._id}`)
+      .set("Authorization", `Bearer ${tokenB}`);
+    assert(bGetRes.status === 403, "AUTHZ-BOLA-001: User B cannot access User A's document details (403)");
+
+    // AUTHZ-BOLA-002: User B attempts GET /api/documents/:id/download -> 403 Forbidden
+    const bDownloadRes = await request(app)
+      .get(`/api/documents/${docA._id}/download`)
+      .set("Authorization", `Bearer ${tokenB}`);
+    assert(bDownloadRes.status === 403, "AUTHZ-BOLA-002: User B cannot download User A's document (403)");
+
+    // AUTHZ-BOLA-003: User B attempts GET /api/documents/:id/view -> 403 Forbidden
+    const bViewRes = await request(app)
+      .get(`/api/documents/${docA._id}/view`)
+      .set("Authorization", `Bearer ${tokenB}`);
+    assert(bViewRes.status === 403, "AUTHZ-BOLA-003: User B cannot view/preview User A's document (403)");
+
+    // AUTHZ-BOLA-004: User B attempts GET /api/documents/:id/versions -> 403 Forbidden
+    const bVersionsRes = await request(app)
+      .get(`/api/documents/${docA._id}/versions`)
+      .set("Authorization", `Bearer ${tokenB}`);
+    assert(bVersionsRes.status === 403, "AUTHZ-BOLA-004: User B cannot inspect versions of User A's document (403)");
+
+    // AUTHZ-BOLA-005: User B attempts rename PATCH /api/documents/:id -> 403 Forbidden
+    const bPatchRes = await request(app)
+      .patch(`/api/documents/${docA._id}`)
+      .set("Authorization", `Bearer ${tokenB}`)
+      .send({ name: "Bob Hacked Document.pdf" });
+    assert(bPatchRes.status === 403, "AUTHZ-BOLA-005: User B cannot modify/rename User A's document (403)");
+
+    // AUTHZ-BOLA-006: User B attempts DELETE /api/documents/:id -> 403 Forbidden
+    const bDeleteRes = await request(app)
+      .delete(`/api/documents/${docA._id}`)
+      .set("Authorization", `Bearer ${tokenB}`);
+    assert(bDeleteRes.status === 403, "AUTHZ-BOLA-006: User B cannot delete User A's document (403)");
+
+    // AUTHZ-BOLA-007: User A (legitimate owner) gets 200
+    const aGetRes = await request(app)
+      .get(`/api/documents/${docA._id}`)
+      .set("Authorization", `Bearer ${tokenA}`);
+    assert(aGetRes.status === 200, "AUTHZ-BOLA-007: User A can access own document (200)");
+
+    // AUTHZ-BOLA-008: Admin retains access to all documents
+    const adminGetRes = await request(app)
+      .get(`/api/documents/${docA._id}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    assert(adminGetRes.status === 200, "AUTHZ-BOLA-008: Admin can access document (200)");
+
+    // AUTHZ-CASE-001: Case-linked Document Authorization
+    const caseAlpha = await Case.create({
+      title: "Case Alpha Title",
+      assignedTo: userA._id,
+      createdBy: userA._id,
+      status: "Active",
+    });
+
+    const docCase = await DocumentModel.create({
+      name: "Case Alpha Evidence.pdf",
+      originalName: "Case Alpha Evidence.pdf",
+      kind: "pdf",
+      size: 1024,
+      sizeFormatted: "1 KB",
+      caseId: caseAlpha._id,
+      uploadedBy: userA._id,
+      nasPath: "Cases/SW-2026-Alpha/evidence.pdf",
+      mimeType: "application/pdf",
+      sha256: "1122334455667788990011223344556677889900112233445566778899001122",
+      state: "Pending",
+    });
+
+    // User B is not assigned to Case Alpha -> 403
+    const bCaseDocRes = await request(app)
+      .get(`/api/documents/${docCase._id}`)
+      .set("Authorization", `Bearer ${tokenB}`);
+    assert(bCaseDocRes.status === 403, "AUTHZ-CASE-001: User B cannot access case-linked document without case membership (403)");
+
+    // User A is assigned to Case Alpha -> 200
+    const aCaseDocRes = await request(app)
+      .get(`/api/documents/${docCase._id}`)
+      .set("Authorization", `Bearer ${tokenA}`);
+    assert(aCaseDocRes.status === 200, "AUTHZ-CASE-002: User A can access case-linked document via case membership (200)");
+
+    // AUTHZ-GRANT-001: Explicit Approved Access Grant allows access
+    docCase.accessRequests.push({
+      userId: userB._id as any,
+      reason: "Need to review evidence for court hearing",
+      status: "approved",
+      createdAt: new Date(),
+    });
+    await docCase.save();
+
+    const bGrantedRes = await request(app)
+      .get(`/api/documents/${docCase._id}`)
+      .set("Authorization", `Bearer ${tokenB}`);
+    assert(bGrantedRes.status === 200, "AUTHZ-GRANT-001: User B gains access after explicit approved access grant (200)");
+  }
+
+  // --- Suite 15: VPS Storage Security & Canonical Path Traversal Defense (Phase 4) ---
+  console.log("\n--- Suite 15: VPS Storage Security & Path Traversal Defense ---");
+  {
+    // Test 1: Simple relative parent traversal
+    let trav1Caught = false;
+    try {
+      getLocalPath("../secret.txt");
+    } catch {
+      trav1Caught = true;
+    }
+    assert(trav1Caught, "STORAGE-TRAV-001: Throws on '../secret.txt'");
+
+    // Test 2: Multi-level unix traversal
+    let trav2Caught = false;
+    try {
+      getLocalPath("../../etc/passwd");
+    } catch {
+      trav2Caught = true;
+    }
+    assert(trav2Caught, "STORAGE-TRAV-002: Throws on '../../etc/passwd'");
+
+    // Test 3: Windows backslash traversal
+    let trav3Caught = false;
+    try {
+      getLocalPath("..\\..\\windows\\system32");
+    } catch {
+      trav3Caught = true;
+    }
+    assert(trav3Caught, "STORAGE-TRAV-003: Throws on '..\\..\\windows\\system32'");
+
+    // Test 4: Nested URL encoded traversal (%252e%252e)
+    let trav4Caught = false;
+    try {
+      getLocalPath("/%252e%252e/%252e%252e/config.json");
+    } catch {
+      trav4Caught = true;
+    }
+    assert(trav4Caught, "STORAGE-TRAV-004: Throws on double-encoded '/%252e%252e/%252e%252e/'");
+
+    // Test 5: Safe path inside root resolves to string inside storage directory
+    const safePath = getLocalPath("documents/cases/SW-2026-0001/doc.pdf");
+    assert(typeof safePath === "string" && safePath.length > 0, "STORAGE-SAFE-001: Resolves safe relative storage path");
+  }
+
+  // --- Suite 16: Chat Attachment Security & Group Containment (Phase 5) ---
+  console.log("\n--- Suite 16: Chat Attachment Security & Group Containment ---");
+  {
+    const member1 = await createUser({ name: "Chat Member 1", email: "chat1@test.com" });
+    const member1Token = await createToken(member1);
+
+    const nonMember = await createUser({ name: "Chat Non Member", email: "nonmember@test.com" });
+    const nonMemberToken = await createToken(nonMember);
+
+    // Create Chat Group with member1 only
+    const chatGroup = await ChatGroup.create({
+      name: "Litigation Team Discussion",
+      type: "group",
+      createdBy: member1._id,
+      members: [
+        { userId: member1._id, name: member1.name, role: "admin", joinedAt: new Date() },
+      ],
+    });
+
+    // CHAT-SEC-001: Non-member upload is blocked (403)
+    const unauthUploadRes = await request(app)
+      .post(`/api/chat/groups/${chatGroup._id}/upload`)
+      .set("Authorization", `Bearer ${nonMemberToken}`);
+    assert(unauthUploadRes.status === 403, "CHAT-SEC-001: Non-member cannot upload attachment to group (403)");
+
+    // CHAT-SEC-002: Client attempts to send message with injected traversal path in attachments
+    const msgWithInjectedPathRes = await request(app)
+      .post(`/api/chat/groups/${chatGroup._id}/messages`)
+      .set("Authorization", `Bearer ${member1Token}`)
+      .send({
+        text: "Here is an unauthorized attachment",
+        attachments: [
+          { name: "passwd.txt", nasPath: "../../etc/passwd", size: "1 KB" },
+          { name: "case_secret.pdf", nasPath: "/Cases/Secret/doc.pdf", size: "1 KB" },
+        ],
+      });
+    assert(msgWithInjectedPathRes.status === 201, "CHAT-SEC-002: Message creation returned 201");
+    const storedMsg = await ChatMessage.findById(msgWithInjectedPathRes.body._id);
+    assert(
+      (storedMsg?.attachments?.length ?? 0) === 0,
+      "CHAT-SEC-003: Injected non-chat and traversal paths were stripped from attachments"
+    );
+
+    // CHAT-SEC-004: Valid chat attachment in message
+    const validGroupPath = `/chat/${chatGroup._id}/attachment1-contract.pdf`;
+    const msgWithValidAttachmentRes = await request(app)
+      .post(`/api/chat/groups/${chatGroup._id}/messages`)
+      .set("Authorization", `Bearer ${member1Token}`)
+      .send({
+        text: "Here is the valid chat attachment",
+        attachments: [
+          { attachmentId: "att-123", name: "contract.pdf", nasPath: validGroupPath, size: "5 KB" },
+        ],
+      });
+    assert(msgWithValidAttachmentRes.status === 201, "CHAT-SEC-004: Message with valid attachment accepted (201)");
+    const storedValidMsg = await ChatMessage.findById(msgWithValidAttachmentRes.body._id);
+    assert(storedValidMsg?.attachments?.length === 1, "CHAT-SEC-005: Valid chat attachment saved in message");
+
+    // CHAT-SEC-006: Non-member cannot download attachment
+    const nonMemberDownloadRes = await request(app)
+      .get(`/api/chat/groups/${chatGroup._id}/attachments/download?path=${encodeURIComponent(validGroupPath)}`)
+      .set("Authorization", `Bearer ${nonMemberToken}`);
+    assert(nonMemberDownloadRes.status === 403, "CHAT-SEC-006: Non-member cannot download chat attachment (403)");
+  }
+
+  // --- Suite 17: Multi-User Call Reminder Synchronization (Phase 13 & 14) ---
+  console.log("\n--- Suite 17: Multi-User Call Reminder Synchronization ---");
+  {
+    const userA = await createUser({ name: "Assignee A", email: "assigneeA@test.com" });
+    const userB = await createUser({ name: "Assignee B", email: "assigneeB@test.com" });
+    const userC = await createUser({ name: "Assignee C", email: "assigneeC@test.com" });
+    const userD = await createUser({ name: "Assignee D", email: "assigneeD@test.com" });
+    const adminUser = await createUser({ name: "Admin Lead", email: "adminlead@test.com", role: "admin" });
+    const adminToken = await createToken(adminUser);
+
+    const testScheduledAt = new Date(Date.now() + 3600 * 1000);
+
+    // 1. Single-user reminder creation
+    const singleSyncRes = await syncCallReminders({
+      sourceType: "task",
+      sourceId: new mongoose.Types.ObjectId(),
+      userIds: [userA._id],
+      clientName: "Client Alpha",
+      phone: "+91 98765 43210",
+      notes: "Alpha follow-up",
+      scheduledAt: testScheduledAt,
+    });
+    assert(singleSyncRes.length === 1, "REMINDER-SYNC-001: Created single reminder for user A");
+    const foundSingle = await Reminder.findOne({ userId: userA._id, clientName: "Client Alpha" });
+    assert(!!foundSingle, "REMINDER-SYNC-002: Reminder persisted in database for user A");
+
+    // 2. Multi-user reminder creation (A, B, C -> 3 distinct Reminder docs)
+    const multiTaskId = new mongoose.Types.ObjectId();
+    const multiSyncRes = await syncCallReminders({
+      sourceType: "task",
+      sourceId: multiTaskId,
+      userIds: [userA._id, userB._id, userC._id],
+      clientName: "Client Multi",
+      phone: "+91 99999 11111",
+      notes: "Multi-party consultation",
+      scheduledAt: testScheduledAt,
+    });
+    assert(multiSyncRes.length === 3, "REMINDER-SYNC-003: Created 3 distinct reminders for users A, B, and C");
+    const countMulti = await Reminder.countDocuments({ sourceType: "task", sourceId: multiTaskId });
+    assert(countMulti === 3, "REMINDER-SYNC-004: Exactly 3 Reminder docs persisted for multiTaskId");
+
+    const remDocA = await Reminder.findOne({ sourceType: "task", sourceId: multiTaskId, userId: userA._id });
+    const remDocB = await Reminder.findOne({ sourceType: "task", sourceId: multiTaskId, userId: userB._id });
+    const remDocC = await Reminder.findOne({ sourceType: "task", sourceId: multiTaskId, userId: userC._id });
+    assert(!!remDocA && !!remDocB && !!remDocC, "REMINDER-SYNC-005: Each assigned user has a unique reminder doc");
+
+    // 3. Assignee update reconciliation (A, B, C -> A, C, D: B deleted, D created, A and C retained)
+    const reconciledRes = await syncCallReminders({
+      sourceType: "task",
+      sourceId: multiTaskId,
+      userIds: [userA._id, userC._id, userD._id],
+      clientName: "Client Multi Updated",
+      phone: "+91 99999 22222",
+      notes: "Updated party notes",
+      scheduledAt: testScheduledAt,
+    });
+    assert(reconciledRes.length === 3, "REMINDER-SYNC-006: Reconciled to exactly 3 assignees [A, C, D]");
+
+    const checkB = await Reminder.findOne({ sourceType: "task", sourceId: multiTaskId, userId: userB._id });
+    assert(checkB === null, "REMINDER-SYNC-007: Unassigned user B reminder was deleted");
+
+    const checkD = await Reminder.findOne({ sourceType: "task", sourceId: multiTaskId, userId: userD._id });
+    assert(!!checkD, "REMINDER-SYNC-008: Newly assigned user D reminder was created");
+
+    const checkA = await Reminder.findOne({ sourceType: "task", sourceId: multiTaskId, userId: userA._id });
+    const checkC = await Reminder.findOne({ sourceType: "task", sourceId: multiTaskId, userId: userC._id });
+    assert(
+      checkA?._id.toString() === remDocA?._id.toString() &&
+      checkC?._id.toString() === remDocC?._id.toString(),
+      "REMINDER-SYNC-009: Existing reminders for A and C were retained with identical ObjectIds"
+    );
+    assert(
+      checkA?.clientName === "Client Multi Updated" && checkA?.phone === "+91 99999 22222",
+      "REMINDER-SYNC-010: Retained reminders had details updated"
+    );
+
+    // 4. Duplicate sync idempotency (calling sync twice results in exactly 1 reminder per user)
+    await syncCallReminders({
+      sourceType: "task",
+      sourceId: multiTaskId,
+      userIds: [userA._id, userC._id, userD._id],
+      clientName: "Client Multi Updated",
+      phone: "+91 99999 22222",
+      notes: "Updated party notes",
+      scheduledAt: testScheduledAt,
+    });
+    const postIdempotentCount = await Reminder.countDocuments({ sourceType: "task", sourceId: multiTaskId });
+    assert(postIdempotentCount === 3, "REMINDER-SYNC-011: Idempotency verified - no duplicate reminders created on repeated sync");
+
+    // 5. Cascade deletion (deleting task/event cleans up all associated reminders)
+    const deletedCount = await deleteCallReminders("task", multiTaskId);
+    assert(deletedCount === 3, "REMINDER-SYNC-012: deleteCallReminders removed all 3 associated reminders");
+    const countAfterCascade = await Reminder.countDocuments({ sourceType: "task", sourceId: multiTaskId });
+    assert(countAfterCascade === 0, "REMINDER-SYNC-013: 0 reminders remain after cascade delete");
+
+    // 6. End-to-end route testing: Task creation and deletion via API
+    const taskApiRes = await request(app)
+      .post("/api/tasks")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        title: "Task with Call Reminder",
+        assignedTo: userA._id.toString(),
+        callReminder: {
+          clientName: "Client Route Test",
+          phone: "1234567890",
+          scheduledAt: testScheduledAt.toISOString(),
+          notes: "Route test notes",
+        },
+      });
+    assert(taskApiRes.status === 201, "REMINDER-SYNC-014: Task created via API");
+    const taskReminders = await Reminder.find({ sourceType: "task", sourceId: taskApiRes.body.task._id });
+    assert(taskReminders.length === 1, "REMINDER-SYNC-015: Synchronized reminder created for task assignee");
+
+    const taskDeleteRes = await request(app)
+      .delete(`/api/tasks/${taskApiRes.body.task._id}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    assert(taskDeleteRes.status === 200, "REMINDER-SYNC-016: Task deleted via API");
+    const postDeleteTaskReminders = await Reminder.countDocuments({ sourceType: "task", sourceId: taskApiRes.body.task._id });
+    assert(postDeleteTaskReminders === 0, "REMINDER-SYNC-017: Cascade delete removed reminder when task was deleted");
+
+    // 7. End-to-end route testing: CalendarEvent call_reminder creation and deletion via API
+    const eventApiRes = await request(app)
+      .post("/api/calendar/events")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        title: "📞 Call with Client Calendar",
+        type: "call_reminder",
+        start: testScheduledAt.toISOString(),
+        assignedTo: [userA._id.toString(), userB._id.toString()],
+        description: "Calendar sync test",
+      });
+    assert(eventApiRes.status === 201, "REMINDER-SYNC-018: Calendar call_reminder event created via API");
+    const eventReminders = await Reminder.find({ sourceType: "event", sourceId: eventApiRes.body.event._id });
+    assert(eventReminders.length === 2, "REMINDER-SYNC-019: Multi-assignee calendar event created 2 reminder docs");
+
+    const eventDeleteRes = await request(app)
+      .delete(`/api/calendar/events/${eventApiRes.body.event._id}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    assert(eventDeleteRes.status === 200, "REMINDER-SYNC-020: Calendar event deleted via API");
+    const postDeleteEventReminders = await Reminder.countDocuments({ sourceType: "event", sourceId: eventApiRes.body.event._id });
+    assert(postDeleteEventReminders === 0, "REMINDER-SYNC-021: Cascade delete removed reminders when calendar event was deleted");
+  }
+
+  // =========================================================================
+  // SUITE 18: CLIENT ↔ CASE ↔ DOCUMENT LINKAGE & ACCESS CONTROL (BOLA)
+  // =========================================================================
+  console.log("\n--- Suite 18: Client ↔ Case ↔ Document Linkage & Access Control (BOLA) ---");
+  {
+    const adminUser = await createUser({ name: "Suite 18 Admin", email: "s18admin@test.com", role: "admin" });
+    const adminToken = await createToken(adminUser);
+
+    const advocateA = await createUser({
+      name: "Advocate Alice",
+      email: "alice18@test.com",
+      role: "senior_advocate",
+      permissions: { clients: true, cases: true, documents: true },
+    });
+    const tokenA = await createToken(advocateA);
+
+    const advocateB = await createUser({
+      name: "Advocate Bob",
+      email: "bob18@test.com",
+      role: "junior_advocate",
+      permissions: { clients: true, cases: true, documents: true },
+    });
+    const tokenB = await createToken(advocateB);
+
+    // 1. Create client A (assigned to advocateA) and client B (assigned to advocateB)
+    const clientA = await Client.create({
+      name: "Apex Global Corp",
+      type: "Corporate",
+      tag: "VIP",
+      phone: "+91 9876543210",
+      email: "legal@apexcorp.com",
+      assignedTo: [advocateA._id],
+      createdBy: adminUser._id,
+      kyc: "Verified",
+    });
+
+    const clientB = await Client.create({
+      name: "Beta Logistics Ltd",
+      type: "Corporate",
+      tag: "Active",
+      phone: "+91 9123456780",
+      email: "contact@betalogistics.com",
+      assignedTo: [advocateB._id],
+      createdBy: adminUser._id,
+      kyc: "Verified",
+    });
+
+    // 2. Create case A linked to client A via parties
+    const caseARes = await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${tokenA}`)
+      .send({
+        title: "Apex vs Stellar Arbitrations",
+        practice: "Arbitration",
+        status: "Active",
+        assignedTo: advocateA._id.toString(),
+        parties: [
+          {
+            name: "Apex Global Corp",
+            role: "Claimant",
+            type: "client",
+            clientId: clientA._id.toString(),
+          },
+          {
+            name: "Stellar Arbitrations Ltd",
+            role: "Respondent",
+            type: "opposing_party",
+          },
+        ],
+      });
+    assert(caseARes.status === 201, "CLIENT-LINK-001: Case A created with valid clientId party");
+    const caseAId = caseARes.body.case._id;
+    assert(caseARes.body.case.parties[0].clientId === clientA._id.toString(), "CLIENT-LINK-002: Case parties contains linked clientId");
+
+    // 3. Client cases retrieval
+    const clientACasesRes = await request(app)
+      .get(`/api/clients/${clientA._id}/cases`)
+      .set("Authorization", `Bearer ${tokenA}`);
+    assert(clientACasesRes.status === 200, "CLIENT-LINK-003: Authorized advocate A retrieves client A's cases");
+    assert(clientACasesRes.body.cases.length === 1, "CLIENT-LINK-004: Client A cases contains case A");
+    assert(clientACasesRes.body.cases[0]._id === caseAId, "CLIENT-LINK-005: Returned case matches case A ID");
+
+    // 4. Unauthorized user cannot access other client's cases (BOLA)
+    const unauthClientCasesRes = await request(app)
+      .get(`/api/clients/${clientA._id}/cases`)
+      .set("Authorization", `Bearer ${tokenB}`);
+    assert(unauthClientCasesRes.status === 403, "CLIENT-LINK-006: Unauthorized advocate B is forbidden from client A cases (403)");
+
+    // 5. Invalid & Nonexistent client ID validation
+    const invalidCidRes = await request(app)
+      .get("/api/clients/invalid-format-id/cases")
+      .set("Authorization", `Bearer ${adminToken}`);
+    assert(invalidCidRes.status === 400, "CLIENT-LINK-007: Invalid client ID format returns 400 Bad Request");
+
+    const nonExistentCid = new mongoose.Types.ObjectId();
+    const notFoundCidRes = await request(app)
+      .get(`/api/clients/${nonExistentCid}/cases`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    assert(notFoundCidRes.status === 404, "CLIENT-LINK-008: Nonexistent client ID returns 404 Not Found");
+
+    // 6. Case creation validation for invalid and nonexistent clientId
+    const invalidPartyCaseRes = await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        title: "Invalid Client Case",
+        parties: [{ name: "Test Party", role: "Client", type: "client", clientId: "not-a-mongo-id" }],
+      });
+    assert(invalidPartyCaseRes.status === 400, "CLIENT-LINK-009: Creating case with invalid clientId format rejected with 400");
+
+    const nonExistentPartyCaseRes = await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        title: "Nonexistent Client Case",
+        parties: [{ name: "Test Party", role: "Client", type: "client", clientId: nonExistentCid.toString() }],
+      });
+    assert(nonExistentPartyCaseRes.status === 400, "CLIENT-LINK-010: Creating case with nonexistent clientId rejected with 400");
+
+    // 7. Case update (PATCH /api/cases/:id) validation for parties
+    const patchInvalidCaseRes = await request(app)
+      .patch(`/api/cases/${caseAId}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        parties: [{ name: "Test Party", role: "Client", type: "client", clientId: "not-valid-id" }],
+      });
+    assert(patchInvalidCaseRes.status === 400, "CLIENT-LINK-011: Updating case with invalid clientId format rejected with 400");
+
+    // 8. Documents: Upload document linked to case A
+    const uploadDocRes = await request(app)
+      .post("/api/documents/upload")
+      .set("Authorization", `Bearer ${tokenA}`)
+      .field("caseId", caseAId)
+      .field("name", "Apex Arbitration Agreement.pdf")
+      .attach("file", Buffer.from("%PDF-1.4 test document content"), "Apex Arbitration Agreement.pdf");
+    assert(uploadDocRes.status === 201, "CLIENT-LINK-012: Document uploaded to case A by advocate A");
+    const docA = uploadDocRes.body.document;
+    assert(docA.caseId === caseAId, "CLIENT-LINK-013: Document has caseId set");
+    assert(docA.clientId === clientA._id.toString(), "CLIENT-LINK-014: Document inherited clientId from case client party");
+    assert(!docA.filePath && !docA.nasPath, "CLIENT-LINK-015: Document response stripped physical filesystem paths");
+
+    // 9. Document appears in Client A's documents
+    const clientDocsRes = await request(app)
+      .get(`/api/clients/${clientA._id}/documents`)
+      .set("Authorization", `Bearer ${tokenA}`);
+    assert(clientDocsRes.status === 200, "CLIENT-LINK-016: Authorized advocate A retrieves client A's documents");
+    assert(clientDocsRes.body.documents.length === 1, "CLIENT-LINK-017: Client A documents list includes uploaded document");
+    assert(clientDocsRes.body.documents[0]._id === docA._id, "CLIENT-LINK-018: Returned document ID matches doc A");
+
+    // 10. Document BOLA: Advocate B cannot access Client A's documents
+    const unauthClientDocsRes = await request(app)
+      .get(`/api/clients/${clientA._id}/documents`)
+      .set("Authorization", `Bearer ${tokenB}`);
+    assert(unauthClientDocsRes.status === 403, "CLIENT-LINK-019: Unauthorized advocate B is forbidden from client A documents (403)");
+
+    // 11. Search BOLA verification: Case A and Doc A appear for advocate A, but NOT for advocate B
+    const searchAliceRes = await request(app)
+      .get("/api/search?q=Apex")
+      .set("Authorization", `Bearer ${tokenA}`);
+    assert(searchAliceRes.status === 200, "CLIENT-LINK-020: Search executes successfully for advocate A");
+    const aliceCaseHits = (searchAliceRes.body.cases || []).filter((c: any) => c.title.includes("Apex"));
+    assert(aliceCaseHits.length >= 1, "CLIENT-LINK-021: Advocate A finds case A in search results");
+
+    const searchBobRes = await request(app)
+      .get("/api/search?q=Apex")
+      .set("Authorization", `Bearer ${tokenB}`);
+    assert(searchBobRes.status === 200, "CLIENT-LINK-022: Search executes successfully for advocate B");
+    const bobCaseHits = (searchBobRes.body.cases || []).filter((c: any) => c.title.includes("Apex"));
+    const bobDocHits = (searchBobRes.body.documents || []).filter((d: any) => d.name.includes("Apex"));
+    assert(bobCaseHits.length === 0, "CLIENT-LINK-023: Advocate B cannot find isolated case A via search (BOLA)");
+    assert(bobDocHits.length === 0, "CLIENT-LINK-024: Advocate B cannot find isolated doc A via search (BOLA)");
+
+    // 12. Direct client document upload (document with explicit clientId)
+    const directDocRes = await request(app)
+      .post("/api/documents/upload")
+      .set("Authorization", `Bearer ${tokenA}`)
+      .field("clientId", clientA._id.toString())
+      .field("name", "Apex Incorporation Certificate.pdf")
+      .attach("file", Buffer.from("%PDF-1.4 incorporation cert"), "Apex Incorporation Certificate.pdf");
+    assert(directDocRes.status === 201, "CLIENT-LINK-025: Direct document uploaded to client A");
+    assert(directDocRes.body.document.clientId === clientA._id.toString(), "CLIENT-LINK-026: Direct document has clientId set");
+
+    // 13. Re-fetching client documents shows both documents
+    const updatedClientDocsRes = await request(app)
+      .get(`/api/clients/${clientA._id}/documents`)
+      .set("Authorization", `Bearer ${tokenA}`);
+    assert(updatedClientDocsRes.status === 200, "CLIENT-LINK-027: Re-fetch client documents succeeds");
+    assert(updatedClientDocsRes.body.documents.length === 2, "CLIENT-LINK-028: Client A documents now contains both linked documents");
+  }
+
+  // =========================================================================
+  // SUITE 19: Universal Document Preview & Actions + Client-Case Document Sync
+  // =========================================================================
+  console.log("\n--- Suite 19: Universal Document Preview & Actions + Client-Case Sync ---");
+  {
+    const advocate19A = await createUser({
+      name: "Advocate S19 Alice",
+      email: "alice19@test.com",
+      role: "senior_advocate",
+      permissions: { clients: true, cases: true, documents: true },
+    });
+    const tokenA = await createToken(advocate19A);
+
+    const advocate19B = await createUser({
+      name: "Advocate S19 Bob",
+      email: "bob19@test.com",
+      role: "junior_advocate",
+      permissions: { clients: true, cases: true, documents: true },
+    });
+    const tokenB = await createToken(advocate19B);
+
+    const clientA = await Client.create({
+      name: "Acme Corporation S19",
+      type: "Corporate",
+      tag: "VIP",
+      phone: "+91 9888877777",
+      email: "legal@acmes19.com",
+      assignedTo: [advocate19A._id],
+      createdBy: advocate19A._id,
+      kyc: "Verified",
+    });
+
+    const case19ARes = await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${tokenA}`)
+      .send({
+        title: "Acme Arbitration S19",
+        parties: [
+          {
+            name: "Acme Corporation S19",
+            role: "Claimant",
+            type: "client",
+            clientId: clientA._id.toString(),
+          },
+        ],
+      });
+    assert(case19ARes.status === 201, "PREVIEW-INIT-001: Initial case created for preview tests");
+    const caseAId = case19ARes.body.case._id;
+
+    // 1. Authorized PDF preview returns 200 with application/pdf and inline disposition
+    const pdfUploadRes = await request(app)
+      .post("/api/documents/upload")
+      .set("Authorization", `Bearer ${tokenA}`)
+      .field("caseId", caseAId)
+      .field("name", "Summary Judgment Motion.pdf")
+      .attach("file", Buffer.from("%PDF-1.4 Mock PDF Content"), "Summary Judgment Motion.pdf");
+    assert(pdfUploadRes.status === 201, "PREVIEW-001: PDF uploaded successfully");
+    const pdfDoc = pdfUploadRes.body.document;
+
+    const pdfViewRes = await request(app)
+      .get(`/api/documents/${pdfDoc._id}/view`)
+      .set("Authorization", `Bearer ${tokenA}`);
+    assert(pdfViewRes.status === 200, "PREVIEW-002: Authorized user gets 200 on PDF preview");
+    assert(pdfViewRes.headers["content-type"].includes("application/pdf"), "PREVIEW-003: PDF content-type matches application/pdf");
+    assert(pdfViewRes.headers["content-disposition"]?.includes("inline"), "PREVIEW-004: PDF served with inline disposition");
+    assert(pdfViewRes.headers["x-content-type-options"] === "nosniff", "PREVIEW-005: X-Content-Type-Options: nosniff present");
+
+    // 2. Unauthorized user cannot preview PDF (BOLA)
+    const unauthPdfViewRes = await request(app)
+      .get(`/api/documents/${pdfDoc._id}/view`)
+      .set("Authorization", `Bearer ${tokenB}`);
+    assert(unauthPdfViewRes.status === 403, "PREVIEW-006: Unauthorized advocate B is denied PDF preview with 403 (BOLA)");
+
+    // 3. Image preview returns 200 with image/png and inline disposition
+    const imgUploadRes = await request(app)
+      .post("/api/documents/upload")
+      .set("Authorization", `Bearer ${tokenA}`)
+      .field("caseId", caseAId)
+      .field("name", "Evidence Site Photo.png")
+      .attach("file", Buffer.from("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"), "Evidence Site Photo.png");
+    assert(imgUploadRes.status === 201, "PREVIEW-007: Image uploaded successfully");
+    const imgDoc = imgUploadRes.body.document;
+
+    const imgViewRes = await request(app)
+      .get(`/api/documents/${imgDoc._id}/view`)
+      .set("Authorization", `Bearer ${tokenA}`);
+    assert(imgViewRes.status === 200, "PREVIEW-008: Authorized user gets 200 on Image preview");
+    assert(imgViewRes.headers["content-type"].includes("image/png"), "PREVIEW-009: Image content-type matches image/png");
+    assert(imgViewRes.headers["content-disposition"]?.includes("inline"), "PREVIEW-010: Image served with inline disposition");
+
+    // 4. Text/CSV preview returns 200 with text/plain or text/csv and inline disposition
+    const txtUploadRes = await request(app)
+      .post("/api/documents/upload")
+      .set("Authorization", `Bearer ${tokenA}`)
+      .field("caseId", caseAId)
+      .field("name", "Witness Statement Notes.txt")
+      .attach("file", Buffer.from("Witness statement recorded on 2026-03-31."), "Witness Statement Notes.txt");
+    assert(txtUploadRes.status === 201, "PREVIEW-011: Text document uploaded successfully");
+    const txtDoc = txtUploadRes.body.document;
+
+    const txtViewRes = await request(app)
+      .get(`/api/documents/${txtDoc._id}/view`)
+      .set("Authorization", `Bearer ${tokenA}`);
+    assert(txtViewRes.status === 200, "PREVIEW-012: Authorized user gets 200 on text preview");
+    assert(txtViewRes.headers["content-disposition"]?.includes("inline"), "PREVIEW-013: Text document served with inline disposition");
+
+    // 5. Unsupported binary / ZIP returns Content-Disposition: attachment
+    const zipUploadRes = await request(app)
+      .post("/api/documents/upload")
+      .set("Authorization", `Bearer ${tokenA}`)
+      .field("caseId", caseAId)
+      .field("name", "Archive Evidence.zip")
+      .attach("file", Buffer.from("PK\x03\x04mock zip content"), "Archive Evidence.zip");
+    assert(zipUploadRes.status === 201, "PREVIEW-014: ZIP archive uploaded successfully");
+    const zipDoc = zipUploadRes.body.document;
+
+    const zipViewRes = await request(app)
+      .get(`/api/documents/${zipDoc._id}/view`)
+      .set("Authorization", `Bearer ${tokenA}`);
+    assert(zipViewRes.status === 200, "PREVIEW-015: Unsupported file stream returns 200");
+    assert(zipViewRes.headers["content-disposition"]?.includes("attachment"), "PREVIEW-016: Unsupported binary served with attachment disposition");
+
+    // 6. Dangerous/executable content defense-in-depth:
+    // 6a. Upload-level defense: validateMimeType strictly rejects HTML / SVG / JS
+    const htmlCheck = validateMimeType("text/html");
+    const svgCheck = validateMimeType("image/svg+xml");
+    const jsCheck = validateMimeType("application/javascript");
+    assert(!htmlCheck.valid, "PREVIEW-017a: MIME validation rejects text/html");
+    assert(!svgCheck.valid, "PREVIEW-017b: MIME validation rejects image/svg+xml");
+    assert(!jsCheck.valid, "PREVIEW-017c: MIME validation rejects application/javascript");
+
+    // 6b. View endpoint defense-in-depth: if a document record has a dangerous MIME type,
+    // /view strictly forces attachment disposition and application/octet-stream content-type
+    const storedPdf = await DocumentModel.findById(pdfDoc._id);
+    const dangerousDoc = await DocumentModel.create({
+      name: "Legacy Report.html",
+      originalName: "Legacy Report.html",
+      mimeType: "text/html",
+      size: storedPdf!.size,
+      sizeFormatted: storedPdf!.sizeFormatted,
+      caseId: caseAId,
+      uploadedBy: advocate19A._id,
+      state: "Approved",
+      nasPath: storedPdf!.nasPath,
+    });
+
+    const dangerousViewRes = await request(app)
+      .get(`/api/documents/${dangerousDoc._id}/view`)
+      .set("Authorization", `Bearer ${tokenA}`);
+    assert(dangerousViewRes.status === 200, "PREVIEW-018: Dangerous document view returns 200 stream");
+    assert(dangerousViewRes.headers["content-disposition"]?.includes("attachment"), "PREVIEW-019: Dangerous MIME forced to attachment disposition (zero inline XSS)");
+    assert(dangerousViewRes.headers["content-type"].includes("application/octet-stream"), "PREVIEW-020: Dangerous HTML MIME type replaced with application/octet-stream");
+
+    // 7. Versioning: Upload a new version of Summary Judgment Motion.pdf
+    const v2UploadRes = await request(app)
+      .post("/api/documents/upload")
+      .set("Authorization", `Bearer ${tokenA}`)
+      .field("caseId", caseAId)
+      .field("name", "Summary Judgment Motion.pdf")
+      .attach("file", Buffer.from("%PDF-1.4 Mock PDF Content Version 2"), "Summary Judgment Motion.pdf");
+    assert(v2UploadRes.status === 201, "PREVIEW-021: New version of document uploaded successfully");
+    const v2Doc = v2UploadRes.body.document;
+    assert(v2Doc.version === 2, "PREVIEW-022: Uploaded document has version incremented to 2");
+
+    // 8. Version history listing and authorization
+    const versionsRes = await request(app)
+      .get(`/api/documents/${pdfDoc._id}/versions`)
+      .set("Authorization", `Bearer ${tokenA}`);
+    assert(versionsRes.status === 200, "PREVIEW-023: Authorized user retrieves version history");
+    assert(versionsRes.body.count === 2, "PREVIEW-024: Version history contains both versions");
+    assert(versionsRes.body.versions[0].version === 2, "PREVIEW-025: Versions sorted newest first (version 2)");
+    assert(versionsRes.body.versions[1].version === 1, "PREVIEW-026: Version 1 present in history");
+    assert(!versionsRes.body.versions[0].nasPath && !versionsRes.body.versions[0].filePath, "PREVIEW-027: Storage paths omitted from version objects");
+
+    // 9. Version preview authorization: Authorized user can preview historical v1
+    const v1ViewRes = await request(app)
+      .get(`/api/documents/${pdfDoc._id}/view`)
+      .set("Authorization", `Bearer ${tokenA}`);
+    assert(v1ViewRes.status === 200, "PREVIEW-028: Authorized user can preview historical version 1");
+
+    // 10. Version preview denied for unauthorized user (BOLA)
+    const unauthV1ViewRes = await request(app)
+      .get(`/api/documents/${pdfDoc._id}/view`)
+      .set("Authorization", `Bearer ${tokenB}`);
+    assert(unauthV1ViewRes.status === 403, "PREVIEW-029: Unauthorized user denied preview of historical version with 403");
+
+    // 11. Deleted document cannot be previewed (returns 404)
+    const deleteDocRes = await request(app)
+      .delete(`/api/documents/${v2Doc._id}`)
+      .set("Authorization", `Bearer ${tokenA}`);
+    assert(deleteDocRes.status === 200, "PREVIEW-030: Document deleted successfully by uploader");
+
+    const deletedDocViewRes = await request(app)
+      .get(`/api/documents/${v2Doc._id}/view`)
+      .set("Authorization", `Bearer ${tokenA}`);
+    assert(deletedDocViewRes.status === 404 || deletedDocViewRes.status === 403, "PREVIEW-031: Deleted document cannot be previewed (returns 404 or 403)");
+
+    // 12. Client-Case Synchronization (Part A verification):
+    // Direct client document uploaded directly to Client A with no caseId
+    const directDocRes = await request(app)
+      .post("/api/documents/upload")
+      .set("Authorization", `Bearer ${tokenA}`)
+      .field("clientId", clientA._id.toString())
+      .field("name", "Direct S19 Certificate.pdf")
+      .attach("file", Buffer.from("%PDF-1.4 direct cert"), "Direct S19 Certificate.pdf");
+    assert(directDocRes.status === 201, "PREVIEW-032: Direct client document uploaded");
+
+    // Create Client B
+    const clientB = await Client.create({
+      name: "Beacon Maritime Corp S19",
+      type: "Corporate",
+      tag: "Active",
+      kyc: "Verified",
+      createdBy: advocate19A._id,
+    });
+
+    // Update Case A's primary client party to Client B
+    const patchCasePartyRes = await request(app)
+      .patch(`/api/cases/${caseAId}`)
+      .set("Authorization", `Bearer ${tokenA}`)
+      .send({
+        parties: [
+          {
+            name: "Beacon Maritime Corp S19",
+            role: "Claimant",
+            type: "client",
+            clientId: clientB._id.toString(),
+          },
+          {
+            name: "Stellar Arbitrations Ltd",
+            role: "Respondent",
+            type: "opposing_party",
+          },
+        ],
+      });
+    assert(patchCasePartyRes.status === 200, "CLIENT-SYNC-001: Case A client party updated to Client B");
+
+    // Existing case document (pdfDoc) belonging to Case A should now have clientId synchronized to Client B
+    const syncedDoc = await DocumentModel.findById(pdfDoc._id);
+    assert(syncedDoc?.clientId?.toString() === clientB._id.toString(), "CLIENT-SYNC-002: Existing case document automatically updated clientId to Client B");
+
+    // Direct client document was uploaded directly to Client A with no caseId.
+    // It MUST still belong to Client A!
+    const directDocCheck = await DocumentModel.findById(directDocRes.body.document._id);
+    assert(directDocCheck?.clientId?.toString() === clientA._id.toString(), "CLIENT-SYNC-003: Direct client document remains associated with Client A");
+  }
+
+  try {
+    if (mongoose.connection.readyState === 1) {
+      await mongoose.connection.dropDatabase();
+    }
+  } catch {}
   await mongoose.disconnect();
-  await mongod.stop();
+  if (mongod) await mongod.stop();
 
   console.log(`\n========================================`);
   console.log(`Total: ${passed + failed} | Passed: ${passed} | Failed: ${failed}`);

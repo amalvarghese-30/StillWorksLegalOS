@@ -15,9 +15,9 @@ export interface DownloadOptions {
 
 export interface DownloadResult {
   success: boolean;
-  canceled?: boolean;
-  filePath?: string;
-  error?: string;
+  canceled?: boolean | undefined;
+  filePath?: string | undefined;
+  error?: string | undefined;
 }
 
 export interface DownloadProvider {
@@ -40,7 +40,8 @@ class BrowserDownloadProvider implements DownloadProvider {
       } else if (typeof options.data === "string") {
         blob = new Blob([options.data], { type: options.mimeType || "text/plain;charset=utf-8" });
       } else {
-        blob = new Blob([options.data], { type: options.mimeType || "application/octet-stream" });
+        const u8 = options.data instanceof Uint8Array ? options.data : new Uint8Array(options.data);
+        blob = new Blob([u8.buffer as ArrayBuffer], { type: options.mimeType || "application/octet-stream" });
       }
 
       const url = URL.createObjectURL(blob);
@@ -90,7 +91,7 @@ class ElectronDownloadProvider implements DownloadProvider {
         const result = await electronApi.saveFile({
           defaultFilename: options.filename,
           buffer: Array.from(buffer),
-          mimeType: options.mimeType,
+          ...(options.mimeType ? { mimeType: options.mimeType } : {}),
         });
 
         if (result.canceled) {

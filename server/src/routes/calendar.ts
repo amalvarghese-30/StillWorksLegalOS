@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { Types } from "mongoose";
 import { CalendarEvent } from "../models/CalendarEvent.js";
 import { Reminder } from "../models/Reminder.js";
+import { syncCallReminders, deleteCallReminders } from "../services/reminders.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { requireAuth, requireAdminOrPermission } from "../middleware/auth.js";
 import { canAccessCalendarEvent, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
@@ -182,14 +183,14 @@ router.post("/events", async (req: Request, res: Response) => {
       color: color ?? "",
     });
 
-    // Synchronize Reminder document if event is a call_reminder
+    // Synchronize multi-user Reminder documents if event is a call_reminder
     if (event.type === "call_reminder") {
-      const ownerId = (event.assignedTo && event.assignedTo[0]) || event.createdBy || req.userId;
+      const targetUserIds = event.assignedTo && event.assignedTo.length > 0 ? event.assignedTo : [event.createdBy || req.userId];
       try {
-        await Reminder.create({
-          userId: ownerId,
+        await syncCallReminders({
           sourceType: "event",
           sourceId: event._id,
+          userIds: targetUserIds,
           clientName: event.title.replace(/^📞\s*(CALL:\s*)?/i, "").trim() || event.title,
           phone: "",
           notes: event.description || "",
@@ -197,7 +198,7 @@ router.post("/events", async (req: Request, res: Response) => {
           status: "scheduled",
         });
       } catch (remErr) {
-        console.error("[calendar] Failed to create synchronized reminder:", remErr);
+        console.error("[calendar] Failed to create synchronized reminders:", remErr);
       }
     }
 
@@ -296,31 +297,28 @@ router.patch("/events/:id", requireResourceAccess("calendarEvent"), async (req: 
       return;
     }
 
-    // Synchronize Reminder document if event is a call_reminder
+    // Synchronize multi-user Reminder documents if event is or was a call_reminder
     if (event.type === "call_reminder") {
-      const ownerId = (event.assignedTo && event.assignedTo[0]) || event.createdBy || req.userId;
+      const targetUserIds = event.assignedTo && event.assignedTo.length > 0 ? event.assignedTo : [event.createdBy || req.userId];
       try {
-        await Reminder.findOneAndUpdate(
-          { sourceType: "event", sourceId: event._id },
-          {
-            $set: {
-              userId: ownerId,
-              clientName: event.title.replace(/^📞\s*(CALL:\s*)?/i, "").trim() || event.title,
-              notes: event.description || "",
-              scheduledAt: event.start,
-              status: "scheduled",
-            },
-            $setOnInsert: {
-              sourceType: "event",
-              sourceId: event._id,
-              phone: "",
-              createdAt: new Date(),
-            },
-          },
-          { upsert: true, new: true }
-        );
+        await syncCallReminders({
+          sourceType: "event",
+          sourceId: event._id,
+          userIds: targetUserIds,
+          clientName: event.title.replace(/^📞\s*(CALL:\s*)?/i, "").trim() || event.title,
+          phone: "",
+          notes: event.description || "",
+          scheduledAt: event.start,
+          status: "scheduled",
+        });
       } catch (remErr) {
-        console.error("[calendar] Failed to update synchronized reminder:", remErr);
+        console.error("[calendar] Failed to update synchronized reminders:", remErr);
+      }
+    } else if (updates["type"] !== undefined) {
+      try {
+        await deleteCallReminders("event", event._id);
+      } catch (remErr) {
+        console.error("[calendar] Failed to delete reminders when event type changed:", remErr);
       }
     }
 
@@ -356,9 +354,9 @@ router.delete("/events/:id", requireResourceAccess("calendarEvent"), async (req:
 
     // Clean up associated reminders atomically
     try {
-      await Reminder.deleteMany({ sourceType: "event", sourceId: event._id });
+      await deleteCallReminders("event", event._id);
     } catch (remErr) {
-      console.error("[calendar] Failed to delete synchronized reminder on event delete:", remErr);
+      console.error("[calendar] Failed to delete synchronized reminders on event delete:", remErr);
     }
 
     await AuditLog.create({

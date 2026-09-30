@@ -7,11 +7,14 @@ import {
   FileText,
   ChevronDown,
   ChevronUp,
+  Eye,
+  Download,
 } from "lucide-react";
-import { useVersionHistory } from "@/services/documents";
+import { useVersionHistory, downloadDocument } from "@/services/documents";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DocumentPreviewModal } from "@/components/documents/DocumentPreviewModal";
 
 interface VersionHistoryDialogProps {
   open: boolean;
@@ -23,6 +26,7 @@ interface VersionHistoryDialogProps {
 export function VersionHistoryDialog({ open, onClose, documentId, documentName }: VersionHistoryDialogProps) {
   const { data, isLoading, isError, error } = useVersionHistory(documentId);
   const [expandedVersion, setExpandedVersion] = useState<string | null>(null);
+  const [previewingVersion, setPreviewingVersion] = useState<any | null>(null);
 
   if (!open) return null;
 
@@ -95,6 +99,30 @@ export function VersionHistoryDialog({ open, onClose, documentId, documentName }
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPreviewingVersion(version);
+                      }}
+                      title="Preview this version"
+                      className="gap-1 text-caption"
+                    >
+                      <Eye size={14} /> Preview
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        downloadDocument(version._id);
+                      }}
+                      title="Download this version"
+                      className="gap-1 text-caption"
+                    >
+                      <Download size={14} /> Download
+                    </Button>
                     <Button variant="outline" size="sm" onClick={(e) => {
                       e.stopPropagation();
                       navigator.clipboard.writeText(version.sha256 || "");
@@ -151,6 +179,17 @@ export function VersionHistoryDialog({ open, onClose, documentId, documentName }
           </Button>
         </div>
       </div>
+
+      {previewingVersion && (
+        <DocumentPreviewModal
+          open={!!previewingVersion}
+          onClose={() => setPreviewingVersion(null)}
+          documentId={previewingVersion._id}
+          documentName={previewingVersion.name}
+          documentMimeType={previewingVersion.mimeType}
+          documentSize={previewingVersion.sizeFormatted ?? previewingVersion.size}
+        />
+      )}
     </div>
   );
 }

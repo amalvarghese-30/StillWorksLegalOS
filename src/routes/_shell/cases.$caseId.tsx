@@ -4,7 +4,7 @@ import {
   Gavel, FileText, CheckSquare, StickyNote, History, Users,
   LayoutDashboard, Plus, Loader2, ChevronDown, Clock,
   Send, Check, X, UserPlus, Activity as ActivityIcon,
-  CalendarDays, Edit3, Trash2, RotateCcw,
+  CalendarDays, Edit3, Trash2, RotateCcw, Download, Eye,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
@@ -28,11 +28,14 @@ import {
   type CaseRecord, type CaseParty,
 } from "@/services/cases";
 import { useTasks, type TaskRecord } from "@/services/tasks";
-import { useDocuments } from "@/services/documents";
+import { useDocuments, downloadDocument } from "@/services/documents";
+import { DocumentPreviewModal } from "@/components/documents/DocumentPreviewModal";
+import { useClients } from "@/services/clients";
 import { useCalendarEvents } from "@/services/calendar";
 import { EditCaseDialog } from "@/components/cases/EditCaseDialog";
 import { AddTaskDialog } from "@/components/tasks/AddTaskDialog";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
+import { UploadDocumentDialog } from "@/components/documents/UploadDocumentDialog";
 
 export const Route = createFileRoute("/_shell/cases/$caseId")({
   head: () => ({
@@ -167,20 +170,46 @@ function AddNoteForm({ caseId }: { caseId: string }) {
   );
 }
 
+function getPartyClientId(party: CaseParty | undefined): string | null {
+  if (!party || !party.clientId) return null;
+  if (typeof party.clientId === "object" && party.clientId !== null) {
+    return (party.clientId as any)._id?.toString() || null;
+  }
+  return typeof party.clientId === "string" ? party.clientId : null;
+}
+
 /** Add party form */
 function AddPartyForm({ caseId }: { caseId: string }) {
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
   const [type, setType] = useState<CaseParty["type"]>("client");
+  const [selectedClientId, setSelectedClientId] = useState<string>("");
   const [show, setShow] = useState(false);
   const addParty = useAddCaseParty();
+  const { data: clientsData } = useClients({ limit: "100" });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || addParty.isPending) return;
-    addParty.mutate({ caseId, party: { name: name.trim(), role: role.trim() || "Party", type } }, {
-      onSuccess: () => { setName(""); setRole(""); setShow(false); },
-    });
+    addParty.mutate(
+      {
+        caseId,
+        party: {
+          name: name.trim(),
+          role: role.trim() || "Party",
+          type,
+          clientId: type === "client" && selectedClientId ? selectedClientId : undefined,
+        },
+      },
+      {
+        onSuccess: () => {
+          setName("");
+          setRole("");
+          setSelectedClientId("");
+          setShow(false);
+        },
+      }
+    );
   };
 
   if (!show) {
@@ -193,20 +222,18 @@ function AddPartyForm({ caseId }: { caseId: string }) {
 
   return (
     <form onSubmit={handleSubmit} className="rounded-md border border-border bg-muted/30 p-4">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="space-y-1.5 sm:col-span-3">
-          <Label className="text-caption">Name</Label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Party name" className="h-10 rounded-md" />
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-caption">Role</Label>
-          <Input value={role} onChange={(e) => setRole(e.target.value)} placeholder="Plaintiff, Defendant…" className="h-10 rounded-md" />
-        </div>
+      <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label className="text-caption">Type</Label>
           <select
             value={type}
-            onChange={(e) => setType(e.target.value as CaseParty["type"])}
+            onChange={(e) => {
+              const newType = e.target.value as CaseParty["type"];
+              setType(newType);
+              if (newType !== "client") {
+                setSelectedClientId("");
+              }
+            }}
             className="h-10 w-full rounded-md border border-border bg-card px-3 text-helper outline-none"
           >
             <option value="client">Client</option>
@@ -215,6 +242,40 @@ function AddPartyForm({ caseId }: { caseId: string }) {
             <option value="counsel">Counsel</option>
             <option value="other">Other</option>
           </select>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-caption">Role</Label>
+          <Input value={role} onChange={(e) => setRole(e.target.value)} placeholder="Plaintiff, Defendant…" className="h-10 rounded-md" />
+        </div>
+
+        {type === "client" && (
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label className="text-caption text-muted-foreground">Link Client Profile</Label>
+            <select
+              value={selectedClientId}
+              onChange={(e) => {
+                const id = e.target.value;
+                setSelectedClientId(id);
+                const found = clientsData?.clients.find((c) => c._id === id);
+                if (found) {
+                  setName(found.name);
+                }
+              }}
+              className="h-10 w-full rounded-md border border-border bg-card px-3 text-helper outline-none"
+            >
+              <option value="">— Select an existing client or enter name below —</option>
+              {clientsData?.clients.map((c) => (
+                <option key={c._id} value={c._id}>
+                  {c.name} {c.phone ? `(${c.phone})` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label className="text-caption">Name *</Label>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Party name" className="h-10 rounded-md" />
         </div>
       </div>
       <div className="mt-3 flex justify-end gap-2">
@@ -253,8 +314,10 @@ function CaseWorkspace() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showReopenConfirm, setShowReopenConfirm] = useState(false);
   const [showAddTaskDialog, setShowAddTaskDialog] = useState(false);
+  const [showUploadDocDialog, setShowUploadDocDialog] = useState(false);
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState<any | null>(null);
 
   const handleDeleteCase = async () => {
     setIsDeleting(true);
@@ -301,6 +364,8 @@ function CaseWorkspace() {
   const documents = docsData?.documents ?? [];
   const tasks = tasksData?.tasks ?? [];
   const hearings = (hearingsData?.events ?? []).filter((e) => e.type === "hearing");
+  const primaryClientParty = record.parties?.find((p) => p.type === "client");
+  const primaryClientId = getPartyClientId(primaryClientParty);
 
   return (
     <div>
@@ -311,7 +376,27 @@ function CaseWorkspace() {
           { label: record.number },
         ]}
         title={record.title}
-        subtitle={`${record.parties?.[0]?.name ?? "No client"} · ${record.court || "No court"}`}
+        subtitle={
+          <span className="flex flex-wrap items-center gap-1.5">
+            {primaryClientParty ? (
+              primaryClientId ? (
+                <Link
+                  to="/clients/$clientId"
+                  params={{ clientId: primaryClientId }}
+                  className="font-medium text-primary hover:underline"
+                >
+                  {primaryClientParty.name}
+                </Link>
+              ) : (
+                <span>{primaryClientParty.name}</span>
+              )
+            ) : (
+              <span>No client</span>
+            )}
+            <span>·</span>
+            <span>{record.court || "No court"}</span>
+          </span>
+        }
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" className="rounded-md" asChild>
@@ -372,7 +457,7 @@ function CaseWorkspace() {
 
       {/* Hero card */}
       <div className="gradient-primary mb-6 rounded-lg p-6 text-primary-foreground shadow-lift">
-        <div className="grid gap-6 md:grid-cols-4">
+        <div className="grid gap-6 md:grid-cols-5">
           {[
             ["Status", record.status],
             ["Priority", record.priority],
@@ -384,6 +469,22 @@ function CaseWorkspace() {
               <p className="mt-1 truncate text-body font-semibold">{value}</p>
             </div>
           ))}
+          <div className="min-w-0">
+            <p className="text-caption opacity-85">Primary Client</p>
+            {primaryClientId ? (
+              <Link
+                to="/clients/$clientId"
+                params={{ clientId: primaryClientId }}
+                className="mt-1 block truncate text-body font-semibold underline underline-offset-2 hover:opacity-90"
+              >
+                {primaryClientParty?.name || "View Client"}
+              </Link>
+            ) : (
+              <p className="mt-1 truncate text-body font-semibold">
+                {primaryClientParty?.name || "None"}
+              </p>
+            )}
+          </div>
         </div>
         <div className="mt-6 flex items-center gap-3">
           <Progress value={record.progress} className="h-1.5 bg-white/25" />
@@ -499,27 +600,73 @@ function CaseWorkspace() {
 
           {/* ── Documents ── */}
           {active === "documents" && (
-            <SectionCard title="Documents" description="Files linked to this matter." icon={FileText}>
+            <SectionCard
+              title="Documents"
+              description="Files and case records linked to this matter."
+              icon={FileText}
+              action={
+                <Button
+                  size="sm"
+                  className="gap-1.5 rounded-md"
+                  onClick={() => setShowUploadDocDialog(true)}
+                >
+                  <Plus size={14} /> Upload Document
+                </Button>
+              }
+            >
               {documents.length === 0 ? (
                 <div className="rounded-lg border border-dashed p-12 text-center">
                   <FileText size={32} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
                   <p className="mt-4 font-medium">No documents yet</p>
                   <p className="mt-1 text-helper text-muted-foreground">
-                    Upload documents through the Documents module to link them to this case.
+                    Upload documents directly to this matter or link them from the document repository.
                   </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-4 gap-1.5 rounded-md"
+                    onClick={() => setShowUploadDocDialog(true)}
+                  >
+                    <Plus size={14} /> Upload first document
+                  </Button>
                 </div>
               ) : (
                 <ul className="divide-y divide-border/60">
                   {documents.map((d) => (
-                    <li key={d._id} className="flex items-center gap-3 py-3">
-                      <span className="num grid size-9 shrink-0 place-items-center rounded-sm bg-muted text-caption font-semibold text-muted-foreground">
-                        {(d.kind ?? "DOC").slice(0, 3)}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-helper font-medium">{d.name}</p>
-                        <p className="truncate text-caption text-muted-foreground">{d.size}</p>
+                    <li key={d._id} className="flex flex-wrap items-center justify-between gap-4 py-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="num grid size-9 shrink-0 place-items-center rounded-sm bg-muted text-caption font-semibold text-muted-foreground">
+                          {(d.kind ?? "DOC").slice(0, 3).toUpperCase()}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-helper font-medium text-foreground">{d.name}</p>
+                          <p className="truncate text-caption text-muted-foreground">
+                            {d.sizeFormatted || `${(d.size / 1024).toFixed(1)} KB`} • {formatDate(d.createdAt)}
+                          </p>
+                        </div>
                       </div>
-                      <StatusPill tone={toneForStatus(d.state)}>{d.state}</StatusPill>
+
+                      <div className="flex items-center gap-2">
+                        <StatusPill tone={toneForStatus(d.state)}>{d.state}</StatusPill>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 rounded-md px-2 text-muted-foreground hover:text-foreground"
+                          onClick={() => setPreviewDoc(d)}
+                          title="Preview document"
+                        >
+                          <Eye size={15} />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 rounded-md px-2 text-muted-foreground hover:text-foreground"
+                          onClick={() => downloadDocument(d._id)}
+                          title="Download document"
+                        >
+                          <Download size={15} />
+                        </Button>
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -617,17 +764,32 @@ function CaseWorkspace() {
             >
               {record.parties && record.parties.length > 0 ? (
                 <ul className="grid gap-3 sm:grid-cols-2">
-                  {record.parties.map((p) => (
-                    <li key={p._id ?? p.name} className="rounded-md border border-border p-4">
-                      <div className="flex items-center gap-2">
-                        <p className="truncate font-medium">{p.name}</p>
-                        <StatusPill tone={p.type === "client" ? "primary" : p.type === "opposing_party" ? "destructive" : "muted"}>
-                          {p.type.replace(/_/g, " ")}
-                        </StatusPill>
-                      </div>
-                      <p className="mt-1 truncate text-helper text-muted-foreground">{p.role}</p>
-                    </li>
-                  ))}
+                  {record.parties.map((p) => {
+                    const partyClientId = getPartyClientId(p);
+                    return (
+                      <li key={p._id ?? p.name} className="rounded-md border border-border p-4">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {partyClientId ? (
+                              <Link
+                                to="/clients/$clientId"
+                                params={{ clientId: partyClientId }}
+                                className="truncate font-medium text-foreground hover:text-primary hover:underline"
+                              >
+                                {p.name}
+                              </Link>
+                            ) : (
+                              <p className="truncate font-medium">{p.name}</p>
+                            )}
+                          </div>
+                          <StatusPill tone={p.type === "client" ? "primary" : p.type === "opposing_party" ? "destructive" : "muted"}>
+                            {p.type.replace(/_/g, " ")}
+                          </StatusPill>
+                        </div>
+                        <p className="mt-1 truncate text-helper text-muted-foreground">{p.role}</p>
+                      </li>
+                    );
+                  })}
                 </ul>
               ) : (
                 <div className="rounded-lg border border-dashed p-12 text-center">
@@ -774,6 +936,23 @@ function CaseWorkspace() {
         onClose={() => setSelectedTask(null)}
         task={selectedTask}
       />
+
+      <UploadDocumentDialog
+        open={showUploadDocDialog}
+        onClose={() => setShowUploadDocDialog(false)}
+        preSelectedCaseId={caseId}
+      />
+
+      {previewDoc && (
+        <DocumentPreviewModal
+          open={!!previewDoc}
+          onClose={() => setPreviewDoc(null)}
+          documentId={previewDoc._id}
+          documentName={previewDoc.name}
+          documentMimeType={previewDoc.mimeType}
+          documentSize={previewDoc.sizeFormatted ?? previewDoc.size}
+        />
+      )}
     </div>
   );
 }

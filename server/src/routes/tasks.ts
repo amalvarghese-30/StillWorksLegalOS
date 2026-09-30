@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { Task } from "../models/Task.js";
 import { Reminder } from "../models/Reminder.js";
+import { syncCallReminders, deleteCallReminders } from "../services/reminders.js";
 import { Case } from "../models/Case.js";
 import { Client } from "../models/Client.js";
 import { AuditLog } from "../models/AuditLog.js";
@@ -432,14 +433,14 @@ router.post("/", async (req: Request, res: Response) => {
       userAgent: req.headers["user-agent"],
     });
 
-    // Create synchronized Reminder document if callReminder is present
+    // Create synchronized Reminder documents if callReminder is present
     if (task.callReminder && task.callReminder.clientName) {
-      const ownerId = task.assignedTo || task.createdBy || req.userId;
+      const taskUserIds = (Array.isArray(assignedTo) ? assignedTo : [finalAssignedTo || task.createdBy || req.userId]).filter(Boolean);
       try {
-        await Reminder.create({
-          userId: ownerId,
+        await syncCallReminders({
           sourceType: "task",
           sourceId: task._id,
+          userIds: taskUserIds,
           clientName: task.callReminder.clientName,
           phone: task.callReminder.phone || "",
           notes: task.callReminder.notes || "",
@@ -447,7 +448,7 @@ router.post("/", async (req: Request, res: Response) => {
           status: task.callReminder.completed ? "completed" : "scheduled",
         });
       } catch (remErr) {
-        console.error("[tasks] Failed to create synchronized reminder:", remErr);
+        console.error("[tasks] Failed to create synchronized reminders:", remErr);
       }
     }
 
@@ -630,43 +631,35 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       }
     }
 
-    // Synchronize Reminder document if task has callReminder or status changed
+    // Synchronize Reminder documents if task has callReminder or status/assignee changed
     if (task) {
       if (req.body["callReminder"] === null || req.body["callReminder"] === false) {
         try {
-          await Reminder.deleteMany({ sourceType: "task", sourceId: task._id });
+          await deleteCallReminders("task", task._id);
         } catch (remErr) {
           console.error("[tasks] Failed to remove synchronized reminder:", remErr);
         }
-      } else if (updates["callReminder"] !== undefined || updates["status"] !== undefined) {
-        const isDone = task.status === "completed" || Boolean(task.callReminder?.completed);
-        const ownerId = (task.assignedTo as any)?._id || task.assignedTo || task.createdBy || req.userId;
-        const updateDoc: Record<string, unknown> = {
-          userId: ownerId,
-          sourceType: "task",
-          sourceId: task._id,
-          status: isDone ? "completed" : "scheduled",
-        };
-        if (isDone) {
-          updateDoc["completedAt"] = new Date();
-        }
-        if (task.callReminder) {
-          updateDoc["clientName"] = task.callReminder.clientName;
-          updateDoc["phone"] = task.callReminder.phone ?? "";
-          updateDoc["notes"] = task.callReminder.notes ?? "";
-          updateDoc["scheduledAt"] = task.callReminder.scheduledAt;
-        }
-
+      } else if (
+        updates["callReminder"] !== undefined ||
+        updates["status"] !== undefined ||
+        updates["assignedTo"] !== undefined ||
+        task.callReminder?.clientName
+      ) {
         if (task.callReminder?.clientName) {
+          const isDone = task.status === "completed" || Boolean(task.callReminder?.completed);
+          const rawAssignee = (task.assignedTo as any)?._id || task.assignedTo || task.createdBy || req.userId;
+          const assignedList = (Array.isArray(rawAssignee) ? rawAssignee : [rawAssignee]).filter(Boolean);
           try {
-            await Reminder.findOneAndUpdate(
-              { sourceType: "task", sourceId: task._id },
-              {
-                $set: updateDoc,
-                $setOnInsert: { createdAt: new Date() },
-              },
-              { upsert: true, new: true }
-            );
+            await syncCallReminders({
+              sourceType: "task",
+              sourceId: task._id,
+              userIds: assignedList,
+              clientName: task.callReminder.clientName,
+              phone: task.callReminder.phone || "",
+              notes: task.callReminder.notes || "",
+              scheduledAt: task.callReminder.scheduledAt,
+              status: isDone ? "completed" : "scheduled",
+            });
           } catch (remErr) {
             console.error("[tasks] Failed to synchronize reminder on update:", remErr);
           }
@@ -890,7 +883,7 @@ router.delete("/:id", requireResourceAccess("task"), async (req: Request, res: R
 
     // Clean up associated reminders atomically
     try {
-      await Reminder.deleteMany({ sourceType: "task", sourceId: task._id });
+      await deleteCallReminders("task", task._id);
     } catch (remErr) {
       console.error("[tasks] Failed to delete synchronized reminders on task delete:", remErr);
     }

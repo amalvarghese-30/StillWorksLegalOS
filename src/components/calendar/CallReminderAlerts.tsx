@@ -22,13 +22,13 @@ interface ActiveReminder {
   source: "task" | "event" | "reminder";
   title: string;
   clientName: string;
-  phone?: string;
-  notes?: string;
+  phone?: string | undefined;
+  notes?: string | undefined;
   dueTime: Date;
-  taskId?: string;
-  eventId?: string;
-  reminderId?: string;
-  deliveryId?: string;
+  taskId?: string | undefined;
+  eventId?: string | undefined;
+  reminderId?: string | undefined;
+  deliveryId?: string | undefined;
 }
 
 /** Synthesize a pleasant, crisp attention-grabbing phone chime using Web Audio API */
@@ -148,19 +148,29 @@ export function CallReminderAlerts() {
   }, []);
 
   const triggerAlert = useCallback((reminder: ActiveReminder, deliveryId?: string) => {
+    const reminderId = reminder.reminderId || reminder.id;
     const sourceKey = `${reminder.source}:${reminder.taskId || reminder.eventId || reminder.reminderId || reminder.id}`;
 
-    if (alertedIdsRef.current.has(reminder.id) || alertedIdsRef.current.has(sourceKey)) {
+    if (
+      alertedIdsRef.current.has(reminder.id) ||
+      alertedIdsRef.current.has(reminderId) ||
+      alertedIdsRef.current.has(sourceKey)
+    ) {
       return;
     }
     if (deliveryId && alertedIdsRef.current.has(deliveryId)) {
       return;
     }
 
-    setActiveAlert(reminder);
     alertedIdsRef.current.add(reminder.id);
+    alertedIdsRef.current.add(reminderId);
     alertedIdsRef.current.add(sourceKey);
     if (deliveryId) alertedIdsRef.current.add(deliveryId);
+
+    setActiveAlert((prev) => {
+      if (prev) return prev;
+      return reminder;
+    });
 
     playReminderBeep();
 

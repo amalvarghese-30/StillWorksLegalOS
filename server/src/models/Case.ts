@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from "mongoose";
+import { nextSequence } from "./Counter.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -70,6 +71,7 @@ export interface ICase extends Document {
   nasPath: string;                       // NAS folder path for this case
   progress: number;                      // 0-100
   tags: string[];
+  idempotencyKey?: string;
   archivedAt?: Date;                     // Set when case is archived
   archivedBy?: mongoose.Types.ObjectId; // Who archived it
   createdAt: Date;
@@ -156,6 +158,7 @@ const CaseSchema = new Schema<ICase>(
     nasPath: { type: String, default: "" },
     progress: { type: Number, default: 0, min: 0, max: 100 },
     tags: { type: [String], default: [] },
+    idempotencyKey: { type: String, sparse: true, index: true },
     archivedAt: { type: Date },
     archivedBy: { type: Schema.Types.ObjectId, ref: "User" },
   },
@@ -186,6 +189,7 @@ CaseSchema.index({ status: 1, priority: 1, updatedAt: -1 });
 CaseSchema.index({ assignedTo: 1, status: 1 });
 CaseSchema.index({ practice: 1, updatedAt: -1 });
 CaseSchema.index({ nextHearing: 1 });
+CaseSchema.index({ "parties.clientId": 1 });
 
 // ---------------------------------------------------------------------------
 // Auto-generate case number on save — uses atomic Counter to prevent races
@@ -196,12 +200,7 @@ CaseSchema.pre("validate", async function (next) {
     if (this.isNew && !this.number) {
       const year = new Date().getFullYear();
       const counterKey = `case-number-${year}`;
-
-      // nextSequence is a single atomic findOneAndUpdate($inc) — safe under
-      // concurrent requests. No application-level locking needed.
-      const { nextSequence } = await import("./Counter.js");
       const seq = await nextSequence(counterKey);
-
       this.number = `SW-${year}-${String(seq).padStart(4, "0")}`;
     }
     next();

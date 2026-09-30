@@ -35,18 +35,21 @@ interface SocketContextValue {
 }
 
 function getSocketUrl(): string {
-  if (isElectron()) {
-    return "https://legalos.stillworks.in";
-  }
-  if (typeof window !== "undefined") {
-    // In dev, Vite proxies /socket.io to https://legalos.stillworks.in
-    // In production web, window.location.origin connects to https://legalos.stillworks.in
-    return window.location.origin;
-  }
+  // 1. Explicit environment variable takes precedence
   if (import.meta.env["VITE_SOCKET_URL"]) {
     return import.meta.env["VITE_SOCKET_URL"];
   }
-  return "https://legalos.stillworks.in";
+
+  // 2. Web browser: in dev Vite proxies /socket.io, in production web connects same-origin
+  if (typeof window !== "undefined" && window.location) {
+    if (window.location.origin && window.location.origin.startsWith("http")) {
+      return window.location.origin;
+    }
+  }
+
+  // 3. Fallback for Electron / local desktop development (default to localhost:3001)
+  const defaultPort = import.meta.env["VITE_BACKEND_PORT"] || "3001";
+  return `http://localhost:${defaultPort}`;
 }
 
 const SOCKET_URL = getSocketUrl();

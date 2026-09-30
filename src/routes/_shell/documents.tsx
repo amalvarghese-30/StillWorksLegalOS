@@ -44,16 +44,14 @@ import {
 import { useAuth } from "@/lib/auth";
 import {
   useDocuments,
-  useNasStructure,
   useRequestAccess,
   downloadDocument,
-  viewDocument,
   useDeleteDocument,
   type DocumentRecord,
-  type NasFolder,
 } from "@/services/documents";
 import { UploadDocumentDialog } from "@/components/documents/UploadDocumentDialog";
 import { VersionHistoryDialog } from "@/components/documents/VersionHistoryDialog";
+import { DocumentPreviewModal } from "@/components/documents/DocumentPreviewModal";
 
 export const Route = createFileRoute("/_shell/documents")({
   head: () => ({
@@ -202,6 +200,7 @@ function DocumentsPage() {
   const [versionHistoryDocName, setVersionHistoryDocName] = useState("");
   const [search, setSearch] = useState("");
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [previewModalDoc, setPreviewModalDoc] = useState<DocumentRecord | null>(null);
 
   const toggleFav = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -218,7 +217,6 @@ function DocumentsPage() {
 
   const requestAccess = useRequestAccess();
   const { data, isLoading, isError, error } = useDocuments();
-  const { data: nasData, isLoading: nasLoading, isError: nasError } = useNasStructure();
 
   const rawDocs = data?.documents ?? [];
 
@@ -245,8 +243,6 @@ function DocumentsPage() {
         )
       : shelfDocs;
   }, [rawDocs, activeShelf, search, favourites, user]);
-
-  const nasFolders: NasFolder[] = nasData?.folders ?? [];
 
   // Select first doc as default preview
   const [selected, setSelected] = useState<DocumentRecord | null>(null);
@@ -287,15 +283,8 @@ function DocumentsPage() {
     }
   };
 
-  const handleView = async (doc: DocumentRecord) => {
-    try {
-      await viewDocument(doc._id);
-    } catch (err) {
-      showToast(
-        err instanceof Error ? `Preview failed: ${err.message}` : `Failed to preview "${doc.name}"`,
-        "error",
-      );
-    }
+  const handleView = (doc: DocumentRecord) => {
+    setPreviewModalDoc(doc);
   };
 
   const confirmDelete = async () => {
@@ -513,7 +502,7 @@ function DocumentsPage() {
                     ["Uploaded by", uploadedByName(previewDoc)],
                     ["Size", previewDoc.size],
                     ["Version", previewDoc.version || 1],
-                    ["Folder", previewDoc.nasPath || "—"],
+                    ["Location", previewDoc.caseName ? `Case: ${previewDoc.caseName}` : "General Storage"],
                     ["Updated", formatDate(previewDoc.updatedAt)],
                   ].map(([k, v]) => (
                     <div key={k} className="flex justify-between gap-3">
@@ -582,7 +571,7 @@ function DocumentsPage() {
                   ["Uploaded by", uploadedByName(previewDoc)],
                   ["Size", previewDoc.size],
                   ["Version", previewDoc.version || 1],
-                  ["Folder", previewDoc.nasPath || "—"],
+                  ["Location", previewDoc.caseName ? `Case: ${previewDoc.caseName}` : "General Storage"],
                   ["Updated", formatDate(previewDoc.updatedAt)],
                 ].map(([k, v]) => (
                   <div key={k} className="flex justify-between gap-3 border-b border-border/50 py-1.5">
@@ -714,6 +703,17 @@ function DocumentsPage() {
           onClose={() => setShowVersionHistory(false)}
           documentId={versionHistoryDocId}
           documentName={versionHistoryDocName}
+        />
+      )}
+
+      {previewModalDoc && (
+        <DocumentPreviewModal
+          open={!!previewModalDoc}
+          onClose={() => setPreviewModalDoc(null)}
+          documentId={previewModalDoc._id}
+          documentName={previewModalDoc.name}
+          documentMimeType={previewModalDoc.mimeType}
+          documentSize={previewModalDoc.sizeFormatted ?? previewModalDoc.size}
         />
       )}
 

@@ -122,10 +122,10 @@ export interface UpdateEmployeePayload {
 export interface CreateEmployeePayload {
   name: string;
   email: string;
-  role?: string;
-  title?: string;
-  phone?: string;
-  password?: string;
+  role?: string | undefined;
+  title?: string | undefined;
+  phone?: string | undefined;
+  password?: string | undefined;
 }
 
 export interface UpdateFirmPayload {

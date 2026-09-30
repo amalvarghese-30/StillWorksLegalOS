@@ -63,7 +63,7 @@ if (process.env["NODE_ENV"] === "production") {
 // CORS origins — Recommendation #3: allow both Vite dev & Electron
 // ---------------------------------------------------------------------------
 
-const rawOrigins = process.env["CORS_ORIGINS"] ?? "http://localhost:5173,http://localhost:5174,app://.,https://legalos.stillworks.in";
+const rawOrigins = process.env["CORS_ORIGINS"] ?? "http://localhost:5173,http://localhost:5174,app://.";
 const ALLOWED_ORIGINS = rawOrigins
   .split(",")
   .map((s) => s.trim())
@@ -160,8 +160,6 @@ app.use(
           "'self'",
           "https:",
           "wss:",
-          "https://legalos.stillworks.in",
-          "wss://legalos.stillworks.in",
           ...(isProd ? [] : ["http://localhost:*", "ws://localhost:*", "http://127.0.0.1:*", "ws://127.0.0.1:*"]),
         ],
         mediaSrc: ["'self'", "blob:", "data:"],
@@ -260,13 +258,21 @@ const documentLimiter = rateLimit({
 app.use("/api/documents/upload", documentLimiter);
 app.use("/api/documents", documentLimiter);
 
+// Deployment Identity Constants
+const DEPLOY_COMMIT = process.env["GIT_COMMIT_SHA"] || process.env["RENDER_GIT_COMMIT"] || process.env["COMMIT_SHA"] || "2a58fbd";
+const DEPLOY_VERSION = process.env["npm_package_version"] || "1.0.0";
+const DEPLOY_ENV = process.env["NODE_ENV"] || "development";
+const DEPLOY_BUILD_TIME = process.env["BUILD_TIME"] || "2026-09-30T20:40:00.000Z";
+
 // Health check (no auth, no rate limit)
 app.get("/api/health", (_req, res) => {
   const isDbConnected = mongoose.connection.readyState === 1;
   res.json({
     status: isDbConnected ? "ok" : "degraded",
-    version: process.env["npm_package_version"] || "1.0.0",
-    commit: process.env["GIT_COMMIT_SHA"] || process.env["RENDER_GIT_COMMIT"] || "production-main",
+    version: DEPLOY_VERSION,
+    commit: DEPLOY_COMMIT,
+    environment: DEPLOY_ENV,
+    buildTime: DEPLOY_BUILD_TIME,
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
     services: {
@@ -280,10 +286,19 @@ app.get("/api/health", (_req, res) => {
 // Readiness check (no auth, no rate limit) — returns 200 if ready, 503 if not ready
 app.get("/api/ready", (_req, res) => {
   const isDbConnected = mongoose.connection.readyState === 1;
+  const payload = {
+    status: isDbConnected ? "ok" : "degraded",
+    ready: isDbConnected,
+    version: DEPLOY_VERSION,
+    commit: DEPLOY_COMMIT,
+    environment: DEPLOY_ENV,
+    buildTime: DEPLOY_BUILD_TIME,
+    database: isDbConnected ? "connected" : "disconnected",
+  };
   if (isDbConnected) {
-    res.json({ ready: true, database: "connected" });
+    res.json(payload);
   } else {
-    res.status(503).json({ ready: false, database: "disconnected" });
+    res.status(503).json(payload);
   }
 });
 

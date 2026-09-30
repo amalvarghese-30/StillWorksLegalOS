@@ -4,13 +4,14 @@ import { createHash } from "node:crypto";
 import busboy from "busboy";
 import { DocumentModel, type IDocument } from "../models/Document.js";
 import { Case } from "../models/Case.js";
+import { Client } from "../models/Client.js";
 import { User } from "../models/User.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { FileIntegrity } from "../models/FileIntegrity.js";
 import { NotificationService } from "../services/notifications.js";
 import { Types } from "mongoose";
 import { requireAuth } from "../middleware/auth.js";
-import { requireResourceAccess, getAccessibleCaseIds, canAccessCase } from "../middleware/authorization.js";
+import { requireResourceAccess, getAccessibleCaseIds, canAccessCase, canAccessClient } from "../middleware/authorization.js";
 import {
   buildAccessibleNasTree,
   validateMimeType,
@@ -20,7 +21,7 @@ import {
   getCaseFolderPath,
   createDocumentAuditLog,
 } from "../services/nas.js";
-import { uploadStream, downloadStream, deletePath } from "../services/webdav.js";
+import { uploadStream, downloadStream, deletePath } from "../services/storage.js";
 
 const router = Router();
 
@@ -55,14 +56,17 @@ router.get("/", async (req: Request, res: Response) => {
       filter["name"] = regex;
     }
 
-    // Non-admins only see documents they uploaded or in their cases
+    // Non-admins only see documents they uploaded, in their accessible cases, or approved access grants
     if (req.user!.role !== "admin") {
       const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
 
-      const accessFilter: Record<string, unknown> =
-        accessibleCaseIds.length === 0
-          ? { uploadedBy: req.userId }
-          : { $or: [{ uploadedBy: req.userId }, { caseId: { $in: accessibleCaseIds } }] };
+      const accessFilter: Record<string, unknown> = {
+        $or: [
+          { uploadedBy: req.userId },
+          ...(accessibleCaseIds.length > 0 ? [{ caseId: { $in: accessibleCaseIds } }] : []),
+          { accessRequests: { $elemMatch: { userId: req.userId, status: "approved" } } },
+        ],
+      };
 
       const hasBaseFilter = Object.keys(filter).length > 0;
       filter = hasBaseFilter ? { $and: [filter, accessFilter] } : accessFilter;
@@ -96,18 +100,21 @@ router.get("/", async (req: Request, res: Response) => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /api/documents/nas/structure — secure NAS folder tree (access-controlled)
+// GET /api/documents/structure (and /nas/structure) — secure folder tree (access-controlled)
 // ---------------------------------------------------------------------------
 
-router.get("/nas/structure", async (req: Request, res: Response) => {
+const getStructureHandler = async (req: Request, res: Response) => {
   try {
     const folders = await buildAccessibleNasTree(req.userId!, req.user!.role);
     res.json({ folders });
   } catch (err) {
-    console.error("[documents] NAS structure error:", err);
+    console.error("[documents] Folder structure error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
-});
+};
+
+router.get("/structure", getStructureHandler);
+router.get("/nas/structure", getStructureHandler);
 
 // ---------------------------------------------------------------------------
 // GET /api/documents/:id/download — stream the file from VPS disk for download
@@ -144,6 +151,7 @@ router.get("/:id/download", requireResourceAccess("document"), async (req: Reque
       "Content-Disposition",
       `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
     );
+    res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Cache-Control", "private, no-store");
     if (document.size > 0) res.setHeader("Content-Length", String(document.size));
 
@@ -188,12 +196,20 @@ router.get("/:id/view", requireResourceAccess("document"), async (req: Request, 
     const fileName = document.originalName || document.name || "document";
     const safeName = fileName.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "_");
 
-    res.setHeader("Content-Type", document.mimeType || "application/octet-stream");
+    const mime = (document.mimeType || "application/octet-stream").toLowerCase();
+    const isDangerous = /^(text\/html|application\/xhtml\+xml|image\/svg\+xml|text\/javascript|application\/javascript|text\/xml)$/i.test(mime);
+    const isPreviewable = /^(application\/pdf|image\/(jpeg|png|gif|webp)|text\/(plain|csv)|application\/json)$/i.test(mime);
+
+    const disposition = (!isDangerous && isPreviewable) ? "inline" : "attachment";
+    const responseMime = isDangerous ? "application/octet-stream" : mime;
+
+    res.setHeader("Content-Type", responseMime);
     res.setHeader(
       "Content-Disposition",
-      `inline; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+      `${disposition}; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
     );
-    res.setHeader("Cache-Control", "private, max-age=3600");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cache-Control", "private, no-cache, no-transform");
     if (document.size > 0) res.setHeader("Content-Length", String(document.size));
 
     stream.on("error", (err) => {
@@ -331,7 +347,13 @@ router.get("/:id", requireResourceAccess("document"), async (req: Request, res: 
       res.status(404).json({ message: "Document not found" });
       return;
     }
-    res.json({ document });
+    const docObj: any = document.toObject ? document.toObject() : { ...document };
+    delete docObj.nasPath;
+    delete docObj.nasFolder;
+    delete docObj.filePath;
+    delete docObj.tempPath;
+
+    res.json({ document: docObj });
   } catch (err) {
     console.error("[documents] Get error:", err);
     res.status(500).json({ message: "Internal server error" });
@@ -362,11 +384,15 @@ router.post("/upload", async (req: Request, res: Response) => {
   const fields: Record<string, string> = {};
   let fileSeen = false;
   let settled = false;
+  let uploadError: { status: number; message: string } | null = null;
   let fileTask: Promise<void> = Promise.resolve();
 
   const respond = (status: number, body: unknown) => {
     if (settled) return;
     settled = true;
+    if (status >= 400 && !res.headersSent) {
+      res.setHeader("Connection", "close");
+    }
     res.status(status).json(body);
   };
 
@@ -391,8 +417,9 @@ router.post("/upload", async (req: Request, res: Response) => {
     const mimeType = info.mimeType || "application/octet-stream";
     const displayName = fields["name"]?.trim() || originalName;
     const caseId = fields["caseId"]?.trim() || undefined;
+    const clientId = fields["clientId"]?.trim() || undefined;
 
-    fileTask = processFile(fileStream, { originalName, displayName, mimeType, caseId });
+    fileTask = processFile(fileStream, { originalName, displayName, mimeType, caseId, clientId });
   });
 
   bb.on("error", (err) => {
@@ -402,6 +429,10 @@ router.post("/upload", async (req: Request, res: Response) => {
 
   bb.on("close", async () => {
     await fileTask;
+    if (uploadError) {
+      respond(uploadError.status, { message: uploadError.message });
+      return;
+    }
     if (!settled) {
       respond(fileSeen ? 500 : 400, { message: fileSeen ? "Upload failed" : "No file uploaded" });
     }
@@ -411,23 +442,48 @@ router.post("/upload", async (req: Request, res: Response) => {
 
   async function processFile(
     fileStream: Readable & { truncated?: boolean },
-    meta: { originalName: string; displayName: string; mimeType: string; caseId?: string },
+    meta: { originalName: string; displayName: string; mimeType: string; caseId?: string; clientId?: string },
   ): Promise<void> {
     let doc: IDocument | null = null;
     let nasPath = "";
     let nasFolder = "/General";
     try {
       const mimeCheck = validateMimeType(meta.mimeType);
-      if (!mimeCheck.valid) throw httpError(415, mimeCheck.error ?? "File type not allowed");
+      if (!mimeCheck.valid) {
+        await new Promise<void>((resolve) => {
+          fileStream.on("data", () => {});
+          fileStream.on("end", () => resolve());
+          fileStream.on("error", () => resolve());
+          fileStream.resume();
+        });
+        throw httpError(415, mimeCheck.error ?? "File type not allowed");
+      }
 
       let caseNumber = "";
+      let linkedClientId: Types.ObjectId | null = null;
+
       if (meta.caseId) {
-        const caseDoc = await Case.findById(meta.caseId).select("number _id").lean();
+        const caseDoc = await Case.findById(meta.caseId).select("number _id parties").lean();
         if (!caseDoc) throw httpError(404, "Case not found");
         const allowed = await canAccessCase(req.userId!, req.user!.role, meta.caseId);
         if (!allowed) throw httpError(403, "Cannot upload to a case you don't have access to");
         caseNumber = caseDoc.number;
         nasFolder = getCaseFolderPath(caseNumber, meta.caseId);
+
+        // Derive client relationship from case parties if available
+        const clientParty = caseDoc.parties?.find((p: any) => (p.type === "client" || p.type === "sub_client") && p.clientId);
+        if (clientParty && clientParty.clientId) {
+          linkedClientId = clientParty.clientId as any;
+        }
+      }
+
+      if (meta.clientId) {
+        if (!Types.ObjectId.isValid(meta.clientId)) throw httpError(400, "Invalid client ID format");
+        const clientDoc = await Client.findById(meta.clientId).select("_id").lean();
+        if (!clientDoc) throw httpError(404, "Client not found");
+        const canClient = await canAccessClient(req.userId!, req.user!.role, meta.clientId, req.user?.permissions);
+        if (!canClient) throw httpError(403, "Cannot upload to a client you don't have access to");
+        linkedClientId = clientDoc._id as Types.ObjectId;
       }
 
       // Check if a document with the same name and caseId already exists to determine version
@@ -460,6 +516,7 @@ router.post("/upload", async (req: Request, res: Response) => {
         size: 0,
         sizeFormatted: "0 Bytes",
         caseId: meta.caseId ?? null,
+        clientId: linkedClientId ?? null,
         uploadedBy: req.userId,
         state: "Draft",
         nasPath: "",
@@ -538,7 +595,13 @@ router.post("/upload", async (req: Request, res: Response) => {
         }
       }
 
-      respond(201, { document: doc });
+      const sanitizedDoc: any = doc.toObject ? doc.toObject() : { ...doc };
+      delete sanitizedDoc.nasPath;
+      delete sanitizedDoc.nasFolder;
+      delete sanitizedDoc.filePath;
+      delete sanitizedDoc.tempPath;
+
+      respond(201, { document: sanitizedDoc });
     } catch (err) {
       if (doc) {
         await DocumentModel.findByIdAndDelete(doc._id).catch(() => { });
@@ -550,7 +613,7 @@ router.post("/upload", async (req: Request, res: Response) => {
       const status = (err as { status?: number }).status ?? 502;
       const message = err instanceof Error ? err.message : "Failed to upload file to NAS";
       console.error("[documents] Upload stream error:", err);
-      respond(status, { message });
+      uploadError = { status, message };
     }
   }
 });
@@ -581,6 +644,18 @@ router.patch("/:id", requireResourceAccess("document"), async (req: Request, res
       updates["rejectedReason"] = req.body["rejectedReason"] ?? "";
     }
 
+    // Verify document exists and enforce rename permissions
+    const existing = await DocumentModel.findById(req.params["id"]);
+    if (!existing) {
+      res.status(404).json({ message: "Document not found" });
+      return;
+    }
+
+    if (updates["name"] && req.user!.role !== "admin" && existing.uploadedBy?.toString() !== req.userId) {
+      res.status(403).json({ message: "Only the uploader or an administrator can rename this document" });
+      return;
+    }
+
     // Atomically update state if this is an approval/rejection action
     let document;
     if (updates["state"] === "Approved" || updates["state"] === "Rejected") {
@@ -591,8 +666,7 @@ router.patch("/:id", requireResourceAccess("document"), async (req: Request, res
       );
       if (!document) {
         // Check if document was already processed in a concurrent request
-        const existing = await DocumentModel.findById(req.params["id"]);
-        if (existing) {
+        if (existing.state !== "Pending") {
           res.json({ document: existing, code: "ALREADY_PROCESSED", message: "This document has already been reviewed." });
           return;
         }
@@ -816,6 +890,11 @@ router.delete("/:id", requireResourceAccess("document"), async (req: Request, re
       return;
     }
 
+    if (req.user!.role !== "admin" && document.uploadedBy?.toString() !== req.userId) {
+      res.status(403).json({ message: "Only the uploader or an administrator can delete this document" });
+      return;
+    }
+
     if (document.nasPath) {
       await deletePath(document.nasPath).catch((err) => {
         console.warn("[documents] Could not delete file from disk:", err);
@@ -865,7 +944,15 @@ router.get("/:id/versions", requireResourceAccess("document"), async (req: Reque
       .populate("caseId", "title number")
       .lean();
 
-    res.json({ versions, count: versions.length });
+    const sanitizedVersions = versions.map((v: any) => {
+      delete v.nasPath;
+      delete v.nasFolder;
+      delete v.filePath;
+      delete v.tempPath;
+      return v;
+    });
+
+    res.json({ versions: sanitizedVersions, count: sanitizedVersions.length });
   } catch (err) {
     console.error("[documents] Get versions error:", err);
     res.status(500).json({ message: "Internal server error" });

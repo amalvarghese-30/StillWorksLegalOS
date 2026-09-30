@@ -3,7 +3,7 @@ import { useSocketEvent } from "@/lib/socket";
 import { apiFetch } from "@/services/api";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
-import { notifications } from "@/platform";
+import { notifications as platformNotifications } from "@/platform";
 import {
   playNotificationSound,
   isNotificationSoundEnabled,
@@ -104,7 +104,7 @@ export function useNotifications() {
     });
 
     // 3. Trigger OS-level notification (Browser push or Windows native toast)
-    notifications.show({
+    platformNotifications.show({
       id: normId,
       title: norm.title,
       body: norm.message,

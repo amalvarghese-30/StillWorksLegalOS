@@ -12,7 +12,7 @@ export function PageHeader({
 }: {
   breadcrumb: { label: string; to?: string }[];
   title: string;
-  subtitle?: string;
+  subtitle?: ReactNode;
   actions?: ReactNode;
   className?: string;
 }) {

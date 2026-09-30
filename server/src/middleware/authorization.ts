@@ -4,9 +4,10 @@ import { Client } from "../models/Client.js";
 import { Task } from "../models/Task.js";
 import { CalendarEvent } from "../models/CalendarEvent.js";
 import { DocumentModel } from "../models/Document.js";
-import { User, type IUser, type UserPermissions } from "../models/User.js";
+import { ChatGroup } from "../models/Chat.js";
+import { type IUser, type UserPermissions } from "../models/User.js";
 
-// Extend Express Request with user info (already in auth.ts, but for type safety)
+// Extend Express Request with user info
 declare global {
   namespace Express {
     interface Request {
@@ -26,7 +27,9 @@ export function isAdmin(user: IUser | undefined): boolean {
 /**
  * Authorization check for cases
  * Admins: full access
- * Employees: can access if they have cases permission OR they created OR are assigned to it
+ * Employees: can access only if they created or are assigned to the case.
+ * NOTE: Module permission (`userPermissions.cases`) allows using the module,
+ * but does NOT grant access to every individual case resource (Phase 2 & 3).
  */
 export async function canAccessCase(
   userId: string,
@@ -35,7 +38,7 @@ export async function canAccessCase(
   userPermissions?: UserPermissions | Record<string, boolean>
 ): Promise<boolean> {
   if (userRole === "admin") return true;
-  if (userPermissions?.cases === true) return true;
+  if (userPermissions && userPermissions["cases"] === false) return false;
 
   const c = await Case.findById(caseId).select("assignedTo createdBy").lean();
   if (!c) return false;
@@ -49,7 +52,8 @@ export async function canAccessCase(
 /**
  * Authorization check for clients
  * Admins: full access
- * Employees: can access if they have clients permission OR created OR linked to their cases
+ * Employees: can access only if they created the client OR the client is a party in an accessible case.
+ * Module permission does NOT grant blanket access to all client records.
  */
 export async function canAccessClient(
   userId: string,
@@ -58,14 +62,14 @@ export async function canAccessClient(
   userPermissions?: UserPermissions | Record<string, boolean>
 ): Promise<boolean> {
   if (userRole === "admin") return true;
-  if (userPermissions?.clients === true) return true;
+  if (userPermissions && userPermissions["clients"] === false) return false;
 
   const c = await Client.findById(clientId).select("createdBy").lean();
   if (!c) return false;
 
   if (c.createdBy?.toString() === userId) return true;
 
-  // Also allow access if the client is a party in a case the user can access
+  // Allow access if the client is a party in a case the user can access
   const linkedCase = await Case.findOne({
     "parties.clientId": clientId,
     $or: [{ assignedTo: userId }, { createdBy: userId }],
@@ -79,14 +83,16 @@ export async function canAccessClient(
 /**
  * Authorization check for tasks
  * Admins: full access
- * Employees: can access tasks assigned to them, created by them, or in their cases
+ * Employees: can access tasks assigned to them, created by them, or in their accessible cases.
  */
 export async function canAccessTask(
   userId: string,
   userRole: string,
-  taskId: string
+  taskId: string,
+  userPermissions?: UserPermissions | Record<string, boolean>
 ): Promise<boolean> {
   if (userRole === "admin") return true;
+  if (userPermissions && userPermissions["tasks"] === false) return false;
 
   const task = await Task.findById(taskId)
     .select("assignedTo createdBy caseId")
@@ -99,7 +105,7 @@ export async function canAccessTask(
 
   // Check if task's case is accessible
   if (task.caseId) {
-    return canAccessCase(userId, userRole, task.caseId.toString());
+    return canAccessCase(userId, userRole, task.caseId.toString(), userPermissions);
   }
 
   return false;
@@ -108,7 +114,7 @@ export async function canAccessTask(
 /**
  * Authorization check for calendar events
  * Admins: full access
- * Employees: can access events they created, are assigned to, or firm hearings/events
+ * Employees: can access events they created, are assigned to, firm events, or events in their accessible cases.
  */
 export async function canAccessCalendarEvent(
   userId: string,
@@ -117,6 +123,7 @@ export async function canAccessCalendarEvent(
   userPermissions?: UserPermissions | Record<string, boolean>
 ): Promise<boolean> {
   if (userRole === "admin") return true;
+  if (userPermissions && userPermissions["calendar"] === false) return false;
 
   const event = await CalendarEvent.findById(eventId)
     .select("createdBy assignedTo type caseId")
@@ -125,7 +132,7 @@ export async function canAccessCalendarEvent(
 
   if (event.createdBy?.toString() === userId) return true;
   if (event.assignedTo?.some((id) => id.toString() === userId)) return true;
-  if (event.type === "hearing" || event.type === "firm_event") return true;
+  if (event.type === "firm_event") return true;
 
   if (event.caseId) {
     return canAccessCase(userId, userRole, event.caseId.toString(), userPermissions);
@@ -135,9 +142,15 @@ export async function canAccessCalendarEvent(
 }
 
 /**
- * Authorization check for documents
+ * Authorization check for documents (Phase 2 & 3: Document BOLA Prevention)
  * Admins: full access
- * Employees: can access documents they uploaded, in their cases, or if they have documents permission
+ * Employees: can access a document ONLY if:
+ * 1. They uploaded it (`uploadedBy === userId`)
+ * 2. It belongs to a case they are assigned to / created (`canAccessCase(...)`)
+ * 3. An explicit approved access grant exists (`accessRequests` with status `approved`)
+ *
+ * CRITICAL SECURITY FIX: Module permission `userPermissions.documents === true` does
+ * NOT bypass individual document authorization.
  */
 export async function canAccessDocument(
   userId: string,
@@ -146,27 +159,56 @@ export async function canAccessDocument(
   userPermissions?: UserPermissions | Record<string, boolean>
 ): Promise<boolean> {
   if (userRole === "admin") return true;
-  if (userPermissions?.documents === true) return true;
+  if (userPermissions && userPermissions["documents"] === false) return false;
 
   const doc = await DocumentModel.findById(documentId)
-    .select("uploadedBy caseId")
+    .select("uploadedBy caseId accessRequests")
     .lean();
   if (!doc) return false;
 
+  // 1. Direct uploader
   if (doc.uploadedBy?.toString() === userId) return true;
 
+  // 2. Case relationship
   if (doc.caseId) {
-    return canAccessCase(userId, userRole, doc.caseId.toString(), userPermissions);
+    const hasCaseAccess = await canAccessCase(userId, userRole, doc.caseId.toString(), userPermissions);
+    if (hasCaseAccess) return true;
+  }
+
+  // 3. Explicit document access grant
+  if (doc.accessRequests && Array.isArray(doc.accessRequests)) {
+    const hasGrant = doc.accessRequests.some(
+      (ar: any) => ar.userId?.toString() === userId && ar.status === "approved"
+    );
+    if (hasGrant) return true;
   }
 
   return false;
 }
 
 /**
+ * Authorization check for chat groups
+ * Admins: full access
+ * Members: user must be an active member of the chat group.
+ */
+export async function canAccessChatGroup(
+  userId: string,
+  userRole: string,
+  groupId: string,
+): Promise<boolean> {
+  if (userRole === "admin") return true;
+
+  const group = await ChatGroup.findById(groupId).select("members").lean();
+  if (!group) return false;
+
+  return group.members.some((m: any) => m.userId?.toString() === userId);
+}
+
+/**
  * Middleware factory for protecting single resource endpoints
  */
 export function requireResourceAccess(
-  resourceType: "case" | "client" | "task" | "calendarEvent" | "document",
+  resourceType: "case" | "client" | "task" | "calendarEvent" | "document" | "chatGroup",
   paramName: string = "id"
 ) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -191,13 +233,16 @@ export function requireResourceAccess(
           hasAccess = await canAccessClient(userId, userRole, resourceId, permissions);
           break;
         case "task":
-          hasAccess = await canAccessTask(userId, userRole, resourceId);
+          hasAccess = await canAccessTask(userId, userRole, resourceId, permissions);
           break;
         case "calendarEvent":
           hasAccess = await canAccessCalendarEvent(userId, userRole, resourceId, permissions);
           break;
         case "document":
           hasAccess = await canAccessDocument(userId, userRole, resourceId, permissions);
+          break;
+        case "chatGroup":
+          hasAccess = await canAccessChatGroup(userId, userRole, resourceId);
           break;
       }
 
@@ -214,17 +259,6 @@ export function requireResourceAccess(
       res.status(500).json({ message: "Internal server error" });
     }
   };
-}
-
-/**
- * Filter query for list endpoints - adds user's accessible resources to filter
- */
-export function buildUserFilter(userId: string, userRole: string, baseFilter: Record<string, unknown> = {}) {
-  if (userRole === "admin") return baseFilter;
-
-  // For employees, we need to build a filter that only returns their resources
-  // This is used in list endpoints
-  return baseFilter;
 }
 
 /**

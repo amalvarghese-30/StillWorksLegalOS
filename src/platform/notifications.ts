@@ -110,7 +110,7 @@ class BrowserNotificationProvider implements NotificationProvider {
         const notif = new Notification(payload.title, {
           body: payload.body,
           icon: "/icon.png",
-          tag: payload.tag || payload.id,
+          ...(payload.tag || payload.id ? { tag: payload.tag || payload.id } : {}),
         });
         if (payload.onClick) {
           notif.onclick = () => {
@@ -156,7 +156,7 @@ class ElectronNotificationProvider implements NotificationProvider {
           title: payload.title,
           body: payload.body,
           sound: false, // We already played the Web Audio chime
-          tag: payload.tag || payload.id,
+          ...(payload.tag || payload.id ? { tag: payload.tag || payload.id } : {}),
         });
         return result.shown;
       } catch (err) {
@@ -167,7 +167,7 @@ class ElectronNotificationProvider implements NotificationProvider {
     // Fallback to browser Notification if Electron IPC is unavailable
     if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
       try {
-        new Notification(payload.title, { body: payload.body, tag: payload.tag });
+        new Notification(payload.title, { body: payload.body, ...(payload.tag ? { tag: payload.tag } : {}) });
         return true;
       } catch {
         /* ignore */

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import {
   File,
   Loader2,
@@ -37,6 +37,12 @@ export function UploadDocumentDialog({ open, onClose, preSelectedCaseId }: Uploa
   const [uploadedSha256, setUploadedSha256] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
+
+  useEffect(() => {
+    if (open && preSelectedCaseId) {
+      setCaseId(preSelectedCaseId);
+    }
+  }, [open, preSelectedCaseId]);
 
   const { data: casesData } = useCases({ limit: "200" });
   const cases = casesData?.cases ?? [];
@@ -101,6 +107,7 @@ export function UploadDocumentDialog({ open, onClose, preSelectedCaseId }: Uploa
       setUploadStatus("complete");
       setUploadProgress(100);
       qc.invalidateQueries({ queryKey: docKeys.all });
+      qc.invalidateQueries({ queryKey: ["clients"] });
 
       setTimeout(() => {
         onClose();

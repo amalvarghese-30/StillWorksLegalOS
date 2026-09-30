@@ -13,7 +13,7 @@ import { DocumentModel } from "../models/Document.js";
 import { FileIntegrity, computeFileHash, type FileIntegrityStatus } from "../models/FileIntegrity.js";
 import { CalendarEvent } from "../models/CalendarEvent.js";
 import { AppSettings } from "../models/AppSettings.js";
-import { testConnection, getLocalPath } from "../services/webdav.js";
+import { testConnection, getLocalPath } from "../services/storage.js";
 import { requireAuth, requireAdmin, requireAdminOrPermission } from "../middleware/auth.js";
 
 const router = Router();

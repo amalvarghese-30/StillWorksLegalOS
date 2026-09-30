@@ -62,13 +62,9 @@ export async function nextSequence(key: string, init = 0): Promise<number> {
 // @param minValue  The counter will be set to max(currentSeq, minValue)
 // ---------------------------------------------------------------------------
 export async function initSequence(key: string, minValue: number): Promise<void> {
-  const existing = await Counter.findOne({ key });
-  if (!existing) {
-    // Create fresh with the starting value
-    await Counter.create({ key, seq: minValue });
-    return;
-  }
-  if (existing.seq < minValue) {
-    await Counter.updateOne({ key }, { $set: { seq: minValue } });
-  }
+  await Counter.findOneAndUpdate(
+    { key },
+    { $max: { seq: minValue } },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
 }

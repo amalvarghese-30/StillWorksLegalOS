@@ -50,16 +50,13 @@ router.get("/", async (req: Request, res: Response) => {
         // Non-admins only see cases they have access to
         if (req.user!.role !== "admin") {
           const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
+          if (accessibleCaseIds.length === 0) {
+            return [];
+          }
           caseFilter = {
             $and: [
               caseFilter,
-              {
-                $or: [
-                  { _id: { $in: accessibleCaseIds } },
-                  // Also include cases where the user is a party? We don't have a direct party field in Case model.
-                  // We'll rely on the accessibleCaseIds from the middleware which should already consider parties.
-                ],
-              },
+              { _id: { $in: accessibleCaseIds } },
             ],
           };
         }
@@ -103,16 +100,23 @@ router.get("/", async (req: Request, res: Response) => {
       (async () => {
         const nameFilter = { name: queryRegex };
 
-        // Non-admins only see documents they have access to
+        // Non-admins only see documents they have access to (BOLA consistent)
         if (req.user!.role !== "admin") {
           const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
-          const accessFilter = {
-            $or: [
-              { uploadedBy: req.userId }, // Documents they uploaded
-              { caseId: { $in: accessibleCaseIds } }, // Documents in their accessible cases
+          const accessConditions: any[] = [
+            { uploadedBy: req.userId },
+            { accessRequests: { $elemMatch: { userId: req.userId, status: "approved" } } },
+          ];
+          if (accessibleCaseIds.length > 0) {
+            accessConditions.push({ caseId: { $in: accessibleCaseIds } });
+          }
+
+          return await DocumentModel.find({
+            $and: [
+              nameFilter,
+              { $or: accessConditions },
             ],
-          };
-          return await DocumentModel.find({ $and: [nameFilter, accessFilter] })
+          })
             .limit(limitNum)
             .select("name _id")
             .lean();

@@ -7,7 +7,7 @@ import { ChatGroup, ChatMessage } from "../models/Chat.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { User } from "../models/User.js";
 import { NotificationService } from "../services/notifications.js";
-import { uploadStream, downloadStream } from "../services/webdav.js";
+import { uploadStream, downloadStream, getLocalPath } from "../services/storage.js";
 import { formatBytes } from "../services/nas.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
 import rateLimit from "express-rate-limit";
@@ -533,9 +533,24 @@ router.post(
     try {
       const { text, mentions, replyTo, attachments } = req.body;
       const cleanText = typeof text === "string" ? text.trim() : "";
+
+      const group = (req as any).chatGroup;
+      const groupId = group._id;
+
+      // Validate attachments: strictly enforce server-controlled chat group paths
+      const safeGroupPrefix = `/chat/${groupId.toString().toLowerCase()}/`;
+      const safeLocalPrefix = `local:chat/${groupId.toString().toLowerCase()}/`;
+
       const validAttachments = (Array.isArray(attachments) ? attachments : [])
-        .filter((a: any) => a && typeof a.name === "string" && typeof a.nasPath === "string")
+        .filter((a: any) => {
+          if (!a || typeof a.name !== "string" || typeof a.nasPath !== "string") return false;
+          const p = String(a.nasPath).trim().toLowerCase();
+          if (!p.startsWith(safeGroupPrefix) && !p.startsWith(safeLocalPrefix)) return false;
+          if (p.includes("..") || p.includes("\\") || p.includes("\0")) return false;
+          return true;
+        })
         .map((a: any) => ({
+          attachmentId: a.attachmentId ? String(a.attachmentId) : undefined,
           name: String(a.name).slice(0, 200),
           nasPath: String(a.nasPath),
           size: String(a.size || ""),
@@ -551,9 +566,6 @@ router.post(
         });
         return;
       }
-
-      const group = (req as any).chatGroup;
-      const groupId = group._id;
 
       const senderName = req.user?.name ?? "Unknown";
       const senderInitials = computeInitials(senderName);
@@ -689,6 +701,11 @@ router.post(
 
 const MAX_CHAT_UPLOAD_BYTES = 50 * 1024 * 1024; // 50MB
 
+const DISALLOWED_CHAT_EXTENSIONS = new Set([
+  ".exe", ".bat", ".cmd", ".sh", ".ps1", ".vbs", ".js", ".mjs", ".php",
+  ".py", ".bin", ".com", ".scr", ".html", ".htm", ".vbe", ".wsf",
+]);
+
 router.post(
   "/groups/:groupId/upload",
   requireChatMembership,
@@ -726,53 +743,34 @@ router.post(
         const originalName = info.filename || "file";
         const mimeType = info.mimeType || "application/octet-stream";
 
+        const ext = originalName.includes(".")
+          ? originalName.substring(originalName.lastIndexOf(".")).toLowerCase()
+          : "";
+
+        if (DISALLOWED_CHAT_EXTENSIONS.has(ext)) {
+          fileStream.resume();
+          respond(415, { message: "Executable or script attachment types are not allowed" });
+          return;
+        }
+
         uploadTask = (async () => {
           try {
             const safeBase = originalName
               .replace(/\.[^.]+$/, "")
               .replace(/[^a-zA-Z0-9_-]/g, "_")
               .slice(0, 80);
-            const ext = originalName.includes(".")
-              ? originalName.substring(originalName.lastIndexOf("."))
-              : "";
-            const uniqueName = `${Date.now()}-${safeBase}${ext}`;
+            const attachmentId = new mongoose.Types.ObjectId().toString();
+            const storagePath = `/chat/${groupId}/${attachmentId}-${safeBase}${ext}`;
 
-            // Local fallback persistence ensures attachments always work regardless of WebDAV status
-            const uploadsDir = path.resolve(process.cwd(), "uploads", "chat", groupId);
-            await fs.promises.mkdir(uploadsDir, { recursive: true });
-            const localFilePath = path.join(uploadsDir, uniqueName);
-
-            const localWriteStream = fs.createWriteStream(localFilePath);
-            let bytesWritten = 0;
-
-            await new Promise<void>((resolve, reject) => {
-              fileStream.on("data", (chunk: Buffer) => {
-                bytesWritten += chunk.length;
-              });
-              fileStream.pipe(localWriteStream);
-              localWriteStream.on("finish", () => resolve());
-              localWriteStream.on("error", reject);
-              fileStream.on("error", reject);
-            });
-
-            const localNasPath = `local:chat/${groupId}/${uniqueName}`;
-            let finalNasPath = localNasPath;
-
-            // Attempt WebDAV replication to Synology NAS if configured
-            try {
-              const webdavPath = `/Chat/${groupId}/${uniqueName}`;
-              const fileReadStream = fs.createReadStream(localFilePath);
-              await uploadStream(webdavPath, fileReadStream);
-              finalNasPath = webdavPath;
-            } catch {
-              // WebDAV not active or failed; local storage remains authoritative
-            }
+            // Save stream directly to VPS disk via StorageService
+            const { size } = await uploadStream(storagePath, fileStream);
 
             respond(200, {
               attachment: {
+                attachmentId,
                 name: originalName,
-                nasPath: finalNasPath,
-                size: formatBytes(bytesWritten),
+                nasPath: storagePath,
+                size: formatBytes(size),
                 mimeType,
               },
             });
@@ -812,59 +810,77 @@ router.get(
   requireChatMembership,
   async (req: Request, res: Response) => {
     try {
-      const nasPath = (req.query["path"] as string) || "";
+      const requestedPath = (req.query["path"] as string) || "";
+      const requestedId = (req.query["attachmentId"] as string) || "";
       const fileName = (req.query["name"] as string) || "attachment";
 
-      if (!nasPath) {
-        res.status(400).json({ message: "Attachment path is required" });
+      if (!requestedPath && !requestedId) {
+        res.status(400).json({ message: "Attachment identifier or path is required" });
         return;
       }
 
-      // Verify the attachment actually belongs to a message in this chat group (prevent BOLA)
+      // Verify the attachment actually belongs to a message in this chat group (BOLA prevention)
       const attachmentExists = await ChatMessage.findOne({
         groupId: req.params["groupId"],
-        "attachments.nasPath": nasPath,
+        $or: [
+          ...(requestedId ? [{ "attachments.attachmentId": requestedId }] : []),
+          ...(requestedPath ? [{ "attachments.nasPath": requestedPath }] : []),
+        ],
       });
+
       if (!attachmentExists) {
         res.status(403).json({ message: "Access denied: file is not an attachment of this chat group" });
         return;
       }
 
-      if (nasPath.startsWith("local:")) {
-        const localRel = nasPath.replace(/^local:/, "");
-        const safeBase = path.resolve(process.cwd(), "uploads");
-        const fullPath = path.resolve(safeBase, localRel);
+      // Determine the authentic server storage path from the verified message
+      const matchingAttachment = attachmentExists.attachments.find(
+        (a: any) =>
+          (requestedId && a.attachmentId === requestedId) ||
+          (requestedPath && a.nasPath === requestedPath)
+      );
 
-        if (!fullPath.startsWith(safeBase)) {
-          res.status(403).json({ message: "Access denied: invalid file path" });
-          return;
-        }
+      let targetPath = matchingAttachment?.nasPath || requestedPath;
+      if (targetPath.startsWith("local:")) {
+        targetPath = targetPath.replace(/^local:/, "");
+      }
 
-        if (!fs.existsSync(fullPath)) {
-          res.status(404).json({ message: "Attachment file not found on server" });
-          return;
-        }
-
-        res.setHeader(
-          "Content-Disposition",
-          `attachment; filename="${encodeURIComponent(fileName)}"`,
-        );
-        fs.createReadStream(fullPath).pipe(res);
+      // getLocalPath strictly validates canonical boundary containment and throws on traversal
+      let fullPath: string;
+      try {
+        fullPath = getLocalPath(targetPath);
+      } catch (pathErr) {
+        res.status(403).json({ message: "Access denied: invalid storage path" });
         return;
       }
 
-      // Stream from WebDAV NAS
-      try {
-        const stream = await downloadStream(nasPath);
-        res.setHeader(
-          "Content-Disposition",
-          `attachment; filename="${encodeURIComponent(fileName)}"`,
-        );
-        stream.pipe(res);
-      } catch (davErr) {
-        console.error("[chat] WebDAV download error:", davErr);
-        res.status(502).json({ message: "Failed to retrieve attachment from NAS storage" });
+      if (!fs.existsSync(fullPath)) {
+        res.status(404).json({ message: "Attachment file not found on server" });
+        return;
       }
+
+      const safeName = (matchingAttachment?.name || fileName)
+        .replace(/[^\x20-\x7E]/g, "_")
+        .replace(/["\\]/g, "_");
+
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(matchingAttachment?.name || fileName)}`
+      );
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Cache-Control", "private, no-store");
+
+      const readStream = fs.createReadStream(fullPath);
+      readStream.on("error", (err) => {
+        console.error("[chat] Attachment read stream error:", err);
+        if (!res.headersSent) {
+          res.status(500).json({ message: "Failed to read attachment file" });
+        } else {
+          res.destroy();
+        }
+      });
+
+      readStream.pipe(res);
     } catch (err) {
       console.error("[chat] Attachment download error:", err);
       res.status(500).json({ message: "Internal server error" });
