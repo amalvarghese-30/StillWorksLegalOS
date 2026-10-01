@@ -311,6 +311,95 @@ router.patch("/employees/:id", requireAdminOrPermission("employees"), async (req
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/admin/employees/:id/reset-password — admin reset password (admin or employees perm)
+// ---------------------------------------------------------------------------
+
+router.post("/employees/:id/reset-password", requireAdminOrPermission("employees"), async (req: Request, res: Response) => {
+  try {
+    const targetId = req.params["id"];
+    const isActualAdmin = req.user?.role === "admin";
+
+    // Guard: Prevent admin self-reset via administrative endpoint
+    if (targetId === req.userId) {
+      res.status(400).json({ message: "You cannot reset your own password here. Please use profile settings." });
+      return;
+    }
+
+    const targetUser = await User.findById(targetId);
+    if (!targetUser) {
+      res.status(404).json({ message: "Employee not found" });
+      return;
+    }
+
+    // Guard: Non-admin managers cannot reset admin passwords
+    if (!isActualAdmin && targetUser.role === "admin") {
+      res.status(403).json({ message: "Only admins can reset administrator passwords" });
+      return;
+    }
+
+    const { mode = "generate", newPassword } = req.body ?? {};
+    let finalPassword = "";
+
+    if (mode === "manual") {
+      if (typeof newPassword !== "string" || newPassword.length < 8) {
+        res.status(400).json({ message: "Password must be at least 8 characters long" });
+        return;
+      }
+      finalPassword = newPassword;
+    } else {
+      finalPassword = randomBytes(16).toString("hex");
+    }
+
+    targetUser.passwordHash = await bcrypt.hash(finalPassword, 12);
+    await targetUser.save();
+
+    // Invalidate all active sessions for this user
+    await Session.updateMany(
+      { userId: targetUser._id, isRevoked: false },
+      { $set: { isRevoked: true } }
+    );
+
+    // Disconnect active socket connections
+    const io = req.app.get("io");
+    if (io) {
+      io.to(`user:${targetId}`).emit("force:logout", {
+        reason: "password_reset",
+      });
+      const sockets = await io.in(`user:${targetId}`).fetchSockets();
+      for (const socket of sockets) {
+        socket.disconnect(true);
+      }
+    }
+
+    // Audit log
+    try {
+      await AuditLog.create({
+        userId: req.userId,
+        userName: req.user?.name ?? "Unknown",
+        action: "update",
+        resource: "user",
+        resourceId: targetUser._id.toString(),
+        resourceName: targetUser.name,
+        details: "Password reset by administrator",
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+      });
+    } catch (logErr) {
+      console.error("[admin] Reset password audit log error:", logErr);
+    }
+
+    res.json({
+      message: "Password reset successfully",
+      temporaryPassword: finalPassword,
+      mustChangePassword: true,
+    });
+  } catch (err: any) {
+    console.error("[admin] Reset password error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // DELETE /api/admin/employees/:id — remove employee (admin or employees perm)
 // ---------------------------------------------------------------------------
 

@@ -64,6 +64,105 @@ async function resolveClientId(identifier: unknown): Promise<{ id: string | null
   return { id: null, error: `Client "${clean}" was not found. Please select a valid client.` };
 }
 
+function sanitizeInputText(str: unknown, maxLen: number): string {
+  if (typeof str !== "string") return "";
+  return str
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
+    .replace(/<[^>]*>?/gm, "")
+    .trim()
+    .slice(0, maxLen);
+}
+
+function validateTaskInput(data: {
+  title?: unknown;
+  description?: unknown;
+  priority?: unknown;
+  status?: unknown;
+  agent?: unknown;
+  checklist?: unknown;
+  callReminder?: unknown;
+}, isCreate = false): { valid: boolean; error?: string } {
+  if (isCreate || data.title !== undefined) {
+    if (!data.title || typeof data.title !== "string" || !data.title.trim()) {
+      return { valid: false, error: "Task title is required" };
+    }
+    if (data.title.trim().length > 200) {
+      return { valid: false, error: "Task title cannot exceed 200 characters" };
+    }
+  }
+
+  if (data.description !== undefined && data.description !== null) {
+    if (typeof data.description !== "string") {
+      return { valid: false, error: "Task description must be a string" };
+    }
+    if (data.description.length > 5000) {
+      return { valid: false, error: "Task description cannot exceed 5000 characters" };
+    }
+  }
+
+  if (data.priority !== undefined && data.priority !== null) {
+    if (!["High", "Medium", "Low"].includes(String(data.priority))) {
+      return { valid: false, error: "Invalid priority level (must be High, Medium, or Low)" };
+    }
+  }
+
+  if (data.status !== undefined && data.status !== null) {
+    if (!["pending", "in_progress", "pending_approval", "completed", "overdue"].includes(String(data.status))) {
+      return { valid: false, error: "Invalid status value" };
+    }
+  }
+
+  if (data.agent !== undefined && data.agent !== null) {
+    if (typeof data.agent !== "string") {
+      return { valid: false, error: "Broker / Agent name must be a string" };
+    }
+    if (data.agent.trim().length > 100) {
+      return { valid: false, error: "Broker / Agent name cannot exceed 100 characters" };
+    }
+  }
+
+  if (data.checklist !== undefined && data.checklist !== null) {
+    if (!Array.isArray(data.checklist)) {
+      return { valid: false, error: "Checklist must be an array" };
+    }
+    if (data.checklist.length > 100) {
+      return { valid: false, error: "Checklist cannot exceed 100 items" };
+    }
+    for (let i = 0; i < data.checklist.length; i++) {
+      const item = data.checklist[i];
+      if (!item || typeof item !== "object" || !item.text || typeof item.text !== "string" || !item.text.trim()) {
+        return { valid: false, error: `Checklist item ${i + 1} description is required` };
+      }
+      if (item.text.trim().length > 500) {
+        return { valid: false, error: `Checklist item ${i + 1} cannot exceed 500 characters` };
+      }
+    }
+  }
+
+  if (data.callReminder !== undefined && data.callReminder !== null && typeof data.callReminder === "object") {
+    const cr = data.callReminder as Record<string, unknown>;
+    const clientName = String(cr["clientName"] ?? "").trim();
+    if (!clientName) {
+      return { valid: false, error: "Client name is required for call reminder" };
+    }
+    if (clientName.length > 200) {
+      return { valid: false, error: "Client name cannot exceed 200 characters" };
+    }
+    if (cr["phone"] && String(cr["phone"]).trim().length > 50) {
+      return { valid: false, error: "Phone number cannot exceed 50 characters" };
+    }
+    if (cr["notes"] && String(cr["notes"]).trim().length > 2000) {
+      return { valid: false, error: "Notes cannot exceed 2000 characters" };
+    }
+    if (!cr["scheduledAt"] || isNaN(new Date(cr["scheduledAt"] as string).getTime())) {
+      return { valid: false, error: "Please select a date and time for the reminder." };
+    }
+  }
+
+  return { valid: true };
+}
+
 const router = Router();
 router.use(requireAuth);
 
@@ -82,6 +181,7 @@ router.get("/", async (req: Request, res: Response) => {
       assignedTo,
       caseId,
       clientId,
+      agent,
       dueFrom,
       dueTo,
       overdue,
@@ -111,6 +211,9 @@ router.get("/", async (req: Request, res: Response) => {
     if (category && category !== "all") filter["category"] = category;
     if (caseId) filter["caseId"] = caseId;
     if (clientId) filter["clientId"] = clientId;
+    if (agent && agent !== "all") {
+      filter["agent"] = agent;
+    }
 
     if (assignedTo && assignedTo !== "all") {
       if (assignedTo.includes(",")) {
@@ -166,7 +269,7 @@ router.get("/", async (req: Request, res: Response) => {
     if (search && search.trim()) {
       const regex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
       andConditions.push({
-        $or: [{ title: regex }, { description: regex }],
+        $or: [{ title: regex }, { description: regex }, { agent: regex }],
       });
     }
 
@@ -316,8 +419,9 @@ router.post("/", async (req: Request, res: Response) => {
       isCall,
     } = req.body;
 
-    if (!title || !title.trim()) {
-      res.status(400).json({ message: "Task title is required" });
+    const taskValidation = validateTaskInput(req.body, true);
+    if (!taskValidation.valid) {
+      res.status(400).json({ message: taskValidation.error });
       return;
     }
 
@@ -373,10 +477,10 @@ router.post("/", async (req: Request, res: Response) => {
           return;
         }
         parsedCallReminder = {
-          clientName,
-          phone: String(callReminder.phone ?? "").trim(),
+          clientName: sanitizeInputText(clientName, 200),
+          phone: sanitizeInputText(callReminder.phone, 50),
           scheduledAt: new Date(callReminder.scheduledAt),
-          notes: String(callReminder.notes ?? "").trim(),
+          notes: sanitizeInputText(callReminder.notes, 2000),
           completed: Boolean(callReminder.completed ?? false),
         };
       }
@@ -384,6 +488,7 @@ router.post("/", async (req: Request, res: Response) => {
 
     // Non-admins can only assign to themselves
     const finalAssignedTo = req.user!.role === "admin" ? (assignedTo ?? null) : req.userId;
+    const cleanAgent = sanitizeInputText(agent, 100);
 
     const task = await Task.create({
       title: title.trim(),
@@ -395,9 +500,14 @@ router.post("/", async (req: Request, res: Response) => {
       assignedTo: finalAssignedTo,
       caseId: cleanCaseId,
       clientId: cleanClientId,
-      checklist: checklist ?? [],
+      checklist: Array.isArray(checklist)
+        ? checklist.map((item) => ({
+            text: sanitizeInputText(item.text, 500),
+            done: Boolean(item.done),
+          }))
+        : [],
       callReminder: parsedCallReminder,
-      agent: agent ?? "",
+      agent: cleanAgent,
       isCall: Boolean(isCall),
       createdBy: req.userId,
     });
@@ -474,12 +584,34 @@ router.post("/", async (req: Request, res: Response) => {
 
 router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Response) => {
   try {
+    const taskValidation = validateTaskInput(req.body, false);
+    if (!taskValidation.valid) {
+      res.status(400).json({ message: taskValidation.error });
+      return;
+    }
+
     const updates: Record<string, unknown> = {};
 
-    const allowed = ["title", "description", "category", "priority", "status", "deadline", "assignedTo", "caseId", "clientId", "agent", "isCall"];
+    const allowed = ["title", "description", "category", "priority", "status", "deadline", "assignedTo", "caseId", "clientId", "agent", "isCall", "checklist"];
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     }
+
+    if (updates["title"] !== undefined) {
+      updates["title"] = String(updates["title"]).trim();
+    }
+    if (updates["agent"] !== undefined) {
+      updates["agent"] = sanitizeInputText(updates["agent"], 100);
+    }
+    if (updates["checklist"] !== undefined) {
+      if (Array.isArray(updates["checklist"])) {
+        updates["checklist"] = (updates["checklist"] as any[]).map((item) => ({
+          text: sanitizeInputText(item.text, 500),
+          done: Boolean(item.done),
+        }));
+      }
+    }
+
     if (req.body["deadline"] !== undefined) {
       if (req.body["deadline"] === null || req.body["deadline"] === "") {
         updates["deadline"] = null;
@@ -513,10 +645,10 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
           return;
         }
         updates["callReminder"] = {
-          clientName,
-          phone: String(cr["phone"] ?? "").trim(),
+          clientName: sanitizeInputText(clientName, 200),
+          phone: sanitizeInputText(cr["phone"], 50),
           scheduledAt: schedDate,
-          notes: String(cr["notes"] ?? "").trim(),
+          notes: sanitizeInputText(cr["notes"], 2000),
           completed: Boolean(cr["completed"]),
         };
       }

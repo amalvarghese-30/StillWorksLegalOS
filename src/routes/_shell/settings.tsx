@@ -1,12 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
-import { User, Building2, Bell, Lock, Palette, HardDrive, Loader2, Laptop, LogOut, ShieldCheck } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { User, Building2, Bell, Lock, Palette, HardDrive, Loader2, Laptop, LogOut, ShieldCheck, Camera, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
 import {
@@ -18,6 +19,7 @@ import {
   useRevokeAllOtherSessions,
 } from "@/services/admin";
 import { validatePhone, sanitizePhone } from "@/lib/validation";
+import { getAccessToken, getApiBase } from "@/services/api";
 
 export const Route = createFileRoute("/_shell/settings")({
   head: () => ({
@@ -41,8 +43,12 @@ const tabs = [
 ];
 
 function SettingsPage() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [tab, setTab] = useState("profile");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [isRemovingAvatar, setIsRemovingAvatar] = useState(false);
+
   const updateProfile = useUpdateProfile();
   const updateFirm = useUpdateFirm();
   const updatePreferences = useUpdatePreferences();
@@ -50,6 +56,79 @@ function SettingsPage() {
   const activeSessionsQuery = useActiveSessions();
   const revokeSessionMutation = useRevokeSession();
   const revokeAllOtherSessionsMutation = useRevokeAllOtherSessions();
+
+  const handleAvatarFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error("Invalid file format. Please upload a JPEG, PNG, or WebP image.");
+      e.target.value = "";
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("File size exceeds 2MB limit. Please choose an image smaller than 2MB.");
+      e.target.value = "";
+      return;
+    }
+
+    try {
+      setIsUploadingAvatar(true);
+      const formData = new FormData();
+      formData.append("avatar", file);
+
+      const token = getAccessToken();
+      const res = await fetch(`${getApiBase()}/auth/avatar`, {
+        method: "POST",
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to upload avatar");
+      }
+
+      await refreshUser();
+      toast.success("Profile picture updated successfully");
+    } catch (err: any) {
+      console.error("Avatar upload error:", err);
+      toast.error(err.message || "Failed to upload avatar");
+    } finally {
+      setIsUploadingAvatar(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleRemoveAvatar = async () => {
+    try {
+      setIsRemovingAvatar(true);
+      const token = getAccessToken();
+      const res = await fetch(`${getApiBase()}/auth/avatar`, {
+        method: "DELETE",
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to remove avatar");
+      }
+
+      await refreshUser();
+      toast.success("Profile picture removed");
+    } catch (err: any) {
+      console.error("Avatar removal error:", err);
+      toast.error(err.message || "Failed to remove avatar");
+    } finally {
+      setIsRemovingAvatar(false);
+    }
+  };
 
   // Form state — initialised from auth user
   const [name, setName] = useState("");
@@ -335,6 +414,70 @@ function SettingsPage() {
             >
               {tab === "profile" ? (
                 <form className="space-y-5 sm:grid sm:grid-cols-2 sm:gap-5" onSubmit={handleSave}>
+                  {/* Profile Picture Avatar Section */}
+                  <div className="flex flex-col sm:flex-row items-center gap-5 sm:col-span-2 pb-4 border-b border-border/60">
+                    <div className="relative group">
+                      {user?.avatarUrl ? (
+                        <img
+                          src={user.avatarUrl}
+                          alt={user.name}
+                          className="size-20 rounded-full object-cover border-2 border-primary/20 shadow-soft"
+                        />
+                      ) : (
+                        <span className="grid size-20 place-items-center rounded-full bg-primary/10 font-display text-xl font-bold text-primary border-2 border-primary/20">
+                          {user?.initials ?? "SW"}
+                        </span>
+                      )}
+                    </div>
+                    <div className="space-y-1.5 text-center sm:text-left">
+                      <h4 className="text-helper font-semibold text-foreground">Profile Picture</h4>
+                      <p className="text-caption text-muted-foreground">
+                        JPEG, PNG or WebP, up to 2MB. Displayed across top navigation and chat.
+                      </p>
+                      <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          onChange={handleAvatarFileSelect}
+                          accept="image/jpeg,image/png,image/webp"
+                          className="hidden"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={isUploadingAvatar}
+                          onClick={() => fileInputRef.current?.click()}
+                          className="h-8 rounded-md text-xs"
+                        >
+                          {isUploadingAvatar ? (
+                            <Loader2 size={13} className="animate-spin mr-1.5" />
+                          ) : (
+                            <Camera size={13} className="mr-1.5" />
+                          )}
+                          {user?.avatarUrl ? "Change Photo" : "Upload Photo"}
+                        </Button>
+                        {user?.avatarUrl && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={isRemovingAvatar}
+                            onClick={handleRemoveAvatar}
+                            className="h-8 rounded-md text-xs text-destructive hover:bg-destructive/10"
+                          >
+                            {isRemovingAvatar ? (
+                              <Loader2 size={13} className="animate-spin mr-1.5" />
+                            ) : (
+                              <Trash2 size={13} className="mr-1.5" />
+                            )}
+                            Remove
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="space-y-2">
                     <Label className="text-helper">Full name</Label>
                     <Input

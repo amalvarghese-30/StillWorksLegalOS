@@ -128,6 +128,17 @@ export interface CreateEmployeePayload {
   password?: string | undefined;
 }
 
+export interface ResetPasswordPayload {
+  mode?: "generate" | "manual" | undefined;
+  newPassword?: string | undefined;
+}
+
+export interface ResetPasswordResponse {
+  message: string;
+  temporaryPassword?: string | undefined;
+  mustChangePassword?: boolean | undefined;
+}
+
 export interface UpdateFirmPayload {
   firmName?: string;
   firmBarRegistration?: string;
@@ -221,6 +232,17 @@ export function useDeleteEmployee() {
         };
       });
       qc.invalidateQueries({ queryKey: ["chat", "users"] });
+    },
+  });
+}
+
+export function useResetEmployeePassword() {
+  const qc = useQueryClient();
+  return useMutation<ResetPasswordResponse, Error, { id: string; payload?: ResetPasswordPayload }>({
+    mutationFn: ({ id, payload }) =>
+      api.post(`/admin/employees/${id}/reset-password`, payload ?? { mode: "generate" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: adminKeys.all });
     },
   });
 }

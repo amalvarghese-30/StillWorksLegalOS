@@ -1658,6 +1658,218 @@ async function run() {
     assert(directDocCheck?.clientId?.toString() === clientA._id.toString(), "CLIENT-SYNC-003: Direct client document remains associated with Client A");
   }
 
+  // ---------------------------------------------------------------------------
+  // Suite 20: Phases 15–22 Verification (Task Validation, Broker/Agent, Admin Password Reset, Avatar Lifecycle)
+  // ---------------------------------------------------------------------------
+  console.log("\n--- Suite 20: Phases 15–22 Verification ---");
+  {
+    // 1. Setup users: Admin and Employee
+    const admin20 = await User.create({
+      name: "Adv. Vikram Seth Admin",
+      email: "admin20@stillworks.legal",
+      passwordHash: await bcrypt.hash("AdminPass123!", 12),
+      role: "admin",
+      status: "online",
+      permissions: {
+        dashboard: true, clients: true, cases: true, tasks: true, documents: true,
+        calendar: true, chat: true, reports: true,
+        employees: true, approvals: true, auditLogs: true, settings: true,
+      },
+    });
+
+    const emp20 = await User.create({
+      name: "Adv. Ananya Rao Employee",
+      email: "employee20@stillworks.legal",
+      passwordHash: await bcrypt.hash("EmployeePass123!", 12),
+      role: "junior_advocate",
+      status: "online",
+      permissions: {
+        dashboard: true, clients: true, cases: true, tasks: true, documents: true,
+        calendar: true, chat: true, reports: false,
+        employees: false, approvals: false, auditLogs: false, settings: false,
+      },
+    });
+
+    const adminToken = await createToken(admin20);
+    const empToken = await createToken(emp20);
+    const empSession = await Session.findOne({ userId: emp20._id, isRevoked: false });
+    assert(empSession !== null, "SETUP: empSession found for emp20");
+
+    // 2. Task Validation tests
+    // Empty title
+    const emptyTitleRes = await request(app)
+      .post("/api/tasks")
+      .set("Authorization", `Bearer ${empToken}`)
+      .send({ title: "   " });
+    assert(emptyTitleRes.status === 400, "TASK-VAL-001: Reject task with empty title (400)");
+
+    // Title exceeding 200 chars
+    const longTitleRes = await request(app)
+      .post("/api/tasks")
+      .set("Authorization", `Bearer ${empToken}`)
+      .send({ title: "A".repeat(201) });
+    assert(longTitleRes.status === 400, "TASK-VAL-002: Reject task with title > 200 chars (400)");
+
+    // Invalid priority
+    const badPrioRes = await request(app)
+      .post("/api/tasks")
+      .set("Authorization", `Bearer ${empToken}`)
+      .send({ title: "Valid Title", priority: "SuperUrgent" });
+    assert(badPrioRes.status === 400, "TASK-VAL-003: Reject task with invalid priority (400)");
+
+    // Agent name with HTML / script injection
+    const xssAgentRes = await request(app)
+      .post("/api/tasks")
+      .set("Authorization", `Bearer ${empToken}`)
+      .send({
+        title: "Broker Verification Task",
+        agent: "<script>alert('xss')</script>Apex Legal Consultancy",
+      });
+    assert(xssAgentRes.status === 201, "TASK-VAL-004: Create task with sanitized agent name");
+    assert(
+      !xssAgentRes.body.task.agent.includes("<script>"),
+      "TASK-VAL-005: HTML tags stripped from agent field"
+    );
+
+    // Filter tasks by agent
+    const agentFilterRes = await request(app)
+      .get("/api/tasks")
+      .set("Authorization", `Bearer ${empToken}`)
+      .query({ agent: "Apex Legal Consultancy" });
+    assert(agentFilterRes.status === 200, "TASK-VAL-006: Tasks list accepts agent query filter");
+    assert(
+      agentFilterRes.body.tasks.some((t: any) => t.agent === "Apex Legal Consultancy"),
+      "TASK-VAL-007: Filtered tasks return matching agent"
+    );
+
+    // Search tasks by agent name
+    const agentSearchRes = await request(app)
+      .get("/api/tasks")
+      .set("Authorization", `Bearer ${empToken}`)
+      .query({ search: "Apex Legal" });
+    assert(agentSearchRes.status === 200, "TASK-VAL-008: Search query matches agent name");
+    assert(
+      agentSearchRes.body.tasks.some((t: any) => t._id === xssAgentRes.body.task._id),
+      "TASK-VAL-009: Found created task in agent search"
+    );
+
+    // Invalid checklist item
+    const badChecklistRes = await request(app)
+      .post("/api/tasks")
+      .set("Authorization", `Bearer ${empToken}`)
+      .send({
+        title: "Checklist Task",
+        checklist: [{ text: "   " }],
+      });
+    assert(badChecklistRes.status === 400, "TASK-VAL-010: Reject task with empty checklist item text (400)");
+
+    // 3. Client Promised Completion Date Validation
+    const badClientDateRes = await request(app)
+      .post("/api/clients")
+      .set("Authorization", `Bearer ${empToken}`)
+      .send({
+        name: "Acme Enterprises Client S20",
+        type: "Corporate",
+        promisedCompletionDate: "Not-A-Valid-Date-String",
+      });
+    assert(badClientDateRes.status === 400, "CLIENT-DATE-001: Reject client creation with invalid promisedCompletionDate (400)");
+
+    const validClientDate = new Date("2026-12-31T00:00:00.000Z").toISOString();
+    const goodClientRes = await request(app)
+      .post("/api/clients")
+      .set("Authorization", `Bearer ${empToken}`)
+      .send({
+        name: "Acme Enterprises Client S20",
+        type: "Corporate",
+        promisedCompletionDate: validClientDate,
+      });
+    assert(goodClientRes.status === 201, "CLIENT-DATE-002: Accept valid ISO promisedCompletionDate (201)");
+
+    const badPatchClientRes = await request(app)
+      .patch(`/api/clients/${goodClientRes.body.client._id}`)
+      .set("Authorization", `Bearer ${empToken}`)
+      .send({ promisedCompletionDate: "invalid-date-format" });
+    assert(badPatchClientRes.status === 400, "CLIENT-DATE-003: Reject client patch with invalid promisedCompletionDate (400)");
+
+    // 4. Admin Password Reset tests
+    // Non-admin employee cannot reset password
+    const unauthResetRes = await request(app)
+      .post(`/api/admin/employees/${emp20._id}/reset-password`)
+      .set("Authorization", `Bearer ${empToken}`)
+      .send({ mode: "generate" });
+    assert(unauthResetRes.status === 403, "ADMIN-RESET-001: Non-admin cannot reset employee password (403)");
+
+    // Admin self-reset prevented
+    const selfResetRes = await request(app)
+      .post(`/api/admin/employees/${admin20._id}/reset-password`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ mode: "generate" });
+    assert(selfResetRes.status === 400, "ADMIN-RESET-002: Admin self-reset rejected (400)");
+
+    // Reject manual password < 8 chars
+    const shortPassRes = await request(app)
+      .post(`/api/admin/employees/${emp20._id}/reset-password`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ mode: "manual", newPassword: "short" });
+    assert(shortPassRes.status === 400, "ADMIN-RESET-003: Reject manual password < 8 chars (400)");
+
+    // Reset password with auto-generated temporary password
+    const resetSuccessRes = await request(app)
+      .post(`/api/admin/employees/${emp20._id}/reset-password`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ mode: "generate" });
+    assert(resetSuccessRes.status === 200, "ADMIN-RESET-004: Admin reset password returns 200");
+    const tempPass = resetSuccessRes.body.temporaryPassword;
+    assert(Boolean(tempPass && tempPass.length >= 16), "ADMIN-RESET-005: Temporary password returned with length >= 16");
+
+    // Verify session was revoked
+    const checkSession = await Session.findById(empSession!._id);
+    assert(checkSession?.isRevoked === true, "ADMIN-RESET-006: Employee active sessions revoked on password reset");
+
+    // Employee logs in with the new temporary password
+    const loginTempRes = await request(app)
+      .post("/api/auth/login")
+      .send({ email: emp20.email, password: tempPass });
+    assert(loginTempRes.status === 200, "ADMIN-RESET-007: Employee successfully signs in with temporary password");
+    const newEmpToken = loginTempRes.body.accessToken;
+
+    // 5. Avatar Lifecycle tests
+    // Reject invalid MIME type
+    const badMimeRes = await request(app)
+      .post("/api/auth/avatar")
+      .set("Authorization", `Bearer ${newEmpToken}`)
+      .attach("file", Buffer.from("not an image"), { filename: "test.txt", contentType: "text/plain" });
+    assert(badMimeRes.status === 400, "AVATAR-001: Reject avatar with invalid MIME type (400)");
+
+    // Upload valid JPEG avatar
+    const validJpgBuffer = Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00]);
+    const uploadAvatarRes = await request(app)
+      .post("/api/auth/avatar")
+      .set("Authorization", `Bearer ${newEmpToken}`)
+      .attach("file", validJpgBuffer, { filename: "avatar.jpg", contentType: "image/jpeg" });
+    assert(uploadAvatarRes.status === 200, "AVATAR-002: Avatar uploaded successfully (200)");
+    const avatarUrl = uploadAvatarRes.body.avatarUrl;
+    assert(Boolean(avatarUrl && avatarUrl.startsWith("/api/auth/avatar/")), "AVATAR-003: avatarUrl returned in response");
+
+    // Stream uploaded avatar
+    const avatarFilename = avatarUrl.replace("/api/auth/avatar/", "");
+    const streamAvatarRes = await request(app).get(`/api/auth/avatar/${avatarFilename}`);
+    assert(streamAvatarRes.status === 200, "AVATAR-004: Avatar streamed successfully");
+    assert(streamAvatarRes.headers["content-type"]?.includes("image/jpeg"), "AVATAR-005: Avatar content-type is image/jpeg");
+
+    // Reject path traversal attempt
+    const traversalAvatarRes = await request(app).get(`/api/auth/avatar/..%2f..%2fpackage.json`);
+    assert(traversalAvatarRes.status === 400 || traversalAvatarRes.status === 404, "AVATAR-006: Avatar traversal attempt rejected (400 or 404)");
+
+    // Delete avatar
+    const deleteAvatarRes = await request(app)
+      .delete("/api/auth/avatar")
+      .set("Authorization", `Bearer ${newEmpToken}`);
+    assert(deleteAvatarRes.status === 200, "AVATAR-007: Avatar removed successfully (200)");
+    const empAfterDelete = await User.findById(emp20._id);
+    assert(empAfterDelete?.avatarUrl === "", "AVATAR-008: user.avatarUrl cleared in database");
+  }
+
   try {
     if (mongoose.connection.readyState === 1) {
       await mongoose.connection.dropDatabase();

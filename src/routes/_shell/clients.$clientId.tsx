@@ -32,6 +32,7 @@ import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
 import { downloadDocument } from "@/services/documents";
 import { DocumentPreviewModal } from "@/components/documents/DocumentPreviewModal";
 import type { ClientDocument } from "@/services/clients";
+import { formatSafeDate } from "@/lib/dates";
 
 export const Route = createFileRoute("/_shell/clients/$clientId")({
   head: () => ({
@@ -59,8 +60,7 @@ const sections = [
 // ---------------------------------------------------------------------------
 
 function formatDate(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  return formatSafeDate(iso, "—", { day: "numeric", month: "short", year: "numeric" });
 }
 
 const kycTone: Record<string, string> = { Verified: "success", Pending: "warning", Rejected: "destructive" };

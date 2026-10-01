@@ -229,6 +229,17 @@ export function AdminTopbar() {
           <span className="block truncate text-helper font-medium">{user?.name}</span>
           <span className="block truncate text-caption text-muted-foreground">Administrator</span>
         </span>
+        {user?.avatarUrl ? (
+          <img
+            src={user.avatarUrl}
+            alt={user.name}
+            className="size-10 rounded-full object-cover border border-border shrink-0"
+          />
+        ) : (
+          <span className="grid size-10 place-items-center rounded-full bg-primary/12 font-display text-helper font-semibold text-primary shrink-0">
+            {user?.initials ?? "SW"}
+          </span>
+        )}
       </div>
     </header>
   );

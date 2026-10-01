@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/dialog";
 import { useUpdateClient, type ClientRecord, type CreateClientPayload } from "@/services/clients";
 import { useEmployees } from "@/services/admin";
+import { toSafeIso } from "@/lib/dates";
 import {
   validatePhone,
   validateAadhaar,
@@ -110,11 +111,8 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
       setAadhar(record.aadhar || "");
       setPan(record.pan || "");
       setNotes(record.notes || "");
-      setPromisedCompletionDate(
-        record.promisedCompletionDate
-          ? new Date(record.promisedCompletionDate).toISOString().slice(0, 16)
-          : ""
-      );
+      const safeIso = toSafeIso(record.promisedCompletionDate);
+      setPromisedCompletionDate(safeIso ? safeIso.slice(0, 16) : "");
       const initialAssigned = (record.assignedTo || []).map((a: any) =>
         typeof a === "object" && a !== null ? a._id : a
       );
@@ -228,7 +226,7 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
         notes: notes.trim(),
         assignedTo,
         promisedCompletionDate: promisedCompletionDate
-          ? new Date(promisedCompletionDate).toISOString()
+          ? toSafeIso(promisedCompletionDate)
           : null,
       };
 

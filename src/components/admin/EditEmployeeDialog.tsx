@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Loader2, Save, Trash2 } from "lucide-react";
+import { Loader2, Save, Trash2, KeyRound, Copy, Check, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,9 +8,11 @@ import { toast } from "sonner";
 import {
   useUpdateEmployee,
   useDeleteEmployee,
+  useResetEmployeePassword,
   type EmployeeRecord,
   type UserPermissions,
 } from "@/services/admin";
+import { useAuth } from "@/lib/auth";
 import {
   Dialog,
   DialogContent,
@@ -93,6 +95,7 @@ interface EditEmployeeDialogProps {
 }
 
 export function EditEmployeeDialog({ employee, onClose }: EditEmployeeDialogProps) {
+  const { user: currentUser } = useAuth();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("junior_advocate");
@@ -102,8 +105,16 @@ export function EditEmployeeDialog({ employee, onClose }: EditEmployeeDialogProp
   const [permissions, setPermissions] = useState<UserPermissions>(DEFAULT_PERMISSIONS);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
+  // Password reset state
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetMode, setResetMode] = useState<"generate" | "manual">("generate");
+  const [customPassword, setCustomPassword] = useState("");
+  const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
+  const [hasCopied, setHasCopied] = useState(false);
+
   const updateEmployee = useUpdateEmployee();
   const deleteEmployee = useDeleteEmployee();
+  const resetPassword = useResetEmployeePassword();
   const isPending = updateEmployee.isPending;
   const isError = updateEmployee.isError;
 
@@ -120,6 +131,10 @@ export function EditEmployeeDialog({ employee, onClose }: EditEmployeeDialogProp
         ...(employee.permissions ?? {}),
       });
       setShowDeleteConfirm(false);
+      setShowResetModal(false);
+      setGeneratedPassword(null);
+      setCustomPassword("");
+      setHasCopied(false);
     }
   }, [employee]);
 
@@ -166,6 +181,41 @@ export function EditEmployeeDialog({ employee, onClose }: EditEmployeeDialogProp
       toast.error(err?.message || "Failed to delete employee");
     }
   };
+
+  const handleResetPasswordSubmit = async () => {
+    if (resetMode === "manual") {
+      if (!customPassword || customPassword.length < 8) {
+        toast.error("Password must be at least 8 characters");
+        return;
+      }
+    }
+
+    try {
+      const res = await resetPassword.mutateAsync({
+        id: employee._id,
+        payload:
+          resetMode === "manual"
+            ? { mode: "manual", newPassword: customPassword }
+            : { mode: "generate" },
+      });
+      setGeneratedPassword(res.temporaryPassword ?? customPassword);
+      toast.success("Password reset successfully. Active sessions revoked.");
+    } catch (err: any) {
+      console.error("Failed to reset password:", err);
+      toast.error(err?.message || "Failed to reset password");
+    }
+  };
+
+  const handleCopyPassword = () => {
+    if (generatedPassword) {
+      navigator.clipboard.writeText(generatedPassword);
+      setHasCopied(true);
+      toast.success("Password copied to clipboard");
+      setTimeout(() => setHasCopied(false), 2000);
+    }
+  };
+
+  const isSelf = currentUser?._id === employee._id;
 
   return (
     <>
@@ -298,16 +348,38 @@ export function EditEmployeeDialog({ employee, onClose }: EditEmployeeDialogProp
               </div>
             </div>
 
-            <DialogFooter className="flex items-center justify-between border-t border-border/60 pt-4">
-              <Button
-                type="button"
-                variant="ghost"
-                className="text-destructive hover:bg-destructive/10 hover:text-destructive rounded-md"
-                onClick={() => setShowDeleteConfirm(true)}
-              >
-                <Trash2 size={15} className="mr-1.5" />
-                Delete Employee
-              </Button>
+            <DialogFooter className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 border-t border-border/60 pt-4">
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive rounded-md"
+                  onClick={() => setShowDeleteConfirm(true)}
+                >
+                  <Trash2 size={15} className="mr-1.5" />
+                  Delete
+                </Button>
+
+                {!isSelf && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-md text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/10 text-xs"
+                    onClick={() => {
+                      setGeneratedPassword(null);
+                      setCustomPassword("");
+                      setResetMode("generate");
+                      setShowResetModal(true);
+                    }}
+                  >
+                    <KeyRound size={14} className="mr-1.5" />
+                    Reset Password
+                  </Button>
+                )}
+              </div>
+
               <div className="flex gap-2">
                 <Button type="button" variant="outline" onClick={onClose} className="rounded-md">
                   Cancel
@@ -332,6 +404,7 @@ export function EditEmployeeDialog({ employee, onClose }: EditEmployeeDialogProp
         </DialogContent>
       </Dialog>
 
+      {/* Delete Confirmation Alert */}
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
         <AlertDialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
           <AlertDialogHeader>
@@ -356,6 +429,135 @@ export function EditEmployeeDialog({ employee, onClose }: EditEmployeeDialogProp
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Admin Reset Password Dialog */}
+      <Dialog open={showResetModal} onOpenChange={setShowResetModal}>
+        <DialogContent className="max-w-md rounded-xl border border-border bg-card p-6 shadow-lift">
+          <DialogHeader>
+            <DialogTitle className="text-title font-semibold flex items-center gap-2">
+              <KeyRound size={18} className="text-amber-500" />
+              Reset Password for {employee.name}
+            </DialogTitle>
+            <DialogDescription className="text-helper text-muted-foreground">
+              This will invalidate all active sessions for this employee and require them to sign in with new credentials.
+            </DialogDescription>
+          </DialogHeader>
+
+          {generatedPassword ? (
+            <div className="space-y-4 py-2">
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5 flex items-start gap-2.5">
+                <ShieldAlert size={18} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                <p className="text-xs text-foreground">
+                  The password has been updated. Please share this temporary password securely with <span className="font-semibold">{employee.name}</span>. It will not be shown again.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">New Temporary Password</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    readOnly
+                    value={generatedPassword}
+                    className="font-mono text-sm h-10 bg-muted/60"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-10 w-10 shrink-0"
+                    onClick={handleCopyPassword}
+                    title="Copy password"
+                  >
+                    {hasCopied ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
+                  </Button>
+                </div>
+              </div>
+
+              <DialogFooter className="pt-2">
+                <Button
+                  type="button"
+                  className="w-full gradient-primary text-primary-foreground rounded-md"
+                  onClick={() => setShowResetModal(false)}
+                >
+                  Done
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label className="text-xs font-medium">Reset Method</Label>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2.5 text-xs text-foreground cursor-pointer">
+                    <input
+                      type="radio"
+                      name="resetMode"
+                      value="generate"
+                      checked={resetMode === "generate"}
+                      onChange={() => setResetMode("generate")}
+                      className="text-primary"
+                    />
+                    Generate random secure password (Recommended)
+                  </label>
+                  <label className="flex items-center gap-2.5 text-xs text-foreground cursor-pointer">
+                    <input
+                      type="radio"
+                      name="resetMode"
+                      value="manual"
+                      checked={resetMode === "manual"}
+                      onChange={() => setResetMode("manual")}
+                      className="text-primary"
+                    />
+                    Set manual password
+                  </label>
+                </div>
+              </div>
+
+              {resetMode === "manual" && (
+                <div className="space-y-1.5 pt-1">
+                  <Label htmlFor="custom-pass" className="text-xs text-muted-foreground">
+                    New Password (min 8 characters)
+                  </Label>
+                  <Input
+                    id="custom-pass"
+                    type="password"
+                    value={customPassword}
+                    onChange={(e) => setCustomPassword(e.target.value)}
+                    placeholder="Enter new password…"
+                    className="h-9 rounded-md text-xs"
+                  />
+                </div>
+              )}
+
+              <DialogFooter className="flex justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowResetModal(false)}
+                  disabled={resetPassword.isPending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="gradient-primary text-primary-foreground rounded-md"
+                  onClick={handleResetPasswordSubmit}
+                  disabled={resetPassword.isPending}
+                >
+                  {resetPassword.isPending ? (
+                    <Loader2 size={14} className="animate-spin mr-1.5" />
+                  ) : (
+                    <KeyRound size={14} className="mr-1.5" />
+                  )}
+                  Reset Password
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

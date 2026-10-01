@@ -1,11 +1,15 @@
 import { Router, type Request, type Response } from "express";
 import bcrypt from "bcryptjs";
 import { randomInt } from "node:crypto";
+import path from "node:path";
+import { pipeline } from "node:stream/promises";
+import busboy from "busboy";
 import { User } from "../models/User.js";
 import { Session } from "../models/Session.js";
 import { signToken, signRefreshToken, verifyToken, requireAuth, requireAdmin } from "../middleware/auth.js";
 import { validatePasswordStrength } from "../services/passwordPolicy.js";
 import { getPasswordResetDeliveryProvider } from "../services/passwordResetDelivery.js";
+import { StorageService } from "../services/storage.js";
 
 const router = Router();
 
@@ -472,6 +476,194 @@ router.patch("/me", requireAuth, async (req: Request, res: Response) => {
     res.json({ user: user.toJSON() });
   } catch (err) {
     console.error("[auth] Update profile error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/auth/avatar — upload user profile avatar (max 2MB, jpg/png/webp)
+// ---------------------------------------------------------------------------
+
+router.post("/avatar", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const contentType = req.headers["content-type"] || "";
+    if (!contentType.includes("multipart/form-data")) {
+      res.status(400).json({ message: "Content-Type must be multipart/form-data" });
+      return;
+    }
+
+    const bb = busboy({
+      headers: req.headers,
+      limits: {
+        fileSize: 2 * 1024 * 1024, // 2MB limit
+        files: 1,
+      },
+    });
+
+    let fileFound = false;
+    let uploadPromise: Promise<string> | null = null;
+    let fileError: string | null = null;
+
+    bb.on("file", (_name, fileStream, info) => {
+      fileFound = true;
+      const { mimeType } = info;
+      const allowedMimes: Record<string, string> = {
+        "image/jpeg": "jpg",
+        "image/png": "png",
+        "image/webp": "webp",
+      };
+
+      const ext = allowedMimes[mimeType.toLowerCase()];
+      if (!ext) {
+        fileError = "Invalid file type. Allowed formats: JPEG, PNG, WebP.";
+        fileStream.resume();
+        return;
+      }
+
+      const filename = `avatar_${req.userId}_${Date.now()}.${ext}`;
+      const logicalPath = `Avatars/${filename}`;
+
+      uploadPromise = new Promise(async (resolve, reject) => {
+        let sizeLimitExceeded = false;
+        fileStream.on("limit", () => {
+          sizeLimitExceeded = true;
+          fileError = "Avatar file size exceeds the 2MB limit.";
+        });
+
+        try {
+          await StorageService.save(logicalPath, fileStream);
+          if (sizeLimitExceeded) {
+            await StorageService.delete(logicalPath).catch(() => {});
+            reject(new Error("Avatar file size exceeds the 2MB limit."));
+          } else {
+            resolve(filename);
+          }
+        } catch (err) {
+          reject(err);
+        }
+      });
+    });
+
+    bb.on("close", async () => {
+      try {
+        if (!fileFound) {
+          res.status(400).json({ message: "No avatar image provided" });
+          return;
+        }
+
+        if (fileError) {
+          res.status(400).json({ message: fileError });
+          return;
+        }
+
+        if (!uploadPromise) {
+          res.status(400).json({ message: "Failed to upload avatar" });
+          return;
+        }
+
+        const filename = await uploadPromise;
+
+        const user = await User.findById(req.userId);
+        if (!user) {
+          res.status(404).json({ message: "User not found" });
+          return;
+        }
+
+        // Delete old avatar from storage if present
+        if (user.avatarUrl && user.avatarUrl.startsWith("/api/auth/avatar/")) {
+          const oldFilename = user.avatarUrl.replace("/api/auth/avatar/", "");
+          if (/^avatar_[a-zA-Z0-9_\-\.]+$/.test(oldFilename)) {
+            await StorageService.delete(`Avatars/${oldFilename}`).catch(() => {});
+          }
+        }
+
+        user.avatarUrl = `/api/auth/avatar/${filename}`;
+        await user.save();
+
+        res.json({
+          message: "Avatar uploaded successfully",
+          avatarUrl: user.avatarUrl,
+          user: user.toJSON(),
+        });
+      } catch (err: any) {
+        console.error("[auth] Avatar upload close error:", err);
+        res.status(500).json({ message: err?.message || "Failed to save avatar" });
+      }
+    });
+
+    req.pipe(bb);
+  } catch (err: any) {
+    console.error("[auth] Avatar upload error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/auth/avatar/:filename — stream avatar image securely
+// ---------------------------------------------------------------------------
+
+router.get("/avatar/:filename", async (req: Request, res: Response) => {
+  try {
+    const rawFilename = req.params["filename"];
+    const filename = typeof rawFilename === "string" ? rawFilename : "";
+    // Strict filename verification
+    if (!/^avatar_[a-zA-Z0-9_\-]+\.(jpg|jpeg|png|webp)$/i.test(filename)) {
+      res.status(400).json({ message: "Invalid avatar filename" });
+      return;
+    }
+
+    const logicalPath = `Avatars/${filename}`;
+    const exists = await StorageService.exists(logicalPath);
+    if (!exists) {
+      res.status(404).json({ message: "Avatar not found" });
+      return;
+    }
+
+    const ext = path.extname(filename).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".png": "image/png",
+      ".webp": "image/webp",
+    };
+
+    res.setHeader("Content-Type", mimeTypes[ext] || "application/octet-stream");
+    res.setHeader("Cache-Control", "public, max-age=86400"); // 1 day client cache
+    const stream = await StorageService.read(logicalPath);
+    await pipeline(stream, res);
+  } catch (err: any) {
+    console.error("[auth] Avatar download error:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ message: "Failed to load avatar" });
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/auth/avatar — remove avatar image
+// ---------------------------------------------------------------------------
+
+router.delete("/avatar", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const user = await User.findById(req.userId);
+    if (!user) {
+      res.status(404).json({ message: "User not found" });
+      return;
+    }
+
+    if (user.avatarUrl && user.avatarUrl.startsWith("/api/auth/avatar/")) {
+      const oldFilename = user.avatarUrl.replace("/api/auth/avatar/", "");
+      if (/^avatar_[a-zA-Z0-9_\-\.]+$/.test(oldFilename)) {
+        await StorageService.delete(`Avatars/${oldFilename}`).catch(() => {});
+      }
+    }
+
+    user.avatarUrl = "";
+    await user.save();
+
+    res.json({ message: "Avatar removed successfully", user: user.toJSON() });
+  } catch (err: any) {
+    console.error("[auth] Delete avatar error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 });

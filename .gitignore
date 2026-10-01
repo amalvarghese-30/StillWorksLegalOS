@@ -82,3 +82,9 @@ error.txt
 out.txt
 output.txt
 vite.log
+scratch_*.md
+
+# Application Uploads
+server/uploads/
+uploads/
+

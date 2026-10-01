@@ -276,9 +276,17 @@ export function Topbar() {
           New Case
         </Button>
         {/* User Avatar */}
-        <span className="grid size-10 place-items-center rounded-full bg-primary/12 font-display text-helper font-semibold text-primary">
-          {user?.initials ?? "SW"}
-        </span>
+        {user?.avatarUrl ? (
+          <img
+            src={user.avatarUrl}
+            alt={user.name}
+            className="size-10 rounded-full object-cover border border-border shrink-0"
+          />
+        ) : (
+          <span className="grid size-10 place-items-center rounded-full bg-primary/12 font-display text-helper font-semibold text-primary shrink-0">
+            {user?.initials ?? "SW"}
+          </span>
+        )}
       </div>
 
       {/* Add Case Dialog */}

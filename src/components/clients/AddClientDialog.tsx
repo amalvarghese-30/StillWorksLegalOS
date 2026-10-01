@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useCreateClient, type CreateClientPayload, type SubClient } from "@/services/clients";
 import { useEmployees } from "@/services/admin";
+import { toSafeIso } from "@/lib/dates";
 import {
   validatePhone,
   validateAadhaar,
@@ -215,8 +216,8 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
       ...(form.pan && { pan: form.pan.trim().toUpperCase() }),
       ...(form.notes && { notes: form.notes.trim() }),
       ...(form.assignedTo.length > 0 && { assignedTo: form.assignedTo }),
-      ...(form.promisedCompletionDate && {
-        promisedCompletionDate: new Date(form.promisedCompletionDate).toISOString(),
+      ...(form.promisedCompletionDate && toSafeIso(form.promisedCompletionDate) && {
+        promisedCompletionDate: toSafeIso(form.promisedCompletionDate)!,
       }),
       ...(showProperty && {
         propertyDetails: {

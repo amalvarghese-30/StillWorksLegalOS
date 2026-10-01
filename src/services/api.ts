@@ -10,7 +10,7 @@
 import { isElectron } from "@/platform";
 export { isElectron };
 
-function getApiBase(): string {
+export function getApiBase(): string {
   // 1. Explicit environment variable takes precedence (development or production)
   if (import.meta.env["VITE_API_URL"]) {
     return import.meta.env["VITE_API_URL"];

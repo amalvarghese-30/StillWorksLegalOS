@@ -110,6 +110,7 @@ interface AuthValue {
   ready: boolean;
   signIn: (email: string, password: string, rememberMe?: boolean) => Promise<{ ok: true; user: SessionUser } | { ok: false; error: string; field?: "email" | "password" | undefined }>;
   signOut: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthValue | null>(null);
@@ -258,6 +259,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await clearTokens();
           queryClient.cancelQueries();
           queryClient.clear();
+        }
+      },
+      refreshUser: async () => {
+        try {
+          const res = await apiFetch<{ user: RawUser }>("/auth/me");
+          const sessionUser = toSessionUser(res.user);
+          setUser(sessionUser);
+          if (window.localStorage.getItem(STORAGE_KEY)) {
+            window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionUser));
+          } else {
+            window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(sessionUser));
+          }
+        } catch (err) {
+          console.error("Failed to refresh user:", err);
         }
       },
     }),

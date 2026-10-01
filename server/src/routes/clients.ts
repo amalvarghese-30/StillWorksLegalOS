@@ -395,6 +395,15 @@ router.post("/", async (req: Request, res: Response) => {
       typeof propertyDetails === "object" &&
       Object.values(propertyDetails).some((v) => v !== undefined && v !== null && String(v).trim() !== "");
 
+    let parsedPromisedDate: Date | null = null;
+    if (promisedCompletionDate !== undefined && promisedCompletionDate !== null && promisedCompletionDate !== "") {
+      parsedPromisedDate = new Date(promisedCompletionDate);
+      if (isNaN(parsedPromisedDate.getTime())) {
+        res.status(400).json({ field: "promisedCompletionDate", message: "Invalid date format for promised completion date" });
+        return;
+      }
+    }
+
     // Identity auto-verification: if Aadhar + PAN provided, mark Verified
     const kyc = aadhar && pan ? "Verified" : "Pending";
 
@@ -410,7 +419,7 @@ router.post("/", async (req: Request, res: Response) => {
       kyc,
       notes: notes ?? "",
       assignedTo: Array.isArray(assignedTo) ? assignedTo : assignedTo ? [assignedTo] : [],
-      promisedCompletionDate: promisedCompletionDate ? new Date(promisedCompletionDate) : null,
+      promisedCompletionDate: parsedPromisedDate,
       propertyDetails: hasPropertyData ? propertyDetails : undefined,
       subClients: subClients ?? [],
       createdBy: req.userId,
@@ -535,6 +544,19 @@ router.patch("/:id", requireResourceAccess("client"), async (req: Request, res: 
         typeof p === "object" &&
         Object.values(p).some((v) => v !== undefined && v !== null && String(v).trim() !== "");
       updates["propertyDetails"] = hasProp ? p : undefined;
+    }
+
+    if (updates["promisedCompletionDate"] !== undefined) {
+      if (updates["promisedCompletionDate"] === null || updates["promisedCompletionDate"] === "") {
+        updates["promisedCompletionDate"] = null;
+      } else {
+        const d = new Date(updates["promisedCompletionDate"] as string);
+        if (isNaN(d.getTime())) {
+          res.status(400).json({ field: "promisedCompletionDate", message: "Invalid date format for promised completion date" });
+          return;
+        }
+        updates["promisedCompletionDate"] = d;
+      }
     }
 
     // Re-evaluate KYC if Aadhar/PAN change

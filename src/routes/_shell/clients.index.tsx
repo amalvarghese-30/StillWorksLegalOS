@@ -6,6 +6,7 @@ import { StatusPill } from "@/components/common/StatusPill";
 import { Button } from "@/components/ui/button";
 import { useClients, type ClientRecord } from "@/services/clients";
 import { AddClientDialog } from "@/components/clients/AddClientDialog";
+import { formatSafeDate } from "@/lib/dates";
 
 export const Route = createFileRoute("/_shell/clients/")({
   head: () => ({
@@ -56,7 +57,7 @@ function ClientCard({ c }: { c: ClientRecord }) {
           <div className="min-w-0">
             <h2 className="truncate font-semibold">{c.name}</h2>
             <p className="truncate text-caption text-muted-foreground">
-              {c.type} · Since {new Date(c.createdAt).toLocaleDateString("en-IN", { year: "numeric", month: "short" })}
+              {c.type} · Since {formatSafeDate(c.createdAt, "—", { year: "numeric", month: "short" })}
             </p>
           </div>
           <StatusPill tone={toneForTag(c.tag)}>{c.tag}</StatusPill>
@@ -92,7 +93,7 @@ function ClientCard({ c }: { c: ClientRecord }) {
                 <Calendar size={13} className="text-amber-600 dark:text-amber-400" />
                 <span>
                   Due:{" "}
-                  {new Date(c.promisedCompletionDate).toLocaleDateString("en-IN", {
+                  {formatSafeDate(c.promisedCompletionDate, "—", {
                     day: "numeric",
                     month: "short",
                   })}

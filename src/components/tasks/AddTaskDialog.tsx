@@ -101,10 +101,19 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
       if (initialClientId) setForm((prev) => ({ ...prev, clientId: initialClientId }));
     }
   }, [open, initialCaseId, initialClientId]);
+interface TaskFieldErrors {
+  title?: string;
+  description?: string;
+  agent?: string;
+  callClientName?: string;
+  callScheduledAt?: string;
+}
+
   const [checklist, setChecklist] = useState<ChecklistLine[]>([]);
   const [addCallReminder, setAddCallReminder] = useState(false);
   const [agentSelect, setAgentSelect] = useState("");
   const [agentCustom, setAgentCustom] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<TaskFieldErrors>({});
   const [appliedTemplates, setAppliedTemplates] = useState<string[]>([]);
   const [manualCase, setManualCase] = useState(false);
   const [manualClient, setManualClient] = useState(false);
@@ -123,8 +132,12 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
   const cases = casesData?.cases ?? [];
   const clients = clientsData?.clients ?? [];
 
-  const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
+  const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+    if (key in fieldErrors) {
+      setFieldErrors((prev) => ({ ...prev, [key]: undefined }));
+    }
+  };
 
   const addChecklistItem = () => {
     setChecklist((prev) => [...prev, { id: nextId(), text: "" }]);
@@ -166,6 +179,7 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
     setAddCallReminder(false);
     setAgentSelect("");
     setAgentCustom("");
+    setFieldErrors({});
     setAppliedTemplates([]);
     setManualCase(false);
     setManualClient(false);
@@ -179,13 +193,51 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.title.trim()) return;
+    const errors: TaskFieldErrors = {};
 
-    const finalAgent = agentSelect === "__other__" ? agentCustom.trim() : agentSelect;
+    const cleanTitle = form.title.trim();
+    if (!cleanTitle) {
+      errors.title = "Task title is required";
+    } else if (cleanTitle.length > 200) {
+      errors.title = "Task title cannot exceed 200 characters";
+    }
+
+    if (form.description && form.description.length > 5000) {
+      errors.description = "Task description cannot exceed 5000 characters";
+    }
+
+    let finalAgent = "";
+    if (agentSelect === "__other__") {
+      const cleanCustom = agentCustom.trim();
+      if (!cleanCustom) {
+        errors.agent = "Please enter the broker / agent name";
+      } else if (cleanCustom.length > 100) {
+        errors.agent = "Agent name cannot exceed 100 characters";
+      } else {
+        finalAgent = cleanCustom;
+      }
+    } else if (agentSelect) {
+      finalAgent = agentSelect;
+    }
+
+    if (addCallReminder) {
+      if (!form.callClientName.trim()) {
+        errors.callClientName = "Client name is required for call reminder";
+      }
+      if (!form.callScheduledAt) {
+        errors.callScheduledAt = "Please select a date and time for the reminder";
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      return;
+    }
+    setFieldErrors({});
 
     const payload: CreateTaskPayload = {
-      title: form.title,
-      ...(form.description && { description: form.description }),
+      title: cleanTitle,
+      ...(form.description && { description: form.description.trim() }),
       ...(form.category && { category: form.category }),
       priority: form.priority,
       ...(form.deadline && { deadline: form.deadline }),
@@ -194,14 +246,16 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
       ...(form.assignedTo && { assignedTo: form.assignedTo }),
       ...(finalAgent && { agent: finalAgent }),
       ...(checklist.length > 0 && {
-        checklist: checklist.map((cl) => ({ text: cl.text, done: false })),
+        checklist: checklist
+          .filter((cl) => cl.text.trim())
+          .map((cl) => ({ text: cl.text.trim(), done: false })),
       }),
       ...(addCallReminder && {
         callReminder: {
-          clientName: form.callClientName,
-          phone: form.callPhone,
+          clientName: form.callClientName.trim(),
+          phone: form.callPhone.trim(),
           scheduledAt: form.callScheduledAt,
-          notes: form.callNotes,
+          notes: form.callNotes.trim(),
         },
       }),
     };
@@ -232,21 +286,29 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
               <Input
                 id="task-title"
                 required
+                maxLength={200}
                 value={form.title}
                 onChange={(e) => update("title", e.target.value)}
                 placeholder="e.g. File written statement"
-                className="h-11 rounded-md"
+                className={`h-11 rounded-md ${fieldErrors["title"] ? "border-destructive focus-visible:ring-destructive" : ""}`}
               />
+              {fieldErrors["title"] && (
+                <p className="text-caption text-destructive font-medium">{fieldErrors["title"]}</p>
+              )}
             </div>
             <div className="space-y-1.5 sm:col-span-2">
               <Label htmlFor="task-desc" className="text-helper">Description</Label>
               <Input
                 id="task-desc"
+                maxLength={5000}
                 value={form.description}
                 onChange={(e) => update("description", e.target.value)}
                 placeholder="What needs to be done"
-                className="h-11 rounded-md"
+                className={`h-11 rounded-md ${fieldErrors["description"] ? "border-destructive focus-visible:ring-destructive" : ""}`}
               />
+              {fieldErrors["description"] && (
+                <p className="text-caption text-destructive font-medium">{fieldErrors["description"]}</p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="task-category" className="text-helper">Category</Label>
@@ -332,12 +394,27 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
                 </SelectContent>
               </Select>
               {agentSelect === "__other__" && (
-                <Input
-                  value={agentCustom}
-                  onChange={(e) => setAgentCustom(e.target.value)}
-                  placeholder="Agent / broker name"
-                  className="mt-2 h-11 rounded-md"
-                />
+                <div className="space-y-1">
+                  <Input
+                    value={agentCustom}
+                    maxLength={100}
+                    onChange={(e) => {
+                      setAgentCustom(e.target.value);
+                      if (fieldErrors["agent"]) {
+                        setFieldErrors((prev) => {
+                          const next = { ...prev };
+                          delete next["agent"];
+                          return next;
+                        });
+                      }
+                    }}
+                    placeholder="Agent / broker name *"
+                    className={`mt-2 h-11 rounded-md ${fieldErrors["agent"] ? "border-destructive focus-visible:ring-destructive" : ""}`}
+                  />
+                  {fieldErrors["agent"] && (
+                    <p className="text-caption text-destructive font-medium">{fieldErrors["agent"]}</p>
+                  )}
+                </div>
               )}
             </div>
             <div className="space-y-1.5">
@@ -533,19 +610,24 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
               <div className="border-t border-border p-4">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
-                    <Label htmlFor="call-name" className="text-helper">Client name</Label>
+                    <Label htmlFor="call-name" className="text-helper">Client name *</Label>
                     <Input
                       id="call-name"
+                      maxLength={200}
                       value={form.callClientName}
                       onChange={(e) => update("callClientName", e.target.value)}
                       placeholder="Who to call"
-                      className="h-11 rounded-md"
+                      className={`h-11 rounded-md ${fieldErrors["callClientName"] ? "border-destructive focus-visible:ring-destructive" : ""}`}
                     />
+                    {fieldErrors["callClientName"] && (
+                      <p className="text-caption text-destructive font-medium">{fieldErrors["callClientName"]}</p>
+                    )}
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="call-phone" className="text-helper">Phone number</Label>
                     <Input
                       id="call-phone"
+                      maxLength={50}
                       value={form.callPhone}
                       onChange={(e) => update("callPhone", e.target.value)}
                       placeholder="+91-XXXXXXXXXX"
@@ -553,19 +635,23 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="call-schedule" className="text-helper">Scheduled for</Label>
+                    <Label htmlFor="call-schedule" className="text-helper">Scheduled for *</Label>
                     <Input
                       id="call-schedule"
                       type="datetime-local"
                       value={form.callScheduledAt}
                       onChange={(e) => update("callScheduledAt", e.target.value)}
-                      className="h-11 rounded-md"
+                      className={`h-11 rounded-md ${fieldErrors["callScheduledAt"] ? "border-destructive focus-visible:ring-destructive" : ""}`}
                     />
+                    {fieldErrors["callScheduledAt"] && (
+                      <p className="text-caption text-destructive font-medium">{fieldErrors["callScheduledAt"]}</p>
+                    )}
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="call-notes" className="text-helper">Notes</Label>
                     <Input
                       id="call-notes"
+                      maxLength={2000}
                       value={form.callNotes}
                       onChange={(e) => update("callNotes", e.target.value)}
                       placeholder="What to discuss"

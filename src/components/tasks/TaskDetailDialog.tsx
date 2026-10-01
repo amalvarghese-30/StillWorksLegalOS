@@ -17,6 +17,8 @@ import {
   Phone,
   Copy,
   CalendarClock,
+  MoreVertical,
+  RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,8 +43,20 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   useUpdateTask,
   useDeleteTask,
+  useCreateTask,
+  useTaskOptions,
   useToggleChecklistItem,
   type TaskRecord,
   type ChecklistItem,
@@ -52,6 +66,7 @@ import { useCases } from "@/services/cases";
 import { useClients } from "@/services/clients";
 import { useEmployees } from "@/services/admin";
 import { useAuth } from "@/lib/auth";
+import { formatSafeDateTime, toSafeIso } from "@/lib/dates";
 import { toast } from "sonner";
 
 interface TaskDetailDialogProps {
@@ -79,6 +94,10 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
   const [newChecklistText, setNewChecklistText] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
+  // Broker / Agent state
+  const [agentSelect, setAgentSelect] = useState("");
+  const [agentCustom, setAgentCustom] = useState("");
+
   // Call reminder state
   const isCallTask = Boolean(task?.isCall || task?.callReminder);
   const [callClientName, setCallClientName] = useState("");
@@ -96,8 +115,12 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
   const cases = casesData?.cases ?? [];
   const clients = clientsData?.clients ?? [];
 
+  const { data: optionsData } = useTaskOptions();
+  const predefinedAgents = optionsData?.agents ?? [];
+
   const updateTask = useUpdateTask();
   const deleteTask = useDeleteTask();
+  const createTask = useCreateTask();
   const toggleItem = useToggleChecklistItem();
 
   useEffect(() => {
@@ -109,11 +132,25 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
       setDeadline(task.deadline ? new Date(task.deadline).toISOString().slice(0, 16) : "");
       setAssignedTo(task.assignedTo?._id || "");
 
+      // Handle Agent / Broker initialization
+      if (task.agent) {
+        if (predefinedAgents.includes(task.agent)) {
+          setAgentSelect(task.agent);
+          setAgentCustom("");
+        } else {
+          setAgentSelect("__other__");
+          setAgentCustom(task.agent);
+        }
+      } else {
+        setAgentSelect("");
+        setAgentCustom("");
+      }
+
       const cr = task.callReminder;
       setCallClientName(cr?.clientName || (task.isCall ? task.title.replace(/^📞\s*CALL:\s*/i, "") : ""));
       setCallPhone(cr?.phone || "");
       const sched = cr?.scheduledAt ? new Date(cr.scheduledAt) : task.deadline ? new Date(task.deadline) : null;
-      if (sched) {
+      if (sched && !isNaN(sched.getTime())) {
         const localIso = new Date(sched.getTime() - sched.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
         setCallScheduledAt(localIso);
       } else {
@@ -139,7 +176,7 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
       setIsEditing(false);
       setNewChecklistText("");
     }
-  }, [task]);
+  }, [task, predefinedAgents]);
 
   const caseDisplay =
     task.caseId && typeof task.caseId === "object"
@@ -215,7 +252,7 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
           callReminder: {
             clientName: callClientName.trim() || task.callReminder?.clientName || task.title,
             phone: callPhone.trim() || task.callReminder?.phone || "",
-            scheduledAt: callScheduledAt ? new Date(callScheduledAt).toISOString() : task.callReminder?.scheduledAt || new Date().toISOString(),
+            scheduledAt: toSafeIso(callScheduledAt) || task.callReminder?.scheduledAt || new Date().toISOString(),
             notes: callNotes.trim() || task.callReminder?.notes || "",
             completed: nextVal,
           },
@@ -229,7 +266,21 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
   };
 
   const handleSaveDetails = async () => {
+    if (!title.trim()) {
+      toast.error("Task title is required");
+      return;
+    }
+    if (agentSelect === "__other__" && !agentCustom.trim()) {
+      toast.error("Please enter the custom agent/broker name");
+      return;
+    }
+
     try {
+      const resolvedAgent =
+        agentSelect === "__other__"
+          ? agentCustom.trim()
+          : agentSelect.trim();
+
       const payload: Partial<CreateTaskPayload> = {
         title: title.trim(),
         description: description.trim(),
@@ -237,16 +288,16 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
         priority,
         caseId: caseId.trim() ? caseId.trim() : null,
         clientId: clientId.trim() ? clientId.trim() : null,
+        agent: resolvedAgent,
       };
-      if (deadline) payload.deadline = new Date(deadline).toISOString();
+      if (deadline) {
+        const iso = toSafeIso(deadline);
+        if (iso) payload.deadline = iso;
+      }
       if (assignedTo) payload.assignedTo = assignedTo;
 
       if (isCallTask || callClientName.trim()) {
-        const scheduledIso = callScheduledAt
-          ? new Date(callScheduledAt).toISOString()
-          : deadline
-          ? new Date(deadline).toISOString()
-          : new Date().toISOString();
+        const scheduledIso = toSafeIso(callScheduledAt) || (deadline ? toSafeIso(deadline) : null) || new Date().toISOString();
         payload.callReminder = {
           clientName: callClientName.trim() || title.trim(),
           phone: callPhone.trim(),
@@ -282,7 +333,41 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
     }
   };
 
-  const handleSetStatus = async (status: "completed" | "pending_approval" | "in_progress") => {
+  const handleDuplicateTask = async () => {
+    try {
+      const duplicatePayload: CreateTaskPayload = {
+        title: `${task.title} (Copy)`,
+        description: task.description,
+        category: task.category,
+        priority: task.priority,
+        agent: task.agent,
+        checklist: (task.checklist || []).map((c) => ({ text: c.text, done: false })),
+        caseId: task.caseId && typeof task.caseId === "object" ? (task.caseId as any)._id : task.caseId || null,
+        clientId: task.clientId && typeof task.clientId === "object" ? (task.clientId as any)._id : task.clientId || null,
+      };
+      if (task.deadline) {
+        duplicatePayload.deadline = task.deadline;
+      }
+      if (task.callReminder) {
+        duplicatePayload.callReminder = {
+          clientName: task.callReminder.clientName,
+          phone: task.callReminder.phone,
+          scheduledAt: task.callReminder.scheduledAt,
+          notes: task.callReminder.notes,
+          completed: false,
+        };
+        duplicatePayload.isCall = task.isCall;
+      }
+      await createTask.mutateAsync(duplicatePayload);
+      toast.success("Task duplicated successfully");
+      onClose();
+    } catch (err) {
+      console.error("Failed to duplicate task:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to duplicate task");
+    }
+  };
+
+  const handleSetStatus = async (status: "pending" | "in_progress" | "pending_approval" | "completed") => {
     try {
       await updateTask.mutateAsync({
         id: task._id,
@@ -293,13 +378,21 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
       } else if (status === "completed") {
         toast.success("Task marked as completed");
       } else if (status === "in_progress") {
-        toast.info("Task returned to in progress");
+        toast.info("Task marked as in progress");
+      } else if (status === "pending") {
+        toast.info("Task marked as pending");
       }
     } catch (err) {
       console.error("Failed to update task status:", err);
       toast.error(err instanceof Error ? err.message : "Failed to update status");
     }
   };
+
+  const isCreatorOrAdmin =
+    isAdmin ||
+    (task.createdBy &&
+      (typeof task.createdBy === "object" ? (task.createdBy as any)._id : task.createdBy)?.toString() ===
+        user?._id?.toString());
 
   return (
     <>
@@ -336,6 +429,12 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
                       Overdue
                     </span>
                   ) : null}
+
+                  {task.agent && (
+                    <span className="rounded-pill bg-secondary/80 px-2.5 py-0.5 text-caption font-medium text-foreground border border-border">
+                      Agent: {task.agent}
+                    </span>
+                  )}
                 </div>
                 <DialogTitle className="text-title font-semibold text-foreground pt-1">
                   {task.title}
@@ -348,106 +447,134 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
                 )}
               </div>
 
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsEditing(!isEditing)}
-                className="shrink-0 rounded-md"
-              >
-                <Edit2 size={14} className="mr-1.5" />
-                {isEditing ? "View" : "Edit"}
-              </Button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsEditing(!isEditing)}
+                  className="rounded-md h-8 text-xs"
+                >
+                  <Edit2 size={13} className="mr-1.5" />
+                  {isEditing ? "View" : "Edit"}
+                </Button>
+
+                {/* More Options Dropdown */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md" aria-label="More options">
+                      <MoreVertical size={16} />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger className="text-xs">
+                        <CheckCircle2 size={14} className="mr-2" />
+                        Change Status
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="w-44">
+                        <DropdownMenuItem
+                          className="text-xs"
+                          disabled={task.status === "pending"}
+                          onClick={() => handleSetStatus("pending")}
+                        >
+                          Mark as Pending
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-xs"
+                          disabled={task.status === "in_progress"}
+                          onClick={() => handleSetStatus("in_progress")}
+                        >
+                          Mark as In Progress
+                        </DropdownMenuItem>
+                        {isAdmin ? (
+                          <DropdownMenuItem
+                            className="text-xs font-medium text-emerald-600 dark:text-emerald-400"
+                            disabled={task.status === "completed"}
+                            onClick={() => handleSetStatus("completed")}
+                          >
+                            Approve & Complete
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem
+                            className="text-xs font-medium text-amber-600 dark:text-amber-400"
+                            disabled={task.status === "pending_approval" || task.status === "completed"}
+                            onClick={() => handleSetStatus("pending_approval")}
+                          >
+                            Submit for Approval
+                          </DropdownMenuItem>
+                        )}
+                        {isAdmin && task.status === "pending_approval" && (
+                          <DropdownMenuItem
+                            className="text-xs text-amber-600 dark:text-amber-400"
+                            onClick={() => handleSetStatus("in_progress")}
+                          >
+                            Request Changes
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+
+                    <DropdownMenuItem className="text-xs" onClick={handleDuplicateTask}>
+                      <Copy size={14} className="mr-2" />
+                      Duplicate Task
+                    </DropdownMenuItem>
+
+                    {isCreatorOrAdmin && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-xs text-destructive focus:text-destructive"
+                          onClick={() => setShowDeleteConfirm(true)}
+                        >
+                          <Trash2 size={14} className="mr-2" />
+                          Delete Task
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
           </DialogHeader>
 
-          {/* Status banners */}
+          {/* Clean Informational Status Banners (No redundant duplicate action buttons) */}
           {task.status === "pending_approval" && (
-            <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-start gap-2.5">
-                  <Clock size={18} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
-                  <div>
-                    <p className="text-helper font-semibold text-foreground">
-                      Pending Admin Verification & Approval
-                    </p>
-                    <p className="text-caption text-muted-foreground mt-0.5">
-                      {isAdmin
-                        ? "Submitted for review. Verify the checklist items and approve or request changes."
-                        : "Task submitted. An administrator will verify completion and sign off."}
-                    </p>
-                  </div>
-                </div>
-                {isAdmin && (
-                  <div className="flex items-center gap-2 shrink-0 sm:self-center">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8 rounded-md text-caption"
-                      disabled={updateTask.isPending}
-                      onClick={() => handleSetStatus("in_progress")}
-                    >
-                      Request Changes
-                    </Button>
-                    <Button
-                      size="sm"
-                      className="h-8 gradient-primary rounded-md text-primary-foreground text-caption"
-                      disabled={updateTask.isPending}
-                      onClick={() => handleSetStatus("completed")}
-                    >
-                      {updateTask.isPending ? <Loader2 size={13} className="animate-spin mr-1" /> : <Check size={13} className="mr-1" />}
-                      Approve & Complete
-                    </Button>
-                  </div>
-                )}
+            <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5 flex items-start gap-2.5">
+              <Clock size={18} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+              <div>
+                <p className="text-helper font-semibold text-foreground">
+                  Pending Admin Verification & Approval
+                </p>
+                <p className="text-caption text-muted-foreground mt-0.5">
+                  {isAdmin
+                    ? "Submitted for review. Review the checklist items below and approve or request changes using the action buttons."
+                    : "Task submitted. An administrator will verify completion and sign off."}
+                </p>
               </div>
             </div>
           )}
 
           {task.status === "completed" && (
-            <div className="mt-4 rounded-lg border border-success/30 bg-success/10 p-3.5 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <CheckCircle2 size={18} className="shrink-0 text-success" />
-                <div>
-                  <p className="text-helper font-semibold text-foreground">Task Completed</p>
-                  <p className="text-caption text-muted-foreground">Work and checklist items have been completed and verified.</p>
-                </div>
+            <div className="mt-4 rounded-lg border border-success/30 bg-success/10 p-3.5 flex items-center gap-2.5">
+              <CheckCircle2 size={18} className="shrink-0 text-success" />
+              <div>
+                <p className="text-helper font-semibold text-foreground">Task Completed</p>
+                <p className="text-caption text-muted-foreground">Work and checklist items have been completed and verified.</p>
               </div>
-              {isAdmin && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 rounded-md text-caption shrink-0"
-                  disabled={updateTask.isPending}
-                  onClick={() => handleSetStatus("in_progress")}
-                >
-                  Reopen Task
-                </Button>
-              )}
             </div>
           )}
 
           {task.status !== "completed" && task.status !== "pending_approval" && total > 0 && doneCount === total && (
-            <div className="mt-4 rounded-lg border border-primary/30 bg-primary/5 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <CheckCircle2 size={18} className="shrink-0 text-primary" />
-                <div>
-                  <p className="text-helper font-semibold text-foreground">All checklist items are completed!</p>
-                  <p className="text-caption text-muted-foreground">
-                    {isAdmin
-                      ? "Ready to mark this task as fully completed?"
-                      : "Submit this task for admin verification to complete it."}
-                  </p>
-                </div>
+            <div className="mt-4 rounded-lg border border-primary/30 bg-primary/5 p-3.5 flex items-center gap-2.5">
+              <CheckCircle2 size={18} className="shrink-0 text-primary" />
+              <div>
+                <p className="text-helper font-semibold text-foreground">All checklist items are completed!</p>
+                <p className="text-caption text-muted-foreground">
+                  {isAdmin
+                    ? "Use the action button below to finalize and complete this task."
+                    : "Submit this task for admin verification to complete it."}
+                </p>
               </div>
-              <Button
-                size="sm"
-                className="h-8 gradient-primary rounded-md text-primary-foreground text-caption shrink-0"
-                disabled={updateTask.isPending}
-                onClick={() => handleSetStatus(isAdmin ? "completed" : "pending_approval")}
-              >
-                {updateTask.isPending ? <Loader2 size={13} className="animate-spin mr-1" /> : <Check size={13} className="mr-1" />}
-                {isAdmin ? "Mark as Completed" : "Submit for Approval"}
-              </Button>
             </div>
           )}
 
@@ -500,6 +627,38 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
                     <option value="Medium">Medium</option>
                     <option value="Low">Low</option>
                   </select>
+                </div>
+              </div>
+
+              {/* Agent / Broker Selector in Edit Mode */}
+              <div className="space-y-1.5">
+                <Label htmlFor="task-agent-select" className="text-helper font-medium">
+                  Broker / Agent (Optional)
+                </Label>
+                <div className="space-y-2">
+                  <select
+                    id="task-agent-select"
+                    value={agentSelect}
+                    onChange={(e) => setAgentSelect(e.target.value)}
+                    className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="">None (Direct client / internal)</option>
+                    {predefinedAgents.map((ag) => (
+                      <option key={ag} value={ag}>
+                        {ag}
+                      </option>
+                    ))}
+                    <option value="__other__">+ Other custom broker / agent...</option>
+                  </select>
+                  {agentSelect === "__other__" && (
+                    <Input
+                      value={agentCustom}
+                      onChange={(e) => setAgentCustom(e.target.value)}
+                      placeholder="Enter agent / broker name or firm..."
+                      className="h-9 rounded-md text-xs"
+                      maxLength={100}
+                    />
+                  )}
                 </div>
               </div>
 
@@ -715,7 +874,7 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
             /* View Details */
             <div className="mt-4 space-y-4">
               {task.description && (
-                <div className="rounded-md bg-muted/50 p-3 text-helper text-foreground/90">
+                <div className="rounded-md bg-muted/50 p-3 text-helper text-foreground/90 whitespace-pre-wrap">
                   {task.description}
                 </div>
               )}
@@ -730,15 +889,7 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
                   <span>
                     Deadline:{" "}
                     <strong className="text-foreground">
-                      {task.deadline
-                        ? new Date(task.deadline).toLocaleDateString("en-IN", {
-                            day: "numeric",
-                            month: "short",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })
-                        : "No deadline"}
+                      {formatSafeDateTime(task.deadline, "No deadline")}
                     </strong>
                   </span>
                 </div>
@@ -757,6 +908,15 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
                     <span>
                       Linked Client:{" "}
                       <strong className="text-foreground">{clientDisplay}</strong>
+                    </span>
+                  </div>
+                )}
+                {task.agent && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Tag size={15} />
+                    <span>
+                      Agent / Broker:{" "}
+                      <strong className="text-foreground">{task.agent}</strong>
                     </span>
                   </div>
                 )}
@@ -785,15 +945,7 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
                         </div>
                         <p className="text-[11px] text-muted-foreground flex items-center gap-1 mt-0.5">
                           <Clock size={11} />
-                          {task.callReminder?.scheduledAt
-                            ? new Date(task.callReminder.scheduledAt).toLocaleDateString("en-IN", {
-                                weekday: "short",
-                                day: "numeric",
-                                month: "short",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })
-                            : "No scheduled time"}
+                          {formatSafeDateTime(task.callReminder?.scheduledAt, "No scheduled time")}
                         </p>
                       </div>
                     </div>
@@ -937,7 +1089,7 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
 
           <DialogFooter className="mt-6 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 border-t border-border/60 pt-4">
             <div>
-              {isAdmin || (task.createdBy && (typeof task.createdBy === "object" ? (task.createdBy as any)._id : task.createdBy)?.toString() === user?._id?.toString()) ? (
+              {isCreatorOrAdmin ? (
                 <Button
                   type="button"
                   variant="ghost"
@@ -953,9 +1105,10 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
 
             <div className="flex items-center justify-end gap-2">
               <Button type="button" variant="outline" size="sm" onClick={onClose} className="rounded-md">
-                Done
+                Close
               </Button>
 
+              {/* Single Contextual Action Button */}
               {task.status === "pending_approval" ? (
                 isAdmin ? (
                   <>
@@ -983,10 +1136,24 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
                 ) : (
                   <Button type="button" size="sm" variant="secondary" disabled className="rounded-md opacity-80">
                     <Clock size={14} className="mr-1.5 text-amber-500" />
-                    Awaiting Admin Approval
+                    Awaiting Approval
                   </Button>
                 )
-              ) : task.status !== "completed" ? (
+              ) : task.status === "completed" ? (
+                isAdmin ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-md"
+                    disabled={updateTask.isPending}
+                    onClick={() => handleSetStatus("in_progress")}
+                  >
+                    <RotateCcw size={14} className="mr-1.5" />
+                    Reopen Task
+                  </Button>
+                ) : null
+              ) : (
                 <Button
                   type="button"
                   size="sm"
@@ -1001,7 +1168,7 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
                   )}
                   {isAdmin ? "Mark as Completed" : "Submit for Approval"}
                 </Button>
-              ) : null}
+              )}
             </div>
           </DialogFooter>
         </DialogContent>
