@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { Server } from "socket.io";
-import express from "express";
+import express, { type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import morgan from "morgan";
 import helmet from "helmet";
@@ -319,6 +319,22 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/notifications", notificationsRoutes);
 app.use("/api/reminders", remindersRoutes);
 app.use("/api/search", searchRoutes);
+
+// Unmatched API routes return standard JSON 404
+app.all("/api/*", (_req: Request, res: Response) => {
+  res.status(404).json({ message: "API endpoint not found" });
+});
+
+// Global Express error handling middleware
+app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  console.error("[server] Unhandled error:", err);
+  if (!res.headersSent) {
+    const status = typeof err?.status === "number" && err.status >= 400 && err.status < 600 ? err.status : 500;
+    res.status(status).json({
+      message: status < 500 && err?.message ? err.message : "Internal server error",
+    });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Static web app (same-origin hosting for the web/mobile version)

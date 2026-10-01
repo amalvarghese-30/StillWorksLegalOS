@@ -24,7 +24,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  useCase, useUpdateCase, useDeleteCase, useAddCaseNote, useAddCaseParty,
+  useCase, useUpdateCase, useDeleteCase, useAddCaseNote, useAddCaseParty, useRemoveCaseParty,
   type CaseRecord, type CaseParty,
 } from "@/services/cases";
 import { useTasks, type TaskRecord } from "@/services/tasks";
@@ -318,6 +318,8 @@ function CaseWorkspace() {
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<any | null>(null);
+  const [partyToDelete, setPartyToDelete] = useState<CaseParty | null>(null);
+  const removeParty = useRemoveCaseParty();
 
   const handleDeleteCase = async () => {
     setIsDeleting(true);
@@ -782,9 +784,19 @@ function CaseWorkspace() {
                               <p className="truncate font-medium">{p.name}</p>
                             )}
                           </div>
-                          <StatusPill tone={p.type === "client" ? "primary" : p.type === "opposing_party" ? "destructive" : "muted"}>
-                            {p.type.replace(/_/g, " ")}
-                          </StatusPill>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <StatusPill tone={p.type === "client" ? "primary" : p.type === "opposing_party" ? "destructive" : "muted"}>
+                              {p.type.replace(/_/g, " ")}
+                            </StatusPill>
+                            <button
+                              type="button"
+                              onClick={() => setPartyToDelete(p)}
+                              className="p-1 text-muted-foreground hover:text-destructive rounded transition-colors"
+                              title="Remove party from case"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
                         </div>
                         <p className="mt-1 truncate text-helper text-muted-foreground">{p.role}</p>
                       </li>
@@ -920,6 +932,40 @@ function CaseWorkspace() {
               disabled={updateCase.isPending}
             >
               {updateCase.isPending ? "Reopening…" : "Reopen Case"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={Boolean(partyToDelete)} onOpenChange={(open) => !open && setPartyToDelete(null)}>
+        <AlertDialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-title font-semibold text-destructive flex items-center gap-2">
+              <Trash2 size={18} />
+              Remove Party
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-helper text-muted-foreground mt-2">
+              Are you sure you want to remove <span className="font-semibold text-foreground">"{partyToDelete?.name}"</span> from this matter?
+              The party will be unlinked from this case.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-5 flex justify-end gap-2">
+            <AlertDialogCancel className="rounded-md" disabled={removeParty.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (partyToDelete?._id) {
+                  removeParty.mutate(
+                    { caseId, partyId: partyToDelete._id },
+                    { onSettled: () => setPartyToDelete(null) }
+                  );
+                } else {
+                  setPartyToDelete(null);
+                }
+              }}
+              disabled={removeParty.isPending}
+            >
+              {removeParty.isPending ? "Removing…" : "Remove Party"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

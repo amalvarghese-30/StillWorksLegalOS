@@ -115,9 +115,9 @@ router.post("/login", async (req: Request, res: Response) => {
 
     if (!user) {
       res.status(401).json({
-        field: "email",
-        code: "USER_NOT_FOUND",
-        message: "No account found matching this email or username.",
+        field: "password",
+        code: "INVALID_CREDENTIALS",
+        message: "Invalid email or password. Please check your credentials.",
       });
       return;
     }
@@ -126,8 +126,8 @@ router.post("/login", async (req: Request, res: Response) => {
     if (!valid) {
       res.status(401).json({
         field: "password",
-        code: "INVALID_PASSWORD",
-        message: "Incorrect password. Please check your password and try again.",
+        code: "INVALID_CREDENTIALS",
+        message: "Invalid email or password. Please check your credentials.",
       });
       return;
     }

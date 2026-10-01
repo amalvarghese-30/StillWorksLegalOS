@@ -63,6 +63,20 @@ function buildApp() {
   app.use("/api/documents", documentsRoutes);
   app.use("/api/chat", chatRoutes);
   app.use("/api/search", searchRoutes);
+
+  app.all("/api/*", (_req, res) => {
+    res.status(404).json({ message: "API endpoint not found" });
+  });
+
+  app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    if (!res.headersSent) {
+      const status = typeof err?.status === "number" && err.status >= 400 && err.status < 600 ? err.status : 500;
+      res.status(status).json({
+        message: status < 500 && err?.message ? err.message : "Internal server error",
+      });
+    }
+  });
+
   return app;
 }
 
@@ -1868,6 +1882,103 @@ async function run() {
     assert(deleteAvatarRes.status === 200, "AVATAR-007: Avatar removed successfully (200)");
     const empAfterDelete = await User.findById(emp20._id);
     assert(empAfterDelete?.avatarUrl === "", "AVATAR-008: user.avatarUrl cleared in database");
+
+    // =========================================================================
+    // Suite 21: Forensic Verification — Parties, JSON 404 & Anti-Enumeration
+    // =========================================================================
+    console.log("\n--- Suite 21: Forensic Verification (Parties, 404, Anti-Enumeration) ---");
+
+    // 1. Anti-Enumeration on Login
+    const nonExistentLoginRes = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "doesnotexist@nowhere.legal", password: "wrongpassword123" });
+    assert(nonExistentLoginRes.status === 401, "AUTH-ENUM-001: Nonexistent user returns 401");
+    assert(nonExistentLoginRes.body.code === "INVALID_CREDENTIALS", "AUTH-ENUM-002: Nonexistent user returns generic INVALID_CREDENTIALS code");
+    assert(nonExistentLoginRes.body.message.includes("Invalid email or password"), "AUTH-ENUM-003: Nonexistent user returns generic message");
+
+    const wrongPassLoginRes = await request(app)
+      .post("/api/auth/login")
+      .send({ email: emp20.email, password: "definitelywrongpassword" });
+    assert(wrongPassLoginRes.status === 401, "AUTH-ENUM-004: Wrong password returns 401");
+    assert(wrongPassLoginRes.body.code === "INVALID_CREDENTIALS", "AUTH-ENUM-005: Wrong password returns identical INVALID_CREDENTIALS code");
+    assert(wrongPassLoginRes.body.message === nonExistentLoginRes.body.message, "AUTH-ENUM-006: Missing user and wrong password return identical messages");
+
+    // 2. Global JSON 404
+    const notFoundApiRes = await request(app).get("/api/forensic-nonexistent-route");
+    assert(notFoundApiRes.status === 404, "API-404-001: Unmatched API route returns 404");
+    assert(notFoundApiRes.headers["content-type"]?.includes("application/json"), "API-404-002: Unmatched API route returns JSON");
+    assert(notFoundApiRes.body.message === "API endpoint not found", "API-404-003: Unmatched API route body contains standard message");
+
+    // 3. Case Party Management & Client Linkage
+    const partyCaseRes = await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ title: "Forensic Case Suite 21", practice: "Corporate" });
+    assert(partyCaseRes.status === 201, "CASE-PARTY-001: Case created for party tests");
+    const testCase21Id = partyCaseRes.body.case._id;
+
+    // Document created under this case before client party is added
+    const preDoc = await DocumentModel.create({
+      name: "Pre-party Agreement.pdf",
+      originalName: "Pre-party Agreement.pdf",
+      caseId: testCase21Id,
+      uploadedBy: admin20._id,
+      storagePath: `/Cases/SW-2026-Forensic/Pre-party Agreement.pdf`,
+    });
+    assert(!preDoc.clientId, "CASE-PARTY-002: Pre-party document initially has no clientId");
+
+    // Invalid clientId format in POST /api/cases/:id/parties
+    const badClientFormatPartyRes = await request(app)
+      .post(`/api/cases/${testCase21Id}/parties`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "Invalid Client Party", role: "Petitioner", clientId: "invalid-id" });
+    assert(badClientFormatPartyRes.status === 400, "CASE-PARTY-003: Reject invalid clientId format in add party (400)");
+
+    // Nonexistent clientId in POST /api/cases/:id/parties
+    const fakeClientId = new mongoose.Types.ObjectId().toString();
+    const fakeClientPartyRes = await request(app)
+      .post(`/api/cases/${testCase21Id}/parties`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "Fake Client Party", role: "Petitioner", clientId: fakeClientId });
+    assert(fakeClientPartyRes.status === 400, "CASE-PARTY-004: Reject nonexistent clientId in add party (400)");
+
+    // Add valid client party
+    const validClientPartyRes = await request(app)
+      .post(`/api/cases/${testCase21Id}/parties`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        name: goodClientRes.body.client.name,
+        role: "Primary Claimant",
+        type: "client",
+        clientId: goodClientRes.body.client._id,
+      });
+    assert(validClientPartyRes.status === 200, "CASE-PARTY-005: Valid client party added successfully (200)");
+    const updatedCaseParties = validClientPartyRes.body.case.parties;
+    const addedParty = updatedCaseParties.find((p: any) => p.name === goodClientRes.body.client.name);
+    assert(Boolean(addedParty && addedParty._id), "CASE-PARTY-006: Added party has valid subdocument _id");
+
+    // Verify DocumentModel was synchronized with the new client party
+    const refreshedDoc = await DocumentModel.findById(preDoc._id);
+    assert(refreshedDoc?.clientId?.toString() === goodClientRes.body.client._id.toString(), "CASE-PARTY-007: Case document synchronized clientId from added party");
+
+    // Remove party: nonexistent party returns 404
+    const fakePartyDeleteRes = await request(app)
+      .delete(`/api/cases/${testCase21Id}/parties/nonexistent-party-id`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    assert(fakePartyDeleteRes.status === 404, "CASE-PARTY-008: Reject nonexistent partyId with 404");
+
+    // Remove the valid party
+    const partyDeleteRes = await request(app)
+      .delete(`/api/cases/${testCase21Id}/parties/${addedParty._id}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    assert(partyDeleteRes.status === 200, "CASE-PARTY-009: Party removed successfully (200)");
+    const caseAfterPartyRemoval = partyDeleteRes.body.case;
+    const partyStillExists = (caseAfterPartyRemoval.parties || []).some((p: any) => p._id.toString() === addedParty._id.toString());
+    assert(!partyStillExists, "CASE-PARTY-010: Party confirmed absent from case after deletion");
+
+    // Timeline entry added for party removal
+    const lastTimeline = caseAfterPartyRemoval.timeline[caseAfterPartyRemoval.timeline.length - 1];
+    assert(lastTimeline?.event?.includes("Removed party"), "CASE-PARTY-011: Timeline event recorded for removed party");
   }
 
   try {

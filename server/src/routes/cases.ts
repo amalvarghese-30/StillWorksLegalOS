@@ -708,9 +708,23 @@ router.post("/:id/parties", requireResourceAccess("case"), async (req: Request, 
   try {
     const { name, role, type, clientId } = req.body;
 
-    if (!name || !role) {
+    if (!name || !String(name).trim() || !role || !String(role).trim()) {
       res.status(400).json({ message: "Party name and role are required" });
       return;
+    }
+
+    let linkedClientId: mongoose.Types.ObjectId | undefined;
+    if (clientId) {
+      if (!mongoose.Types.ObjectId.isValid(clientId)) {
+        res.status(400).json({ message: `Invalid client ID format: ${clientId}` });
+        return;
+      }
+      const realClient = await Client.findById(clientId).select("_id name").lean();
+      if (!realClient) {
+        res.status(400).json({ message: `Client not found with ID: ${clientId}` });
+        return;
+      }
+      linkedClientId = realClient._id as mongoose.Types.ObjectId;
     }
 
     const record = await Case.findById(req.params["id"]);
@@ -719,14 +733,31 @@ router.post("/:id/parties", requireResourceAccess("case"), async (req: Request, 
       return;
     }
 
-    record.parties.push({ name, role, type: type ?? "client", clientId });
+    const partyType = ["client", "sub_client", "opposing_party", "counsel", "other"].includes(type) ? type : "client";
+    const cleanName = String(name).trim();
+    const cleanRole = String(role).trim();
+
+    record.parties.push({
+      name: cleanName,
+      role: cleanRole,
+      type: partyType,
+      ...(linkedClientId ? { clientId: linkedClientId } : {}),
+    });
     record.timeline.push({
-      event: `Added party: ${name} (${role})`,
+      event: `Added party: ${cleanName} (${cleanRole})`,
       by: req.user?.name ?? "Unknown",
       when: new Date(),
     });
 
     await record.save();
+
+    // Reconcile document client linkage if a client party was added
+    if (linkedClientId && (partyType === "client" || partyType === "sub_client")) {
+      await DocumentModel.updateMany(
+        { caseId: record._id, $or: [{ clientId: { $exists: false } }, { clientId: null }] },
+        { clientId: linkedClientId }
+      );
+    }
 
     await AuditLog.logWithActivity(
       {
@@ -736,7 +767,7 @@ router.post("/:id/parties", requireResourceAccess("case"), async (req: Request, 
         resource: "case",
         resourceId: record._id.toString(),
         resourceName: record.title,
-        details: `Added party: ${name} (${role})`,
+        details: `Added party: ${cleanName} (${cleanRole})`,
         ip: req.ip,
         userAgent: req.headers["user-agent"],
       },
@@ -746,6 +777,70 @@ router.post("/:id/parties", requireResourceAccess("case"), async (req: Request, 
     res.json({ case: record });
   } catch (err) {
     console.error("[cases] Add party error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/cases/:id/parties/:partyId — remove a party from case
+// ---------------------------------------------------------------------------
+
+router.delete("/:id/parties/:partyId", requireResourceAccess("case"), async (req: Request, res: Response) => {
+  try {
+    const { id, partyId } = req.params;
+    const record = await Case.findById(id);
+    if (!record) {
+      res.status(404).json({ message: "Case not found" });
+      return;
+    }
+
+    const partyIndex = record.parties.findIndex((p: any) =>
+      p._id?.toString() === partyId || String(p.id) === partyId
+    );
+
+    if (partyIndex === -1) {
+      res.status(404).json({ message: "Party not found in case" });
+      return;
+    }
+
+    const removedParty = record.parties[partyIndex];
+    record.parties.splice(partyIndex, 1);
+
+    record.timeline.push({
+      event: `Removed party: ${removedParty.name} (${removedParty.role})`,
+      by: req.user?.name ?? "Unknown",
+      when: new Date(),
+    });
+
+    await record.save();
+
+    // If removed party was a client, resync document clientId to the new primary client if any
+    if (removedParty.clientId) {
+      const remainingClientParty = record.parties.find(
+        (p: any) => (p.type === "client" || p.type === "sub_client") && p.clientId
+      );
+      const newClientId = remainingClientParty ? remainingClientParty.clientId : null;
+      await DocumentModel.updateMany({ caseId: record._id }, { clientId: newClientId });
+    }
+
+    await AuditLog.logWithActivity(
+      {
+        userId: new mongoose.Types.ObjectId(req.userId!),
+        userName: req.user?.name ?? "Unknown",
+        action: "update",
+        resource: "case",
+        resourceId: record._id.toString(),
+        resourceName: record.title,
+        details: `Removed party: ${removedParty.name} (${removedParty.role})`,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+      },
+      req.app.get("io")
+    );
+
+    res.json({ case: record, message: "Party removed successfully" });
+  } catch (err) {
+    console.error("[cases] Remove party error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 });

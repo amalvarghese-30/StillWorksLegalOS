@@ -150,6 +150,18 @@ export function useAddCaseParty() {
     mutationFn: ({ caseId, party }) => api.post(`/cases/${caseId}/parties`, party),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: caseKeys.detail(vars.caseId) });
+      qc.invalidateQueries({ queryKey: caseKeys.all });
+    },
+  });
+}
+
+export function useRemoveCaseParty() {
+  const qc = useQueryClient();
+  return useMutation<CaseResponse, Error, { caseId: string; partyId: string }>({
+    mutationFn: ({ caseId, partyId }) => api.delete(`/cases/${caseId}/parties/${partyId}`),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: caseKeys.detail(vars.caseId) });
+      qc.invalidateQueries({ queryKey: caseKeys.all });
     },
   });
 }
