@@ -443,11 +443,6 @@ router.post("/", async (req: Request, res: Response) => {
       }
     }
 
-    // Set server-controlled canonical storage path
-    const safeNumber = record.number.replace(/[^a-zA-Z0-9_-]/g, "_");
-    record.nasPath = `/Cases/${safeNumber}-${record._id}`;
-    await record.save();
-
     console.log(`[cases:create] [corrId: ${corrId}] [stage: created] [caseId: ${record._id}] [number: ${record.number}]`);
 
     await record.populate(["assignedTo", "createdBy"]);
@@ -501,7 +496,7 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
   try {
     // ---------------------------------------------------------------------------
     // Explicit field whitelist — never spread req.body directly into DB updates.
-    // Internal fields: _id, number, createdBy, createdAt, updatedAt, nasPath
+    // Internal fields: _id, number, createdBy, createdAt, updatedAt
     // are server-controlled and must not be modifiable via this endpoint.
     // ---------------------------------------------------------------------------
     const ALLOWED_FIELDS = [

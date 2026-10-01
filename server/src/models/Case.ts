@@ -68,7 +68,6 @@ export interface ICase extends Document {
   createdBy: mongoose.Types.ObjectId;
   notes: CaseNote[];
   timeline: CaseTimelineEntry[];
-  nasPath: string;                       // NAS folder path for this case
   progress: number;                      // 0-100
   tags: string[];
   idempotencyKey?: string;
@@ -155,7 +154,6 @@ const CaseSchema = new Schema<ICase>(
     createdBy: { type: Schema.Types.ObjectId, ref: "User" },
     notes: { type: [CaseNoteSchema], default: [] },
     timeline: { type: [CaseTimelineSchema], default: [] },
-    nasPath: { type: String, default: "" },
     progress: { type: Number, default: 0, min: 0, max: 100 },
     tags: { type: [String], default: [] },
     idempotencyKey: { type: String, sparse: true, index: true },

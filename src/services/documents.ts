@@ -19,7 +19,9 @@ export interface DocumentRecord {
   uploadedBy: string | { _id: string; name?: string };
   uploadedByName?: string;
   state: "Pending" | "Approved" | "Rejected" | "Draft";
-  nasPath: string;
+  storagePath?: string;
+  storageFolder?: string;
+  nasPath?: string;
   nasFolder?: string;
   version?: number;
   sha256?: string;
@@ -39,13 +41,15 @@ export interface AccessRequest {
   createdAt: string;
 }
 
-export interface NasFolder {
+export interface FolderNode {
   name: string;
   path: string;
-  children?: NasFolder[];
+  children?: FolderNode[];
   isCaseFolder?: boolean;
   caseId?: string;
 }
+
+export type NasFolder = FolderNode; // backward compatibility alias
 
 export interface DocumentsResponse {
   documents: DocumentRecord[];
@@ -59,9 +63,11 @@ export interface VersionHistoryResponse {
   count: number;
 }
 
-export interface NasStructureResponse {
-  folders: NasFolder[];
+export interface DocumentStructureResponse {
+  folders: FolderNode[];
 }
+
+export type NasStructureResponse = DocumentStructureResponse; // backward compatibility alias
 
 // ---------------------------------------------------------------------------
 // Query keys
@@ -71,7 +77,8 @@ export const docKeys = {
   all: ["documents"] as const,
   list: (filters: Record<string, string>) => ["documents", "list", filters] as const,
   detail: (id: string) => ["documents", id] as const,
-  nas: () => ["documents", "nas"] as const,
+  structure: () => ["documents", "structure"] as const,
+  nas: () => ["documents", "structure"] as const, // alias
   versions: (id: string) => ["documents", "versions", id] as const,
 };
 
@@ -95,14 +102,15 @@ export function useDocument(id: string) {
   });
 }
 
-export function useNasStructure() {
-  return useQuery<NasStructureResponse>({
-    queryKey: docKeys.nas(),
-    queryFn: () => api.get("/documents/nas/structure"),
-    // Stale time longer since NAS structure doesn't change often
+export function useDocumentStructure() {
+  return useQuery<DocumentStructureResponse>({
+    queryKey: docKeys.structure(),
+    queryFn: () => api.get("/documents/structure"),
     staleTime: 5 * 60 * 1000,
   });
 }
+
+export const useNasStructure = useDocumentStructure;
 
 export function uploadDocumentStream(
   formData: FormData,

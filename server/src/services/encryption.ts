@@ -1,8 +1,7 @@
 import crypto from "node:crypto";
 
 // ---------------------------------------------------------------------------
-// At-rest secret encryption (aes-256-gcm) for sensitive config values such as
-// the Synology WebDAV password.
+// At-rest secret encryption (aes-256-gcm) for sensitive config values and secrets.
 //
 // The key is read from the DB_ENCRYPTION_KEY environment variable. It accepts
 // either a 64-char hex string (32 bytes, recommended) or an arbitrary

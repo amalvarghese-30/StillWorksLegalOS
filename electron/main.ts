@@ -7,13 +7,6 @@ import { fileURLToPath } from "node:url";
 // ESM __dirname equivalent
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Extend BrowserWindow for nas watcher
-declare module "electron" {
-  interface BrowserWindow {
-    __nasWatcher?: fs.FSWatcher;
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Security: Prevent navigation to unknown origins
 // ---------------------------------------------------------------------------
@@ -104,9 +97,10 @@ let mainWindow: BrowserWindow | null = null;
 let serverProcess: ReturnType<typeof spawn> | null = null;
 let isQuitting = false;
 
-// Start the Express server in production mode
+// Desktop client connects to configured API backend
+// Development: http://localhost:3001
+// Production: configured environment endpoint (e.g. VITE_API_URL / VITE_API_ORIGIN)
 function startServer(): Promise<void> {
-  // Stripped local server execution — the desktop client is now a thin client that connects directly to the hosted Render cloud API
   return Promise.resolve();
 }
 
@@ -464,14 +458,13 @@ function validateAndResolvePath(inputPath: string): string {
 
   const resolved = path.resolve(cleaned);
 
-  // Restrict to app data, uploads, downloads, documents, or configured storage/NAS mount
+  // Restrict to app data, uploads, downloads, documents, or configured storage
   const allowedRoots = [
     app.getPath("userData"),
     app.getPath("downloads"),
     app.getPath("documents"),
     path.resolve(process.cwd(), "uploads"),
     ...(process.env.STORAGE_DIR ? [path.resolve(process.env.STORAGE_DIR)] : []),
-    ...(process.env.NAS_MOUNT_POINT ? [path.resolve(process.env.NAS_MOUNT_POINT)] : []),
   ];
 
   const isAllowed = allowedRoots.some((root) => {
@@ -490,86 +483,6 @@ function validateAndResolvePath(inputPath: string): string {
 
   return resolved;
 }
-
-// Open a path in Windows Explorer / macOS Finder
-ipcMain.handle("nas:openPath", async (event: Electron.IpcMainInvokeEvent, nasPath: string) => {
-  assertTrustedIpcSender(event);
-  try {
-    const safePath = validateAndResolvePath(nasPath);
-    const error = await shell.openPath(safePath);
-    if (error) {
-      dialog.showErrorBox("Open Failed", error);
-      return { success: false, error };
-    }
-    return { success: true };
-  } catch (err) {
-    const error = err as Error;
-    console.error("[IPC nas:openPath] Error:", error.message);
-    dialog.showErrorBox(
-      "Path Not Found",
-      `The folder "${nasPath}" does not exist or is currently unavailable.\n\nCheck that the Synology NAS is connected and the path is correct.`,
-    );
-    return { success: false, error: error.message };
-  }
-});
-
-// Watch a NAS folder for changes
-ipcMain.handle("nas:watchFolder", async (event: Electron.IpcMainInvokeEvent, folderPath: string) => {
-  assertTrustedIpcSender(event);
-  try {
-    const safePath = validateAndResolvePath(folderPath);
-    const watcher = fs.watch(safePath, { recursive: false }, (eventType, filename) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send("nas:fileEvent", {
-          eventType,
-          filename,
-          folderPath: safePath,
-          timestamp: new Date().toISOString(),
-        });
-      }
-    });
-    // Store watcher reference for cleanup
-    if (mainWindow) {
-      mainWindow.__nasWatcher = watcher;
-    }
-    return { success: true };
-  } catch (err) {
-    const error = err as Error;
-    console.error("[IPC nas:watchFolder] Error:", error.message);
-    return { success: false, error: error.message };
-  }
-});
-
-// Stop watching a folder
-ipcMain.handle("nas:unwatchFolder", async (event: Electron.IpcMainInvokeEvent) => {
-  assertTrustedIpcSender(event);
-  const watcher = mainWindow?.__nasWatcher;
-  if (watcher) {
-    watcher.close();
-    if (mainWindow) {
-      delete mainWindow.__nasWatcher;
-    }
-  }
-  return { success: true };
-});
-
-// Select a folder dialog — used for admin to link NAS case folders
-ipcMain.handle("nas:selectFolder", async (event: Electron.IpcMainInvokeEvent) => {
-  assertTrustedIpcSender(event);
-  if (!mainWindow) return null;
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ["openDirectory"],
-    title: "Select NAS Folder",
-  });
-  if (result.canceled || result.filePaths.length === 0) return null;
-  try {
-    return validateAndResolvePath(result.filePaths[0]);
-  } catch (err) {
-    const error = err as Error;
-    console.error("[IPC nas:selectFolder] Error:", error.message);
-    return null;
-  }
-});
 
 // App info
 ipcMain.handle("app:getVersion", (event: Electron.IpcMainInvokeEvent) => {

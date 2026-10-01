@@ -31,22 +31,9 @@ export const reminderKeys = {
 export function useDueReminders() {
   return useQuery<{ reminders: ReminderRecord[] }>({
     queryKey: reminderKeys.due,
-    queryFn: async () => {
-      try {
-        const result = await api.get<{ reminders: ReminderRecord[] }>("/reminders/due");
-        return result;
-      } catch (err: any) {
-        if (err?.status === 404) {
-          if (import.meta.env.DEV) {
-            console.warn("[reminders] GET /api/reminders/due returned 404; route may be pending deployment on target backend");
-          }
-          return { reminders: [] };
-        }
-        throw err;
-      }
-    },
+    queryFn: () => api.get<{ reminders: ReminderRecord[] }>("/reminders/due"),
     retry: (failureCount, err: any) => {
-      if (err?.status === 404 || err?.status === 401) {
+      if (err?.status === 401 || err?.status === 403) {
         return false;
       }
       return failureCount < 2;
@@ -56,9 +43,6 @@ export function useDueReminders() {
       const status = err?.status || err?.response?.status;
       if (status === 401 || status === 403) {
         return false;
-      }
-      if (status === 404) {
-        return 60_000;
       }
       return 15_000;
     },

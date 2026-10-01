@@ -407,7 +407,7 @@ function SettingsPage() {
                 tab === "appearance"
                   ? "Choose how the app looks on this device."
                   : tab === "storage"
-                    ? "Manage NAS storage and usage."
+                    ? "Manage application filesystem storage, root directories, and write health."
                     : "Keep these details current — they appear on filings and shared documents."
               }
               icon={tabs.find((t) => t.id === tab)?.icon ?? User}

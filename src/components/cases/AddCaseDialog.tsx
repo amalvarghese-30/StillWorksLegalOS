@@ -42,7 +42,6 @@ interface FormState {
   priority: "High" | "Medium" | "Low";
   nextHearing: string;
   tags: string;
-  nasPath: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -55,7 +54,6 @@ const EMPTY_FORM: FormState = {
   priority: "Medium",
   nextHearing: "",
   tags: "",
-  nasPath: "",
 };
 
 const PRACTICE_AREAS = [
@@ -190,7 +188,6 @@ export function AddCaseDialog({
       ...(form.judge && { judge: form.judge }),
       ...(form.nextHearing && { nextHearing: form.nextHearing }),
       ...(tags.length > 0 && { tags }),
-      ...(form.nasPath && { nasPath: form.nasPath }),
       ...(parties.length > 0 && { parties }),
     };
 

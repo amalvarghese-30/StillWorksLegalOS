@@ -12,7 +12,7 @@ export { Case } from "./Case.js";
 export type { ICase, CaseStatus, CasePriority, CasePractice, CaseParty, CaseNote, CaseTimelineEntry } from "./Case.js";
 
 export { AppSettings } from "./AppSettings.js";
-export type { IAppSettings, SynologyConfig } from "./AppSettings.js";
+export type { IAppSettings, StorageConfig, SynologyConfig } from "./AppSettings.js";
 
 export { Task } from "./Task.js";
 export type { ITask, TaskCategory, TaskPriority, TaskStatus, ChecklistItem, CallReminder } from "./Task.js";

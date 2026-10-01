@@ -128,7 +128,8 @@ router.get("/:id/download", requireResourceAccess("document"), async (req: Reque
       return;
     }
 
-    if (!document.nasPath) {
+    const filePath = document.storagePath || document.nasPath;
+    if (!filePath) {
       res.status(400).json({ message: "Document has no file path" });
       return;
     }
@@ -142,7 +143,7 @@ router.get("/:id/download", requireResourceAccess("document"), async (req: Reque
       req
     ));
 
-    const stream = await downloadStream(document.nasPath);
+    const stream = await downloadStream(filePath);
     const fileName = document.originalName || document.name || "download";
     const safeName = fileName.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "_");
 
@@ -187,12 +188,13 @@ router.get("/:id/view", requireResourceAccess("document"), async (req: Request, 
       return;
     }
 
-    if (!document.nasPath) {
+    const filePath = document.storagePath || document.nasPath;
+    if (!filePath) {
       res.status(400).json({ message: "Document has no file path" });
       return;
     }
 
-    const stream = await downloadStream(document.nasPath);
+    const stream = await downloadStream(filePath);
     const fileName = document.originalName || document.name || "document";
     const safeName = fileName.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "_");
 
@@ -282,7 +284,8 @@ router.post("/:id/verify", requireResourceAccess("document"), async (req: Reques
     let status: "verified" | "tampered" | "missing" = "missing";
 
     try {
-      const stream = await downloadStream(document.nasPath);
+      const filePath = document.storagePath || document.nasPath;
+      const stream = filePath ? await downloadStream(filePath) : null;
       if (stream) {
         const hash = createHash("sha256");
         await new Promise<void>((resolve, reject) => {
@@ -348,6 +351,8 @@ router.get("/:id", requireResourceAccess("document"), async (req: Request, res: 
       return;
     }
     const docObj: any = document.toObject ? document.toObject() : { ...document };
+    delete docObj.storagePath;
+    delete docObj.storageFolder;
     delete docObj.nasPath;
     delete docObj.nasFolder;
     delete docObj.filePath;
@@ -362,9 +367,8 @@ router.get("/:id", requireResourceAccess("document"), async (req: Request, res: 
 
 // ---------------------------------------------------------------------------
 // POST /api/documents/upload — streaming multipart upload
-// Streams the file straight through to the NAS (WebDAV), hashing bytes in
-// transit. The file is never buffered whole in memory. Cloudflare Tunnel caps
-// requests at 100MB, so we enforce that limit here as well.
+// Streams the file straight through to application filesystem storage, hashing
+// bytes in transit. The file is never buffered whole in memory. Upload limit: 100MB.
 // ---------------------------------------------------------------------------
 
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
@@ -547,7 +551,10 @@ router.post("/upload", async (req: Request, res: Response) => {
       doc.size = size;
       doc.sizeFormatted = formatBytes(size);
       doc.sha256 = sha256;
+      doc.storagePath = nasPath;
+      doc.storageFolder = nasFolder;
       doc.nasPath = nasPath;
+      doc.nasFolder = nasFolder;
       doc.state = "Pending";
       await doc.save();
 
@@ -596,6 +603,8 @@ router.post("/upload", async (req: Request, res: Response) => {
       }
 
       const sanitizedDoc: any = doc.toObject ? doc.toObject() : { ...doc };
+      delete sanitizedDoc.storagePath;
+      delete sanitizedDoc.storageFolder;
       delete sanitizedDoc.nasPath;
       delete sanitizedDoc.nasFolder;
       delete sanitizedDoc.filePath;
@@ -611,7 +620,7 @@ router.post("/upload", async (req: Request, res: Response) => {
       }
       fileStream.resume();
       const status = (err as { status?: number }).status ?? 502;
-      const message = err instanceof Error ? err.message : "Failed to upload file to NAS";
+      const message = err instanceof Error ? err.message : "Failed to upload file to storage";
       console.error("[documents] Upload stream error:", err);
       uploadError = { status, message };
     }
@@ -895,8 +904,9 @@ router.delete("/:id", requireResourceAccess("document"), async (req: Request, re
       return;
     }
 
-    if (document.nasPath) {
-      await deletePath(document.nasPath).catch((err) => {
+    const filePath = document.storagePath || document.nasPath;
+    if (filePath) {
+      await deletePath(filePath).catch((err) => {
         console.warn("[documents] Could not delete file from disk:", err);
       });
     }
@@ -931,11 +941,12 @@ router.get("/:id/versions", requireResourceAccess("document"), async (req: Reque
       return;
     }
 
+    const folder = document.storageFolder || document.nasFolder || "/General";
     const filter: any = { name: document.name };
     if (document.caseId) {
       filter.caseId = document.caseId;
     } else {
-      filter.nasFolder = document.nasFolder || "/General";
+      filter.$or = [{ storageFolder: folder }, { nasFolder: folder }];
     }
 
     const versions = await DocumentModel.find(filter)
@@ -945,6 +956,8 @@ router.get("/:id/versions", requireResourceAccess("document"), async (req: Reque
       .lean();
 
     const sanitizedVersions = versions.map((v: any) => {
+      delete v.storagePath;
+      delete v.storageFolder;
       delete v.nasPath;
       delete v.nasFolder;
       delete v.filePath;

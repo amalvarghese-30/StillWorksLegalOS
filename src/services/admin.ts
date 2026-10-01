@@ -324,22 +324,27 @@ export function useVerifyFile() {
 }
 
 // ---------------------------------------------------------------------------
-// Storage (Synology NAS WebDAV configuration)
+// Storage (Application Filesystem Storage)
 // ---------------------------------------------------------------------------
 
 export interface StorageConfig {
   configured: boolean;
-  url: string;
-  username: string;
-  rootPath: string;
-  passwordSet: boolean;
+  provider?: string;
+  storagePath?: string;
+  url?: string;
+  username?: string;
+  rootPath?: string;
+  passwordSet?: boolean;
+  writable?: boolean;
+  status?: "active" | "error";
+  error?: string;
 }
 
 export interface SaveStorageConfigPayload {
-  url: string;
-  username: string;
-  password: string;
-  rootPath: string;
+  url?: string;
+  username?: string;
+  password?: string;
+  rootPath?: string;
 }
 
 export interface TestConnectionResult {
@@ -369,8 +374,8 @@ export function useUpdateStorageConfig() {
 }
 
 export function useTestStorageConnection() {
-  return useMutation<TestConnectionResult, Error, SaveStorageConfigPayload>({
-    mutationFn: (data) => api.post("/admin/storage/test-connection", data),
+  return useMutation<TestConnectionResult, Error, Partial<SaveStorageConfigPayload> | void>({
+    mutationFn: (data) => api.post("/admin/storage/test-connection", data || {}),
   });
 }
 

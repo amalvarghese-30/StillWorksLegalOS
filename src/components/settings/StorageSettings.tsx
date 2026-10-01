@@ -1,36 +1,13 @@
-import { useEffect, useState } from "react";
-import { Loader2, CheckCircle2, XCircle, PlugZap } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, HardDrive, ShieldCheck, FolderTree } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { useStorageConfig, useUpdateStorageConfig, useTestStorageConnection } from "@/services/admin";
+import { useStorageConfig, useTestStorageConnection } from "@/services/admin";
 
 export function StorageSettings() {
   const configQuery = useStorageConfig();
-  const saveMutation = useUpdateStorageConfig();
   const testMutation = useTestStorageConnection();
 
-  const [url, setUrl] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [rootPath, setRootPath] = useState("/LegalOS");
-
-  useEffect(() => {
-    if (configQuery.data) {
-      setUrl(configQuery.data.url);
-      setUsername(configQuery.data.username);
-      setRootPath(configQuery.data.rootPath);
-      setPassword("");
-    }
-  }, [configQuery.data]);
-
   const handleTest = () => {
-    testMutation.mutate({ url, username, password, rootPath });
-  };
-
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    saveMutation.mutate({ url, username, password, rootPath });
+    testMutation.mutate();
   };
 
   if (configQuery.isLoading) {
@@ -45,66 +22,103 @@ export function StorageSettings() {
   if (configQuery.isError) {
     return (
       <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-helper text-destructive">
-        Could not load storage configuration. Please try again.
+        Could not load storage configuration. Please verify backend connection.
       </div>
     );
   }
 
-  const passwordSet = configQuery.data?.passwordSet ?? false;
+  const config = configQuery.data;
+  const storagePath = config?.storagePath || config?.url || "./uploads";
+  const isWritable = config?.writable ?? true;
   const testResult = testMutation.data;
 
+  const storageStructure = [
+    { name: "documents/cases/", desc: "Case-associated filings, exhibits, and evidence" },
+    { name: "documents/clients/", desc: "Client KYC, registration, and corporate records" },
+    { name: "documents/general/", desc: "Firm templates and reference materials" },
+    { name: "chat/", desc: "Team chat attachments and audio notes" },
+    { name: "Avatars/", desc: "User profile pictures" },
+    { name: "temp/", desc: "Secure upload streaming staging" },
+  ];
+
   return (
-    <form className="space-y-5" onSubmit={handleSave}>
-      <div className="grid gap-5 sm:grid-cols-2">
-        <div className="space-y-2 sm:col-span-2">
-          <Label className="text-helper">Storage Server Address (WebDAV)</Label>
-          <Input
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://nas.stillworks.legal"
-            className="h-12 rounded-md"
-          />
-          <p className="text-caption text-muted-foreground">
-            The secure server address for your firm's central document repository (WebDAV / Cloudflare Tunnel).
-          </p>
+    <div className="space-y-6">
+      {/* Overview Card */}
+      <div className="rounded-lg border border-border bg-card p-5 shadow-soft">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3.5">
+            <div className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+              <HardDrive size={20} strokeWidth={1.75} />
+            </div>
+            <div>
+              <h3 className="text-body font-semibold text-foreground">
+                Application-Managed Filesystem Storage
+              </h3>
+              <p className="text-helper text-muted-foreground">
+                All confidential legal documents, chat attachments, and profile avatars are stored securely on the application server filesystem.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
+                isWritable
+                  ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                  : "bg-destructive/10 text-destructive"
+              }`}
+            >
+              {isWritable ? (
+                <>
+                  <CheckCircle2 size={13} className="shrink-0" />
+                  Storage Active & Writable
+                </>
+              ) : (
+                <>
+                  <XCircle size={13} className="shrink-0" />
+                  Storage Read-Only / Error
+                </>
+              )}
+            </span>
+          </div>
         </div>
 
-        <div className="space-y-2">
-          <Label className="text-helper">Storage Username</Label>
-          <Input
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="legalos"
-            className="h-12 rounded-md"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label className="text-helper">Storage Password</Label>
-          <Input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder={passwordSet ? "•••••••• (leave blank to keep)" : "Storage password"}
-            autoComplete="new-password"
-            className="h-12 rounded-md"
-          />
-        </div>
-
-        <div className="space-y-2 sm:col-span-2">
-          <Label className="text-helper">Primary Document Folder</Label>
-          <Input
-            value={rootPath}
-            onChange={(e) => setRootPath(e.target.value)}
-            placeholder="/LegalOS"
-            className="h-12 rounded-md"
-          />
-          <p className="text-caption text-muted-foreground">
-            Central folder where LegalOS securely stores and organizes case files.
-          </p>
+        <div className="mt-5 grid gap-4 border-t border-border pt-4 sm:grid-cols-2">
+          <div className="space-y-1">
+            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Storage Root Directory
+            </span>
+            <p className="font-mono text-helper text-foreground font-medium break-all">
+              {storagePath}
+            </p>
+          </div>
+          <div className="space-y-1">
+            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Security Model
+            </span>
+            <p className="text-helper text-foreground">
+              Application-Controlled (Zero direct client filesystem exposure)
+            </p>
+          </div>
         </div>
       </div>
 
+      {/* Directory Hierarchy Breakdown */}
+      <div className="rounded-lg border border-border bg-card p-5 shadow-soft">
+        <div className="flex items-center gap-2.5 mb-3">
+          <FolderTree size={18} className="text-primary" strokeWidth={1.75} />
+          <h4 className="text-helper font-medium text-foreground">Storage Hierarchy</h4>
+        </div>
+        <div className="grid gap-2.5 sm:grid-cols-2">
+          {storageStructure.map((item) => (
+            <div key={item.name} className="rounded-md border border-border/60 bg-muted/20 p-3">
+              <span className="font-mono text-xs font-semibold text-primary">{item.name}</span>
+              <p className="mt-0.5 text-caption text-muted-foreground">{item.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Verification Results */}
       {testResult ? (
         <div
           className={`flex items-start gap-3 rounded-lg border p-4 ${
@@ -121,49 +135,43 @@ export function StorageSettings() {
           <div className="min-w-0 text-helper">
             {testResult.ok ? (
               <>
-                <p className="font-medium text-green-600 dark:text-green-400">Connected</p>
-                <p className="text-muted-foreground">
-                  Server: {testResult.server ?? "Unknown"}
-                  {testResult.compliance?.length ? ` · ${testResult.compliance.join(", ")}` : ""}
+                <p className="font-medium text-green-600 dark:text-green-400">
+                  Filesystem Storage Verification Passed
                 </p>
-                {testResult.rootExists === false ? (
-                  <p className="mt-1 font-medium text-amber-600 dark:text-amber-400">
-                    Connected, but the root folder was not found — create it on the storage server or check the path.
-                  </p>
-                ) : null}
+                <p className="text-muted-foreground mt-0.5">
+                  Server: {testResult.server ?? "Application Server"}
+                  {testResult.compliance?.length ? ` · ${testResult.compliance.join(" · ")}` : ""}
+                </p>
+                <p className="text-caption text-muted-foreground mt-1">
+                  Directory creation, write permissions, and path traversal controls verified cleanly.
+                </p>
               </>
             ) : (
               <>
-                <p className="font-medium text-destructive">Connection failed</p>
-                <p className="break-words text-muted-foreground">{testResult.error}</p>
+                <p className="font-medium text-destructive">Storage verification failed</p>
+                <p className="break-words text-muted-foreground mt-0.5">{testResult.error}</p>
               </>
             )}
           </div>
         </div>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
+      {/* Action Footer */}
+      <div className="flex items-center gap-3 border-t border-border pt-4">
         <Button
           type="button"
           variant="outline"
           onClick={handleTest}
-          disabled={testMutation.isPending || !url.trim()}
+          disabled={testMutation.isPending}
         >
-          {testMutation.isPending ? <Loader2 size={17} className="animate-spin" /> : <PlugZap size={17} strokeWidth={1.75} />}
-          {testMutation.isPending ? "Testing…" : "Test connection"}
+          {testMutation.isPending ? (
+            <Loader2 size={17} className="animate-spin" />
+          ) : (
+            <ShieldCheck size={17} strokeWidth={1.75} />
+          )}
+          {testMutation.isPending ? "Verifying Storage…" : "Verify Storage Health & Permissions"}
         </Button>
-        <Button
-          type="submit"
-          disabled={saveMutation.isPending}
-          className="gradient-primary rounded-md text-primary-foreground shadow-soft"
-        >
-          {saveMutation.isPending ? <Loader2 size={17} className="animate-spin" /> : null}
-          {saveMutation.isPending ? "Saving…" : saveMutation.isSuccess ? "Saved ✓" : "Save configuration"}
-        </Button>
-        {saveMutation.isError ? (
-          <span className="text-caption text-destructive">Failed to save. Please try again.</span>
-        ) : null}
       </div>
-    </form>
+    </div>
   );
 }

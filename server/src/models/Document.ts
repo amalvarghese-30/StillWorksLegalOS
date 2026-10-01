@@ -17,8 +17,10 @@ export interface IDocument extends Document {
   clientId?: mongoose.Types.ObjectId | null;
   uploadedBy: mongoose.Types.ObjectId;
   state: DocumentState;
-  nasPath: string; // full path on NAS
-  nasFolder: string; // parent folder
+  storagePath: string; // full path in application filesystem storage
+  storageFolder: string; // parent folder in application filesystem storage
+  nasPath?: string; // legacy alias
+  nasFolder?: string; // legacy alias
   version: number;
   sha256?: string; // SHA-256 hash for integrity verification
   approvedBy?: mongoose.Types.ObjectId;
@@ -70,6 +72,8 @@ const DocumentSchema = new Schema<IDocument>(
       default: "Pending",
       index: true,
     },
+    storagePath: { type: String, default: "" },
+    storageFolder: { type: String, default: "" },
     nasPath: { type: String, default: "" },
     nasFolder: { type: String, default: "" },
     version: { type: Number, default: 1 },

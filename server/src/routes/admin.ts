@@ -13,7 +13,7 @@ import { DocumentModel } from "../models/Document.js";
 import { FileIntegrity, computeFileHash, type FileIntegrityStatus } from "../models/FileIntegrity.js";
 import { CalendarEvent } from "../models/CalendarEvent.js";
 import { AppSettings } from "../models/AppSettings.js";
-import { testConnection, getLocalPath } from "../services/storage.js";
+import { testConnection, getLocalPath, STORAGE_ROOT } from "../services/storage.js";
 import { requireAuth, requireAdmin, requireAdminOrPermission } from "../middleware/auth.js";
 
 const router = Router();
@@ -533,22 +533,27 @@ router.get("/approvals", requireAdminOrPermission("approvals"), async (req: Requ
 });
 
 // ===========================================================================
-// STORAGE ROUTES (Synology NAS WebDAV configuration)
+// STORAGE ROUTES (Application Filesystem Storage)
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
-// GET /api/admin/storage — current Synology config (admin or settings perm; password masked)
+// GET /api/admin/storage — current application filesystem storage status
 // ---------------------------------------------------------------------------
 
 router.get("/storage", requireAdminOrPermission("settings"), async (_req: Request, res: Response) => {
   try {
-    const config = await AppSettings.getSynologyConfig();
+    const test = await testConnection();
     res.json({
-      configured: Boolean(config?.url),
-      url: config?.url ?? "",
-      username: config?.username ?? "",
-      rootPath: config?.rootPath ?? "/LegalOS",
-      passwordSet: Boolean(config?.passwordEncrypted),
+      configured: true,
+      provider: "filesystem",
+      storagePath: STORAGE_ROOT,
+      url: STORAGE_ROOT,
+      username: "",
+      rootPath: STORAGE_ROOT,
+      passwordSet: false,
+      writable: test.ok,
+      status: test.ok ? "active" : "error",
+      error: test.error,
     });
   } catch (err) {
     console.error("[admin] Storage config error:", err);
@@ -557,29 +562,12 @@ router.get("/storage", requireAdminOrPermission("settings"), async (_req: Reques
 });
 
 // ---------------------------------------------------------------------------
-// PATCH /api/admin/storage — save Synology config (admin or settings perm)
+// PATCH /api/admin/storage — acknowledge application storage config
 // ---------------------------------------------------------------------------
 
-router.patch("/storage", requireAdminOrPermission("settings"), async (req: Request, res: Response) => {
+router.patch("/storage", requireAdminOrPermission("settings"), async (_req: Request, res: Response) => {
   try {
-    const { url, username, password, rootPath } = req.body ?? {};
-
-    if (!url || typeof url !== "string" || !url.trim()) {
-      res.status(400).json({ message: "WebDAV URL is required" });
-      return;
-    }
-
-    await AppSettings.setSynologyConfig(
-      {
-        url: url.trim(),
-        username: typeof username === "string" ? username.trim() : "",
-        password: typeof password === "string" ? password : "",
-        rootPath: typeof rootPath === "string" && rootPath.trim() ? rootPath.trim() : "/LegalOS",
-      },
-      req.userId!,
-    );
-
-    res.json({ message: "Storage configuration saved" });
+    res.json({ message: "Application storage configuration is managed by the server environment." });
   } catch (err) {
     console.error("[admin] Save storage config error:", err);
     res.status(500).json({ message: "Internal server error" });
@@ -587,18 +575,12 @@ router.patch("/storage", requireAdminOrPermission("settings"), async (req: Reque
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/admin/storage/test-connection — verify WebDAV connectivity (admin or settings perm)
+// POST /api/admin/storage/test-connection — verify application filesystem storage
 // ---------------------------------------------------------------------------
 
-router.post("/storage/test-connection", requireAdminOrPermission("settings"), async (req: Request, res: Response) => {
+router.post("/storage/test-connection", requireAdminOrPermission("settings"), async (_req: Request, res: Response) => {
   try {
-    const { url, username, password, rootPath } = req.body ?? {};
-    const result = await testConnection({
-      url: typeof url === "string" ? url.trim() : "",
-      username: typeof username === "string" ? username.trim() : "",
-      password: typeof password === "string" ? password : "",
-      rootPath: typeof rootPath === "string" ? rootPath : "/LegalOS",
-    });
+    const result = await testConnection();
     res.json(result);
   } catch (err) {
     console.error("[admin] Test storage connection error:", err);

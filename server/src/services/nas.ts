@@ -3,15 +3,14 @@ import { Request } from "express";
 import { Case } from "../models/Case.js";
 
 /**
- * NAS Security Service
+ * Application Storage & Document Security Service
  *
  * Handles secure file operations with:
  * - Path traversal prevention
  * - SHA-256 integrity verification
  * - Access control based on case membership
  *
- * Actual read/write streams against the office Synology NAS live in
- * `services/webdav.ts` (WebDAV over HTTPS via Cloudflare Tunnel).
+ * Authoritative filesystem operations are managed by `./storage.js`.
  */
 
 export interface FileIntegrityResult {

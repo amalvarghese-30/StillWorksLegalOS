@@ -51,10 +51,10 @@ const PORT = parseInt(process.env["SERVER_PORT"] ?? "3001", 10);
 const HOST = process.env["SERVER_HOST"] ?? "0.0.0.0"; // Listen on all interfaces by default
 const MONGODB_URI = process.env["MONGODB_URI"] ?? "mongodb://localhost:27017/stillworks";
 
-// Fail-fast in production if required environment configuration is missing or insecure
+// Fail-fast in production if required environment configuration is missing
 if (process.env["NODE_ENV"] === "production") {
-  if (!process.env["MONGODB_URI"] || process.env["MONGODB_URI"].includes("localhost") || process.env["MONGODB_URI"].includes("127.0.0.1")) {
-    console.error("[server] FATAL: Production requires an external MONGODB_URI (e.g. MongoDB Atlas cluster).");
+  if (!process.env["MONGODB_URI"]) {
+    console.error("[server] FATAL: Production requires MONGODB_URI environment variable.");
     process.exit(1);
   }
 }
@@ -87,9 +87,14 @@ const isOriginAllowed = (origin?: string): boolean => {
     return true;
   }
 
-  // Production allowlist: HTTPS only on stillworks.in domain
-  if (/^https:\/\/([a-zA-Z0-9-]+\.)*stillworks\.in$/.test(origin)) {
-    return true;
+  // Configured production domain (optional regex check for subdomains if provided)
+  const prodDomain = process.env["PRODUCTION_DOMAIN"];
+  if (prodDomain) {
+    const escapedDomain = prodDomain.replace(/\./g, "\\.");
+    const prodRegex = new RegExp(`^https://([a-zA-Z0-9-]+\\.)*${escapedDomain}$`);
+    if (prodRegex.test(origin)) {
+      return true;
+    }
   }
 
   // Local development only: permit loopback and private LAN addresses

@@ -211,7 +211,7 @@ function SettingsPage() {
                 tab === "appearance"
                   ? "Choose how the app looks on this device."
                   : tab === "storage"
-                    ? "Manage Firm Document Storage and WebDAV server connection."
+                    ? "Manage application filesystem storage, root directories, and write health."
                     : tab === "taskOptions"
                       ? "Manage task categories, checklist templates and agents."
                       : "Keep these details current — they appear on filings and shared documents."

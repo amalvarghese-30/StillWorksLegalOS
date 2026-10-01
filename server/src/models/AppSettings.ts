@@ -2,25 +2,20 @@ import mongoose, { Document, Schema } from "mongoose";
 import { encryptSecret } from "../services/encryption.js";
 
 // ---------------------------------------------------------------------------
-// Types — dynamic Synology WebDAV credentials
+// Types — application filesystem storage configuration
 // ---------------------------------------------------------------------------
 
-// Stored shape. The password is encrypted at rest (aes-256-gcm).
-export interface SynologyConfig {
-  url: string;                 // WebDAV base URL, e.g. "https://nas.stillworks.legal"
-  username: string;
-  passwordEncrypted: string;   // "iv:authTag:ciphertext" (base64), aes-256-gcm
-  rootPath: string;            // LegalOS data root on the NAS, e.g. "/LegalOS"
+export interface StorageConfig {
+  provider: "filesystem";
+  storageRoot: string;
+  configured: boolean;
+  status: "active" | "error";
+  error?: string;
 }
 
-// Input shape. The settings UI submits a plaintext password; we encrypt it
-// before persisting so plaintext never touches the database.
-export interface SynologyConfigInput {
-  url: string;
-  username: string;
-  password: string;            // plaintext (never persisted)
-  rootPath: string;
-}
+// Backward compatibility aliases
+export type SynologyConfig = StorageConfig;
+export type SynologyConfigInput = Partial<StorageConfig>;
 
 // ---------------------------------------------------------------------------
 // Types — task workflow options (admin-managed)
@@ -89,33 +84,48 @@ const AppSettingsSchema = new Schema<IAppSettings>(
 // Static helpers
 // ---------------------------------------------------------------------------
 
-AppSettingsSchema.statics.getSynologyConfig = async function (): Promise<SynologyConfig | null> {
-  const doc = await this.findOne({ key: "synology" });
-  return (doc?.value as SynologyConfig) ?? null;
+AppSettingsSchema.statics.getStorageConfig = async function (): Promise<StorageConfig> {
+  const { STORAGE_ROOT } = await import("../services/storage.js");
+  const doc = await this.findOne({ key: "storage" });
+  if (doc?.value) {
+    return doc.value as StorageConfig;
+  }
+  return {
+    provider: "filesystem",
+    storageRoot: STORAGE_ROOT,
+    configured: true,
+    status: "active",
+  };
+};
+
+AppSettingsSchema.statics.getSynologyConfig = async function (): Promise<StorageConfig | null> {
+  return (this as any).getStorageConfig();
+};
+
+AppSettingsSchema.statics.setStorageConfig = async function (
+  config: Partial<StorageConfig>,
+  userId: string,
+): Promise<void> {
+  const { STORAGE_ROOT } = await import("../services/storage.js");
+  const stored: StorageConfig = {
+    provider: "filesystem",
+    storageRoot: config.storageRoot || STORAGE_ROOT,
+    configured: true,
+    status: "active",
+  };
+
+  await this.findOneAndUpdate(
+    { key: "storage" },
+    { $set: { value: stored, updatedBy: userId } },
+    { upsert: true, new: true },
+  );
 };
 
 AppSettingsSchema.statics.setSynologyConfig = async function (
   config: SynologyConfigInput,
   userId: string,
 ): Promise<void> {
-  // Preserve the existing encrypted password when the caller submits a blank
-  // one (e.g. updating the URL/username without re-entering the password).
-  const existing = await this.findOne({ key: "synology" });
-  const existingEncrypted =
-    (existing?.value as SynologyConfig | undefined)?.passwordEncrypted ?? "";
-
-  const stored: SynologyConfig = {
-    url: config.url,
-    username: config.username,
-    passwordEncrypted: config.password ? encryptSecret(config.password) : existingEncrypted,
-    rootPath: config.rootPath,
-  };
-
-  await this.findOneAndUpdate(
-    { key: "synology" },
-    { $set: { value: stored, updatedBy: userId } },
-    { upsert: true, new: true },
-  );
+  return (this as any).setStorageConfig(config, userId);
 };
 
 AppSettingsSchema.statics.getTaskOptions = async function (): Promise<TaskOptions> {
@@ -140,22 +150,26 @@ AppSettingsSchema.statics.setTaskOptions = async function (
 };
 
 // ---------------------------------------------------------------------------
-// Default NAS config (loaded from env; overridden by the DB value at runtime)
+// Default storage config (application filesystem)
 // ---------------------------------------------------------------------------
 
-export const DEFAULT_NAS_CONFIG: SynologyConfig = {
-  url: process.env["NAS_URL"] ?? "https://nas.stillworks.legal",
-  username: process.env["NAS_USERNAME"] ?? "",
-  passwordEncrypted: "", // set through the settings UI (encrypted)
-  rootPath: process.env["NAS_ROOT_PATH"] ?? "/LegalOS",
+export const DEFAULT_STORAGE_CONFIG: StorageConfig = {
+  provider: "filesystem",
+  storageRoot: process.env["STORAGE_DIR"] ?? "./uploads",
+  configured: true,
+  status: "active",
 };
+
+export const DEFAULT_NAS_CONFIG = DEFAULT_STORAGE_CONFIG;
 
 // ---------------------------------------------------------------------------
 // Model
 // ---------------------------------------------------------------------------
 
 interface AppSettingsModel extends mongoose.Model<IAppSettings> {
-  getSynologyConfig(): Promise<SynologyConfig | null>;
+  getStorageConfig(): Promise<StorageConfig>;
+  setStorageConfig(config: Partial<StorageConfig>, userId: string): Promise<void>;
+  getSynologyConfig(): Promise<StorageConfig | null>;
   setSynologyConfig(config: SynologyConfigInput, userId: string): Promise<void>;
   getTaskOptions(): Promise<TaskOptions>;
   setTaskOptions(options: TaskOptions, userId: string): Promise<void>;

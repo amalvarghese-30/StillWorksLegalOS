@@ -44,7 +44,6 @@ export interface CaseRecord {
   createdBy?: { _id: string; name: string };
   notes: CaseNote[];
   timeline: CaseTimelineEntry[];
-  nasPath: string;
   progress: number;
   tags: string[];
   createdAt: string;
@@ -80,7 +79,6 @@ export interface CreateCasePayload {
   nextHearing?: string;
   parties?: CaseParty[];
   assignedTo?: string;
-  nasPath?: string;
   tags?: string[];
   progress?: number;
 }
