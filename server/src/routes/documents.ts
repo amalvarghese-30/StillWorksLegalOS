@@ -78,6 +78,7 @@ router.get("/", async (req: Request, res: Response) => {
 
     const [documents, total] = await Promise.all([
       DocumentModel.find(filter)
+        .select("-storagePath -storageFolder -nasPath -nasFolder -filePath -tempPath")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limitNum)

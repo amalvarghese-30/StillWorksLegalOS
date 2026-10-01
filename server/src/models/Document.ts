@@ -89,6 +89,12 @@ const DocumentSchema = new Schema<IDocument>(
     toJSON: {
       transform(_doc, ret: Record<string, unknown>) {
         delete (ret as any).__v;
+        delete (ret as any).storagePath;
+        delete (ret as any).storageFolder;
+        delete (ret as any).nasPath;
+        delete (ret as any).nasFolder;
+        delete (ret as any).filePath;
+        delete (ret as any).tempPath;
         return ret;
       },
     },
