@@ -48,18 +48,20 @@ jobs:
         run: |
           npm run build:client
 
+      - name: Sync Version and Push Tag to GitHub
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          if ("${{ steps.versioning.outputs.is_bumped }}" -eq "true") {
+            git add package.json
+            git commit -m "chore(release): bump desktop version to ${{ steps.versioning.outputs.version }} [skip ci]"
+            git push origin main
+          }
+          git tag -f "v${{ steps.versioning.outputs.version }}"
+          git push origin "v${{ steps.versioning.outputs.version }}" --force
+
       - name: Build Windows EXE & Publish to GitHub Releases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npx electron-builder --config electron-builder.json --win --publish always
-
-      - name: Commit Bumped Version back to GitHub (if auto-bumped)
-        if: steps.versioning.outputs.is_bumped == 'true'
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add package.json
-          git commit -m "chore(release): bump desktop version to ${{ steps.versioning.outputs.version }} [skip ci]"
-          git tag -f "v${{ steps.versioning.outputs.version }}"
-          git push origin main --tags
