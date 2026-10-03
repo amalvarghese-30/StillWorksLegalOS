@@ -6,6 +6,7 @@ import { Client } from "../models/Client.js";
 import { DocumentModel } from "../models/Document.js";
 import { initSequence } from "../models/Counter.js";
 import { AuditLog } from "../models/AuditLog.js";
+import { NotificationService } from "../services/notifications.js";
 import { requireAuth } from "../middleware/auth.js";
 import { canAccessCase, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
 
@@ -205,6 +206,42 @@ router.get("/", async (req: Request, res: Response) => {
     });
   } catch (err) {
     console.error("[cases] List error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/cases/requestable — list cases available for access requests
+// ---------------------------------------------------------------------------
+
+router.get("/requestable", async (req: Request, res: Response) => {
+  try {
+    const cases = await Case.find({ status: { $ne: "Archived" } })
+      .select("_id number title court practice status accessRequests assignedTo createdBy")
+      .populate("assignedTo", "name")
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    const mapped = cases.map((c: any) => {
+      const myRequest = (c.accessRequests || []).find(
+        (ar: any) => ar.userId?.toString() === req.userId,
+      );
+      return {
+        _id: c._id,
+        number: c.number,
+        title: c.title,
+        court: c.court,
+        practice: c.practice,
+        status: c.status,
+        assignedToName: c.assignedTo?.name || "Unassigned",
+        myRequestStatus: myRequest ? myRequest.status : null,
+        myRequestReason: myRequest ? myRequest.reason : null,
+      };
+    });
+
+    res.json({ cases: mapped });
+  } catch (err) {
+    console.error("[cases] Requestable list error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -890,6 +927,174 @@ router.post("/:id/notes", requireResourceAccess("case"), async (req: Request, re
     res.json({ case: record });
   } catch (err) {
     console.error("[cases] Add note error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/cases/:id/request-access — request access to a case
+// ---------------------------------------------------------------------------
+
+router.post("/:id/request-access", async (req: Request, res: Response) => {
+  try {
+    const { reason } = req.body;
+    const caseRecord = await Case.findById(req.params["id"]);
+    if (!caseRecord) {
+      res.status(404).json({ message: "Case not found" });
+      return;
+    }
+
+    if (!caseRecord.accessRequests) {
+      caseRecord.accessRequests = [];
+    }
+
+    const existingReq = caseRecord.accessRequests.find(
+      (ar) => ar.userId?.toString() === req.userId && ar.status === "pending"
+    );
+    if (existingReq) {
+      res.json({ message: "Access request is already pending review", case: caseRecord });
+      return;
+    }
+
+    caseRecord.accessRequests.push({
+      userId: new mongoose.Types.ObjectId(req.userId!) as any,
+      userName: req.user?.name ?? "Unknown",
+      reason: reason ?? "",
+      status: "pending",
+      createdAt: new Date(),
+    });
+
+    await caseRecord.save();
+
+    // Notify assigned counsel if not requester
+    if (caseRecord.assignedTo && !caseRecord.assignedTo.equals(req.userId)) {
+      await NotificationService.createNotification(
+        {
+          userId: caseRecord.assignedTo,
+          type: "DOCUMENT_SHARED",
+          title: "Case Access Request",
+          message: `User "${req.user?.name ?? "Unknown"}" has requested access to case "${caseRecord.title}".`,
+          relatedId: caseRecord._id,
+          relatedModel: "Case",
+          actorId: new mongoose.Types.ObjectId(req.userId!),
+          metadata: {
+            caseTitle: caseRecord.title,
+            caseId: caseRecord._id.toString(),
+            requesterId: req.userId,
+            requesterName: req.user?.name ?? "Unknown",
+            reason: reason ?? "",
+          },
+        },
+        req.app.get("io")
+      );
+    }
+
+    await AuditLog.logWithActivity(
+      {
+        userId: new mongoose.Types.ObjectId(req.userId!),
+        userName: req.user?.name ?? "Unknown",
+        action: "access_request",
+        resource: "case",
+        resourceId: caseRecord._id.toString(),
+        resourceName: caseRecord.title,
+        details: reason ? `Access request: ${reason}` : "Access requested",
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+      },
+      req.app.get("io")
+    );
+
+    res.json({ message: "Access requested successfully", case: caseRecord });
+  } catch (err) {
+    console.error("[cases] Access request error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/cases/:id/access-requests/:requestId — review access request (admin only)
+// ---------------------------------------------------------------------------
+
+router.patch("/:id/access-requests/:requestId", async (req: Request, res: Response) => {
+  try {
+    if (req.user!.role !== "admin") {
+      res.status(403).json({ message: "Only admins can review access requests" });
+      return;
+    }
+
+    const { status } = req.body;
+    if (status !== "approved" && status !== "rejected") {
+      res.status(400).json({ message: "status must be 'approved' or 'rejected'" });
+      return;
+    }
+
+    const caseRecord = await Case.findById(req.params["id"]);
+    if (!caseRecord) {
+      res.status(404).json({ message: "Case not found" });
+      return;
+    }
+
+    const requestId = req.params["requestId"];
+    const request = (caseRecord.accessRequests || []).find(
+      (ar) => ar.createdAt.getTime().toString() === requestId
+    );
+    if (!request) {
+      res.status(404).json({ message: "Access request not found" });
+      return;
+    }
+
+    if (request.status !== "pending") {
+      res.json({ message: `Access request already ${request.status}`, case: caseRecord, code: "ALREADY_PROCESSED" });
+      return;
+    }
+
+    request.status = status;
+    await caseRecord.save();
+
+    // Notify requester
+    if (request.userId && !request.userId.equals(req.userId)) {
+      const notificationTitle = status === "approved" ? "Case Access Granted" : "Case Access Request Rejected";
+      const notificationMessage = status === "approved"
+        ? `Your request to access case "${caseRecord.title}" has been approved.`
+        : `Your request to access case "${caseRecord.title}" has been rejected.`;
+
+      await NotificationService.createNotification(
+        {
+          userId: request.userId,
+          type: "DOCUMENT_SHARED",
+          title: notificationTitle,
+          message: notificationMessage,
+          relatedId: caseRecord._id,
+          relatedModel: "Case",
+          actorId: new mongoose.Types.ObjectId(req.userId!),
+          metadata: {
+            caseTitle: caseRecord.title,
+            caseId: caseRecord._id.toString(),
+            decision: status,
+          },
+        },
+        req.app.get("io")
+      );
+    }
+
+    await AuditLog.logWithActivity(
+      {
+        userId: new mongoose.Types.ObjectId(req.userId!),
+        userName: req.user?.name ?? "Unknown",
+        action: status === "approved" ? "approve" : "reject",
+        resource: "case",
+        resourceId: caseRecord._id.toString(),
+        resourceName: caseRecord.title,
+        details: `Case access request ${status}`,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+      },
+      req.app.get("io")
+    );
+
+    res.json({ message: `Access request ${status}`, case: caseRecord });
+  } catch (err) {
+    console.error("[cases] Review access request error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 });

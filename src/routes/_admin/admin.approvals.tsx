@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApprovals, adminKeys, type ApprovalItem } from "@/services/admin";
 import { useUpdateDocument, useReviewAccessRequest } from "@/services/documents";
+import { useReviewCaseAccessRequest } from "@/services/cases";
 import { useUpdateTask } from "@/services/tasks";
 import { toast } from "sonner";
 
@@ -64,9 +65,17 @@ function matchesFilter(a: ApprovalItem, filter: Filter): boolean {
 }
 
 /** Resolve an approval `_id` back into the task, document + (optional) access-request ids. */
-function parseTarget(a: ApprovalItem): { docId?: string; requestId?: string; taskId?: string } {
+function parseTarget(a: ApprovalItem): { docId?: string; caseId?: string; requestId?: string; taskId?: string } {
   if (a.kind === "Task Completion" || a._id.startsWith("task_")) {
     return { taskId: a._id.replace(/^task_/, "") };
+  }
+  if (a.kind === "Case Request" || a._id.startsWith("case_")) {
+    const marker = "_access_";
+    const withoutPrefix = a._id.replace(/^case_/, "");
+    const idx = withoutPrefix.indexOf(marker);
+    if (idx >= 0) {
+      return { caseId: withoutPrefix.slice(0, idx), requestId: withoutPrefix.slice(idx + marker.length) };
+    }
   }
   if (a.kind === "Access Request") {
     const marker = "_access_";
@@ -89,6 +98,7 @@ function ApprovalsPage() {
 
   const updateDocument = useUpdateDocument();
   const reviewAccessRequest = useReviewAccessRequest();
+  const reviewCaseAccessRequest = useReviewCaseAccessRequest();
   const updateTask = useUpdateTask();
 
   const visible = approvals.filter((a) => matchesFilter(a, filter));
@@ -127,6 +137,15 @@ function ApprovalsPage() {
     if (target.taskId) {
       updateTask.mutate(
         { id: target.taskId, data: { status: action === "approved" ? "completed" : "in_progress" } },
+        {
+          onSuccess,
+          onError,
+          onSettled,
+        },
+      );
+    } else if (target.caseId && target.requestId) {
+      reviewCaseAccessRequest.mutate(
+        { caseId: target.caseId, requestId: target.requestId, status: action },
         {
           onSuccess,
           onError,

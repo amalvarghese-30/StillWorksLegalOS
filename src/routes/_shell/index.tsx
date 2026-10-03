@@ -16,7 +16,7 @@ import { useAuth } from "@/lib/auth";
 import { useSocketEvent } from "@/lib/socket";
 import { useReportsSummary, useEmployeeWorkload, reportKeys } from "@/services/reports";
 import { useCalendarEvents, type CalendarEvent } from "@/services/calendar";
-import { useCases } from "@/services/cases";
+import { useCases, useReviewCaseAccessRequest } from "@/services/cases";
 import { useDocuments, useUpdateDocument, useReviewAccessRequest } from "@/services/documents";
 import { useApprovals } from "@/services/admin";
 import { useAuditLogs } from "@/services/admin";
@@ -37,9 +37,15 @@ export const Route = createFileRoute("/_shell/")({
 });
 
 /** Resolve an approval `_id` back into the document + (optional) access-request ids or task id. */
-function approvalTarget(a: { kind: string; _id: string }): { docId?: string; requestId?: string; taskId?: string } {
+function approvalTarget(a: { kind: string; _id: string }): { docId?: string; caseId?: string; requestId?: string; taskId?: string } {
   if (a.kind === "Task Completion" || a._id.startsWith("task_")) {
     return { taskId: a._id.replace(/^task_/, "") };
+  }
+  if (a.kind === "Case Request" || a._id.startsWith("case_")) {
+    const marker = "_access_";
+    const withoutPrefix = a._id.replace(/^case_/, "");
+    const idx = withoutPrefix.indexOf(marker);
+    if (idx >= 0) return { caseId: withoutPrefix.slice(0, idx), requestId: withoutPrefix.slice(idx + marker.length) };
   }
   if (a.kind === "Access Request") {
     const marker = "_access_";
@@ -57,6 +63,7 @@ function Dashboard() {
   const hasAuditAccess = isAdmin || user?.permissions?.auditLogs === true;
   const updateDocument = useUpdateDocument();
   const reviewAccessRequest = useReviewAccessRequest();
+  const reviewCaseAccessRequest = useReviewCaseAccessRequest();
   const updateTask = useUpdateTask();
   const [actingOn, setActingOn] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
@@ -135,6 +142,11 @@ function Dashboard() {
     if (target.taskId) {
       updateTask.mutate(
         { id: target.taskId, data: { status: action === "approved" ? "completed" : "in_progress" } },
+        { onSettled },
+      );
+    } else if (target.caseId && target.requestId) {
+      reviewCaseAccessRequest.mutate(
+        { caseId: target.caseId, requestId: target.requestId, status: action },
         { onSettled },
       );
     } else if (target.requestId && target.docId) {

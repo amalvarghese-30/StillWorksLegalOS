@@ -18,6 +18,7 @@ import {
   Eye,
   Trash2,
   Download,
+  KeyRound,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StatusPill, toneForStatus } from "@/components/common/StatusPill";
@@ -52,6 +53,8 @@ import {
 import { UploadDocumentDialog } from "@/components/documents/UploadDocumentDialog";
 import { VersionHistoryDialog } from "@/components/documents/VersionHistoryDialog";
 import { DocumentPreviewModal } from "@/components/documents/DocumentPreviewModal";
+import { DocumentInlinePreview } from "@/components/documents/DocumentInlinePreview";
+import { RequestAccessDialog } from "@/components/documents/RequestAccessDialog";
 
 export const Route = createFileRoute("/_shell/documents")({
   head: () => ({
@@ -121,7 +124,7 @@ function DocumentCard({
           onClick();
         }
       }}
-      className={`group flex flex-col justify-between h-[126px] w-full cursor-pointer rounded-xl border p-4 text-left transition-all duration-200 select-none ${
+      className={`group flex flex-col justify-between min-h-[126px] h-auto w-full cursor-pointer rounded-xl border p-3.5 sm:p-4 text-left transition-all duration-200 select-none ${
         active
           ? "border-primary bg-primary/5 ring-1 ring-primary/30 shadow-md"
           : "border-border bg-card shadow-soft hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
@@ -193,8 +196,6 @@ function DocumentsPage() {
   });
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [showRequestAccess, setShowRequestAccess] = useState(false);
-  const [requestAccessDocId, setRequestAccessDocId] = useState("");
-  const [requestAccessReason, setRequestAccessReason] = useState("");
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [versionHistoryDocId, setVersionHistoryDocId] = useState("");
   const [versionHistoryDocName, setVersionHistoryDocName] = useState("");
@@ -306,7 +307,15 @@ function DocumentsPage() {
         title="Documents"
         subtitle={`${data?.total ?? "—"} files — securely stored in LegalOS VPS storage.`}
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              className="rounded-md border-border bg-card shadow-soft hover:bg-muted"
+              onClick={() => setShowRequestAccess(true)}
+            >
+              <KeyRound size={16} strokeWidth={2} />
+              Request access
+            </Button>
             <Button
               className="gradient-primary rounded-md text-primary-foreground shadow-soft transition-transform duration-200 hover:-translate-y-0.5"
               onClick={() => setShowUploadDialog(true)}
@@ -352,40 +361,21 @@ function DocumentsPage() {
             ))}
           </ul>
 
-          {/* Upload-to-approval flow info */}
-          <div className="mt-4 hidden rounded-lg border border-border bg-muted/20 p-4 lg:block">
-            <p className="flex items-center gap-1.5 text-helper font-medium">
-              <ShieldCheck size={15} className="text-muted-foreground" /> Approval flow
-            </p>
-            <ol className="mt-2 space-y-2 text-caption text-muted-foreground">
-              <li className="flex gap-2">
-                <span className="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full bg-muted text-[10px] font-semibold">1</span>
-                Upload document
-              </li>
-              <li className="flex gap-2">
-                <span className="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full bg-muted text-[10px] font-semibold">2</span>
-                Document enters "Pending"
-              </li>
-              <li className="flex gap-2">
-                <span className="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full bg-muted text-[10px] font-semibold">3</span>
-                Admin reviews & approves
-              </li>
-              <li className="flex gap-2">
-                <span className="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full bg-muted text-[10px] font-semibold">4</span>
-                Available to linked case
-              </li>
-            </ol>
-          </div>
-
           {/* Access requests */}
-          <div className="mt-4 hidden rounded-lg border border-border bg-card p-4 lg:block">
-            <p className="flex items-center gap-1.5 text-helper font-medium">
-              <AlertTriangle size={15} className="text-warning" /> Access requests
+          <div className="mt-4 hidden rounded-lg border border-border bg-card p-4 shadow-soft lg:block">
+            <p className="flex items-center gap-1.5 text-helper font-semibold">
+              <KeyRound size={15} className="text-warning" /> Access requests
             </p>
-            <p className="mt-2 text-caption text-muted-foreground">
-              Request access to documents outside your assigned cases. Admin approval required.
+            <p className="mt-2 text-caption text-muted-foreground leading-relaxed">
+              Request access to cases and documents outside your assigned permissions. Admin approval required.
             </p>
-            <Button variant="outline" size="sm" className="mt-3 w-full rounded-md" onClick={() => { setRequestAccessDocId(""); setRequestAccessReason(""); setShowRequestAccess(true); }}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3.5 w-full rounded-md font-medium hover:bg-muted"
+              onClick={() => setShowRequestAccess(true)}
+            >
+              <KeyRound size={14} className="mr-1.5" />
               Request access
             </Button>
           </div>
@@ -422,11 +412,11 @@ function DocumentsPage() {
           {/* Upload drop zone */}
           <div
             onClick={() => setShowUploadDialog(true)}
-            className="mb-6 cursor-pointer rounded-xl border border-dashed border-primary/40 bg-primary/5 px-6 py-8 text-center transition-all duration-200 hover:border-primary hover:bg-primary/10"
+            className="mb-6 cursor-pointer rounded-xl border border-dashed border-primary/40 bg-primary/5 px-4 py-6 sm:px-6 sm:py-8 text-center transition-all duration-200 hover:border-primary hover:bg-primary/10"
           >
             <UploadCloud size={28} strokeWidth={1.75} className="mx-auto text-primary" />
-            <p className="mt-2.5 font-medium text-foreground">Drop files here to upload</p>
-            <p className="mt-1 text-helper text-muted-foreground">
+            <p className="mt-2.5 font-medium text-foreground text-sm sm:text-base">Drop files here to upload</p>
+            <p className="mt-1 text-caption sm:text-helper text-muted-foreground max-w-md mx-auto">
               PDF, DOC, XLSX, images and archives · up to 100 MB per file · Stored securely on LegalOS VPS storage
             </p>
           </div>
@@ -490,9 +480,13 @@ function DocumentsPage() {
           <div className="rounded-lg border border-border bg-card p-6 shadow-soft">
             {previewDoc ? (
               <>
-                <div className="grid h-40 place-items-center rounded-md bg-muted/70">
-                  <FileText size={34} strokeWidth={1.5} className="text-muted-foreground" />
-                </div>
+                <DocumentInlinePreview
+                  documentId={previewDoc._id}
+                  documentName={previewDoc.name}
+                  mimeType={previewDoc.mimeType}
+                  className="h-44 w-full shadow-inner"
+                  onExpand={() => handleView(previewDoc)}
+                />
                 <h2 className="mt-4 truncate text-title font-semibold">{previewDoc.name}</h2>
                 {previewDoc.caseName && (
                   <p className="truncate text-helper text-muted-foreground">{previewDoc.caseName}</p>
@@ -563,9 +557,16 @@ function DocumentsPage() {
           </SheetHeader>
           {previewDoc && (
             <div className="mt-4 space-y-4">
-              <div className="grid h-32 place-items-center rounded-md bg-muted/70">
-                <FileText size={34} strokeWidth={1.5} className="text-muted-foreground" />
-              </div>
+              <DocumentInlinePreview
+                documentId={previewDoc._id}
+                documentName={previewDoc.name}
+                mimeType={previewDoc.mimeType}
+                className="h-44 w-full shadow-inner"
+                onExpand={() => {
+                  setMobileDrawerOpen(false);
+                  handleView(previewDoc);
+                }}
+              />
               <dl className="space-y-2.5 text-helper">
                 {[
                   ["Uploaded by", uploadedByName(previewDoc)],
@@ -640,61 +641,10 @@ function DocumentsPage() {
       )}
 
       {showRequestAccess && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="fixed inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setShowRequestAccess(false)} />
-          <div className="relative z-10 w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-lift">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-title font-semibold">Request Document Access</h2>
-              <button onClick={() => setShowRequestAccess(false)} className="text-muted-foreground hover:text-foreground">✕</button>
-            </div>
-            <p className="text-helper text-muted-foreground mb-4">
-              Request access to a document outside your assigned cases. An admin will review and approve.
-            </p>
-            <div className="space-y-3">
-              <select
-                value={requestAccessDocId}
-                onChange={(e) => setRequestAccessDocId(e.target.value)}
-                className="h-11 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              >
-                <option value="">Select document…</option>
-                {rawDocs.filter((d) => d.state !== "Approved").map((d) => (
-                  <option key={d._id} value={d._id}>
-                    {d.name} ({d.caseName || "General"})
-                  </option>
-                ))}
-              </select>
-              <textarea
-                placeholder="Reason for requesting access…"
-                value={requestAccessReason}
-                onChange={(e) => setRequestAccessReason(e.target.value)}
-                className="h-24 w-full rounded-md border border-border bg-background px-3 py-2 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none"
-              />
-            </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowRequestAccess(false)}>Cancel</Button>
-              <Button
-                className="gradient-primary text-primary-foreground"
-                disabled={requestAccess.isPending || !requestAccessDocId || !requestAccessReason.trim()}
-                onClick={() => {
-                  if (!requestAccessDocId || !requestAccessReason.trim()) return;
-                  requestAccess.mutate(
-                    { docId: requestAccessDocId, reason: requestAccessReason.trim() },
-                    {
-                      onSuccess: () => {
-                        setShowRequestAccess(false);
-                        setRequestAccessDocId("");
-                        setRequestAccessReason("");
-                      },
-                    },
-                  );
-                }}
-              >
-                {requestAccess.isPending ? "Requesting…" : "Submit Request"}
-              </Button>
-            </div>
-            {requestAccess.isError && <p className="mt-2 text-caption text-destructive">Failed to submit request. Please try again.</p>}
-          </div>
-        </div>
+        <RequestAccessDialog
+          open={showRequestAccess}
+          onClose={() => setShowRequestAccess(false)}
+        />
       )}
 
       {showVersionHistory && (

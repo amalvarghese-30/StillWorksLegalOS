@@ -40,13 +40,25 @@ export async function canAccessCase(
   if (userRole === "admin") return true;
   if (userPermissions && userPermissions["cases"] === false) return false;
 
-  const c = await Case.findById(caseId).select("assignedTo createdBy").lean();
+  const c = await Case.findById(caseId).select("assignedTo createdBy accessRequests").lean();
   if (!c) return false;
 
-  return (
+  if (
     c.assignedTo?.toString() === userId ||
     c.createdBy?.toString() === userId
-  );
+  ) {
+    return true;
+  }
+
+  // Explicit case access grant
+  if (c.accessRequests && Array.isArray(c.accessRequests)) {
+    const hasGrant = (c.accessRequests as any[]).some(
+      (ar) => ar.userId?.toString() === userId && ar.status === "approved"
+    );
+    if (hasGrant) return true;
+  }
+
+  return false;
 }
 
 /**
@@ -268,7 +280,11 @@ export async function getAccessibleCaseIds(userId: string, userRole: string): Pr
   if (userRole === "admin") return [];
 
   const cases = await Case.find({
-    $or: [{ assignedTo: userId }, { createdBy: userId }],
+    $or: [
+      { assignedTo: userId },
+      { createdBy: userId },
+      { accessRequests: { $elemMatch: { userId, status: "approved" } } },
+    ],
   })
     .select("_id")
     .lean();

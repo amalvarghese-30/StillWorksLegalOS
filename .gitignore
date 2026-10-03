@@ -59,6 +59,8 @@ server/.env
 
 # Environment & secrets
 .env
+.env.production
+.env.example
 .env.*
 !.env.example
 

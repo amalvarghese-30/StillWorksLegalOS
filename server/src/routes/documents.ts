@@ -101,6 +101,43 @@ router.get("/", async (req: Request, res: Response) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/documents/requestable — list documents available for access requests
+// ---------------------------------------------------------------------------
+
+router.get("/requestable", async (req: Request, res: Response) => {
+  try {
+    const documents = await DocumentModel.find()
+      .select("_id name size sizeFormatted state caseName createdAt accessRequests uploadedBy")
+      .populate("caseId", "title number")
+      .populate("uploadedBy", "name")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const mapped = documents.map((d: any) => {
+      const myRequest = (d.accessRequests || []).find(
+        (ar: any) => ar.userId?.toString() === req.userId,
+      );
+      return {
+        _id: d._id,
+        name: d.name,
+        size: d.size,
+        sizeFormatted: d.sizeFormatted,
+        state: d.state,
+        caseName: d.caseId ? `${d.caseId.number} — ${d.caseId.title}` : d.caseName || "General",
+        uploadedByName: d.uploadedBy?.name || "Colleague",
+        myRequestStatus: myRequest ? myRequest.status : null,
+        myRequestReason: myRequest ? myRequest.reason : null,
+      };
+    });
+
+    res.json({ documents: mapped });
+  } catch (err) {
+    console.error("[documents] Requestable list error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/documents/structure (and /nas/structure) — secure folder tree (access-controlled)
 // ---------------------------------------------------------------------------
 
@@ -745,12 +782,20 @@ router.patch("/:id", requireResourceAccess("document"), async (req: Request, res
 // POST /api/documents/:docId/request-access (with authorization)
 // ---------------------------------------------------------------------------
 
-router.post("/:docId/request-access", requireResourceAccess("document", "docId"), async (req: Request, res: Response) => {
+router.post("/:docId/request-access", async (req: Request, res: Response) => {
   try {
     const { reason } = req.body;
     const document = await DocumentModel.findById(req.params["docId"]);
     if (!document) {
       res.status(404).json({ message: "Document not found" });
+      return;
+    }
+
+    const existingReq = (document.accessRequests || []).find(
+      (ar: any) => ar.userId?.toString() === req.userId && ar.status === "pending"
+    );
+    if (existingReq) {
+      res.json({ message: "Access request is already pending review", document });
       return;
     }
 

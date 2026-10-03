@@ -5,6 +5,12 @@
     "buildResources": "public",
     "output": "release"
   },
+  "publish": {
+    "provider": "github",
+    "owner": "amalvarghese-30",
+    "repo": "StillWorksLegalOS",
+    "releaseType": "release"
+  },
   "asar": true,
   "npmRebuild": false,
   "nodeGypRebuild": false,

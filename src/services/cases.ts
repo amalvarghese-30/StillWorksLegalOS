@@ -175,3 +175,50 @@ export function useAddCaseNote() {
     },
   });
 }
+
+export interface RequestableCase {
+  _id: string;
+  number: string;
+  title: string;
+  court: string;
+  practice: string;
+  status: string;
+  assignedToName: string;
+  myRequestStatus: "pending" | "approved" | "rejected" | null;
+  myRequestReason: string | null;
+}
+
+export function useRequestableCases() {
+  return useQuery<{ cases: RequestableCase[] }>({
+    queryKey: ["cases", "requestable"],
+    queryFn: () => api.get("/cases/requestable"),
+  });
+}
+
+export function useRequestCaseAccess() {
+  const qc = useQueryClient();
+  return useMutation<{ message: string }, Error, { caseId: string; reason: string }>({
+    mutationFn: ({ caseId, reason }) => api.post(`/cases/${caseId}/request-access`, { reason }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["cases", "requestable"] });
+      qc.invalidateQueries({ queryKey: caseKeys.all });
+    },
+  });
+}
+
+export function useReviewCaseAccessRequest() {
+  const qc = useQueryClient();
+  return useMutation<
+    { message: string },
+    Error,
+    { caseId: string; requestId: string; status: "approved" | "rejected" }
+  >({
+    mutationFn: ({ caseId, requestId, status }) =>
+      api.patch(`/cases/${caseId}/access-requests/${requestId}`, { status }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: caseKeys.all });
+      qc.invalidateQueries({ queryKey: ["admin", "approvals"] });
+    },
+  });
+}
+

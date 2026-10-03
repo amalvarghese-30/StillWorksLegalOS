@@ -52,6 +52,14 @@ export interface CaseTimelineEntry {
   when: Date;
 }
 
+export interface CaseAccessRequest {
+  userId: mongoose.Types.ObjectId;
+  userName?: string;
+  reason: string;
+  status: "pending" | "approved" | "rejected";
+  createdAt: Date;
+}
+
 export interface ICase extends Document {
   number: string;                        // Internal case ID (e.g., SW-2026-0001)
   courtCaseId?: string;                  // External case ID/CNR (e.g., CNR123456789)
@@ -70,6 +78,7 @@ export interface ICase extends Document {
   timeline: CaseTimelineEntry[];
   progress: number;                      // 0-100
   tags: string[];
+  accessRequests?: CaseAccessRequest[];
   idempotencyKey?: string;
   archivedAt?: Date;                     // Set when case is archived
   archivedBy?: mongoose.Types.ObjectId; // Who archived it
@@ -156,6 +165,22 @@ const CaseSchema = new Schema<ICase>(
     timeline: { type: [CaseTimelineSchema], default: [] },
     progress: { type: Number, default: 0, min: 0, max: 100 },
     tags: { type: [String], default: [] },
+    accessRequests: {
+      type: [
+        {
+          userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+          userName: { type: String, default: "" },
+          reason: { type: String, default: "" },
+          status: {
+            type: String,
+            enum: ["pending", "approved", "rejected"],
+            default: "pending",
+          },
+          createdAt: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
+    },
     idempotencyKey: { type: String, sparse: true, index: true },
     archivedAt: { type: Date },
     archivedBy: { type: Schema.Types.ObjectId, ref: "User" },

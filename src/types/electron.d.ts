@@ -27,6 +27,11 @@ export interface ElectronAPI {
     buffer: Uint8Array | number[];
     mimeType?: string;
   }) => Promise<{ canceled: boolean; filePath?: string; error?: string }>;
+  checkForUpdates?: () => Promise<{ success: boolean; updateInfo?: any; isDev?: boolean; message?: string; error?: string }>;
+  installUpdate?: () => Promise<{ success: boolean; error?: string }>;
+  onUpdateAvailable?: (callback: (info: { version: string; releaseDate?: string }) => void) => () => void;
+  onUpdateDownloaded?: (callback: (info: { version: string; releaseDate?: string }) => void) => () => void;
+  onDownloadProgress?: (callback: (progress: { percent: number; transferred: number; total: number; bytesPerSecond: number }) => void) => () => void;
 }
 
 declare global {

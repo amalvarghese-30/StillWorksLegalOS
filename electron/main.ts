@@ -1,4 +1,5 @@
 import { app, BrowserWindow, shell, ipcMain, dialog, protocol, session, Event, safeStorage, Tray, Menu, Notification } from "electron";
+import { autoUpdater } from "electron-updater";
 import path from "node:path";
 import fs from "node:fs";
 import { spawn } from "node:child_process";
@@ -372,6 +373,9 @@ app.whenReady().then(async () => {
       console.log(`Renderer [${level}]: ${message} (${sourceId}:${line})`);
     });
   }
+
+  // Initialize auto-updater for GitHub Releases
+  setupAutoUpdater();
 });
 
 app.on("window-all-closed", () => {
@@ -635,6 +639,148 @@ ipcMain.handle("dialog:saveFile", async (event: Electron.IpcMainInvokeEvent, opt
   } catch (err) {
     console.error("[IPC dialog:saveFile] Error:", err);
     return { canceled: false, error: (err as Error).message };
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Auto-Updater (GitHub Releases)
+// ---------------------------------------------------------------------------
+function setupAutoUpdater(): void {
+  // Only check for updates in packaged desktop application
+  if (isDev) {
+    console.log("[autoUpdater] Skipping auto-update checks in development mode");
+    return;
+  }
+
+  try {
+    autoUpdater.logger = console;
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    autoUpdater.on("checking-for-update", () => {
+      console.log("[autoUpdater] Checking for updates on GitHub Releases...");
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("update:checking");
+      }
+    });
+
+    autoUpdater.on("update-available", (info) => {
+      console.log(`[autoUpdater] Update available: ${info.version}`);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("update:available", {
+          version: info.version,
+          releaseDate: info.releaseDate,
+        });
+      }
+    });
+
+    autoUpdater.on("update-not-available", (info) => {
+      console.log(`[autoUpdater] Update not available. Current version is latest (${info.version})`);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("update:not-available", { version: info.version });
+      }
+    });
+
+    autoUpdater.on("download-progress", (progress) => {
+      console.log(`[autoUpdater] Download progress: ${progress.percent.toFixed(1)}%`);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("update:download-progress", {
+          percent: progress.percent,
+          transferred: progress.transferred,
+          total: progress.total,
+          bytesPerSecond: progress.bytesPerSecond,
+        });
+      }
+    });
+
+    autoUpdater.on("update-downloaded", (info) => {
+      console.log(`[autoUpdater] Update ${info.version} downloaded and verified successfully.`);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("update:downloaded", {
+          version: info.version,
+          releaseDate: info.releaseDate,
+        });
+
+        // Show prompt dialog to restart now or on quit
+        dialog
+          .showMessageBox(mainWindow, {
+            type: "info",
+            title: "LegalOS Update Ready",
+            message: `StillWorks LegalOS version ${info.version} has been downloaded.`,
+            detail: "Would you like to restart and install the update now, or install automatically when you next close LegalOS?",
+            buttons: ["Restart & Install Now", "Later"],
+            defaultId: 0,
+            cancelId: 1,
+          })
+          .then((result) => {
+            if (result.response === 0) {
+              isQuitting = true;
+              autoUpdater.quitAndInstall();
+            }
+          })
+          .catch((err) => {
+            console.error("[autoUpdater] showMessageBox error:", err);
+          });
+      }
+    });
+
+    autoUpdater.on("error", (err) => {
+      console.warn("[autoUpdater] Error checking/downloading update:", err?.message || err);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("update:error", {
+          error: err?.message || "Update check failed",
+        });
+      }
+    });
+
+    // Run initial update check 10 seconds after startup
+    setTimeout(() => {
+      autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+        console.warn("[autoUpdater] Initial update check failed:", err?.message || err);
+      });
+    }, 10_000);
+
+    // Re-check periodically every 4 hours
+    setInterval(() => {
+      autoUpdater.checkForUpdates().catch((err) => {
+        console.warn("[autoUpdater] Periodic update check failed:", err?.message || err);
+      });
+    }, 4 * 60 * 60 * 1000);
+  } catch (initErr) {
+    console.warn("[autoUpdater] Initialization error:", initErr);
+  }
+}
+
+// IPC: Manual check for updates (e.g. from UI Settings)
+ipcMain.handle("app:checkForUpdates", async (event: Electron.IpcMainInvokeEvent) => {
+  assertTrustedIpcSender(event);
+  if (isDev) {
+    return { success: false, isDev: true, message: "Auto-updater disabled in development mode" };
+  }
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    return {
+      success: true,
+      updateInfo: result?.updateInfo,
+    };
+  } catch (err) {
+    console.warn("[IPC app:checkForUpdates] Error:", err);
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// IPC: Trigger install and restart
+ipcMain.handle("app:installUpdate", async (event: Electron.IpcMainInvokeEvent) => {
+  assertTrustedIpcSender(event);
+  if (isDev) {
+    return { success: false, error: "Cannot install updates in dev mode" };
+  }
+  try {
+    isQuitting = true;
+    autoUpdater.quitAndInstall();
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
   }
 });
 

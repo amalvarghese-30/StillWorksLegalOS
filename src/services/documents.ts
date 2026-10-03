@@ -170,6 +170,7 @@ export function useRequestAccess() {
     mutationFn: ({ docId, reason }) => api.post(`/documents/${docId}/request-access`, { reason }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: docKeys.all });
+      qc.invalidateQueries({ queryKey: ["documents", "requestable"] });
     },
   });
 }
@@ -185,6 +186,7 @@ export function useReviewAccessRequest() {
       api.patch(`/documents/${docId}/access-requests/${requestId}`, { status }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: docKeys.all });
+      qc.invalidateQueries({ queryKey: ["documents", "requestable"] });
       qc.invalidateQueries({ queryKey: ["admin", "approvals"] });
     },
   });
@@ -195,5 +197,24 @@ export function useVersionHistory(documentId: string) {
     queryKey: docKeys.versions(documentId),
     queryFn: () => api.get(`/documents/${documentId}/versions`),
     enabled: !!documentId,
+  });
+}
+
+export interface RequestableDocument {
+  _id: string;
+  name: string;
+  size: number;
+  sizeFormatted?: string;
+  state: string;
+  caseName: string;
+  uploadedByName: string;
+  myRequestStatus: "pending" | "approved" | "rejected" | null;
+  myRequestReason: string | null;
+}
+
+export function useRequestableDocuments() {
+  return useQuery<{ documents: RequestableDocument[] }>({
+    queryKey: ["documents", "requestable"],
+    queryFn: () => api.get("/documents/requestable"),
   });
 }

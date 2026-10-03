@@ -480,10 +480,13 @@ router.delete("/employees/:id", requireAdminOrPermission("employees"), async (re
 
 router.get("/approvals", requireAdminOrPermission("approvals"), async (req: Request, res: Response) => {
   try {
-    const [pendingDocs, pendingAccess, pendingTasks] = await Promise.all([
+    const [pendingDocs, pendingDocAccess, pendingCaseAccess, pendingTasks] = await Promise.all([
       DocumentModel.find({ state: "Pending" }).sort({ createdAt: -1 }).lean(),
       DocumentModel.find({ "accessRequests.status": "pending" })
         .select("name accessRequests")
+        .lean(),
+      Case.find({ "accessRequests.status": "pending" })
+        .select("title number accessRequests")
         .lean(),
       Task.find({ status: "pending_approval" })
         .populate("assignedTo", "name email")
@@ -499,14 +502,25 @@ router.get("/approvals", requireAdminOrPermission("approvals"), async (req: Requ
         context: `Uploaded for review`,
         when: d.createdAt,
       })),
-      ...pendingAccess.flatMap((d) =>
+      ...pendingDocAccess.flatMap((d) =>
         d.accessRequests
           .filter((ar) => ar.status === "pending")
           .map((ar) => ({
             _id: `${d._id}_access_${ar.createdAt.getTime()}`,
             kind: "Access Request",
             title: d.name,
-            context: ar.reason,
+            context: ar.reason || "Document access request",
+            when: ar.createdAt,
+          })),
+      ),
+      ...pendingCaseAccess.flatMap((c) =>
+        (c.accessRequests || [])
+          .filter((ar) => ar.status === "pending")
+          .map((ar) => ({
+            _id: `case_${c._id}_access_${ar.createdAt.getTime()}`,
+            kind: "Case Request",
+            title: `${c.number} — ${c.title}`,
+            context: ar.reason || "Case access request",
             when: ar.createdAt,
           })),
       ),

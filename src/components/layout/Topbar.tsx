@@ -53,7 +53,7 @@ export function Topbar() {
   };
 
   return (
-    <header className="glass sticky top-4 z-30 flex h-18 items-center gap-3 rounded-2xl px-4">
+    <header className="glass sticky top-2 sm:top-4 z-30 flex h-16 sm:h-18 items-center gap-2 sm:gap-3 rounded-xl sm:rounded-2xl px-3 sm:px-4">
       {/* Navigation Sheet */}
       <Sheet open={navOpen} onOpenChange={setNavOpen}>
         <SheetTrigger asChild>
