@@ -1,11 +1,11 @@
 const fs = require('fs');
 const https = require('https');
 
-async function getLatestReleaseTag(owner, repo, token) {
+async function getExistingTags(owner, repo, token) {
   return new Promise((resolve) => {
     const options = {
       hostname: 'api.github.com',
-      path: `/repos/${owner}/${repo}/releases/latest`,
+      path: `/repos/${owner}/${repo}/tags`,
       headers: {
         'User-Agent': 'Node-Release-Checker',
         ...(token ? { 'Authorization': `Bearer ${token}` } : {})
@@ -18,17 +18,17 @@ async function getLatestReleaseTag(owner, repo, token) {
       res.on('end', () => {
         try {
           if (res.statusCode === 200) {
-            const release = JSON.parse(data);
-            resolve(release.tag_name || null);
+            const tags = JSON.parse(data);
+            resolve(tags.map((t) => t.name));
           } else {
-            resolve(null);
+            resolve([]);
           }
         } catch {
-          resolve(null);
+          resolve([]);
         }
       });
     }).on('error', () => {
-      resolve(null);
+      resolve([]);
     });
   });
 }
@@ -51,27 +51,27 @@ async function main() {
   const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
 
   console.log(`[version-check] Current version in package.json: ${currentVersion}`);
-  const latestTag = await getLatestReleaseTag(owner, repo, token);
-  console.log(`[version-check] Latest published GitHub release tag: ${latestTag || 'None'}`);
+  const existingTags = await getExistingTags(owner, repo, token);
+  console.log(`[version-check] Existing Git tags on GitHub:`, existingTags);
 
   let targetVersion = currentVersion;
-  const currentTag = `v${currentVersion}`;
+  while (existingTags.includes(targetVersion) || existingTags.includes(`v${targetVersion}`)) {
+    const nextVersion = bumpPatch(targetVersion);
+    console.log(`[version-check] Tag v${targetVersion} already exists on GitHub. Bumping to ${nextVersion}`);
+    targetVersion = nextVersion;
+  }
 
-  if (latestTag) {
-    const cleanLatest = latestTag.replace(/^v/, '');
-    // If the current package.json version is <= latest release tag, we must bump patch
-    if (cleanLatest === currentVersion || latestTag === currentTag) {
-      targetVersion = bumpPatch(cleanLatest);
-      console.log(`[version-check] Version ${currentVersion} already published. Auto-bumping to ${targetVersion}`);
-      pkg.version = targetVersion;
-      fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8');
-    }
+  const isBumped = targetVersion !== currentVersion;
+  if (isBumped) {
+    pkg.version = targetVersion;
+    fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8');
+    console.log(`[version-check] Updated package.json version to: ${targetVersion}`);
   }
 
   console.log(`[version-check] Final release version: ${targetVersion}`);
   if (process.env.GITHUB_OUTPUT) {
     fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${targetVersion}\n`);
-    fs.appendFileSync(process.env.GITHUB_OUTPUT, `is_bumped=${targetVersion !== currentVersion}\n`);
+    fs.appendFileSync(process.env.GITHUB_OUTPUT, `is_bumped=${isBumped}\n`);
   }
 }
 
