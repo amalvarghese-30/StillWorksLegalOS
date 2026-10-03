@@ -16,10 +16,12 @@ import {
   UserCheck,
   FileText,
   Check,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 import { useCreateClient, type CreateClientPayload, type SubClient } from "@/services/clients";
 import { useEmployees } from "@/services/admin";
 import { toSafeIso } from "@/lib/dates";
@@ -121,6 +123,11 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
   const [showSubClient, setShowSubClient] = useState(false);
 
   const [fieldErrors, setFieldErrors] = useState<FormErrors>({});
+  const [subClientErrors, setSubClientErrors] = useState<{
+    [idx: number]: { name?: string; relationship?: string; phone?: string; email?: string };
+  }>({});
+  const [generalError, setGeneralError] = useState<string | null>(null);
+
   const { data: empData } = useEmployees();
   const employees = empData?.employees ?? [];
 
@@ -140,6 +147,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
         return next;
       });
     }
+    if (generalError) setGeneralError(null);
   };
 
   const toggleStaff = (empId: string) => {
@@ -159,20 +167,37 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
       ...prev,
       { name: "", relationship: "", description: "", phone: "", email: "" },
     ]);
+    setShowSubClient(true);
   };
 
   const updateSubClient = (idx: number, key: keyof SubClientEntry, value: string) => {
     setSubClients((prev) =>
       prev.map((sc, i) => (i === idx ? { ...sc, [key]: value } : sc)),
     );
+    if (subClientErrors[idx]?.[key as "name" | "relationship" | "phone" | "email"]) {
+      setSubClientErrors((prev) => {
+        const next = { ...prev };
+        if (next[idx]) {
+          delete next[idx][key as "name" | "relationship" | "phone" | "email"];
+        }
+        return next;
+      });
+    }
+    if (generalError) setGeneralError(null);
   };
 
   const removeSubClient = (idx: number) => {
     setSubClients((prev) => prev.filter((_, i) => i !== idx));
+    setSubClientErrors((prev) => {
+      const next = { ...prev };
+      delete next[idx];
+      return next;
+    });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setGeneralError(null);
     const errors: FormErrors = {};
 
     if (!form.name.trim()) {
@@ -199,11 +224,66 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
       if (!panCheck.valid) errors.pan = panCheck.error ?? "Invalid PAN format";
     }
 
-    if (Object.keys(errors).length > 0) {
+    // Sub-client validation
+    const scErrors: { [idx: number]: { name?: string; relationship?: string; phone?: string; email?: string } } = {};
+    let hasScErrors = false;
+
+    // Filter sub-clients that have any field filled
+    const activeSubClients = subClients.filter(
+      (sc) =>
+        sc.name.trim() ||
+        sc.relationship.trim() ||
+        sc.phone.trim() ||
+        sc.email.trim() ||
+        sc.description.trim()
+    );
+
+    subClients.forEach((sc, idx) => {
+      const hasAny =
+        sc.name.trim() ||
+        sc.relationship.trim() ||
+        sc.phone.trim() ||
+        sc.email.trim() ||
+        sc.description.trim();
+
+      if (hasAny) {
+        const itemErrors: { name?: string; relationship?: string; phone?: string; email?: string } = {};
+        if (!sc.name.trim()) {
+          itemErrors.name = "Sub-client name is required";
+          hasScErrors = true;
+        }
+        if (!sc.relationship.trim()) {
+          itemErrors.relationship = "Relationship is required (e.g. Spouse, Director, Partner)";
+          hasScErrors = true;
+        }
+        if (sc.phone.trim()) {
+          const pCheck = validatePhone(sc.phone);
+          if (!pCheck.valid) {
+            itemErrors.phone = pCheck.error ?? "Invalid phone number";
+            hasScErrors = true;
+          }
+        }
+        if (sc.email.trim()) {
+          const eCheck = validateEmail(sc.email);
+          if (!eCheck.valid) {
+            itemErrors.email = eCheck.error ?? "Invalid email format";
+            hasScErrors = true;
+          }
+        }
+        if (Object.keys(itemErrors).length > 0) {
+          scErrors[idx] = itemErrors;
+        }
+      }
+    });
+
+    if (Object.keys(errors).length > 0 || hasScErrors) {
       setFieldErrors(errors);
+      setSubClientErrors(scErrors);
+      setGeneralError("Please fix the errors in the form before saving.");
       return;
     }
     setFieldErrors({});
+    setSubClientErrors({});
 
     const payload: CreateClientPayload = {
       type: form.type,
@@ -229,13 +309,13 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
           area: form.area,
         },
       }),
-      ...(subClients.length > 0 && {
-        subClients: subClients.map((sc): SubClient => ({
-          name: sc.name,
-          relationship: sc.relationship,
-          phone: sc.phone,
-          email: sc.email,
-          notes: sc.description,
+      ...(activeSubClients.length > 0 && {
+        subClients: activeSubClients.map((sc): SubClient => ({
+          name: sc.name.trim(),
+          relationship: sc.relationship.trim(),
+          phone: sc.phone.trim(),
+          email: sc.email.trim(),
+          notes: sc.description.trim(),
         })),
       }),
     };
@@ -247,7 +327,15 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
         setShowProperty(false);
         setShowSubClient(false);
         setFieldErrors({});
+        setSubClientErrors({});
+        setGeneralError(null);
+        toast.success("Client created successfully");
         onClose();
+      },
+      onError: (err: any) => {
+        const msg = err?.message || err?.body?.message || "Failed to save client. Please check entered details.";
+        setGeneralError(msg);
+        toast.error(msg);
       },
     });
   };
@@ -263,6 +351,14 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
         </DialogHeader>
 
         <form className="space-y-6" onSubmit={handleSubmit}>
+          {/* General Banner Error */}
+          {generalError && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive flex items-center gap-2 animate-in fade-in-50">
+              <AlertCircle size={16} className="shrink-0" />
+              <span>{generalError}</span>
+            </div>
+          )}
+
           {/* ── Type & Tag ── */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -595,24 +691,34 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                     </div>
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div className="space-y-1.5">
-                        <Label htmlFor={`sc-name-${idx}`} className="text-helper">Name</Label>
+                        <Label htmlFor={`sc-name-${idx}`} className="text-helper">Name *</Label>
                         <Input
                           id={`sc-name-${idx}`}
                           value={sc.name}
                           onChange={(e) => updateSubClient(idx, "name", e.target.value)}
                           placeholder="Full name"
-                          className="h-10 rounded-md"
+                          className={`h-10 rounded-md ${subClientErrors[idx]?.name ? "border-destructive focus-visible:ring-destructive/30 bg-destructive/5" : ""}`}
                         />
+                        {subClientErrors[idx]?.name && (
+                          <p className="text-caption text-destructive flex items-center gap-1 font-medium">
+                            <AlertCircle size={12} /> {subClientErrors[idx].name}
+                          </p>
+                        )}
                       </div>
                       <div className="space-y-1.5">
-                        <Label htmlFor={`sc-rel-${idx}`} className="text-helper">Relationship</Label>
+                        <Label htmlFor={`sc-rel-${idx}`} className="text-helper">Relationship *</Label>
                         <Input
                           id={`sc-rel-${idx}`}
                           value={sc.relationship}
                           onChange={(e) => updateSubClient(idx, "relationship", e.target.value)}
                           placeholder="Buyer / Seller / Partner"
-                          className="h-10 rounded-md"
+                          className={`h-10 rounded-md ${subClientErrors[idx]?.relationship ? "border-destructive focus-visible:ring-destructive/30 bg-destructive/5" : ""}`}
                         />
+                        {subClientErrors[idx]?.relationship && (
+                          <p className="text-caption text-destructive flex items-center gap-1 font-medium">
+                            <AlertCircle size={12} /> {subClientErrors[idx].relationship}
+                          </p>
+                        )}
                       </div>
                       <div className="space-y-1.5 sm:col-span-2">
                         <Label htmlFor={`sc-desc-${idx}`} className="text-helper">Description / Notes</Label>
@@ -631,8 +737,13 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                           value={sc.phone}
                           onChange={(e) => updateSubClient(idx, "phone", e.target.value)}
                           placeholder="+91-XXXXXXXXXX"
-                          className="h-10 rounded-md"
+                          className={`h-10 rounded-md ${subClientErrors[idx]?.phone ? "border-destructive focus-visible:ring-destructive/30 bg-destructive/5" : ""}`}
                         />
+                        {subClientErrors[idx]?.phone && (
+                          <p className="text-caption text-destructive flex items-center gap-1 font-medium">
+                            <AlertCircle size={12} /> {subClientErrors[idx].phone}
+                          </p>
+                        )}
                       </div>
                       <div className="space-y-1.5">
                         <Label htmlFor={`sc-email-${idx}`} className="text-helper">Email</Label>
@@ -641,8 +752,13 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                           value={sc.email}
                           onChange={(e) => updateSubClient(idx, "email", e.target.value)}
                           placeholder="email@example.com"
-                          className="h-10 rounded-md"
+                          className={`h-10 rounded-md ${subClientErrors[idx]?.email ? "border-destructive focus-visible:ring-destructive/30 bg-destructive/5" : ""}`}
                         />
+                        {subClientErrors[idx]?.email && (
+                          <p className="text-caption text-destructive flex items-center gap-1 font-medium">
+                            <AlertCircle size={12} /> {subClientErrors[idx].email}
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>

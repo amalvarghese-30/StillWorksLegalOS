@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { PhoneCall, Clock, Check, Copy, PhoneForwarded } from "lucide-react";
+import { PhoneCall, Clock, Check, Copy, PhoneForwarded, AlertCircle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useTasks, useUpdateTask, taskKeys } from "@/services/tasks";
@@ -16,6 +16,8 @@ import { useSocketEvent } from "@/lib/socket";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { notifications, externalLinks } from "@/platform";
+import { useAuth } from "@/lib/auth";
+import { validatePhone, sanitizePhone } from "@/lib/validation";
 
 interface ActiveReminder {
   id: string;
@@ -81,11 +83,15 @@ export function CallReminderAlerts() {
   const completeMutation = useCompleteReminder();
   const dismissMutation = useDismissReminder();
 
+  const { user } = useAuth();
+  const currentUserId = user?._id?.toString?.() || (user as any)?.id?.toString?.();
+
   const [activeAlert, setActiveAlert] = useState<ActiveReminder | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [editName, setEditName] = useState("");
   const [editPhone, setEditPhone] = useState("");
+  const [editPhoneError, setEditPhoneError] = useState<string | null>(null);
   const [editSchedule, setEditSchedule] = useState("");
   const [editNotes, setEditNotes] = useState("");
 
@@ -104,10 +110,11 @@ export function CallReminderAlerts() {
     channelRef.current = bc;
 
     bc.onmessage = (event: MessageEvent) => {
-      const { type, id, key, deliveryId, snoozedUntil } = event.data || {};
+      const { type, id, key, timeKey, deliveryId, snoozedUntil } = event.data || {};
       if (type === "ALERT_TRIGGERED") {
         if (id) alertedIdsRef.current.add(id);
         if (key) alertedIdsRef.current.add(key);
+        if (timeKey) alertedIdsRef.current.add(timeKey);
         if (deliveryId) alertedIdsRef.current.add(deliveryId);
         // If we had this alert open in this tab too, close to avoid duplicate popups
         setActiveAlert((curr) => {
@@ -119,6 +126,22 @@ export function CallReminderAlerts() {
       } else if (type === "ALERT_DISMISSED") {
         if (id && snoozedUntil) snoozedUntilRef.current.set(id, snoozedUntil);
         if (key && snoozedUntil) snoozedUntilRef.current.set(key, snoozedUntil);
+        setActiveAlert((curr) => {
+          if (!curr) return null;
+          const currKey = `${curr.source}:${curr.taskId || curr.eventId || curr.reminderId || curr.id}`;
+          if (curr.id === id || currKey === key) return null;
+          return curr;
+        });
+      } else if (type === "ALERT_EDITED") {
+        if (id) {
+          for (const k of alertedIdsRef.current) {
+            if (k === id || k.startsWith(`${id}:`) || (key && (k === key || k.startsWith(`${key}:`)))) {
+              alertedIdsRef.current.delete(k);
+            }
+          }
+          snoozedUntilRef.current.delete(id);
+          if (key) snoozedUntilRef.current.delete(key);
+        }
         setActiveAlert((curr) => {
           if (!curr) return null;
           const currKey = `${curr.source}:${curr.taskId || curr.eventId || curr.reminderId || curr.id}`;
@@ -150,21 +173,16 @@ export function CallReminderAlerts() {
   const triggerAlert = useCallback((reminder: ActiveReminder, deliveryId?: string) => {
     const reminderId = reminder.reminderId || reminder.id;
     const sourceKey = `${reminder.source}:${reminder.taskId || reminder.eventId || reminder.reminderId || reminder.id}`;
+    const timeKey = `${sourceKey}:${reminder.dueTime.getTime()}`;
 
     if (
-      alertedIdsRef.current.has(reminder.id) ||
-      alertedIdsRef.current.has(reminderId) ||
-      alertedIdsRef.current.has(sourceKey)
+      alertedIdsRef.current.has(timeKey) ||
+      (deliveryId && alertedIdsRef.current.has(deliveryId))
     ) {
       return;
     }
-    if (deliveryId && alertedIdsRef.current.has(deliveryId)) {
-      return;
-    }
 
-    alertedIdsRef.current.add(reminder.id);
-    alertedIdsRef.current.add(reminderId);
-    alertedIdsRef.current.add(sourceKey);
+    alertedIdsRef.current.add(timeKey);
     if (deliveryId) alertedIdsRef.current.add(deliveryId);
 
     setActiveAlert((prev) => {
@@ -179,12 +197,13 @@ export function CallReminderAlerts() {
       type: "ALERT_TRIGGERED",
       id: reminder.id,
       key: sourceKey,
+      timeKey,
       deliveryId,
     });
 
     // Show platform-appropriate notification (Browser push or Windows native toast)
     notifications.show({
-      id: reminder.id,
+      id: `${reminder.id}-${reminder.dueTime.getTime()}`,
       title: `📞 Call Reminder: ${reminder.clientName || reminder.title}`,
       body: `Scheduled for ${reminder.dueTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}${
         reminder.phone ? ` • ${reminder.phone}` : ""
@@ -208,11 +227,19 @@ export function CallReminderAlerts() {
         nextTimerRef.current = null;
       }
 
-      // Collect all candidate reminders
+      // Collect all candidate reminders for the current user
       const candidates: ActiveReminder[] = [];
 
       for (const t of tasks) {
         if (!t.isCall || t.status === "completed" || t.callReminder?.completed || !t.callReminder?.scheduledAt) continue;
+
+        // User isolation: only notify if current user is the assigned staff or creator
+        const assignedId = (t.assignedTo as any)?._id?.toString?.() ?? t.assignedTo?.toString?.();
+        const createdId = (t.createdBy as any)?._id?.toString?.() ?? t.createdBy?.toString?.();
+        if (currentUserId && assignedId !== currentUserId && createdId !== currentUserId) {
+          continue;
+        }
+
         const due = new Date(t.callReminder.scheduledAt).getTime();
         candidates.push({
           id: `task-${t._id}`,
@@ -228,6 +255,12 @@ export function CallReminderAlerts() {
 
       for (const ev of events) {
         if (ev.type !== "call_reminder" || !ev.start) continue;
+
+        const evCreator = (ev.createdBy as any)?._id?.toString?.() ?? ev.createdBy?.toString?.() ?? (ev as any).userId?.toString?.();
+        if (currentUserId && evCreator && evCreator !== currentUserId) {
+          continue;
+        }
+
         const due = new Date(ev.start).getTime();
         candidates.push({
           id: `event-${ev._id}`,
@@ -242,19 +275,20 @@ export function CallReminderAlerts() {
 
       for (const cand of candidates) {
         const sourceKey = `${cand.source}:${cand.taskId || cand.eventId || cand.id}`;
-        if (alertedIdsRef.current.has(cand.id) || alertedIdsRef.current.has(sourceKey)) {
+        const timeKey = `${sourceKey}:${cand.dueTime.getTime()}`;
+        if (alertedIdsRef.current.has(timeKey)) {
           continue;
         }
 
         const dueMs = cand.dueTime.getTime();
-        const snoozedUntil = snoozedUntilRef.current.get(cand.id) || snoozedUntilRef.current.get(sourceKey);
+        const snoozedUntil = snoozedUntilRef.current.get(cand.id) || snoozedUntilRef.current.get(sourceKey) || snoozedUntilRef.current.get(timeKey);
 
         if (snoozedUntil && now < snoozedUntil) continue;
 
         // EXACT TIMING: Trigger only once scheduled time has arrived (scheduledAt <= now)
         // and within 5 minutes past (300,000ms grace window)
         if (now >= dueMs && now <= dueMs + 300_000) {
-          if (!alertedIdsRef.current.has(cand.id) || (snoozedUntil && now >= snoozedUntil)) {
+          if (!alertedIdsRef.current.has(timeKey) || (snoozedUntil && now >= snoozedUntil)) {
             triggerAlert(cand);
             return;
           }
@@ -287,15 +321,21 @@ export function CallReminderAlerts() {
         clearTimeout(nextTimerRef.current);
       }
     };
-  }, [taskData, calendarData, triggerAlert]);
+  }, [taskData, calendarData, currentUserId, triggerAlert]);
 
   // Socket.IO real-time listener for reminder triggers from authoritative server scheduler
   useSocketEvent("reminder:due", (payload: any) => {
     if (!payload || !payload.id) return;
+    if (payload.userId && currentUserId && payload.userId.toString() !== currentUserId) {
+      return; // Personal reminder for another user
+    }
+
     const reminderId = String(payload.id);
     const sourceKey = `${payload.sourceType || "custom"}:${payload.sourceId || reminderId}`;
+    const dueTime = payload.scheduledAt ? new Date(payload.scheduledAt) : new Date();
+    const timeKey = `${sourceKey}:${dueTime.getTime()}`;
 
-    if (alertedIdsRef.current.has(reminderId) || alertedIdsRef.current.has(sourceKey)) return;
+    if (alertedIdsRef.current.has(timeKey)) return;
     if (payload.deliveryId && alertedIdsRef.current.has(payload.deliveryId)) return;
 
     const cand: ActiveReminder = {
@@ -305,7 +345,7 @@ export function CallReminderAlerts() {
       clientName: payload.clientName || "Call Reminder",
       phone: payload.phone,
       notes: payload.notes,
-      dueTime: payload.scheduledAt ? new Date(payload.scheduledAt) : new Date(),
+      dueTime,
       taskId: payload.sourceType === "task" ? payload.sourceId : undefined,
       eventId: payload.sourceType === "event" ? payload.sourceId : undefined,
       reminderId,
@@ -321,7 +361,9 @@ export function CallReminderAlerts() {
     for (const r of list) {
       const reminderId = String(r._id);
       const sourceKey = `${r.sourceType || "custom"}:${r.sourceId || reminderId}`;
-      if (alertedIdsRef.current.has(reminderId) || alertedIdsRef.current.has(sourceKey)) continue;
+      const dueTime = r.scheduledAt ? new Date(r.scheduledAt) : new Date();
+      const timeKey = `${sourceKey}:${dueTime.getTime()}`;
+      if (alertedIdsRef.current.has(timeKey)) continue;
       const snoozedUntil = r.snoozedUntil ? new Date(r.snoozedUntil).getTime() : null;
       if (snoozedUntil && Date.now() < snoozedUntil) continue;
 
@@ -332,7 +374,7 @@ export function CallReminderAlerts() {
         clientName: r.clientName || "Call Reminder",
         phone: r.phone,
         notes: r.notes,
-        dueTime: r.scheduledAt ? new Date(r.scheduledAt) : new Date(),
+        dueTime,
         taskId: r.sourceType === "task" ? r.sourceId : undefined,
         eventId: r.sourceType === "event" ? r.sourceId : undefined,
         reminderId,
@@ -347,6 +389,7 @@ export function CallReminderAlerts() {
     if (!activeAlert) return;
     setEditName(activeAlert.clientName);
     setEditPhone(activeAlert.phone || "");
+    setEditPhoneError(null);
     const localIso = new Date(activeAlert.dueTime.getTime() - activeAlert.dueTime.getTimezoneOffset() * 60000)
       .toISOString()
       .slice(0, 16);
@@ -371,6 +414,16 @@ export function CallReminderAlerts() {
       return;
     }
 
+    if (editPhone.trim()) {
+      const pCheck = validatePhone(editPhone);
+      if (!pCheck.valid) {
+        setEditPhoneError(pCheck.error ?? "Invalid phone number");
+        toast.error(pCheck.error ?? "Invalid phone number");
+        return;
+      }
+    }
+    setEditPhoneError(null);
+
     if (!editSchedule || !editSchedule.trim()) {
       toast.error("Please select a date and time for the reminder.");
       return;
@@ -394,9 +447,9 @@ export function CallReminderAlerts() {
             deadline: newScheduledIso,
             callReminder: {
               clientName: trimmedName,
-              phone: editPhone.trim(), // Optional: empty string is valid and clears
+              phone: editPhone.trim(),
               scheduledAt: newScheduledIso,
-              notes: editNotes.trim(), // Optional: empty string is valid and clears
+              notes: editNotes.trim(),
               completed: false,
             },
           },
@@ -428,11 +481,20 @@ export function CallReminderAlerts() {
       await queryClient.invalidateQueries({ queryKey: calendarKeys.all });
 
       const sourceKey = `${activeAlert.source}:${activeAlert.taskId || activeAlert.eventId || activeAlert.reminderId || activeAlert.id}`;
+      // Evict old keys so the rescheduled time will trigger the popup dialog
+      for (const k of alertedIdsRef.current) {
+        if (k === activeAlert.id || k === sourceKey || k.startsWith(`${sourceKey}:`) || k.startsWith(`${activeAlert.id}:`)) {
+          alertedIdsRef.current.delete(k);
+        }
+      }
+      snoozedUntilRef.current.delete(activeAlert.id);
+      snoozedUntilRef.current.delete(sourceKey);
+
       channelRef.current?.postMessage({
-        type: "ALERT_DISMISSED",
+        type: "ALERT_EDITED",
         id: activeAlert.id,
         key: sourceKey,
-        snoozedUntil: parsedDate.getTime(),
+        newDue: parsedDate.getTime(),
       });
 
       toast.success("Call reminder updated successfully.");
@@ -441,7 +503,6 @@ export function CallReminderAlerts() {
     } catch (err: any) {
       console.error("[CallReminderAlerts] Failed to update reminder:", err);
       toast.error(err?.message || "We couldn't update the reminder. Please try again.");
-      // Keeps the dialog open on failure so the user can correct or retry
     } finally {
       setIsSaving(false);
     }
@@ -562,7 +623,7 @@ export function CallReminderAlerts() {
       <DialogContent className="max-w-md border-amber-500/40 bg-card p-6 shadow-2xl animate-in zoom-in-95">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <span className="grid size-12 place-items-center rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 animate-bounce">
+            <span className="grid size-12 place-items-center rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 animate-pulse ring-4 ring-amber-500/20">
               <PhoneCall size={22} strokeWidth={2.5} />
             </span>
             <div>
@@ -610,11 +671,21 @@ export function CallReminderAlerts() {
               <input
                 type="text"
                 value={editPhone}
-                onChange={(e) => setEditPhone(e.target.value)}
-                placeholder="Optional phone number"
+                onChange={(e) => {
+                  setEditPhone(sanitizePhone(e.target.value));
+                  setEditPhoneError(null);
+                }}
+                placeholder="10-digit phone number"
                 disabled={isSaving}
-                className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+                className={`w-full rounded-md border bg-background px-3 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50 ${
+                  editPhoneError ? "border-destructive focus:ring-destructive" : "border-input"
+                }`}
               />
+              {editPhoneError && (
+                <p className="text-[11px] text-destructive flex items-center gap-1 font-medium mt-1">
+                  <AlertCircle size={12} /> {editPhoneError}
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5">

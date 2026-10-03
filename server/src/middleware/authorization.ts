@@ -76,12 +76,21 @@ export async function canAccessClient(
   if (userRole === "admin") return true;
   if (userPermissions && userPermissions["clients"] === false) return false;
 
-  const c = await Client.findById(clientId).select("createdBy").lean();
+  const c = await Client.findById(clientId).select("createdBy assignedTo").lean();
   if (!c) return false;
 
+  // 1. Creator
   if (c.createdBy?.toString() === userId) return true;
 
-  // Allow access if the client is a party in a case the user can access
+  // 2. Directly assigned staff
+  if (
+    Array.isArray(c.assignedTo) &&
+    c.assignedTo.some((id: any) => (id?._id || id)?.toString() === userId)
+  ) {
+    return true;
+  }
+
+  // 3. Client is a party in an accessible case
   const linkedCase = await Case.findOne({
     "parties.clientId": clientId,
     $or: [{ assignedTo: userId }, { createdBy: userId }],
@@ -89,7 +98,15 @@ export async function canAccessClient(
     .select("_id")
     .lean();
 
-  return !!linkedCase;
+  if (linkedCase) return true;
+
+  // 4. Firm member with active clients permission
+  if (userPermissions && userPermissions["clients"] === true) {
+    return true;
+  }
+
+  // If clients permission is not explicitly disabled, allow firm employees to view client details
+  return userPermissions?.["clients"] !== false;
 }
 
 /**
@@ -174,25 +191,37 @@ export async function canAccessDocument(
   if (userPermissions && userPermissions["documents"] === false) return false;
 
   const doc = await DocumentModel.findById(documentId)
-    .select("uploadedBy caseId accessRequests")
+    .select("uploadedBy caseId accessRequests state")
     .lean();
   if (!doc) return false;
 
-  // 1. Direct uploader
+  // If the document is Rejected by admin, non-admins cannot download or view it
+  if (doc.state === "Rejected") return false;
+
+  // Check explicit access requests / revocations for this user
+  if (doc.accessRequests && Array.isArray(doc.accessRequests)) {
+    const userReqs = doc.accessRequests.filter(
+      (ar: any) => (ar.userId?._id || ar.userId)?.toString() === userId
+    );
+    if (userReqs.length > 0) {
+      const latestReq = userReqs[userReqs.length - 1];
+      if (latestReq.status === "rejected") {
+        // Admin explicitly rejected or revoked access for this user
+        return false;
+      }
+      if (latestReq.status === "approved") {
+        return true;
+      }
+    }
+  }
+
+  // 1. Direct uploader (if not revoked)
   if (doc.uploadedBy?.toString() === userId) return true;
 
-  // 2. Case relationship
+  // 2. Case relationship (if not revoked)
   if (doc.caseId) {
     const hasCaseAccess = await canAccessCase(userId, userRole, doc.caseId.toString(), userPermissions);
     if (hasCaseAccess) return true;
-  }
-
-  // 3. Explicit document access grant
-  if (doc.accessRequests && Array.isArray(doc.accessRequests)) {
-    const hasGrant = doc.accessRequests.some(
-      (ar: any) => ar.userId?.toString() === userId && ar.status === "approved"
-    );
-    if (hasGrant) return true;
   }
 
   return false;
@@ -260,7 +289,13 @@ export function requireResourceAccess(
 
       if (!hasAccess) {
         res.status(403).json({
-          message: `Access denied: you don't have permission to access this ${resourceType}`,
+          code: "ACCESS_DENIED",
+          resourceType,
+          resourceId,
+          message:
+            resourceType === "document"
+              ? "You don't have access to this document. Kindly ask for access request."
+              : `Access denied: you don't have permission to access this ${resourceType}.`,
         });
         return;
       }

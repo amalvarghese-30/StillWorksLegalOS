@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { UserPlus, Loader2, Copy, Check, KeyRound, ShieldCheck } from "lucide-react";
+import { UserPlus, Loader2, Copy, Check, KeyRound, ShieldCheck, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useCreateEmployee } from "@/services/admin";
+import { validatePhone, sanitizePhone } from "@/lib/validation";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -57,6 +58,7 @@ interface AddEmployeeDialogProps {
 
 export function AddEmployeeDialog({ open, onClose }: AddEmployeeDialogProps) {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [phoneError, setPhoneError] = useState<string | null>(null);
   const [createdCredentials, setCreatedCredentials] = useState<{
     name: string;
     email: string;
@@ -68,11 +70,16 @@ export function AddEmployeeDialog({ open, onClose }: AddEmployeeDialogProps) {
   const isPending = createEmployee.isPending;
   const isError = createEmployee.isError;
 
-  const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
+  const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
+    if (key === "phone") {
+      setPhoneError(null);
+    }
     setForm((prev) => ({ ...prev, [key]: value }));
+  };
 
   const handleClose = () => {
     setForm(EMPTY_FORM);
+    setPhoneError(null);
     setCreatedCredentials(null);
     setCopied(false);
     onClose();
@@ -90,6 +97,15 @@ export function AddEmployeeDialog({ open, onClose }: AddEmployeeDialogProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim() || !form.email.trim()) return;
+
+    if (form.phone.trim()) {
+      const pCheck = validatePhone(form.phone);
+      if (!pCheck.valid) {
+        setPhoneError(pCheck.error ?? "Invalid phone number");
+        return;
+      }
+    }
+    setPhoneError(null);
 
     createEmployee.mutate(
       {
@@ -244,10 +260,15 @@ export function AddEmployeeDialog({ open, onClose }: AddEmployeeDialogProps) {
                 <Input
                   id="emp-phone"
                   value={form.phone}
-                  onChange={(e) => update("phone", e.target.value)}
-                  placeholder="+91-XXXXXXXXXX"
-                  className="h-10 rounded-md"
+                  onChange={(e) => update("phone", sanitizePhone(e.target.value))}
+                  placeholder="10-digit phone number"
+                  className={`h-10 rounded-md ${phoneError ? "border-destructive focus-visible:ring-destructive" : ""}`}
                 />
+                {phoneError && (
+                  <p className="text-caption text-destructive flex items-center gap-1 font-medium">
+                    <AlertCircle size={12} /> {phoneError}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1.5">

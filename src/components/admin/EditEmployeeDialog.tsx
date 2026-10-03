@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
-import { Loader2, Save, Trash2, KeyRound, Copy, Check, ShieldAlert, Eye, EyeOff, Sparkles, Lock } from "lucide-react";
+import { Loader2, Save, Trash2, KeyRound, Copy, Check, ShieldAlert, Eye, EyeOff, Sparkles, Lock, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
+import { validatePhone, sanitizePhone } from "@/lib/validation";
 import {
   useUpdateEmployee,
   useDeleteEmployee,
@@ -106,6 +107,7 @@ function EditEmployeeDialogInner({ employee, onClose }: { employee: EmployeeReco
   const [role, setRole] = useState(employee.role);
   const [title, setTitle] = useState(employee.title ?? "");
   const [phone, setPhone] = useState(employee.phone ?? "");
+  const [phoneError, setPhoneError] = useState<string | null>(null);
   const [status, setStatus] = useState(employee.status ?? "offline");
   const [permissions, setPermissions] = useState<UserPermissions>({
     ...DEFAULT_PERMISSIONS,
@@ -137,6 +139,7 @@ function EditEmployeeDialogInner({ employee, onClose }: { employee: EmployeeReco
     setRole(employee.role);
     setTitle(employee.title ?? "");
     setPhone(employee.phone ?? "");
+    setPhoneError(null);
     setStatus(employee.status ?? "offline");
     setPermissions({
       ...DEFAULT_PERMISSIONS,
@@ -180,6 +183,16 @@ function EditEmployeeDialogInner({ employee, onClose }: { employee: EmployeeReco
       toast.error("Password must be at least 8 characters long");
       return;
     }
+
+    if (phone.trim()) {
+      const pCheck = validatePhone(phone);
+      if (!pCheck.valid) {
+        setPhoneError(pCheck.error ?? "Invalid phone number");
+        toast.error(pCheck.error ?? "Invalid phone number");
+        return;
+      }
+    }
+    setPhoneError(null);
 
     updateEmployee.mutate(
       {
@@ -347,10 +360,18 @@ function EditEmployeeDialogInner({ employee, onClose }: { employee: EmployeeReco
                 <Input
                   id="edit-phone"
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+91-XXXXXXXXXX"
-                  className="h-10 rounded-md"
+                  onChange={(e) => {
+                    setPhone(sanitizePhone(e.target.value));
+                    setPhoneError(null);
+                  }}
+                  placeholder="10-digit phone number"
+                  className={`h-10 rounded-md ${phoneError ? "border-destructive focus-visible:ring-destructive" : ""}`}
                 />
+                {phoneError && (
+                  <p className="text-caption text-destructive flex items-center gap-1 font-medium">
+                    <AlertCircle size={12} /> {phoneError}
+                  </p>
+                )}
               </div>
             </div>
 

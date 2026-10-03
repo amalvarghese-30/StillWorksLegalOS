@@ -1,8 +1,9 @@
 import { useRef, useState, useEffect } from "react";
-import { Plus, Trash2, CheckSquare, PhoneCall, Loader2, ListChecks, UserRound, BadgeCheck } from "lucide-react";
+import { Plus, Trash2, CheckSquare, PhoneCall, Loader2, ListChecks, UserRound, BadgeCheck, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { validatePhone, sanitizePhone } from "@/lib/validation";
 import {
   Select,
   SelectContent,
@@ -106,6 +107,7 @@ interface TaskFieldErrors {
   description?: string;
   agent?: string;
   callClientName?: string;
+  callPhone?: string;
   callScheduledAt?: string;
 }
 
@@ -223,6 +225,12 @@ interface TaskFieldErrors {
     if (addCallReminder) {
       if (!form.callClientName.trim()) {
         errors.callClientName = "Client name is required for call reminder";
+      }
+      if (form.callPhone.trim()) {
+        const pCheck = validatePhone(form.callPhone);
+        if (!pCheck.valid) {
+          errors.callPhone = pCheck.error ?? "Invalid phone number";
+        }
       }
       if (!form.callScheduledAt) {
         errors.callScheduledAt = "Please select a date and time for the reminder";
@@ -629,10 +637,15 @@ interface TaskFieldErrors {
                       id="call-phone"
                       maxLength={50}
                       value={form.callPhone}
-                      onChange={(e) => update("callPhone", e.target.value)}
-                      placeholder="+91-XXXXXXXXXX"
-                      className="h-11 rounded-md"
+                      onChange={(e) => update("callPhone", sanitizePhone(e.target.value))}
+                      placeholder="10-digit phone number"
+                      className={`h-11 rounded-md ${fieldErrors["callPhone"] ? "border-destructive focus-visible:ring-destructive" : ""}`}
                     />
+                    {fieldErrors["callPhone"] && (
+                      <p className="text-caption text-destructive font-medium flex items-center gap-1">
+                        <AlertCircle size={12} /> {fieldErrors["callPhone"]}
+                      </p>
+                    )}
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="call-schedule" className="text-helper">Scheduled for *</Label>

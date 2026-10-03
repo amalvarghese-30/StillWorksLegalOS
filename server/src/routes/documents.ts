@@ -56,37 +56,89 @@ router.get("/", async (req: Request, res: Response) => {
       filter["name"] = regex;
     }
 
-    // Non-admins only see documents they uploaded, in their accessible cases, or approved access grants
-    if (req.user!.role !== "admin") {
-      const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
-
-      const accessFilter: Record<string, unknown> = {
-        $or: [
-          { uploadedBy: req.userId },
-          ...(accessibleCaseIds.length > 0 ? [{ caseId: { $in: accessibleCaseIds } }] : []),
-          { accessRequests: { $elemMatch: { userId: req.userId, status: "approved" } } },
-        ],
-      };
-
-      const hasBaseFilter = Object.keys(filter).length > 0;
-      filter = hasBaseFilter ? { $and: [filter, accessFilter] } : accessFilter;
-    }
-
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 24));
     const skip = (pageNum - 1) * limitNum;
 
-    const [documents, total] = await Promise.all([
+    const [rawDocuments, total] = await Promise.all([
       DocumentModel.find(filter)
         .select("-storagePath -storageFolder -nasPath -nasFolder -filePath -tempPath")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limitNum)
-        .populate("uploadedBy", "name")
+        .populate("uploadedBy", "name email")
         .populate("caseId", "title number")
+        .populate("accessRequests.userId", "name email")
         .lean(),
       DocumentModel.countDocuments(filter),
     ]);
+
+    const currentUserId = req.userId?.toString();
+    const isAdmin = req.user?.role === "admin";
+
+    const documents = rawDocuments.map((doc: any) => {
+      const userReqs = (doc.accessRequests || []).filter(
+        (ar: any) => (ar.userId?._id || ar.userId)?.toString() === currentUserId
+      );
+      const latestReq = userReqs.length > 0 ? userReqs[userReqs.length - 1] : null;
+
+      let canAccess = false;
+      let accessStatus: "approved" | "pending" | "rejected" | "none" = "none";
+
+      if (isAdmin) {
+        canAccess = true;
+        accessStatus = "approved";
+      } else if (doc.state === "Rejected") {
+        canAccess = false;
+        accessStatus = "rejected";
+      } else if (latestReq?.status === "rejected") {
+        canAccess = false;
+        accessStatus = "rejected";
+      } else if (latestReq?.status === "approved") {
+        canAccess = true;
+        accessStatus = "approved";
+      } else if (latestReq?.status === "pending") {
+        canAccess = false;
+        accessStatus = "pending";
+      } else if (
+        (doc.uploadedBy?._id || doc.uploadedBy)?.toString() === currentUserId
+      ) {
+        canAccess = true;
+        accessStatus = "approved";
+      } else {
+        canAccess = false;
+        accessStatus = "none";
+      }
+
+      // Collect who all has access to this document
+      const authorizedUsers: { id: string; name: string; role?: string }[] = [];
+      if (doc.uploadedBy) {
+        const uId = (doc.uploadedBy._id || doc.uploadedBy).toString();
+        const uName = typeof doc.uploadedBy === "object" ? doc.uploadedBy.name : "Uploader";
+        authorizedUsers.push({ id: uId, name: uName, role: "Uploader" });
+      }
+      (doc.accessRequests || []).forEach((ar: any) => {
+        if (ar.status === "approved" && ar.userId) {
+          const aId = (ar.userId._id || ar.userId).toString();
+          if (!authorizedUsers.some((u) => u.id === aId)) {
+            authorizedUsers.push({
+              id: aId,
+              name: typeof ar.userId === "object" ? ar.userId.name : "Authorized",
+              role: "Granted",
+            });
+          }
+        }
+      });
+
+      return {
+        ...doc,
+        caseName: doc.caseId?.title || doc.caseName,
+        uploadedByName: typeof doc.uploadedBy === "object" ? doc.uploadedBy.name : "Colleague",
+        canAccess,
+        accessStatus,
+        authorizedUsers,
+      };
+    });
 
     res.json({
       documents,
@@ -869,33 +921,49 @@ router.patch("/:docId/access-requests/:requestId", requireAuth, async (req: Requ
       return;
     }
 
-    const requestId = req.params["requestId"];
-    const request = document.accessRequests.find(
-      (ar) => ar.createdAt.getTime().toString() === requestId
+    const rawReqId = req.params["requestId"];
+    const requestId = String(Array.isArray(rawReqId) ? rawReqId[0] : rawReqId || "");
+
+    let request = document.accessRequests.find(
+      (ar: any) =>
+        ar._id?.toString() === requestId ||
+        ar.createdAt?.getTime?.()?.toString() === requestId ||
+        (ar.userId?._id || ar.userId)?.toString() === requestId
     );
+
+    let targetUserId = request?.userId;
     if (!request) {
-      res.status(404).json({ message: "Access request not found" });
-      return;
+      if (Types.ObjectId.isValid(requestId)) {
+        targetUserId = new Types.ObjectId(requestId);
+        request = {
+          userId: targetUserId,
+          reason: (req.body.reason as string) || `Access ${status} by administrator`,
+          status,
+          createdAt: new Date(),
+        } as (typeof document.accessRequests)[number];
+        document.accessRequests.push(request);
+      } else {
+        res.status(404).json({ message: "Access request not found" });
+        return;
+      }
+    } else {
+      request.status = status;
+      if (req.body.reason) request.reason = req.body.reason;
     }
 
-    if (request.status !== "pending") {
-      res.json({ message: `Access request already ${request.status}`, document, code: "ALREADY_PROCESSED" });
-      return;
-    }
-
-    request.status = status;
     await document.save();
 
-    // Notify the requester about the outcome of their access request
-    if (request.userId && !request.userId.equals(req.userId)) { // Not notifying the admin who made the decision
-      const notificationTitle = status === "approved" ? "Access Request Approved" : "Access Request Rejected";
+    // Notify the requester about the outcome of their access request / revocation
+    if (targetUserId && !targetUserId.equals(req.userId)) {
+      const reqReason = request?.reason || "";
+      const notificationTitle = status === "approved" ? "Access Request Approved" : "Document Access Revoked";
       const notificationMessage = status === "approved"
         ? `Your request to access document "${document.name}" has been approved.`
-        : `Your request to access document "${document.name}" has been rejected.${request.reason ? " Reason: " + request.reason : ""}`;
+        : `Your access to document "${document.name}" has been revoked by an administrator.${reqReason ? " Reason: " + reqReason : ""}`;
 
       await NotificationService.createNotification({
-        userId: request.userId,
-        type: "DOCUMENT_SHARED", // We can use a specific type, but let's reuse for now
+        userId: targetUserId,
+        type: "DOCUMENT_SHARED",
         title: notificationTitle,
         message: notificationMessage,
         relatedId: document._id,
@@ -904,10 +972,9 @@ router.patch("/:docId/access-requests/:requestId", requireAuth, async (req: Requ
         metadata: {
           documentName: document.name,
           documentId: document._id.toString(),
-          requesterId: request.userId,
-          requesterName: request.userId.toString(), // We don't have the name here, but we can fetch it if needed
+          requesterId: targetUserId,
           status: status,
-          reason: request.reason ?? "",
+          reason: reqReason,
         },
       }, req.app.get("io"));
     }
@@ -920,7 +987,7 @@ router.patch("/:docId/access-requests/:requestId", requireAuth, async (req: Requ
         document._id.toString(),
         document.name,
         req,
-        request.reason
+        request?.reason
       ));
     } catch (logErr) {
       console.error("[documents] Access review audit log error:", logErr);
@@ -929,6 +996,87 @@ router.patch("/:docId/access-requests/:requestId", requireAuth, async (req: Requ
     res.json({ message: `Access request ${status}`, document });
   } catch (err) {
     console.error("[documents] Access request review error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/documents/:docId/revoke-user — revoke a specific user's access (admin)
+// ---------------------------------------------------------------------------
+
+router.post("/:docId/revoke-user", requireAuth, async (req: Request, res: Response) => {
+  try {
+    if (req.user!.role !== "admin") {
+      res.status(403).json({ message: "Only admins can revoke document access" });
+      return;
+    }
+
+    const { userId, reason } = req.body;
+    if (!userId) {
+      res.status(400).json({ message: "userId is required" });
+      return;
+    }
+
+    const document = await DocumentModel.findById(req.params["docId"]);
+    if (!document) {
+      res.status(404).json({ message: "Document not found" });
+      return;
+    }
+
+    const existingIndex = document.accessRequests.findIndex(
+      (ar: any) => (ar.userId?._id || ar.userId)?.toString() === userId
+    );
+
+    if (existingIndex >= 0) {
+      document.accessRequests[existingIndex].status = "rejected";
+      if (reason) document.accessRequests[existingIndex].reason = reason;
+    } else {
+      document.accessRequests.push({
+        userId: new Types.ObjectId(userId),
+        reason: reason || "Access revoked by administrator",
+        status: "rejected",
+        createdAt: new Date(),
+      } as any);
+    }
+
+    await document.save();
+
+    await NotificationService.createNotification(
+      {
+        userId: new Types.ObjectId(userId),
+        type: "DOCUMENT_SHARED",
+        title: "Document Access Revoked",
+        message: `Your access to document "${document.name}" has been revoked by an administrator.`,
+        relatedId: document._id,
+        relatedModel: "Document",
+        actorId: new Types.ObjectId(req.userId),
+        metadata: {
+          documentName: document.name,
+          documentId: document._id.toString(),
+          status: "rejected",
+          reason: reason || "",
+        },
+      },
+      req.app.get("io")
+    ).catch(() => {});
+
+    try {
+      await AuditLog.create(createDocumentAuditLog(
+        req.userId!,
+        req.user?.name ?? "Unknown",
+        "reject",
+        document._id.toString(),
+        document.name,
+        req,
+        reason || "Administrator revoked user access"
+      ));
+    } catch (auditErr) {
+      console.error("[documents] Audit error on revocation:", auditErr);
+    }
+
+    res.json({ message: "User access revoked successfully", document });
+  } catch (err) {
+    console.error("[documents] Revoke user error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 });

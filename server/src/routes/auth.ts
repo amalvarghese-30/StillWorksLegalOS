@@ -226,10 +226,8 @@ router.post("/login", async (req: Request, res: Response) => {
       user: user.toJSON(),
     };
 
-    // Electron desktop stores the refresh token in OS-level safeStorage vault
-    if (isElectron) {
-      body["refreshToken"] = refreshToken;
-    }
+    // Provide refreshToken in payload for safeStorage (Electron) and fallback storage (Web)
+    body["refreshToken"] = refreshToken;
 
     res.json(body);
   } catch (err) {
@@ -454,10 +452,8 @@ router.post("/refresh", async (req: Request, res: Response) => {
       accessToken: newAccessToken,
     };
 
-    // Electron desktop stores the refresh token in OS-level safeStorage vault
-    if (isElectron) {
-      body["refreshToken"] = newRefreshToken;
-    }
+    // Return rotated refresh token for safeStorage and client storage persistence
+    body["refreshToken"] = newRefreshToken;
 
     res.json(body);
   } catch (err) {

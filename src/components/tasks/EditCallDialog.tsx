@@ -12,12 +12,14 @@ import {
   Trash2,
   Check,
   Briefcase,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { validatePhone, sanitizePhone } from "@/lib/validation";
 import {
   Dialog,
   DialogContent,
@@ -56,6 +58,7 @@ export function EditCallDialog({ open, onClose, task }: EditCallDialogProps) {
 function EditCallDialogInner({ open, onClose, task }: { open: boolean; onClose: () => void; task: TaskRecord }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [phoneError, setPhoneError] = useState<string | null>(null);
   const [scheduledAt, setScheduledAt] = useState("");
   const [notes, setNotes] = useState("");
   const [completed, setCompleted] = useState(false);
@@ -156,6 +159,16 @@ function EditCallDialogInner({ open, onClose, task }: { open: boolean; onClose: 
       toast.error("Please enter a contact or client name");
       return;
     }
+
+    if (phone.trim()) {
+      const pCheck = validatePhone(phone);
+      if (!pCheck.valid) {
+        setPhoneError(pCheck.error ?? "Invalid phone number");
+        toast.error(pCheck.error ?? "Invalid phone number");
+        return;
+      }
+    }
+    setPhoneError(null);
 
     if (!scheduledAt || !scheduledAt.trim()) {
       toast.error("Please select a date and time for the reminder.");
@@ -272,9 +285,12 @@ function EditCallDialogInner({ open, onClose, task }: { open: boolean; onClose: 
                   <Input
                     id="edit-call-phone"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="+91-XXXXXXXXXX"
-                    className="h-10 pl-9 pr-16 rounded-md font-mono"
+                    onChange={(e) => {
+                      setPhone(sanitizePhone(e.target.value));
+                      setPhoneError(null);
+                    }}
+                    placeholder="10-digit phone number"
+                    className={`h-10 pl-9 pr-16 rounded-md font-mono ${phoneError ? "border-destructive focus-visible:ring-destructive" : ""}`}
                   />
                   {phone && (
                     <div className="absolute right-1.5 flex items-center gap-1">
@@ -298,6 +314,11 @@ function EditCallDialogInner({ open, onClose, task }: { open: boolean; onClose: 
                     </div>
                   )}
                 </div>
+                {phoneError && (
+                  <p className="text-caption text-destructive flex items-center gap-1 font-medium mt-1">
+                    <AlertCircle size={12} /> {phoneError}
+                  </p>
+                )}
               </div>
             </div>
 

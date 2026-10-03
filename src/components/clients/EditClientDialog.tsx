@@ -17,6 +17,7 @@ import {
   ChevronUp,
   Trash2,
   Plus,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -93,6 +94,9 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
   const [area, setArea] = useState(record.propertyDetails?.area || "");
 
   const [fieldErrors, setFieldErrors] = useState<FormErrors>({});
+  const [subClientErrors, setSubClientErrors] = useState<{
+    [idx: number]: { name?: string; relationship?: string; phone?: string; email?: string };
+  }>({});
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const { data: empData } = useEmployees();
@@ -134,6 +138,7 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
       setPlot(record.propertyDetails?.plot || "");
       setArea(record.propertyDetails?.area || "");
       setFieldErrors({});
+      setSubClientErrors({});
       setErrorMsg(null);
     }
   }, [open, record]);
@@ -154,6 +159,11 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
 
   const removeSubClient = (idx: number) => {
     setSubClients((prev) => prev.filter((_, i) => i !== idx));
+    setSubClientErrors((prev) => {
+      const next = { ...prev };
+      delete next[idx];
+      return next;
+    });
   };
 
   const updateSubClient = (
@@ -164,6 +174,17 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
     setSubClients((prev) =>
       prev.map((sc, i) => (i === idx ? { ...sc, [field]: val } : sc))
     );
+    if (subClientErrors[idx]?.[field as keyof (typeof subClientErrors)[number]]) {
+      setSubClientErrors((prev) => {
+        const next = { ...prev };
+        if (next[idx]) {
+          const item = { ...next[idx] };
+          delete item[field as keyof typeof item];
+          next[idx] = item;
+        }
+        return next;
+      });
+    }
   };
 
   if (!open) return null;
@@ -198,11 +219,56 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
       if (!panCheck.valid) errors.pan = panCheck.error ?? "Invalid PAN format";
     }
 
-    if (Object.keys(errors).length > 0) {
+    // Sub-client validation
+    const scErrors: { [idx: number]: { name?: string; relationship?: string; phone?: string; email?: string } } = {};
+    let hasScErrors = false;
+
+    subClients.forEach((sc, idx) => {
+      const hasAny =
+        sc.name.trim() ||
+        sc.relationship.trim() ||
+        sc.phone.trim() ||
+        sc.email.trim() ||
+        sc.description.trim();
+
+      if (hasAny) {
+        const itemErrors: { name?: string; relationship?: string; phone?: string; email?: string } = {};
+        if (!sc.name.trim()) {
+          itemErrors.name = "Sub-client name is required";
+          hasScErrors = true;
+        }
+        if (!sc.relationship.trim()) {
+          itemErrors.relationship = "Relationship is required (e.g. Spouse, Director, Partner)";
+          hasScErrors = true;
+        }
+        if (sc.phone.trim()) {
+          const pCheck = validatePhone(sc.phone);
+          if (!pCheck.valid) {
+            itemErrors.phone = pCheck.error ?? "Invalid phone number";
+            hasScErrors = true;
+          }
+        }
+        if (sc.email.trim()) {
+          const eCheck = validateEmail(sc.email);
+          if (!eCheck.valid) {
+            itemErrors.email = eCheck.error ?? "Invalid email format";
+            hasScErrors = true;
+          }
+        }
+        if (Object.keys(itemErrors).length > 0) {
+          scErrors[idx] = itemErrors;
+        }
+      }
+    });
+
+    if (Object.keys(errors).length > 0 || hasScErrors) {
       setFieldErrors(errors);
+      setSubClientErrors(scErrors);
+      setErrorMsg("Please fix the errors in the form before saving.");
       return;
     }
     setFieldErrors({});
+    setSubClientErrors({});
 
     try {
       const hasProperty =
@@ -655,24 +721,34 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
                     </div>
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div className="space-y-1.5">
-                        <Label htmlFor={`sc-name-${idx}`} className="text-helper">Name</Label>
+                        <Label htmlFor={`sc-name-${idx}`} className="text-helper">Name *</Label>
                         <Input
                           id={`sc-name-${idx}`}
                           value={sc.name}
                           onChange={(e) => updateSubClient(idx, "name", e.target.value)}
                           placeholder="Full name"
-                          className="h-10 rounded-md"
+                          className={`h-10 rounded-md ${subClientErrors[idx]?.name ? "border-destructive focus-visible:ring-destructive/30 bg-destructive/5" : ""}`}
                         />
+                        {subClientErrors[idx]?.name && (
+                          <p className="text-caption text-destructive flex items-center gap-1 font-medium">
+                            <AlertCircle size={12} /> {subClientErrors[idx].name}
+                          </p>
+                        )}
                       </div>
                       <div className="space-y-1.5">
-                        <Label htmlFor={`sc-rel-${idx}`} className="text-helper">Relationship</Label>
+                        <Label htmlFor={`sc-rel-${idx}`} className="text-helper">Relationship *</Label>
                         <Input
                           id={`sc-rel-${idx}`}
                           value={sc.relationship}
                           onChange={(e) => updateSubClient(idx, "relationship", e.target.value)}
                           placeholder="Buyer / Seller / Partner"
-                          className="h-10 rounded-md"
+                          className={`h-10 rounded-md ${subClientErrors[idx]?.relationship ? "border-destructive focus-visible:ring-destructive/30 bg-destructive/5" : ""}`}
                         />
+                        {subClientErrors[idx]?.relationship && (
+                          <p className="text-caption text-destructive flex items-center gap-1 font-medium">
+                            <AlertCircle size={12} /> {subClientErrors[idx].relationship}
+                          </p>
+                        )}
                       </div>
                       <div className="space-y-1.5 sm:col-span-2">
                         <Label htmlFor={`sc-desc-${idx}`} className="text-helper">Description / Notes</Label>
@@ -691,8 +767,13 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
                           value={sc.phone}
                           onChange={(e) => updateSubClient(idx, "phone", sanitizePhone(e.target.value))}
                           placeholder="10-digit phone number"
-                          className="h-10 rounded-md"
+                          className={`h-10 rounded-md ${subClientErrors[idx]?.phone ? "border-destructive focus-visible:ring-destructive/30 bg-destructive/5" : ""}`}
                         />
+                        {subClientErrors[idx]?.phone && (
+                          <p className="text-caption text-destructive flex items-center gap-1 font-medium">
+                            <AlertCircle size={12} /> {subClientErrors[idx].phone}
+                          </p>
+                        )}
                       </div>
                       <div className="space-y-1.5">
                         <Label htmlFor={`sc-email-${idx}`} className="text-helper">Email Address</Label>
@@ -701,8 +782,13 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
                           value={sc.email}
                           onChange={(e) => updateSubClient(idx, "email", e.target.value)}
                           placeholder="email@domain.com"
-                          className="h-10 rounded-md"
+                          className={`h-10 rounded-md ${subClientErrors[idx]?.email ? "border-destructive focus-visible:ring-destructive/30 bg-destructive/5" : ""}`}
                         />
+                        {subClientErrors[idx]?.email && (
+                          <p className="text-caption text-destructive flex items-center gap-1 font-medium">
+                            <AlertCircle size={12} /> {subClientErrors[idx].email}
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>

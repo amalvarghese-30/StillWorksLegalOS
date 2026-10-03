@@ -31,8 +31,7 @@ import { EditClientDialog } from "@/components/clients/EditClientDialog";
 import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
 import { downloadDocument } from "@/services/documents";
 import { DocumentPreviewModal } from "@/components/documents/DocumentPreviewModal";
-import type { ClientDocument } from "@/services/clients";
-import { formatSafeDate } from "@/lib/dates";
+import { formatSafeDate, formatSafeDateTime } from "@/lib/dates";
 
 export const Route = createFileRoute("/_shell/clients/$clientId")({
   head: () => ({
@@ -303,12 +302,7 @@ function ClientProfile() {
                   },
                   {
                     label: "Promised Completion Date",
-                    value: record.promisedCompletionDate
-                      ? new Date(record.promisedCompletionDate).toLocaleString("en-IN", {
-                          dateStyle: "medium",
-                          timeStyle: "short",
-                        })
-                      : "Not set",
+                    value: formatSafeDateTime(record.promisedCompletionDate, "Not set"),
                   },
                   { label: "Sub-clients", value: `${record.subClients?.length ?? 0}` },
                   { label: "Onboarding Notes", value: record.notes || "No intake notes entered." },

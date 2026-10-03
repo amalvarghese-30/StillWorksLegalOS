@@ -85,6 +85,10 @@ export async function persistTokens(
 ): Promise<void> {
   accessToken = newAccessToken;
 
+  if (newRefreshToken) {
+    sessionRefreshToken = newRefreshToken;
+  }
+
   if (isElectron()) {
     if (rememberMe !== undefined) {
       if (rememberMe) {
@@ -97,7 +101,6 @@ export async function persistTokens(
     const shouldPersist = rememberMe ?? (window.localStorage.getItem(REMEMBER_ME_KEY) === "true");
 
     if (newRefreshToken) {
-      sessionRefreshToken = newRefreshToken;
       if (shouldPersist) {
         await electronApi()?.saveRefreshToken(newRefreshToken);
       } else {
@@ -105,14 +108,24 @@ export async function persistTokens(
         await electronApi()?.clearRefreshToken();
       }
     }
-  }
+  } else if (typeof window !== "undefined") {
+    if (rememberMe !== undefined) {
+      if (rememberMe) {
+        window.localStorage.setItem(REMEMBER_ME_KEY, "true");
+      } else {
+        window.localStorage.removeItem(REMEMBER_ME_KEY);
+      }
+    }
 
-  // Security hardening: remove any residual refresh tokens from browser localStorage
-  if (typeof window !== "undefined") {
-    try {
-      window.localStorage.removeItem(REFRESH_STORAGE_KEY);
-    } catch {
-      /* ignore */
+    const shouldPersist = rememberMe ?? (window.localStorage.getItem(REMEMBER_ME_KEY) === "true");
+    if (newRefreshToken) {
+      if (shouldPersist) {
+        window.localStorage.setItem(REFRESH_STORAGE_KEY, newRefreshToken);
+        window.sessionStorage.removeItem(REFRESH_STORAGE_KEY);
+      } else {
+        window.sessionStorage.setItem(REFRESH_STORAGE_KEY, newRefreshToken);
+        window.localStorage.removeItem(REFRESH_STORAGE_KEY);
+      }
     }
   }
 }
@@ -122,13 +135,12 @@ export async function clearTokens(): Promise<void> {
   sessionRefreshToken = null;
   if (isElectron()) {
     await electronApi()?.clearRefreshToken();
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem(REMEMBER_ME_KEY);
-    }
   }
   if (typeof window !== "undefined") {
     try {
+      window.localStorage.removeItem(REMEMBER_ME_KEY);
       window.localStorage.removeItem(REFRESH_STORAGE_KEY);
+      window.sessionStorage.removeItem(REFRESH_STORAGE_KEY);
     } catch {
       /* ignore */
     }
@@ -174,11 +186,17 @@ let refreshPromise: Promise<string | null> | null = null;
 
 export async function refreshAccessToken(): Promise<string | null> {
   // If in web browser and no session hint exists, don't attempt network refresh
-  if (
-    !isElectron() &&
-    typeof window !== "undefined" &&
-    !window.localStorage.getItem("stillworks_session")
-  ) {
+  const hasSessionHint =
+    isElectron() ||
+    (typeof window !== "undefined" &&
+      (Boolean(window.localStorage.getItem("stillworks.session")) ||
+       Boolean(window.sessionStorage.getItem("stillworks.session")) ||
+       Boolean(window.localStorage.getItem("stillworks_session")) ||
+       Boolean(window.sessionStorage.getItem("stillworks_session")) ||
+       Boolean(window.localStorage.getItem(REFRESH_STORAGE_KEY)) ||
+       Boolean(window.sessionStorage.getItem(REFRESH_STORAGE_KEY))));
+
+  if (!hasSessionHint) {
     return null;
   }
 
@@ -217,11 +235,20 @@ export async function refreshAccessToken(): Promise<string | null> {
         return data.accessToken;
       }
 
-      // Web: authenticate purely via HttpOnly cookie (credentials: "include")
+      // Web: authenticate via HttpOnly cookie AND optional fallback refreshToken in body
+      let webRefreshToken = sessionRefreshToken;
+      if (!webRefreshToken && typeof window !== "undefined") {
+        webRefreshToken =
+          window.localStorage.getItem(REFRESH_STORAGE_KEY) ||
+          window.sessionStorage.getItem(REFRESH_STORAGE_KEY) ||
+          null;
+      }
+
       const res = await fetch(`${API_BASE}/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
+        body: JSON.stringify({ ...(webRefreshToken ? { refreshToken: webRefreshToken } : {}) }),
       });
 
       if (!res.ok) {
@@ -230,7 +257,7 @@ export async function refreshAccessToken(): Promise<string | null> {
       }
 
       const data = await res.json();
-      await persistTokens(data.accessToken);
+      await persistTokens(data.accessToken, data.refreshToken);
       return data.accessToken;
     } catch {
       await clearTokens();

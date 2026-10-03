@@ -48,6 +48,13 @@ function LoginPage() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.email) setEmail(parsed.email);
+        if (parsed.password) {
+          try {
+            setPassword(atob(parsed.password));
+          } catch {
+            setPassword(parsed.password);
+          }
+        }
         if (typeof parsed.rememberMe === "boolean") setRememberMe(parsed.rememberMe);
       }
     } catch {
@@ -104,9 +111,16 @@ function LoginPage() {
         return;
       }
 
-      // Persist or clean up "Remember me" (email only — passwords are NEVER stored in browser storage)
+      // Persist credentials for ease of login when Remember Me is selected
       if (rememberMe) {
-        localStorage.setItem(REMEMBER_KEY, JSON.stringify({ email: cleanEmail, rememberMe: true }));
+        localStorage.setItem(
+          REMEMBER_KEY,
+          JSON.stringify({
+            email: cleanEmail,
+            password: btoa(password),
+            rememberMe: true,
+          })
+        );
       } else {
         localStorage.removeItem(REMEMBER_KEY);
       }
@@ -166,6 +180,7 @@ function LoginPage() {
                 <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground/70 pointer-events-none" />
                 <Input
                   id="email"
+                  name="username"
                   type="text"
                   autoComplete="username"
                   value={email}
@@ -198,6 +213,7 @@ function LoginPage() {
                 <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground/70 pointer-events-none" />
                 <Input
                   id="password"
+                  name="password"
                   type={showPassword ? "text" : "password"}
                   autoComplete="current-password"
                   value={password}

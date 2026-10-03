@@ -16,7 +16,6 @@ import {
   PhoneCall,
   Phone,
   Copy,
-  CalendarClock,
   MoreVertical,
   RotateCcw,
 } from "lucide-react";
@@ -24,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import { validatePhone, sanitizePhone } from "@/lib/validation";
 import {
   Dialog,
   DialogContent,
@@ -300,6 +300,13 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
       if (assignedTo) payload.assignedTo = assignedTo;
 
       if (isCallTask || callClientName.trim()) {
+        if (callPhone.trim()) {
+          const pCheck = validatePhone(callPhone);
+          if (!pCheck.valid) {
+            toast.error(pCheck.error ?? "Invalid phone number");
+            return;
+          }
+        }
         const scheduledIso = toSafeIso(callScheduledAt) || (deadline ? toSafeIso(deadline) : null) || new Date().toISOString();
         payload.callReminder = {
           clientName: callClientName.trim() || title.trim(),
@@ -827,8 +834,8 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                     <Input
                       id="call-edit-phone"
                       value={callPhone}
-                      onChange={(e) => setCallPhone(e.target.value)}
-                      placeholder="+91-XXXXXXXXXX"
+                      onChange={(e) => setCallPhone(sanitizePhone(e.target.value))}
+                      placeholder="10-digit phone number"
                       className="h-9 rounded-md text-xs font-mono"
                     />
                   </div>

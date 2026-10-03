@@ -44,8 +44,17 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useAuth } from "@/lib/auth";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
   useDocuments,
   useRequestAccess,
+  useRevokeUserAccess,
   downloadDocument,
   useDeleteDocument,
   type DocumentRecord,
@@ -113,6 +122,13 @@ function DocumentCard({
   isFav?: boolean;
   onToggleFav?: (e: React.MouseEvent) => void;
 }) {
+  const caseLabel =
+    typeof doc.caseId === "object" && doc.caseId?.number
+      ? `${doc.caseId.number} · ${doc.caseId.title || doc.caseName || ""}`
+      : doc.caseName;
+
+  const hasAccess = doc.canAccess !== false;
+
   return (
     <div
       role="button"
@@ -124,26 +140,54 @@ function DocumentCard({
           onClick();
         }
       }}
-      className={`group flex flex-col justify-between min-h-[126px] h-auto w-full cursor-pointer rounded-xl border p-3.5 sm:p-4 text-left transition-all duration-200 select-none ${
+      className={`group flex flex-col justify-between min-h-[136px] h-auto w-full cursor-pointer rounded-xl border p-3.5 sm:p-4 text-left transition-all duration-200 select-none ${
         active
           ? "border-primary bg-primary/5 ring-1 ring-primary/30 shadow-md"
           : "border-border bg-card shadow-soft hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
       }`}
     >
       <div className="flex items-start justify-between gap-2 min-w-0">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-            <FileText size={20} strokeWidth={1.75} />
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <span
+            className={`grid size-10 shrink-0 place-items-center rounded-lg ${
+              !hasAccess
+                ? "bg-destructive/10 text-destructive"
+                : "bg-primary/10 text-primary"
+            }`}
+          >
+            {!hasAccess ? (
+              <Lock size={19} strokeWidth={1.75} />
+            ) : (
+              <FileText size={20} strokeWidth={1.75} />
+            )}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-foreground group-hover:text-primary transition-colors" title={doc.name}>
-              {doc.name}
-            </p>
-            {doc.caseName ? (
-              <p className="truncate text-caption text-muted-foreground" title={doc.caseName}>
-                {doc.caseName}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <p
+                className="truncate text-sm font-semibold text-foreground group-hover:text-primary transition-colors"
+                title={doc.name}
+              >
+                {doc.name}
               </p>
-            ) : null}
+              {!hasAccess && (
+                <span className="inline-flex items-center gap-0.5 rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-bold text-destructive">
+                  Restricted
+                </span>
+              )}
+            </div>
+            {caseLabel ? (
+              <p
+                className="truncate text-caption text-primary/80 font-medium mt-0.5 flex items-center gap-1"
+                title={caseLabel}
+              >
+                <Briefcase size={12} className="shrink-0" />
+                <span className="truncate">{caseLabel}</span>
+              </p>
+            ) : (
+              <p className="truncate text-caption text-muted-foreground mt-0.5">
+                General Firm Document
+              </p>
+            )}
           </div>
         </div>
         {onToggleFav && (
@@ -161,7 +205,9 @@ function DocumentCard({
               }
             }}
             className={`shrink-0 p-1 rounded-sm transition-colors ${
-              isFav ? "text-amber-500" : "text-muted-foreground/30 hover:text-muted-foreground hover:bg-muted/50"
+              isFav
+                ? "text-amber-500"
+                : "text-muted-foreground/30 hover:text-muted-foreground hover:bg-muted/50"
             }`}
             title={isFav ? "Remove from favourites" : "Add to favourites"}
           >
@@ -170,13 +216,24 @@ function DocumentCard({
         )}
       </div>
 
-      <div className="mt-3 flex items-center justify-between gap-2 border-t border-border/40 pt-2.5 min-w-0">
-        <span className="truncate text-caption text-muted-foreground" title={`${doc.sizeFormatted ?? doc.size} · ${uploadedByName(doc)}`}>
-          {doc.sizeFormatted ?? doc.size} · {uploadedByName(doc)}
+      <div className="mt-3 flex items-center justify-between gap-2 border-t border-border/40 pt-2.5 min-w-0 text-caption text-muted-foreground">
+        <span
+          className="truncate"
+          title={`Uploaded ${formatDate(doc.createdAt)} by ${uploadedByName(doc)}`}
+        >
+          {doc.sizeFormatted ?? `${Math.round((doc.size || 0) / 1024)} KB`} · {uploadedByName(doc)}
         </span>
-        <span className="shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
+          {doc.authorizedUsers && doc.authorizedUsers.length > 0 && (
+            <span
+              className="text-[11px] font-medium text-muted-foreground hidden sm:inline"
+              title={doc.authorizedUsers.map((u) => u.name).join(", ")}
+            >
+              {doc.authorizedUsers.length} user{doc.authorizedUsers.length > 1 ? "s" : ""}
+            </span>
+          )}
           <StatusPill tone={toneForStatus(doc.state)}>{doc.state}</StatusPill>
-        </span>
+        </div>
       </div>
     </div>
   );
@@ -257,6 +314,10 @@ function DocumentsPage() {
     }
   };
 
+  const [requestAccessDocId, setRequestAccessDocId] = useState<string | undefined>(undefined);
+  const [accessPromptDoc, setAccessPromptDoc] = useState<DocumentRecord | null>(null);
+  const revokeUserAccessMutation = useRevokeUserAccess();
+
   // Toast state for stub actions
   const [toast, setToast] = useState<{ message: string; type: "info" | "success" | "warning" | "error" } | null>(null);
   const showToast = (message: string, type: "info" | "success" | "warning" | "error" = "info") => {
@@ -267,6 +328,10 @@ function DocumentsPage() {
   const deleteMutation = useDeleteDocument();
   const [docToDelete, setDocToDelete] = useState<DocumentRecord | null>(null);
 
+  const promptAccessDenied = (doc: DocumentRecord) => {
+    setAccessPromptDoc(doc);
+  };
+
   const handleVersions = (doc: DocumentRecord) => {
     setVersionHistoryDocId(doc._id);
     setVersionHistoryDocName(doc.name);
@@ -274,18 +339,44 @@ function DocumentsPage() {
   };
 
   const handleOpen = async (doc: DocumentRecord) => {
+    if (doc.canAccess === false) {
+      promptAccessDenied(doc);
+      return;
+    }
     try {
       await downloadDocument(doc._id);
-    } catch (err) {
-      showToast(
-        err instanceof Error ? `Download failed: ${err.message}` : `Failed to download "${doc.name}"`,
-        "error",
-      );
+    } catch (err: any) {
+      const msg = err instanceof Error ? err.message : String(err || "");
+      if (err?.status === 403 || msg.toLowerCase().includes("access") || msg.toLowerCase().includes("denied")) {
+        promptAccessDenied(doc);
+      } else {
+        showToast(
+          err instanceof Error ? `Download failed: ${err.message}` : `Failed to download "${doc.name}"`,
+          "error",
+        );
+      }
     }
   };
 
   const handleView = (doc: DocumentRecord) => {
+    if (doc.canAccess === false) {
+      promptAccessDenied(doc);
+      return;
+    }
     setPreviewModalDoc(doc);
+  };
+
+  const handleRevokeUser = async (docId: string, userId: string, userName: string) => {
+    try {
+      await revokeUserAccessMutation.mutateAsync({
+        docId,
+        userId,
+        reason: "Access revoked by firm administrator",
+      });
+      showToast(`Access revoked for ${userName}`, "success");
+    } catch (err: any) {
+      showToast(err?.message || "Failed to revoke access", "error");
+    }
   };
 
   const confirmDelete = async () => {
@@ -487,17 +578,46 @@ function DocumentsPage() {
                   className="h-44 w-full shadow-inner"
                   onExpand={() => handleView(previewDoc)}
                 />
-                <h2 className="mt-4 truncate text-title font-semibold">{previewDoc.name}</h2>
-                {previewDoc.caseName && (
-                  <p className="truncate text-helper text-muted-foreground">{previewDoc.caseName}</p>
+                {/* Access Restriction Warning Banner */}
+                {previewDoc.canAccess === false && (
+                  <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3.5 text-xs text-destructive">
+                    <div className="flex items-center gap-1.5 font-semibold">
+                      <Lock size={15} />
+                      <span>Access Restricted</span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-muted-foreground leading-relaxed">
+                      You don't have access to this document. Kindly ask for access request.
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-2.5 h-7 w-full text-xs border-destructive/30 text-destructive hover:bg-destructive/10"
+                      onClick={() => {
+                        setRequestAccessDocId(previewDoc._id);
+                        setShowRequestAccess(true);
+                      }}
+                    >
+                      <KeyRound size={13} className="mr-1" />
+                      Request Access
+                    </Button>
+                  </div>
                 )}
-                <dl className="mt-5 space-y-3 text-helper">
+
+                <h2 className="truncate text-title font-semibold">{previewDoc.name}</h2>
+                {previewDoc.caseName && (
+                  <p className="truncate text-helper text-primary/90 font-medium flex items-center gap-1.5 mt-0.5">
+                    <Briefcase size={14} className="shrink-0" />
+                    <span>{previewDoc.caseName}</span>
+                  </p>
+                )}
+                <dl className="mt-4 space-y-2.5 text-helper">
                   {[
+                    ["Case", previewDoc.caseName ? previewDoc.caseName : "General Firm Storage"],
                     ["Uploaded by", uploadedByName(previewDoc)],
-                    ["Size", previewDoc.size],
-                    ["Version", previewDoc.version || 1],
-                    ["Location", previewDoc.caseName ? `Case: ${previewDoc.caseName}` : "General Storage"],
-                    ["Updated", formatDate(previewDoc.updatedAt)],
+                    ["Uploaded on", formatDate(previewDoc.createdAt)],
+                    ["Size", previewDoc.sizeFormatted ?? previewDoc.size],
+                    ["Version", `v${previewDoc.version || 1}`],
+                    ["Access status", previewDoc.canAccess === false ? "Restricted" : "Approved"],
                   ].map(([k, v]) => (
                     <div key={k} className="flex justify-between gap-3">
                       <dt className="text-muted-foreground">{k}</dt>
@@ -505,6 +625,36 @@ function DocumentsPage() {
                     </div>
                   ))}
                 </dl>
+
+                {/* Who has access list */}
+                {previewDoc.authorizedUsers && previewDoc.authorizedUsers.length > 0 && (
+                  <div className="mt-4 pt-3 border-t border-border/50">
+                    <p className="text-xs font-semibold text-foreground flex items-center justify-between mb-2">
+                      <span>Who Has Access ({previewDoc.authorizedUsers.length})</span>
+                      <ShieldCheck size={14} className="text-primary" />
+                    </p>
+                    <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                      {previewDoc.authorizedUsers.map((u) => (
+                        <div key={u.id} className="flex items-center justify-between text-xs rounded-md bg-muted/40 px-2.5 py-1.5">
+                          <span className="truncate font-medium text-foreground">{u.name}</span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-[10px] text-muted-foreground font-mono">{u.role || "User"}</span>
+                            {user?.role === "admin" && (
+                              <button
+                                type="button"
+                                onClick={() => handleRevokeUser(previewDoc._id, u.id, u.name)}
+                                className="text-[10px] text-destructive hover:underline ml-1 font-semibold"
+                                title={`Revoke ${u.name}'s access`}
+                              >
+                                Revoke
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="mt-5 flex flex-col gap-2">
                   <div className="flex gap-2">
                     <Button variant="outline" className="flex-1 rounded-md" onClick={() => handleView(previewDoc)}>
@@ -567,13 +717,40 @@ function DocumentsPage() {
                   handleView(previewDoc);
                 }}
               />
+
+              {previewDoc.canAccess === false && (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+                  <div className="flex items-center gap-1.5 font-semibold">
+                    <Lock size={14} />
+                    <span>Access Restricted</span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground leading-relaxed">
+                    You don't have access to this document. Kindly ask for access request.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-2.5 h-7 w-full text-xs border-destructive/30 text-destructive hover:bg-destructive/10"
+                    onClick={() => {
+                      setMobileDrawerOpen(false);
+                      setRequestAccessDocId(previewDoc._id);
+                      setShowRequestAccess(true);
+                    }}
+                  >
+                    <KeyRound size={13} className="mr-1" />
+                    Request Access
+                  </Button>
+                </div>
+              )}
+
               <dl className="space-y-2.5 text-helper">
                 {[
+                  ["Case", previewDoc.caseName ? previewDoc.caseName : "General Storage"],
                   ["Uploaded by", uploadedByName(previewDoc)],
-                  ["Size", previewDoc.size],
-                  ["Version", previewDoc.version || 1],
-                  ["Location", previewDoc.caseName ? `Case: ${previewDoc.caseName}` : "General Storage"],
-                  ["Updated", formatDate(previewDoc.updatedAt)],
+                  ["Uploaded on", formatDate(previewDoc.createdAt)],
+                  ["Size", previewDoc.sizeFormatted ?? previewDoc.size],
+                  ["Version", `v${previewDoc.version || 1}`],
+                  ["Access status", previewDoc.canAccess === false ? "Restricted" : "Approved"],
                 ].map(([k, v]) => (
                   <div key={k} className="flex justify-between gap-3 border-b border-border/50 py-1.5">
                     <dt className="text-muted-foreground">{k}</dt>
@@ -581,6 +758,34 @@ function DocumentsPage() {
                   </div>
                 ))}
               </dl>
+
+              {previewDoc.authorizedUsers && previewDoc.authorizedUsers.length > 0 && (
+                <div className="pt-2 border-t border-border/50">
+                  <p className="text-xs font-semibold text-foreground flex items-center justify-between mb-2">
+                    <span>Who Has Access ({previewDoc.authorizedUsers.length})</span>
+                    <ShieldCheck size={14} className="text-primary" />
+                  </p>
+                  <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
+                    {previewDoc.authorizedUsers.map((u) => (
+                      <div key={u.id} className="flex items-center justify-between text-xs rounded-md bg-muted/40 px-2 py-1">
+                        <span className="truncate font-medium text-foreground">{u.name}</span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="text-[10px] text-muted-foreground font-mono">{u.role || "User"}</span>
+                          {user?.role === "admin" && (
+                            <button
+                              type="button"
+                              onClick={() => handleRevokeUser(previewDoc._id, u.id, u.name)}
+                              className="text-[10px] text-destructive hover:underline ml-1 font-semibold"
+                            >
+                              Revoke
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="flex flex-col gap-2 pt-2">
                 <div className="flex gap-2">
                   <Button
@@ -643,9 +848,75 @@ function DocumentsPage() {
       {showRequestAccess && (
         <RequestAccessDialog
           open={showRequestAccess}
-          onClose={() => setShowRequestAccess(false)}
+          onClose={() => {
+            setShowRequestAccess(false);
+            setRequestAccessDocId(undefined);
+          }}
+          initialDocId={requestAccessDocId}
         />
       )}
+
+      {/* Access Denied / Revoked Prompt Dialog */}
+      <Dialog open={!!accessPromptDoc} onOpenChange={(open) => !open && setAccessPromptDoc(null)}>
+        <DialogContent className="max-w-md p-6">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <span className="grid size-11 place-items-center rounded-xl bg-destructive/10 text-destructive">
+                <Lock size={22} />
+              </span>
+              <div>
+                <DialogTitle className="text-lg font-bold">Access Restricted</DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground">
+                  Confidential Document Protection
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          <div className="mt-4 space-y-3">
+            <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3.5 text-xs text-foreground">
+              <p className="font-semibold text-sm mb-1 text-foreground">{accessPromptDoc?.name}</p>
+              <p className="text-muted-foreground leading-relaxed">
+                You don’t have access to this document. Kindly ask for access request.
+              </p>
+            </div>
+            {accessPromptDoc?.caseName && (
+              <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <Briefcase size={13} className="text-primary" />
+                <span>Matter: <strong className="text-foreground">{accessPromptDoc.caseName}</strong></span>
+              </div>
+            )}
+            {accessPromptDoc?.authorizedUsers && accessPromptDoc.authorizedUsers.length > 0 && (
+              <div className="text-xs">
+                <p className="font-medium text-muted-foreground mb-1.5">Document Custodians:</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {accessPromptDoc.authorizedUsers.map((u) => (
+                    <span key={u.id} className="rounded-md bg-secondary px-2 py-0.5 text-[11px] font-medium text-secondary-foreground">
+                      {u.name} ({u.role || "Authorized"})
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="mt-6 flex gap-2">
+            <Button variant="outline" onClick={() => setAccessPromptDoc(null)}>
+              Cancel
+            </Button>
+            <Button
+              className="gradient-primary text-primary-foreground"
+              onClick={() => {
+                const targetDocId = accessPromptDoc?._id;
+                setAccessPromptDoc(null);
+                setRequestAccessDocId(targetDocId);
+                setShowRequestAccess(true);
+              }}
+            >
+              <KeyRound size={15} className="mr-1.5" />
+              Request Access
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {showVersionHistory && (
         <VersionHistoryDialog

@@ -16,9 +16,12 @@ export interface DocumentRecord {
   sizeFormatted?: string;
   caseId?: string | { _id: string; title?: string; number?: string };
   caseName?: string;
-  uploadedBy: string | { _id: string; name?: string };
+  uploadedBy: string | { _id: string; name?: string; email?: string };
   uploadedByName?: string;
   state: "Pending" | "Approved" | "Rejected" | "Draft";
+  canAccess?: boolean;
+  accessStatus?: "approved" | "pending" | "rejected" | "none";
+  authorizedUsers?: { id: string; name: string; role?: string }[];
   storagePath?: string;
   storageFolder?: string;
   nasPath?: string;
@@ -35,7 +38,8 @@ export interface DocumentRecord {
 }
 
 export interface AccessRequest {
-  userId: string;
+  _id?: string;
+  userId: string | { _id: string; name?: string; email?: string };
   reason: string;
   status: "pending" | "approved" | "rejected";
   createdAt: string;
@@ -184,6 +188,23 @@ export function useReviewAccessRequest() {
   >({
     mutationFn: ({ docId, requestId, status }) =>
       api.patch(`/documents/${docId}/access-requests/${requestId}`, { status }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: docKeys.all });
+      qc.invalidateQueries({ queryKey: ["documents", "requestable"] });
+      qc.invalidateQueries({ queryKey: ["admin", "approvals"] });
+    },
+  });
+}
+
+export function useRevokeUserAccess() {
+  const qc = useQueryClient();
+  return useMutation<
+    { message: string },
+    Error,
+    { docId: string; userId: string; reason?: string }
+  >({
+    mutationFn: ({ docId, userId, reason }) =>
+      api.post(`/documents/${docId}/revoke-user`, { userId, reason }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: docKeys.all });
       qc.invalidateQueries({ queryKey: ["documents", "requestable"] });
