@@ -30,6 +30,7 @@
     "allowToChangeInstallationDirectory": false,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "S & S Legal-Tech LLP"
+    "shortcutName": "S & S Legal-Tech LLP",
+    "artifactName": "${name}-setup-${version}.${ext}"
   }
 }
