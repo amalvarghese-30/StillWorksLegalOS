@@ -34,25 +34,43 @@ interface SocketContextValue {
   status: ConnectionStatus;
 }
 
-function getSocketUrl(): string {
+export function getSocketUrl(): string {
   // 1. Explicit environment variable takes precedence
-  if (import.meta.env["VITE_SOCKET_URL"]) {
-    return import.meta.env["VITE_SOCKET_URL"];
+  const envSocket = import.meta.env["VITE_SOCKET_URL"];
+  if (envSocket && typeof envSocket === "string" && envSocket.trim()) {
+    return envSocket.trim().replace(/\/+$/, "");
   }
 
-  // 2. Web browser: in dev Vite proxies /socket.io, in production web connects same-origin
+  // Derive from VITE_API_URL if provided
+  const envApi = import.meta.env["VITE_API_URL"];
+  if (envApi && typeof envApi === "string" && envApi.trim()) {
+    return envApi.trim().replace(/\/+$/, "").replace(/\/api$/, "");
+  }
+
+  // 2. Web browser: if accessed via production domain legalos.stillworks.in or any stillworks.in subdomain
   if (typeof window !== "undefined" && window.location) {
+    const hostname = window.location.hostname;
+    if (hostname === "legalos.stillworks.in" || hostname.endsWith(".stillworks.in")) {
+      return "https://api.legalos.stillworks.in";
+    }
+
+    // Local dev: Vite proxies /socket.io to backend
     if (window.location.origin && window.location.origin.startsWith("http")) {
       return window.location.origin;
     }
   }
 
-  // 3. Fallback for Electron / local desktop development (default to localhost:3001)
+  // 3. Electron desktop application: default to production cloud socket server
+  if (isElectron()) {
+    return "https://api.legalos.stillworks.in";
+  }
+
+  // 4. Fallback for local desktop development (default to localhost:3001)
   const defaultPort = import.meta.env["VITE_BACKEND_PORT"] || "3001";
   return `http://localhost:${defaultPort}`;
 }
 
-const SOCKET_URL = getSocketUrl();
+export const SOCKET_URL = getSocketUrl();
 
 // ---------------------------------------------------------------------------
 // Context

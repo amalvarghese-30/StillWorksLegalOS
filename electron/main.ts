@@ -50,7 +50,7 @@ const CSP_HEADER_PROD = [
   "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https://fonts.gstatic.com",
-  "connect-src 'self' https: wss: http://localhost:3001 ws://localhost:3001",
+  "connect-src 'self' https: wss: https://api.legalos.stillworks.in wss://api.legalos.stillworks.in http://localhost:3001 ws://localhost:3001",
   "frame-src 'none'",
   "object-src 'none'",
   "base-uri 'self'",
@@ -139,11 +139,14 @@ function createWindow(): BrowserWindow {
   // Origin Interceptor: Attach configured API origin when applicable
   // -------------------------------------------------------------------------
   win.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
-    const configuredOrigin = process.env.VITE_API_ORIGIN;
+    const configuredOrigin = process.env.VITE_API_ORIGIN || "https://legalos.stillworks.in";
     if (configuredOrigin) {
       try {
-        const targetHost = new URL(configuredOrigin).hostname;
-        if (details.url.includes(targetHost)) {
+        if (
+          details.url.includes("legalos.stillworks.in") ||
+          details.url.includes("localhost:3001") ||
+          details.url.includes("127.0.0.1:3001")
+        ) {
           details.requestHeaders["Origin"] = configuredOrigin;
         }
       } catch {

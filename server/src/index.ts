@@ -63,15 +63,15 @@ if (process.env["NODE_ENV"] === "production") {
 // CORS origins — Recommendation #3: allow both Vite dev & Electron
 // ---------------------------------------------------------------------------
 
-const rawOrigins = process.env["CORS_ORIGINS"] ?? "http://localhost:5173,http://localhost:5174,app://.";
+const rawOrigins =
+  process.env["CORS_ORIGINS"] ??
+  "http://localhost:5173,http://localhost:5174,https://legalos.stillworks.in,https://api.legalos.stillworks.in,app://.";
 const ALLOWED_ORIGINS = rawOrigins
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
 
 const isOriginAllowed = (origin?: string): boolean => {
-  const isProd = process.env["NODE_ENV"] === "production";
-
   if (!origin) {
     // Non-browser or internal requests (like Electron direct IPC/fetch, curl, health checks)
     return true;
@@ -87,8 +87,8 @@ const isOriginAllowed = (origin?: string): boolean => {
     return true;
   }
 
-  // Configured production domain (optional regex check for subdomains if provided)
-  const prodDomain = process.env["PRODUCTION_DOMAIN"];
+  // Configured production domain (permits https://legalos.stillworks.in, https://api.legalos.stillworks.in, etc.)
+  const prodDomain = process.env["PRODUCTION_DOMAIN"] ?? "stillworks.in";
   if (prodDomain) {
     const escapedDomain = prodDomain.replace(/\./g, "\\.");
     const prodRegex = new RegExp(`^https://([a-zA-Z0-9-]+\\.)*${escapedDomain}$`);
@@ -97,19 +97,17 @@ const isOriginAllowed = (origin?: string): boolean => {
     }
   }
 
-  // Local development only: permit loopback and private LAN addresses
-  if (!isProd) {
-    if (
-      origin.startsWith("http://localhost:") ||
-      origin.startsWith("http://127.0.0.1:") ||
-      origin.startsWith("http://192.168.") ||
-      origin.startsWith("http://10.") ||
-      origin.startsWith("http://172.16.") ||
-      origin.startsWith("http://[::1]:") ||
-      origin === "null"
-    ) {
-      return true;
-    }
+  // Local development / testing: permit loopback and private LAN addresses
+  if (
+    origin.startsWith("http://localhost:") ||
+    origin.startsWith("http://127.0.0.1:") ||
+    origin.startsWith("http://192.168.") ||
+    origin.startsWith("http://10.") ||
+    origin.startsWith("http://172.16.") ||
+    origin.startsWith("http://[::1]:") ||
+    origin === "null"
+  ) {
+    return true;
   }
 
   return false;
@@ -357,23 +355,7 @@ const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
     origin: (origin, callback) => {
-      // Allow all origins when CORS_ORIGINS=* (local testing only)
-      if (ALLOWED_ORIGINS.includes("*")) return callback(null, true);
-      // Same logic as Express CORS - allow dev + Electron origins
-      if (!origin) return callback(null, true);
-      if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
-      // Allow file:// protocol for Electron production (loadFile)
-      if (origin.startsWith("file://")) return callback(null, true);
-      if (
-        process.env["NODE_ENV"] === "development" &&
-        (origin.startsWith("http://localhost:") ||
-         origin.startsWith("http://127.0.0.1:") ||
-         origin.startsWith("http://192.168.") ||
-         origin.startsWith("http://10.") ||
-         origin.startsWith("http://172.16.") ||
-         origin.startsWith("[::1]:") ||
-         origin.startsWith("http://[::1]:"))
-      ) {
+      if (isOriginAllowed(origin)) {
         return callback(null, true);
       }
       callback(new Error("Socket.io origin not allowed"));

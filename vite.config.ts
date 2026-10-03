@@ -17,10 +17,16 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
-      host: true,
+      host: "0.0.0.0",
       port: 5174,
       strictPort: true,
       cors: true,
+      allowedHosts: [
+        "legalos.stillworks.in",
+        ".stillworks.in",
+        "localhost",
+        "127.0.0.1",
+      ],
       proxy: {
         "/api": {
           target: apiTarget,
@@ -64,6 +70,18 @@ export default defineConfig(({ mode }) => {
       watch: {
         ignored: ["**/*.zip", "**/dist-electron.zip", "**/release/**", "**/dist-electron/**", "**/dist/**"],
       },
+    },
+    preview: {
+      host: "0.0.0.0",
+      port: 5174,
+      strictPort: true,
+      cors: true,
+      allowedHosts: [
+        "legalos.stillworks.in",
+        ".stillworks.in",
+        "localhost",
+        "127.0.0.1",
+      ],
     },
   build: {
     outDir: "dist",

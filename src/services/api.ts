@@ -12,23 +12,37 @@ export { isElectron };
 
 export function getApiBase(): string {
   // 1. Explicit environment variable takes precedence (development or production)
-  if (import.meta.env["VITE_API_URL"]) {
-    return import.meta.env["VITE_API_URL"];
+  const envUrl = import.meta.env["VITE_API_URL"];
+  if (envUrl && typeof envUrl === "string" && envUrl.trim()) {
+    const trimmed = envUrl.trim().replace(/\/+$/, "");
+    return trimmed.endsWith("/api") ? trimmed : `${trimmed}/api`;
   }
 
-  // 2. Web browser: on localhost/LAN, relative /api is forwarded via Vite proxy or same-origin
+  // 2. Web browser: if accessed via production domain legalos.stillworks.in or any stillworks.in subdomain
   if (typeof window !== "undefined" && window.location) {
+    const hostname = window.location.hostname;
+    if (hostname === "legalos.stillworks.in" || hostname.endsWith(".stillworks.in")) {
+      return "https://api.legalos.stillworks.in/api";
+    }
+
+    // Localhost or custom LAN dev: use current origin + /api (Vite dev server proxies /api to backend)
     if (window.location.origin && window.location.origin.startsWith("http")) {
       return `${window.location.origin}/api`;
     }
   }
 
-  // 3. Fallback for Electron / local desktop development (default to localhost:3001)
+  // 3. Electron desktop application: default to production cloud API
+  if (isElectron()) {
+    return "https://api.legalos.stillworks.in/api";
+  }
+
+  // 4. Fallback for local desktop development (default to localhost:3001)
   const defaultPort = import.meta.env["VITE_BACKEND_PORT"] || "3001";
   return `http://localhost:${defaultPort}/api`;
 }
 
-const API_BASE = getApiBase();
+export const API_URL = import.meta.env["VITE_API_URL"] || getApiBase();
+export const API_BASE = getApiBase();
 
 function electronApi() {
   return typeof window !== "undefined" ? (window.electronAPI ?? null) : null;

@@ -41,31 +41,64 @@ function parseCookies(header?: string): Record<string, string> {
   return cookies;
 }
 
-function setRefreshCookie(res: Response, token: string, persistent = false): void {
+function getCookieDomain(req?: Request): string | undefined {
+  if (process.env["COOKIE_DOMAIN"]) {
+    return process.env["COOKIE_DOMAIN"];
+  }
+  const host = req?.headers["host"] || req?.hostname || "";
+  if (host.includes("stillworks.in")) {
+    return ".stillworks.in";
+  }
+  return undefined;
+}
+
+function setRefreshCookie(res: Response, token: string, persistent = false, req?: Request): void {
   const isProd = process.env["NODE_ENV"] === "production";
+  const sameSite = process.env["COOKIE_SAMESITE"] || "Lax";
   const parts = [
     `${REFRESH_COOKIE}=${encodeURIComponent(token)}`,
     "HttpOnly",
-    "SameSite=Lax",
+    `SameSite=${sameSite}`,
     "Path=/api/auth",
   ];
+  const cookieDomain = getCookieDomain(req);
+  if (cookieDomain) {
+    parts.push(`Domain=${cookieDomain}`);
+  }
   if (persistent) {
     parts.push(`Max-Age=${REFRESH_COOKIE_PERSISTENT_MAX_AGE_SECONDS}`);
   }
-  if (isProd) parts.push("Secure");
+  const isHttps = req?.secure || req?.headers["x-forwarded-proto"] === "https";
+  if (isHttps || isProd || process.env["COOKIE_SECURE"] === "true") {
+    const host = req?.headers["host"] || req?.hostname || "";
+    if (!host.startsWith("localhost") && !host.startsWith("127.0.0.1")) {
+      parts.push("Secure");
+    }
+  }
   res.setHeader("Set-Cookie", parts.join("; "));
 }
 
-function clearRefreshCookie(res: Response): void {
+function clearRefreshCookie(res: Response, req?: Request): void {
   const isProd = process.env["NODE_ENV"] === "production";
+  const sameSite = process.env["COOKIE_SAMESITE"] || "Lax";
   const parts = [
     `${REFRESH_COOKIE}=`,
     "HttpOnly",
-    "SameSite=Lax",
+    `SameSite=${sameSite}`,
     "Path=/api/auth",
     "Max-Age=0",
   ];
-  if (isProd) parts.push("Secure");
+  const cookieDomain = getCookieDomain(req);
+  if (cookieDomain) {
+    parts.push(`Domain=${cookieDomain}`);
+  }
+  const isHttps = req?.secure || req?.headers["x-forwarded-proto"] === "https";
+  if (isHttps || isProd || process.env["COOKIE_SECURE"] === "true") {
+    const host = req?.headers["host"] || req?.hostname || "";
+    if (!host.startsWith("localhost") && !host.startsWith("127.0.0.1")) {
+      parts.push("Secure");
+    }
+  }
   res.setHeader("Set-Cookie", parts.join("; "));
 }
 
@@ -169,7 +202,7 @@ router.post("/login", async (req: Request, res: Response) => {
     await user.save();
 
     // Set refresh token cookie: persistent if rememberMe, session-only if not
-    setRefreshCookie(res, refreshToken, rememberMe);
+    setRefreshCookie(res, refreshToken, rememberMe, req);
 
     // If user has securityLoginAlerts enabled, trigger alert notification
     if (user.securityLoginAlerts !== false) {
@@ -237,7 +270,7 @@ router.post("/logout", requireAuth, async (req: Request, res: Response) => {
       lastActiveAt: new Date(),
     });
 
-    clearRefreshCookie(res);
+    clearRefreshCookie(res, req);
     res.json({ message: "Logged out" });
   } catch (err) {
     console.error("[auth] Logout error:", err);
@@ -392,7 +425,7 @@ router.post("/refresh", async (req: Request, res: Response) => {
       // Reuse / replay detection: a valid signature was presented that does not match
       // any active session hash (it was already rotated or revoked). Revoke session family!
       await Session.revokeAllForUser(payload.userId);
-      clearRefreshCookie(res);
+      clearRefreshCookie(res, req);
       res.status(401).json({ message: "Invalid or expired refresh token" });
       return;
     }
@@ -415,7 +448,7 @@ router.post("/refresh", async (req: Request, res: Response) => {
     await session.save();
 
     // Always rotate the httpOnly cookie (web clients); Electron ignores it.
-    setRefreshCookie(res, newRefreshToken, Boolean(session.rememberMe));
+    setRefreshCookie(res, newRefreshToken, Boolean(session.rememberMe), req);
 
     const body: Record<string, unknown> = {
       accessToken: newAccessToken,
