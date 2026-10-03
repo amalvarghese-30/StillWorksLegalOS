@@ -1,0 +1,65 @@
+name: Build & Release Desktop EXE
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    name: Build & Publish Windows Installer
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm install --legacy-peer-deps
+
+      - name: Determine & Bump Version for Auto-Update
+        id: versioning
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node scripts/check-and-bump-version.cjs
+
+      - name: Build Web Client & Electron Preload
+        run: |
+          npm run build:client
+
+      - name: Build Windows EXE & Publish to GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npx electron-builder --config electron-builder.json --win --publish always
+
+      - name: Commit Bumped Version back to GitHub (if auto-bumped)
+        if: steps.versioning.outputs.is_bumped == 'true'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add package.json
+          git commit -m "chore(release): bump desktop version to ${{ steps.versioning.outputs.version }} [skip ci]"
+          git tag -f "v${{ steps.versioning.outputs.version }}"
+          git push origin main --tags
