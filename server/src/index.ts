@@ -379,7 +379,7 @@ const io = new Server(httpServer, {
 // Make io accessible to route handlers
 app.set("io", io);
 
-const MAX_SOCKETS_PER_USER = 5;
+const MAX_SOCKETS_PER_USER = 20;
 
 // ---------------------------------------------------------------------------
 // Socket.io Authentication Middleware
@@ -405,27 +405,39 @@ io.use(async (socket, next) => {
       role: string;
     };
 
-    // Validate the session is still live in the DB — a revoked/expired session
-    // must not be able to open a socket even with a cryptographically valid JWT.
-    const session = await Session.findOne({
+    // Validate the session is still live in the DB — check either exact token
+    // or active unrevoked session for this user to allow seamless token rotation
+    let session = await Session.findOne({
       token,
       isRevoked: false,
       expiresAt: { $gt: new Date() },
     });
     if (!session) {
+      session = await Session.findOne({
+        userId: payload.userId,
+        isRevoked: false,
+        expiresAt: { $gt: new Date() },
+      }).sort({ lastActiveAt: -1 });
+    }
+
+    if (!session) {
       console.warn("[socket] Connection rejected: session revoked/expired", socket.id);
       return next(new Error("Session revoked or expired"));
     }
 
-    // Per-user connection cap — prevents a single account from exhausting
-    // sockets / file descriptors.
-    let userConnections = 0;
+    // Per-user connection cap — evict oldest socket rather than rejecting
+    const existingSockets: any[] = [];
     for (const s of io.sockets.sockets.values()) {
-      if (s.data.userId === payload.userId) userConnections += 1;
+      if (s.data.userId === payload.userId) {
+        existingSockets.push(s);
+      }
     }
-    if (userConnections >= MAX_SOCKETS_PER_USER) {
-      console.warn("[socket] Connection rejected: too many connections", socket.id);
-      return next(new Error("Too many connections"));
+    if (existingSockets.length >= MAX_SOCKETS_PER_USER) {
+      const oldest = existingSockets[0];
+      if (oldest) {
+        console.log(`[socket] Evicting oldest socket ${oldest.id} for user ${payload.userId}`);
+        oldest.disconnect(true);
+      }
     }
 
     // Attach user info to socket (sessionId stays stable across token refresh,

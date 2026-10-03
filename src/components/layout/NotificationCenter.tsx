@@ -24,6 +24,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { useNotifications, type Notification } from "@/lib/notifications";
+import { notifications, getNotificationPermissionStatus, isElectron } from "@/platform";
+import { toast } from "sonner";
 import { useNavigate } from "@tanstack/react-router";
 
 // Format relative timestamps
@@ -139,6 +141,7 @@ export function NotificationCenter() {
     toggleSound,
   } = useNotifications();
   const navigate = useNavigate();
+  const [browserPerm, setBrowserPerm] = useState<string>(() => getNotificationPermissionStatus());
 
   // Route to the target resource
   const handleNotificationClick = (n: Notification) => {
@@ -277,6 +280,31 @@ export function NotificationCenter() {
             )}
           </div>
         </div>
+
+        {/* Web Browser Notification Permission Banner */}
+        {!isElectron() && browserPerm === "default" && (
+          <div className="mx-5 my-2.5 rounded-lg border border-primary/20 bg-primary/5 p-3 flex items-center justify-between gap-3 animate-in fade-in">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="size-2 rounded-full bg-primary animate-pulse shrink-0" />
+              <p className="text-xs text-foreground font-medium">
+                Allow desktop alerts for real-time cases, tasks & hearings
+              </p>
+            </div>
+            <Button
+              size="sm"
+              className="gradient-primary text-primary-foreground h-7 px-3 text-xs rounded-md shrink-0 shadow-xs"
+              onClick={async () => {
+                const granted = await notifications.requestPermission();
+                setBrowserPerm(getNotificationPermissionStatus());
+                if (granted) {
+                  toast.success("Desktop notifications enabled successfully");
+                }
+              }}
+            >
+              Enable
+            </Button>
+          </div>
+        )}
 
         {/* Filter Tabs */}
         <div className="flex items-center gap-1.5 border-b border-border/60 bg-muted/30 px-5 py-2 overflow-x-auto no-scrollbar">

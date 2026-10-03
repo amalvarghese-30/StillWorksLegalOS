@@ -4,7 +4,9 @@ import { Plus, Search, Mail, Phone, ShieldCheck, Briefcase, Loader2, UserCheck, 
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StatusPill } from "@/components/common/StatusPill";
 import { Button } from "@/components/ui/button";
-import { useClients, type ClientRecord } from "@/services/clients";
+import { useQueryClient } from "@tanstack/react-query";
+import { useSocketEvent } from "@/lib/socket";
+import { useClients, clientKeys, type ClientRecord } from "@/services/clients";
 import { AddClientDialog } from "@/components/clients/AddClientDialog";
 import { formatSafeDate } from "@/lib/dates";
 
@@ -125,9 +127,20 @@ function ClientCard({ c }: { c: ClientRecord }) {
 function ClientsPage() {
   const [search, setSearch] = useState("");
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const queryClient = useQueryClient();
   const { data, isLoading, isError, error } = useClients(
     search.trim() ? { search } : {},
   );
+
+  useSocketEvent("client:created", () => {
+    queryClient.invalidateQueries({ queryKey: clientKeys.all });
+  });
+  useSocketEvent("client:updated", () => {
+    queryClient.invalidateQueries({ queryKey: clientKeys.all });
+  });
+  useSocketEvent("client:deleted", () => {
+    queryClient.invalidateQueries({ queryKey: clientKeys.all });
+  });
 
   return (
     <div>

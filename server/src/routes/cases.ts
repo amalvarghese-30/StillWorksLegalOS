@@ -505,6 +505,15 @@ router.post("/", async (req: Request, res: Response) => {
       console.warn(`[cases:create] [corrId: ${corrId}] Non-fatal audit log error:`, auditErr?.message);
     }
 
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("case:created", {
+        caseId: record._id.toString(),
+        number: record.number,
+        title: record.title,
+      });
+    }
+
     res.status(201).json({ case: record });
   } catch (err: any) {
     console.error(`[cases:create] [corrId: ${corrId}] [stage: failed] Error:`, err);
@@ -664,6 +673,15 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
       req.app.get("io")
     );
 
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("case:updated", {
+        caseId: record._id.toString(),
+        number: record.number,
+        title: record.title,
+      });
+    }
+
     res.json({ case: record });
   } catch (err: any) {
     console.error("[cases] Update error:", err);
@@ -729,6 +747,13 @@ router.delete("/:id", requireResourceAccess("case"), async (req: Request, res: R
       },
       req.app.get("io")
     );
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("case:deleted", {
+        caseId: record._id.toString(),
+      });
+    }
 
     res.json({ message: "Case archived", case: record });
   } catch (err) {

@@ -128,6 +128,14 @@ export async function persistTokens(
       }
     }
   }
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("stillworks:token-refreshed", {
+        detail: { token: newAccessToken },
+      })
+    );
+  }
 }
 
 export async function clearTokens(): Promise<void> {

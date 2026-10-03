@@ -439,6 +439,14 @@ router.post("/", async (req: Request, res: Response) => {
 
     const populatedClient = await Client.findById(client._id).populate("assignedTo", "name email title initials");
 
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("client:created", {
+        clientId: client._id.toString(),
+        name: client.name,
+      });
+    }
+
     res.status(201).json({ client: populatedClient ?? client });
   } catch (err: any) {
     console.error("[clients] Create error:", err);
@@ -593,6 +601,14 @@ router.patch("/:id", requireResourceAccess("client"), async (req: Request, res: 
       userAgent: req.headers["user-agent"],
     });
 
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("client:updated", {
+        clientId: client._id.toString(),
+        name: client.name,
+      });
+    }
+
     res.json({ client });
   } catch (err) {
     console.error("[clients] Update error:", err);
@@ -631,6 +647,13 @@ router.delete("/:id", requireResourceAccess("client"), async (req: Request, res:
       ip: req.ip,
       userAgent: req.headers["user-agent"],
     });
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("client:deleted", {
+        clientId: client._id.toString(),
+      });
+    }
 
     res.json({ message: "Client archived", client });
   } catch (err) {

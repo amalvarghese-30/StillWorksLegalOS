@@ -5,7 +5,9 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { StatusPill } from "@/components/common/StatusPill";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { useCases, useUpdateCase, type CaseRecord } from "@/services/cases";
+import { useQueryClient } from "@tanstack/react-query";
+import { useSocketEvent } from "@/lib/socket";
+import { useCases, useUpdateCase, caseKeys, type CaseRecord } from "@/services/cases";
 import { useEmployees } from "@/services/admin";
 import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
 import {
@@ -185,10 +187,21 @@ function CasesPage() {
   }, [page, limit, search, statusFilter, priorityFilter, practiceFilter, selectedStaff, courtFilter, judgeFilter, hearingFrom, hearingTo]);
 
   // Fetch cases with server-side query parameters
+  const queryClient = useQueryClient();
   const { data, isLoading, isError, error } = useCases(apiFilters);
   const updateCase = useUpdateCase();
   const { data: empData } = useEmployees();
   const employees = empData?.employees ?? [];
+
+  useSocketEvent("case:created", () => {
+    queryClient.invalidateQueries({ queryKey: caseKeys.all });
+  });
+  useSocketEvent("case:updated", () => {
+    queryClient.invalidateQueries({ queryKey: caseKeys.all });
+  });
+  useSocketEvent("case:deleted", () => {
+    queryClient.invalidateQueries({ queryKey: caseKeys.all });
+  });
 
   const rawCases = data?.cases ?? [];
   const totalItems = data?.total ?? rawCases.length;

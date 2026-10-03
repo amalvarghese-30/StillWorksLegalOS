@@ -182,3 +182,8 @@ class ElectronNotificationProvider implements NotificationProvider {
 export const notifications: NotificationProvider = isElectron()
   ? new ElectronNotificationProvider()
   : new BrowserNotificationProvider();
+
+export function getNotificationPermissionStatus(): NotificationPermission | "unsupported" {
+  if (typeof window === "undefined" || !("Notification" in window)) return "unsupported";
+  return Notification.permission;
+}

@@ -51,12 +51,15 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { useQueryClient } from "@tanstack/react-query";
+import { useSocketEvent } from "@/lib/socket";
 import {
   useDocuments,
   useRequestAccess,
   useRevokeUserAccess,
   downloadDocument,
   useDeleteDocument,
+  docKeys,
   type DocumentRecord,
 } from "@/services/documents";
 import { UploadDocumentDialog } from "@/components/documents/UploadDocumentDialog";
@@ -273,8 +276,19 @@ function DocumentsPage() {
     });
   };
 
+  const queryClient = useQueryClient();
   const requestAccess = useRequestAccess();
   const { data, isLoading, isError, error } = useDocuments();
+
+  useSocketEvent("document:created", () => {
+    queryClient.invalidateQueries({ queryKey: docKeys.all });
+  });
+  useSocketEvent("document:updated", () => {
+    queryClient.invalidateQueries({ queryKey: docKeys.all });
+  });
+  useSocketEvent("document:deleted", () => {
+    queryClient.invalidateQueries({ queryKey: docKeys.all });
+  });
 
   const rawDocs = data?.documents ?? [];
 

@@ -692,6 +692,14 @@ router.post("/upload", async (req: Request, res: Response) => {
         }
       }
 
+      if (io) {
+        io.emit("document:created", {
+          documentId: doc._id.toString(),
+          name: meta.displayName,
+          caseId: meta.caseId?.toString(),
+        });
+      }
+
       const sanitizedDoc: any = doc.toObject ? doc.toObject() : { ...doc };
       delete sanitizedDoc.storagePath;
       delete sanitizedDoc.storageFolder;
@@ -822,6 +830,15 @@ router.patch("/:id", requireResourceAccess("document"), async (req: Request, res
       document.name,
       req
     ));
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("document:updated", {
+        documentId: document._id.toString(),
+        name: document.name,
+        state: document.state,
+      });
+    }
 
     res.json({ document });
   } catch (err) {
@@ -993,6 +1010,14 @@ router.patch("/:docId/access-requests/:requestId", requireAuth, async (req: Requ
       console.error("[documents] Access review audit log error:", logErr);
     }
 
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("document:updated", {
+        documentId: document._id.toString(),
+        name: document.name,
+      });
+    }
+
     res.json({ message: `Access request ${status}`, document });
   } catch (err) {
     console.error("[documents] Access request review error:", err);
@@ -1074,6 +1099,14 @@ router.post("/:docId/revoke-user", requireAuth, async (req: Request, res: Respon
       console.error("[documents] Audit error on revocation:", auditErr);
     }
 
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("document:updated", {
+        documentId: document._id.toString(),
+        name: document.name,
+      });
+    }
+
     res.json({ message: "User access revoked successfully", document });
   } catch (err) {
     console.error("[documents] Revoke user error:", err);
@@ -1116,6 +1149,13 @@ router.delete("/:id", requireResourceAccess("document"), async (req: Request, re
       document.name,
       req
     ));
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("document:deleted", {
+        documentId: document._id.toString(),
+      });
+    }
 
     res.json({ message: "Document deleted" });
   } catch (err) {

@@ -19,7 +19,7 @@ import {
   type ReactNode,
 } from "react";
 import { io, Socket } from "socket.io-client";
-import { getAccessToken } from "@/services/api";
+import { getAccessToken, refreshAccessToken } from "@/services/api";
 import { useAuth } from "@/lib/auth";
 import { isElectron } from "@/platform";
 
@@ -127,7 +127,11 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       reconnectionDelayMax: 10_000,
     });
 
+    let authRefreshAttempts = 0;
+    const maxAuthRefreshAttempts = 5;
+
     newSocket.on("connect", () => {
+      authRefreshAttempts = 0;
       setStatus("connected");
     });
 
@@ -140,6 +144,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     });
 
     newSocket.io.on("reconnect", () => {
+      authRefreshAttempts = 0;
       setStatus("connected");
     });
 
@@ -151,7 +156,31 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       setStatus("error");
     });
 
-    newSocket.on("connect_error", (_err) => {
+    newSocket.on("connect_error", async (err: Error) => {
+      const msg = err?.message || "";
+      const isAuthError =
+        msg.includes("token") ||
+        msg.includes("Session") ||
+        msg.includes("Authentication") ||
+        msg.includes("jwt");
+
+      if (isAuthError && authRefreshAttempts < maxAuthRefreshAttempts) {
+        authRefreshAttempts += 1;
+        setStatus("reconnecting");
+        try {
+          const newToken = await refreshAccessToken();
+          if (newToken) {
+            newSocket.auth = { token: newToken };
+            setTimeout(() => {
+              newSocket.connect();
+            }, 1000);
+            return;
+          }
+        } catch {
+          // Token refresh failed
+        }
+      }
+
       setStatus("error");
     });
 
@@ -159,10 +188,27 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       // Internal socket error
     });
 
+    // Listen to token refresh broadcast from api.ts to keep socket credentials in sync
+    const handleTokenRefreshed = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (detail?.token) {
+        newSocket.auth = { token: detail.token };
+        if (!newSocket.connected) {
+          newSocket.connect();
+        }
+      }
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("stillworks:token-refreshed", handleTokenRefreshed);
+    }
+
     // Publish new socket instance to context (triggers consumer re-renders)
     setSocket(newSocket);
 
     return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("stillworks:token-refreshed", handleTokenRefreshed);
+      }
       newSocket.disconnect();
       setSocket(null);
       setStatus("disconnected");

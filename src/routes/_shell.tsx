@@ -1,12 +1,14 @@
 import { createFileRoute, Outlet, useNavigate, useLocation } from "@tanstack/react-router";
-import { useEffect } from "react";
-import { ShieldAlert, ArrowLeft } from "lucide-react";
+import { useState, useEffect } from "react";
+import { ShieldAlert, ArrowLeft, Bell, X } from "lucide-react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 import { SkipLink } from "@/components/common/SkipLink";
 import { CallReminderAlerts } from "@/components/calendar/CallReminderAlerts";
+import { notifications, getNotificationPermissionStatus, isElectron } from "@/platform";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_shell")({
   component: ShellLayout,
@@ -32,6 +34,12 @@ function ShellLayout() {
   const { user, ready } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [notifPromptVisible, setNotifPromptVisible] = useState<boolean>(() => {
+    if (isElectron()) return false;
+    if (typeof window === "undefined") return false;
+    const dismissed = localStorage.getItem("stillworks_notif_prompt_dismissed");
+    return !dismissed && getNotificationPermissionStatus() === "default";
+  });
 
   useEffect(() => {
     if (ready && !user) navigate({ to: "/login", replace: true });
@@ -67,6 +75,41 @@ function ShellLayout() {
         </aside>
         <div className="flex min-w-0 flex-1 flex-col py-4">
           <Topbar />
+          {!isElectron() && notifPromptVisible && (
+            <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-primary/25 bg-primary/5 px-4 py-2.5 shadow-xs transition-all">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Bell size={16} className="text-primary shrink-0" />
+                <p className="text-xs text-foreground font-medium">
+                  Enable browser notifications to receive hearing dates, call reminders, and chat alerts in real time.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  size="sm"
+                  className="gradient-primary text-primary-foreground h-7 px-3 text-xs rounded-md shadow-xs"
+                  onClick={async () => {
+                    const granted = await notifications.requestPermission();
+                    setNotifPromptVisible(false);
+                    if (granted) {
+                      toast.success("Desktop notifications enabled successfully");
+                    }
+                  }}
+                >
+                  Enable
+                </Button>
+                <button
+                  onClick={() => {
+                    setNotifPromptVisible(false);
+                    localStorage.setItem("stillworks_notif_prompt_dismissed", "true");
+                  }}
+                  className="p-1 text-muted-foreground hover:text-foreground rounded-md transition-colors"
+                  title="Dismiss"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            </div>
+          )}
           <main id="main-content" className="page-enter mt-6 min-w-0">
             {isRestricted ? (
               <div className="flex flex-col items-center justify-center p-10 text-center rounded-xl border border-destructive/20 bg-card shadow-soft mt-8 max-w-lg mx-auto">
