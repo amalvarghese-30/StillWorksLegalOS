@@ -95,14 +95,22 @@ interface EditEmployeeDialogProps {
 }
 
 export function EditEmployeeDialog({ employee, onClose }: EditEmployeeDialogProps) {
+  if (!employee) return null;
+  return <EditEmployeeDialogInner key={employee._id} employee={employee} onClose={onClose} />;
+}
+
+function EditEmployeeDialogInner({ employee, onClose }: { employee: EmployeeRecord; onClose: () => void }) {
   const { user: currentUser } = useAuth();
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState("junior_advocate");
-  const [title, setTitle] = useState("");
-  const [phone, setPhone] = useState("");
-  const [status, setStatus] = useState("offline");
-  const [permissions, setPermissions] = useState<UserPermissions>(DEFAULT_PERMISSIONS);
+  const [name, setName] = useState(employee.name || "");
+  const [email, setEmail] = useState(employee.email || "");
+  const [role, setRole] = useState(employee.role);
+  const [title, setTitle] = useState(employee.title ?? "");
+  const [phone, setPhone] = useState(employee.phone ?? "");
+  const [status, setStatus] = useState(employee.status ?? "offline");
+  const [permissions, setPermissions] = useState<UserPermissions>({
+    ...DEFAULT_PERMISSIONS,
+    ...(employee.permissions ?? {}),
+  });
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Inline password update state
@@ -124,29 +132,25 @@ export function EditEmployeeDialog({ employee, onClose }: EditEmployeeDialogProp
   const isError = updateEmployee.isError;
 
   useEffect(() => {
-    if (employee) {
-      setName(employee.name || "");
-      setEmail(employee.email || "");
-      setRole(employee.role);
-      setTitle(employee.title ?? "");
-      setPhone(employee.phone ?? "");
-      setStatus(employee.status ?? "offline");
-      setPermissions({
-        ...DEFAULT_PERMISSIONS,
-        ...(employee.permissions ?? {}),
-      });
-      setShowDeleteConfirm(false);
-      setShowResetModal(false);
-      setGeneratedPassword(null);
-      setCustomPassword("");
-      setHasCopied(false);
-      setNewPassword("");
-      setShowNewPassword(false);
-      setPasswordCopied(false);
-    }
+    setName(employee.name || "");
+    setEmail(employee.email || "");
+    setRole(employee.role);
+    setTitle(employee.title ?? "");
+    setPhone(employee.phone ?? "");
+    setStatus(employee.status ?? "offline");
+    setPermissions({
+      ...DEFAULT_PERMISSIONS,
+      ...(employee.permissions ?? {}),
+    });
+    setShowDeleteConfirm(false);
+    setShowResetModal(false);
+    setGeneratedPassword(null);
+    setCustomPassword("");
+    setHasCopied(false);
+    setNewPassword("");
+    setShowNewPassword(false);
+    setPasswordCopied(false);
   }, [employee]);
-
-  if (!employee) return null;
 
   const togglePermission = (key: keyof UserPermissions) =>
     setPermissions((prev) => ({ ...prev, [key]: !prev[key] }));
