@@ -46,7 +46,13 @@ jobs:
         run: |
           npm run build:client
 
-      - name: Sync Version and Push Tag to GitHub
+      - name: Build Windows EXE Installer Package
+        run: |
+          npx electron-builder --config electron-builder.json --win --publish never
+
+      - name: Publish Unified GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
@@ -57,9 +63,6 @@ jobs:
           }
           git tag -f "v${{ steps.versioning.outputs.version }}"
           git push origin "v${{ steps.versioning.outputs.version }}" --force
-
-      - name: Build Windows EXE & Publish to GitHub Releases
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          npx electron-builder --config electron-builder.json --win --publish always
+          $assets = (Get-ChildItem release -File | Where-Object { $_.Name -like "ss-legaltech*" -or $_.Name -eq "latest.yml" }).FullName
+          gh release delete "v${{ steps.versioning.outputs.version }}" --yes 2>$null || $true
+          gh release create "v${{ steps.versioning.outputs.version }}" $assets --title "${{ steps.versioning.outputs.version }}" --notes "Automated release of StillWorks LegalOS v${{ steps.versioning.outputs.version }}"
