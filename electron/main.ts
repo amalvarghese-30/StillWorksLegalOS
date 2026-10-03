@@ -50,7 +50,7 @@ const CSP_HEADER_PROD = [
   "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https://fonts.gstatic.com",
-  "connect-src 'self' https: wss: https://api.legalos.stillworks.in wss://api.legalos.stillworks.in http://localhost:3001 ws://localhost:3001",
+  "connect-src 'self' https: wss: https://api-legalos.stillworks.in wss://api-legalos.stillworks.in https://api.legalos.stillworks.in wss://api.legalos.stillworks.in http://localhost:3001 ws://localhost:3001",
   "frame-src 'none'",
   "object-src 'none'",
   "base-uri 'self'",

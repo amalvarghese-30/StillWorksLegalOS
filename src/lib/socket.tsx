@@ -51,7 +51,7 @@ export function getSocketUrl(): string {
   if (typeof window !== "undefined" && window.location) {
     const hostname = window.location.hostname;
     if (hostname === "legalos.stillworks.in" || hostname.endsWith(".stillworks.in")) {
-      return "https://api.legalos.stillworks.in";
+      return "https://api-legalos.stillworks.in";
     }
 
     // Local dev: Vite proxies /socket.io to backend
@@ -62,7 +62,7 @@ export function getSocketUrl(): string {
 
   // 3. Electron desktop application: default to production cloud socket server
   if (isElectron()) {
-    return "https://api.legalos.stillworks.in";
+    return "https://api-legalos.stillworks.in";
   }
 
   // 4. Fallback for local desktop development (default to localhost:3001)

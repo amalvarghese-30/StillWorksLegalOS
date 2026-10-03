@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Loader2, Save, Trash2, KeyRound, Copy, Check, ShieldAlert } from "lucide-react";
+import { Loader2, Save, Trash2, KeyRound, Copy, Check, ShieldAlert, Eye, EyeOff, Sparkles, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -105,7 +105,12 @@ export function EditEmployeeDialog({ employee, onClose }: EditEmployeeDialogProp
   const [permissions, setPermissions] = useState<UserPermissions>(DEFAULT_PERMISSIONS);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  // Password reset state
+  // Inline password update state
+  const [newPassword, setNewPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [passwordCopied, setPasswordCopied] = useState(false);
+
+  // Password reset modal state
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetMode, setResetMode] = useState<"generate" | "manual">("generate");
   const [customPassword, setCustomPassword] = useState("");
@@ -135,6 +140,9 @@ export function EditEmployeeDialog({ employee, onClose }: EditEmployeeDialogProp
       setGeneratedPassword(null);
       setCustomPassword("");
       setHasCopied(false);
+      setNewPassword("");
+      setShowNewPassword(false);
+      setPasswordCopied(false);
     }
   }, [employee]);
 
@@ -143,8 +151,32 @@ export function EditEmployeeDialog({ employee, onClose }: EditEmployeeDialogProp
   const togglePermission = (key: keyof UserPermissions) =>
     setPermissions((prev) => ({ ...prev, [key]: !prev[key] }));
 
+  const handleGenerateRandomPassword = () => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%*";
+    const array = new Uint8Array(12);
+    window.crypto.getRandomValues(array);
+    const pass = Array.from(array, (byte) => chars[byte % chars.length]).join("");
+    setNewPassword(pass);
+    setShowNewPassword(true);
+    setPasswordCopied(false);
+    toast.info("Generated new temporary password");
+  };
+
+  const handleCopyNewPassword = () => {
+    if (!newPassword) return;
+    navigator.clipboard.writeText(newPassword);
+    setPasswordCopied(true);
+    toast.success("Password copied to clipboard");
+    setTimeout(() => setPasswordCopied(false), 2000);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (newPassword.trim() && newPassword.trim().length < 8) {
+      toast.error("Password must be at least 8 characters long");
+      return;
+    }
+
     updateEmployee.mutate(
       {
         id: employee._id,
@@ -156,11 +188,16 @@ export function EditEmployeeDialog({ employee, onClose }: EditEmployeeDialogProp
           phone: phone.trim(),
           status,
           permissions,
+          ...(newPassword.trim() ? { password: newPassword.trim() } : {}),
         },
       },
       {
         onSuccess: () => {
-          toast.success("Employee updated successfully");
+          if (newPassword.trim()) {
+            toast.success("Employee profile and password updated successfully");
+          } else {
+            toast.success("Employee updated successfully");
+          }
           onClose();
         },
         onError: (err: any) => {
@@ -313,6 +350,87 @@ export function EditEmployeeDialog({ employee, onClose }: EditEmployeeDialogProp
               </div>
             </div>
 
+            {/* Update Password Card */}
+            <div className="rounded-lg border border-border/80 bg-muted/20 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="grid size-7 place-items-center rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                    <KeyRound size={15} />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold text-foreground">Update Password</Label>
+                    <p className="text-[11px] text-muted-foreground">
+                      Set a new login password for this employee
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs gap-1 px-2.5 text-muted-foreground hover:text-foreground"
+                  onClick={handleGenerateRandomPassword}
+                >
+                  <Sparkles size={12} className="text-amber-500" />
+                  Generate
+                </Button>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="relative">
+                  <Input
+                    type={showNewPassword ? "text" : "password"}
+                    value={newPassword}
+                    onChange={(e) => {
+                      setNewPassword(e.target.value);
+                      setPasswordCopied(false);
+                    }}
+                    placeholder="Enter new password (min. 8 chars) or leave blank"
+                    className="h-10 text-xs pr-20 font-mono bg-background"
+                  />
+                  <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                    {newPassword && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-7 text-muted-foreground hover:text-foreground"
+                        onClick={handleCopyNewPassword}
+                        title="Copy password"
+                      >
+                        {passwordCopied ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-7 text-muted-foreground hover:text-foreground"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      title={showNewPassword ? "Hide password" : "Show password"}
+                    >
+                      {showNewPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </Button>
+                  </div>
+                </div>
+
+                {newPassword ? (
+                  <div className="flex items-center justify-between text-[11px] pt-0.5">
+                    <span className={newPassword.length >= 8 ? "text-emerald-600 dark:text-emerald-400 font-medium" : "text-amber-600 dark:text-amber-400"}>
+                      {newPassword.length >= 8 ? "✓ Ready to update (minimum 8 characters)" : "• Minimum 8 characters required"}
+                    </span>
+                    <span className="text-muted-foreground">
+                      Will apply on Save changes
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground">
+                    Leave blank to keep the current password unchanged.
+                  </p>
+                )}
+              </div>
+            </div>
+
             <div className="space-y-3">
               <Label className="text-helper font-medium">Module Access Control</Label>
               <p className="text-caption text-muted-foreground">
@@ -361,23 +479,21 @@ export function EditEmployeeDialog({ employee, onClose }: EditEmployeeDialogProp
                   Delete
                 </Button>
 
-                {!isSelf && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="rounded-md text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/10 text-xs"
-                    onClick={() => {
-                      setGeneratedPassword(null);
-                      setCustomPassword("");
-                      setResetMode("generate");
-                      setShowResetModal(true);
-                    }}
-                  >
-                    <KeyRound size={14} className="mr-1.5" />
-                    Reset Password
-                  </Button>
-                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="rounded-md text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/10 text-xs"
+                  onClick={() => {
+                    setGeneratedPassword(null);
+                    setCustomPassword("");
+                    setResetMode("generate");
+                    setShowResetModal(true);
+                  }}
+                >
+                  <KeyRound size={14} className="mr-1.5" />
+                  Update Password (Modal)
+                </Button>
               </div>
 
               <div className="flex gap-2">
@@ -430,16 +546,16 @@ export function EditEmployeeDialog({ employee, onClose }: EditEmployeeDialogProp
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Admin Reset Password Dialog */}
+      {/* Admin Update Password Dialog */}
       <Dialog open={showResetModal} onOpenChange={setShowResetModal}>
         <DialogContent className="max-w-md rounded-xl border border-border bg-card p-6 shadow-lift">
           <DialogHeader>
             <DialogTitle className="text-title font-semibold flex items-center gap-2">
               <KeyRound size={18} className="text-amber-500" />
-              Reset Password for {employee.name}
+              Update Password for {employee.name}
             </DialogTitle>
             <DialogDescription className="text-helper text-muted-foreground">
-              This will invalidate all active sessions for this employee and require them to sign in with new credentials.
+              This will update the login password for this employee and require them to sign in with new credentials.
             </DialogDescription>
           </DialogHeader>
 
@@ -448,12 +564,12 @@ export function EditEmployeeDialog({ employee, onClose }: EditEmployeeDialogProp
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5 flex items-start gap-2.5">
                 <ShieldAlert size={18} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
                 <p className="text-xs text-foreground">
-                  The password has been updated. Please share this temporary password securely with <span className="font-semibold">{employee.name}</span>. It will not be shown again.
+                  The password has been updated. Please share this new password securely with <span className="font-semibold">{employee.name}</span>. It will not be shown again.
                 </p>
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">New Temporary Password</Label>
+                <Label className="text-xs text-muted-foreground">New Password</Label>
                 <div className="flex items-center gap-2">
                   <Input
                     readOnly
@@ -486,7 +602,7 @@ export function EditEmployeeDialog({ employee, onClose }: EditEmployeeDialogProp
           ) : (
             <div className="space-y-4 py-2">
               <div className="space-y-2">
-                <Label className="text-xs font-medium">Reset Method</Label>
+                <Label className="text-xs font-medium">Password Option</Label>
                 <div className="space-y-2">
                   <label className="flex items-center gap-2.5 text-xs text-foreground cursor-pointer">
                     <input
@@ -551,7 +667,7 @@ export function EditEmployeeDialog({ employee, onClose }: EditEmployeeDialogProp
                   ) : (
                     <KeyRound size={14} className="mr-1.5" />
                   )}
-                  Reset Password
+                  Update Password
                 </Button>
               </DialogFooter>
             </div>

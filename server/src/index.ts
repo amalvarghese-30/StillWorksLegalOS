@@ -65,7 +65,7 @@ if (process.env["NODE_ENV"] === "production") {
 
 const rawOrigins =
   process.env["CORS_ORIGINS"] ??
-  "http://localhost:5173,http://localhost:5174,https://legalos.stillworks.in,https://api.legalos.stillworks.in,app://.";
+  "http://localhost:5173,http://localhost:5174,https://legalos.stillworks.in,https://api-legalos.stillworks.in,https://api.legalos.stillworks.in,app://.";
 const ALLOWED_ORIGINS = rawOrigins
   .split(",")
   .map((s) => s.trim())

@@ -22,7 +22,7 @@ export function getApiBase(): string {
   if (typeof window !== "undefined" && window.location) {
     const hostname = window.location.hostname;
     if (hostname === "legalos.stillworks.in" || hostname.endsWith(".stillworks.in")) {
-      return "https://api.legalos.stillworks.in/api";
+      return "https://api-legalos.stillworks.in/api";
     }
 
     // Localhost or custom LAN dev: use current origin + /api (Vite dev server proxies /api to backend)
@@ -33,7 +33,7 @@ export function getApiBase(): string {
 
   // 3. Electron desktop application: default to production cloud API
   if (isElectron()) {
-    return "https://api.legalos.stillworks.in/api";
+    return "https://api-legalos.stillworks.in/api";
   }
 
   // 4. Fallback for local desktop development (default to localhost:3001)

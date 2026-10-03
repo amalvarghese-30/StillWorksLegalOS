@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/lib/auth";
-import { ForgotPasswordDialog } from "@/components/auth/ForgotPasswordDialog";
 import { validateEmail } from "@/lib/validation";
 import stillworksLogoLight from "@/assets/stillworks-logo-light.jpg";
 import stillworksLogoDark from "@/assets/stillworks-logo-dark.jpg";
@@ -40,7 +39,6 @@ function LoginPage() {
   const [emailError, setEmailError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [generalError, setGeneralError] = useState<string | null>(null);
-  const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   // Restore remembered credentials on initial mount
@@ -193,18 +191,9 @@ function LoginPage() {
 
             {/* Password Field with specific validation and show/hide toggle */}
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="text-xs font-semibold text-foreground">
-                  Password
-                </Label>
-                <button
-                  type="button"
-                  onClick={() => setShowForgotPassword(true)}
-                  className="text-xs text-primary hover:underline font-medium transition-colors"
-                >
-                  Forgot password?
-                </button>
-              </div>
+              <Label htmlFor="password" className="text-xs font-semibold text-foreground">
+                Password
+              </Label>
               <div className="relative">
                 <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground/70 pointer-events-none" />
                 <Input
@@ -271,15 +260,6 @@ function LoginPage() {
               )}
             </Button>
           </form>
-
-          <ForgotPasswordDialog
-            open={showForgotPassword}
-            onClose={() => setShowForgotPassword(false)}
-            onPasswordResetSuccess={(id) => {
-              setEmail(id);
-              setPassword("");
-            }}
-          />
 
           {/* StillWorks attribution — bundled logo with reliable fallback */}
           <div className="mt-8 flex items-center justify-center gap-2.5 border-t border-border/60 pt-5">

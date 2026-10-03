@@ -116,6 +116,7 @@ export interface UpdateEmployeePayload {
   title?: string;
   status?: string;
   phone?: string;
+  password?: string;
   permissions?: UserPermissions;
 }
 

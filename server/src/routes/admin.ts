@@ -255,6 +255,21 @@ router.patch("/employees/:id", requireAdminOrPermission("employees"), async (req
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     }
 
+    let passwordUpdated = false;
+    if (req.body["password"] !== undefined && req.body["password"] !== "") {
+      if (!isActualAdmin) {
+        res.status(403).json({ message: "Only administrators can update employee passwords" });
+        return;
+      }
+      const rawPassword = typeof req.body["password"] === "string" ? req.body["password"].trim() : "";
+      if (rawPassword.length < 8) {
+        res.status(400).json({ field: "password", message: "Password must be at least 8 characters long" });
+        return;
+      }
+      updates["passwordHash"] = await bcrypt.hash(rawPassword, 12);
+      passwordUpdated = true;
+    }
+
     if (updates["email"]) {
       updates["email"] = String(updates["email"]).toLowerCase().trim();
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -282,6 +297,24 @@ router.patch("/employees/:id", requireAdminOrPermission("employees"), async (req
     if (!user) {
       res.status(404).json({ message: "Employee not found" });
       return;
+    }
+
+    if (passwordUpdated && targetId !== req.userId) {
+      // Invalidate active sessions for this user
+      await Session.updateMany(
+        { userId: targetId, isRevoked: false },
+        { $set: { isRevoked: true } }
+      );
+      const io = req.app.get("io");
+      if (io) {
+        io.to(`user:${targetId}`).emit("force:logout", {
+          reason: "password_updated",
+        });
+        const sockets = await io.in(`user:${targetId}`).fetchSockets();
+        for (const socket of sockets) {
+          socket.disconnect(true);
+        }
+      }
     }
 
     try {
@@ -319,12 +352,6 @@ router.post("/employees/:id/reset-password", requireAdminOrPermission("employees
     const targetId = req.params["id"];
     const isActualAdmin = req.user?.role === "admin";
 
-    // Guard: Prevent admin self-reset via administrative endpoint
-    if (targetId === req.userId) {
-      res.status(400).json({ message: "You cannot reset your own password here. Please use profile settings." });
-      return;
-    }
-
     const targetUser = await User.findById(targetId);
     if (!targetUser) {
       res.status(404).json({ message: "Employee not found" });
@@ -353,21 +380,23 @@ router.post("/employees/:id/reset-password", requireAdminOrPermission("employees
     targetUser.passwordHash = await bcrypt.hash(finalPassword, 12);
     await targetUser.save();
 
-    // Invalidate all active sessions for this user
-    await Session.updateMany(
-      { userId: targetUser._id, isRevoked: false },
-      { $set: { isRevoked: true } }
-    );
+    // Invalidate active sessions for this user (if not the admin self-updating)
+    if (targetId !== req.userId) {
+      await Session.updateMany(
+        { userId: targetUser._id, isRevoked: false },
+        { $set: { isRevoked: true } }
+      );
 
-    // Disconnect active socket connections
-    const io = req.app.get("io");
-    if (io) {
-      io.to(`user:${targetId}`).emit("force:logout", {
-        reason: "password_reset",
-      });
-      const sockets = await io.in(`user:${targetId}`).fetchSockets();
-      for (const socket of sockets) {
-        socket.disconnect(true);
+      // Disconnect active socket connections
+      const io = req.app.get("io");
+      if (io) {
+        io.to(`user:${targetId}`).emit("force:logout", {
+          reason: "password_reset",
+        });
+        const sockets = await io.in(`user:${targetId}`).fetchSockets();
+        for (const socket of sockets) {
+          socket.disconnect(true);
+        }
       }
     }
 
