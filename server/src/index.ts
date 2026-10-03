@@ -45,7 +45,17 @@ function getDirname(): string {
 }
 
 const __dirname = getDirname();
-dotenv.config({ path: path.resolve(__dirname, "..", ".env") });
+const envCandidates = [
+  path.resolve(__dirname, "..", ".env"),
+  path.resolve(__dirname, "..", "..", ".env"),
+  path.resolve(process.cwd(), ".env"),
+  path.resolve(process.cwd(), "server", ".env"),
+];
+for (const p of envCandidates) {
+  if (existsSync(p)) {
+    dotenv.config({ path: p });
+  }
+}
 
 const PORT = parseInt(process.env["SERVER_PORT"] ?? "3001", 10);
 const HOST = process.env["SERVER_HOST"] ?? "0.0.0.0"; // Listen on all interfaces by default

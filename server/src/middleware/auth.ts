@@ -8,9 +8,13 @@ export const getJwtSecret = (): string => {
   const secret = process.env["JWT_SECRET"];
 
   if (!secret) {
-    console.error("[auth] FATAL: JWT_SECRET environment variable is not set");
-    console.error("[auth] Generate a strong secret: openssl rand -base64 48");
-    process.exit(1);
+    if (process.env["NODE_ENV"] === "production") {
+      console.error("[auth] FATAL: JWT_SECRET environment variable is not set");
+      console.error("[auth] Generate a strong secret: openssl rand -base64 48");
+      process.exit(1);
+    }
+    console.warn("[auth] WARNING: JWT_SECRET not found in environment; using fallback key for development");
+    return "dev-jwt-secret-stillworks-legal-practice-suite-2026-fallback-key-64chars-long";
   }
 
   // In production, enforce minimum secret strength
