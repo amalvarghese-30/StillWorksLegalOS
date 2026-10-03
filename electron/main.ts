@@ -709,6 +709,10 @@ function setupAutoUpdater(): void {
         });
 
         // Show prompt dialog to restart now or on quit
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+
         dialog
           .showMessageBox(mainWindow, {
             type: "info",
