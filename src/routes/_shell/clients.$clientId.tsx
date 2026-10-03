@@ -139,17 +139,6 @@ function ClientProfile() {
   const { data, isLoading, isError } = useClient(clientId);
   const [active, setActive] = useState("overview");
 
-  if (isLoading) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="text-center">
-          <Loader2 size={32} className="mx-auto animate-spin text-muted-foreground" />
-          <p className="mt-4 text-helper text-muted-foreground">Loading client profile…</p>
-        </div>
-      </div>
-    );
-  }
-
   const navigate = useNavigate();
   const deleteClient = useDeleteClient();
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -182,6 +171,17 @@ function ClientProfile() {
       setIsDeleting(false);
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="text-center">
+          <Loader2 size={32} className="mx-auto animate-spin text-muted-foreground" />
+          <p className="mt-4 text-helper text-muted-foreground">Loading client profile…</p>
+        </div>
+      </div>
+    );
+  }
 
   if (isError || !data) {
     return (

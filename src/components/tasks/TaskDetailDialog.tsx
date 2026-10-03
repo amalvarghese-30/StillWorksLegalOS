@@ -76,8 +76,11 @@ interface TaskDetailDialogProps {
 }
 
 export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps) {
-  if (!task) return null;
+  if (!open || !task) return null;
+  return <TaskDetailDialogInner key={task._id} open={open} onClose={onClose} task={task} />;
+}
 
+function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose: () => void; task: TaskRecord }) {
   const [isEditing, setIsEditing] = useState(false);
   const [title, setTitle] = useState(task.title || "");
   const [description, setDescription] = useState(task.description || "");

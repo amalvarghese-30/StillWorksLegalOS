@@ -107,52 +107,13 @@ function ReportsPage() {
         >
           <div className="h-72">
             {growthLoading ? (
-              <div className="flex h-full items-center justify-center"><Loader2 className="animate-spin text-muted-foreground" size={24} /></div>
+              <div key="growth-loading" className="flex h-full items-center justify-center"><Loader2 className="animate-spin text-muted-foreground" size={24} /></div>
             ) : growthError ? (
-              <div className="flex h-full items-center justify-center"><ErrorState title="Couldn't load case growth" onRetry={refetchGrowth} /></div>
+              <div key="growth-error" className="flex h-full items-center justify-center"><ErrorState title="Couldn't load case growth" onRetry={refetchGrowth} /></div>
             ) : growth.length === 0 ? (
-              <div className="flex h-full items-center justify-center text-muted-foreground text-helper">No historical case data available yet</div>
+              <div key="growth-empty" className="flex h-full items-center justify-center text-muted-foreground text-helper">No historical case data available yet</div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={growth} margin={{ left: -10, right: 12, top: 12, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="gNew" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="var(--chart-1)" stopOpacity={0.35} />
-                      <stop offset="100%" stopColor="var(--chart-1)" stopOpacity={0.05} />
-                    </linearGradient>
-                    <linearGradient id="gClosed" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="var(--chart-3)" stopOpacity={0.25} />
-                      <stop offset="100%" stopColor="var(--chart-3)" stopOpacity={0.02} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                  <XAxis dataKey="month" tickLine={false} axisLine={false} fontSize={12} />
-                  <YAxis tickLine={false} axisLine={false} fontSize={12} allowDecimals={false} />
-                  <Tooltip
-                    contentStyle={{
-                      borderRadius: "var(--radius-medium)",
-                      border: "1px solid var(--border)",
-                      boxShadow: "var(--shadow-soft)",
-                      backgroundColor: "var(--card)",
-                    }}
-                    formatter={(value: any, name: any) => [
-                      `${value} matters`,
-                      name === "New Cases" ? "Newly Filed Matters" : "Resolved & Closed Matters",
-                    ]}
-                  />
-                  <Legend
-                    verticalAlign="bottom"
-                    height={36}
-                    formatter={(val) => (
-                      <span className="text-caption font-medium text-foreground">
-                        {val === "New Cases" ? "Newly Filed Matters" : "Resolved & Closed Matters"}
-                      </span>
-                    )}
-                  />
-                  <Area type="monotone" dataKey="cases" stroke="var(--chart-1)" fill="url(#gNew)" strokeWidth={2.5} name="New Cases" />
-                  <Area type="monotone" dataKey="closed" stroke="var(--chart-3)" fill="url(#gClosed)" strokeWidth={2} name="Closed" />
-                </AreaChart>
-              </ResponsiveContainer>
+              <CaseGrowthChart key="growth-chart" growth={growth} />
             )}
           </div>
           <p className="mt-2 text-[11px] text-muted-foreground border-t border-border/40 pt-2">
@@ -168,29 +129,13 @@ function ReportsPage() {
         >
           <div className="h-72">
             {practiceLoading ? (
-              <div className="flex h-full items-center justify-center"><Loader2 className="animate-spin text-muted-foreground" size={24} /></div>
+              <div key="practice-loading" className="flex h-full items-center justify-center"><Loader2 className="animate-spin text-muted-foreground" size={24} /></div>
             ) : practiceError ? (
-              <div className="flex h-full items-center justify-center"><ErrorState title="Couldn't load practice areas" onRetry={refetchPractice} /></div>
+              <div key="practice-error" className="flex h-full items-center justify-center"><ErrorState title="Couldn't load practice areas" onRetry={refetchPractice} /></div>
             ) : distribution.length === 0 ? (
-              <div className="flex h-full items-center justify-center text-muted-foreground text-helper">No active practice area records yet</div>
+              <div key="practice-empty" className="flex h-full items-center justify-center text-muted-foreground text-helper">No active practice area records yet</div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={distribution} layout="vertical" margin={{ left: 16, right: 24, top: 8, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-                  <XAxis type="number" tickLine={false} axisLine={false} fontSize={12} allowDecimals={false} />
-                  <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} fontSize={12} width={110} />
-                  <Tooltip
-                    cursor={{ fill: "var(--muted)" }}
-                    contentStyle={{
-                      borderRadius: "var(--radius-medium)",
-                      border: "1px solid var(--border)",
-                      backgroundColor: "var(--card)",
-                    }}
-                    formatter={(value: any) => [`${value} active matters`, "Active Matters"]}
-                  />
-                  <Bar dataKey="value" radius={[0, 6, 6, 0]} fill="var(--chart-2)" barSize={16} name="Active Matters" />
-                </BarChart>
-              </ResponsiveContainer>
+              <PracticeAreaChart key="practice-chart" distribution={distribution} />
             )}
           </div>
           <p className="mt-2 text-[11px] text-muted-foreground border-t border-border/40 pt-2">
@@ -271,46 +216,7 @@ function ReportsPage() {
           icon={PieIcon}
         >
           <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={[
-                    { name: "Active", value: caseStatusBreakdown.Active, color: "var(--chart-2)" },
-                    { name: "Urgent", value: caseStatusBreakdown.Urgent, color: "var(--chart-1)" },
-                    { name: "On Hold", value: caseStatusBreakdown["On Hold"], color: "var(--chart-4)" },
-                    { name: "Closed", value: caseStatusBreakdown.Closed, color: "var(--chart-3)" },
-                  ]}
-                  dataKey="value"
-                  nameKey="name"
-                  innerRadius={62}
-                  outerRadius={92}
-                  paddingAngle={3}
-                  stroke="none"
-                >
-                  <Cell fill="var(--chart-2)" />
-                  <Cell fill="var(--chart-1)" />
-                  <Cell fill="var(--chart-4)" />
-                  <Cell fill="var(--chart-3)" />
-                </Pie>
-                <Tooltip
-                  contentStyle={{
-                    borderRadius: "var(--radius-medium)",
-                    border: "1px solid var(--border)",
-                    backgroundColor: "var(--card)",
-                  }}
-                  formatter={(value: any, name: any) => [`${value} matters`, `${name} Stage`]}
-                />
-                <Legend
-                  verticalAlign="bottom"
-                  height={36}
-                  formatter={(val) => (
-                    <span className="text-caption font-medium text-foreground">
-                      {val} Matters
-                    </span>
-                  )}
-                />
-              </PieChart>
-            </ResponsiveContainer>
+            <CaseStatusChart caseStatusBreakdown={caseStatusBreakdown} />
           </div>
 
           {/* Quick status summary count pill bar */}
@@ -330,5 +236,117 @@ function ReportsPage() {
         </SectionCard>
       </div>
     </div>
+  );
+}
+
+function CaseGrowthChart({ growth }: { growth: any[] }) {
+  return (
+    <ResponsiveContainer width="100%" height="100%" minHeight={240}>
+      <AreaChart data={growth} margin={{ left: -10, right: 12, top: 12, bottom: 0 }}>
+        <defs>
+          <linearGradient id="gNew" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--chart-1)" stopOpacity={0.35} />
+            <stop offset="100%" stopColor="var(--chart-1)" stopOpacity={0.05} />
+          </linearGradient>
+          <linearGradient id="gClosed" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--chart-3)" stopOpacity={0.25} />
+            <stop offset="100%" stopColor="var(--chart-3)" stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+        <XAxis dataKey="month" tickLine={false} axisLine={false} fontSize={12} />
+        <YAxis tickLine={false} axisLine={false} fontSize={12} allowDecimals={false} />
+        <Tooltip
+          contentStyle={{
+            borderRadius: "var(--radius-medium)",
+            border: "1px solid var(--border)",
+            boxShadow: "var(--shadow-soft)",
+            backgroundColor: "var(--card)",
+          }}
+          formatter={(value: any, name: any) => [
+            `${value} matters`,
+            name === "New Cases" ? "Newly Filed Matters" : "Resolved & Closed Matters",
+          ]}
+        />
+        <Legend
+          verticalAlign="bottom"
+          height={36}
+          formatter={(val) => (
+            <span className="text-caption font-medium text-foreground">
+              {val === "New Cases" ? "Newly Filed Matters" : "Resolved & Closed Matters"}
+            </span>
+          )}
+        />
+        <Area type="monotone" dataKey="cases" stroke="var(--chart-1)" fill="url(#gNew)" strokeWidth={2.5} name="New Cases" />
+        <Area type="monotone" dataKey="closed" stroke="var(--chart-3)" fill="url(#gClosed)" strokeWidth={2} name="Closed" />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+function PracticeAreaChart({ distribution }: { distribution: any[] }) {
+  return (
+    <ResponsiveContainer width="100%" height="100%" minHeight={240}>
+      <BarChart data={distribution} layout="vertical" margin={{ left: 16, right: 24, top: 8, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+        <XAxis type="number" tickLine={false} axisLine={false} fontSize={12} allowDecimals={false} />
+        <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} fontSize={12} width={110} />
+        <Tooltip
+          cursor={{ fill: "var(--muted)" }}
+          contentStyle={{
+            borderRadius: "var(--radius-medium)",
+            border: "1px solid var(--border)",
+            backgroundColor: "var(--card)",
+          }}
+          formatter={(value: any) => [`${value} active matters`, "Active Matters"]}
+        />
+        <Bar dataKey="value" radius={[0, 6, 6, 0]} fill="var(--chart-2)" barSize={16} name="Active Matters" />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+function CaseStatusChart({ caseStatusBreakdown }: { caseStatusBreakdown: any }) {
+  return (
+    <ResponsiveContainer width="100%" height="100%" minHeight={240}>
+      <PieChart>
+        <Pie
+          data={[
+            { name: "Active", value: caseStatusBreakdown.Active, color: "var(--chart-2)" },
+            { name: "Urgent", value: caseStatusBreakdown.Urgent, color: "var(--chart-1)" },
+            { name: "On Hold", value: caseStatusBreakdown["On Hold"], color: "var(--chart-4)" },
+            { name: "Closed", value: caseStatusBreakdown.Closed, color: "var(--chart-3)" },
+          ]}
+          dataKey="value"
+          nameKey="name"
+          innerRadius={62}
+          outerRadius={92}
+          paddingAngle={3}
+          stroke="none"
+        >
+          <Cell fill="var(--chart-2)" />
+          <Cell fill="var(--chart-1)" />
+          <Cell fill="var(--chart-4)" />
+          <Cell fill="var(--chart-3)" />
+        </Pie>
+        <Tooltip
+          contentStyle={{
+            borderRadius: "var(--radius-medium)",
+            border: "1px solid var(--border)",
+            backgroundColor: "var(--card)",
+          }}
+          formatter={(value: any, name: any) => [`${value} matters`, `${name} Stage`]}
+        />
+        <Legend
+          verticalAlign="bottom"
+          height={36}
+          formatter={(val) => (
+            <span className="text-caption font-medium text-foreground">
+              {val} Matters
+            </span>
+          )}
+        />
+      </PieChart>
+    </ResponsiveContainer>
   );
 }

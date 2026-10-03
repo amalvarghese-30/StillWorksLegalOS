@@ -83,55 +83,11 @@ export default defineConfig(({ mode }) => {
         "127.0.0.1",
       ],
     },
-  build: {
-    outDir: "dist",
-    emptyOutDir: true,
-    chunkSizeWarningLimit: 700,
-    rollupOptions: {
-      output: {
-        manualChunks: (id) => {
-          // Vendor: React core
-          if (id.includes("node_modules/react") || id.includes("node_modules/react-dom")) {
-            return "vendor-react";
-          }
-          // Vendor: Radix UI primitives
-          if (id.includes("node_modules/@radix-ui")) {
-            return "vendor-radix";
-          }
-          // Vendor: TanStack (router + query)
-          if (id.includes("node_modules/@tanstack")) {
-            return "vendor-tanstack";
-          }
-          // Vendor: Charting (recharts is heavy)
-          if (id.includes("node_modules/recharts") || id.includes("node_modules/d3")) {
-            return "vendor-charts";
-          }
-          // Vendor: Socket.IO client
-          if (id.includes("node_modules/socket.io-client") || id.includes("node_modules/engine.io-client")) {
-            return "vendor-socket";
-          }
-          // Vendor: Lucide icons
-          if (id.includes("node_modules/lucide-react")) {
-            return "vendor-icons";
-          }
-          // Vendor: date/form/zod utilities
-          if (
-            id.includes("node_modules/date-fns") ||
-            id.includes("node_modules/zod") ||
-            id.includes("node_modules/react-hook-form") ||
-            id.includes("node_modules/@hookform")
-          ) {
-            return "vendor-form";
-          }
-          // Remaining node_modules
-          if (id.includes("node_modules")) {
-            return "vendor-misc";
-          }
-          return undefined;
-        },
-      },
+    build: {
+      outDir: "dist",
+      emptyOutDir: true,
+      chunkSizeWarningLimit: 1500,
     },
-  },
   base: "./",
 };
 });

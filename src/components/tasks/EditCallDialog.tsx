@@ -49,8 +49,11 @@ interface EditCallDialogProps {
 }
 
 export function EditCallDialog({ open, onClose, task }: EditCallDialogProps) {
-  if (!task) return null;
+  if (!open || !task) return null;
+  return <EditCallDialogInner key={task._id} open={open} onClose={onClose} task={task} />;
+}
 
+function EditCallDialogInner({ open, onClose, task }: { open: boolean; onClose: () => void; task: TaskRecord }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
