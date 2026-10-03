@@ -1,9 +1,13 @@
 import { app, BrowserWindow, shell, ipcMain, dialog, protocol, session, Event, safeStorage, Tray, Menu, Notification } from "electron";
-import { autoUpdater } from "electron-updater";
+import { createRequire } from "node:module";
+import type { AppUpdater } from "electron-updater";
 import path from "node:path";
 import fs from "node:fs";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+
+const require = createRequire(import.meta.url);
+const autoUpdater: AppUpdater = require("electron-updater").autoUpdater;
 
 // ESM __dirname equivalent
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
