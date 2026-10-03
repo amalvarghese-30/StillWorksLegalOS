@@ -10,12 +10,16 @@
 import { isElectron } from "@/platform";
 export { isElectron };
 
+function sanitizeApiUrl(url: string): string {
+  return url.replace("api.legalos.stillworks.in", "api-legalos.stillworks.in");
+}
+
 export function getApiBase(): string {
   // 1. Explicit environment variable takes precedence (development or production)
   const envUrl = import.meta.env["VITE_API_URL"];
   if (envUrl && typeof envUrl === "string" && envUrl.trim()) {
-    const trimmed = envUrl.trim().replace(/\/+$/, "");
-    return trimmed.endsWith("/api") ? trimmed : `${trimmed}/api`;
+    const sanitized = sanitizeApiUrl(envUrl.trim().replace(/\/+$/, ""));
+    return sanitized.endsWith("/api") ? sanitized : `${sanitized}/api`;
   }
 
   // 2. Web browser: if accessed via production domain legalos.stillworks.in or any stillworks.in subdomain
@@ -41,7 +45,7 @@ export function getApiBase(): string {
   return `http://localhost:${defaultPort}/api`;
 }
 
-export const API_URL = import.meta.env["VITE_API_URL"] || getApiBase();
+export const API_URL = sanitizeApiUrl(import.meta.env["VITE_API_URL"] || getApiBase());
 export const API_BASE = getApiBase();
 
 function electronApi() {

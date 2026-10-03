@@ -38,13 +38,13 @@ export function getSocketUrl(): string {
   // 1. Explicit environment variable takes precedence
   const envSocket = import.meta.env["VITE_SOCKET_URL"];
   if (envSocket && typeof envSocket === "string" && envSocket.trim()) {
-    return envSocket.trim().replace(/\/+$/, "");
+    return envSocket.trim().replace(/\/+$/, "").replace("api.legalos.stillworks.in", "api-legalos.stillworks.in");
   }
 
   // Derive from VITE_API_URL if provided
   const envApi = import.meta.env["VITE_API_URL"];
   if (envApi && typeof envApi === "string" && envApi.trim()) {
-    return envApi.trim().replace(/\/+$/, "").replace(/\/api$/, "");
+    return envApi.trim().replace(/\/+$/, "").replace(/\/api$/, "").replace("api.legalos.stillworks.in", "api-legalos.stillworks.in");
   }
 
   // 2. Web browser: if accessed via production domain legalos.stillworks.in or any stillworks.in subdomain
