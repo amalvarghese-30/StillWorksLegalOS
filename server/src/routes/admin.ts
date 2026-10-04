@@ -358,6 +358,12 @@ router.post("/employees/:id/reset-password", requireAdminOrPermission("employees
       return;
     }
 
+    // Guard: Prevent admin self-reset via employee administration endpoint
+    if (targetId === req.userId) {
+      res.status(400).json({ message: "Cannot reset your own password via employee administration. Use profile settings." });
+      return;
+    }
+
     // Guard: Non-admin managers cannot reset admin passwords
     if (!isActualAdmin && targetUser.role === "admin") {
       res.status(403).json({ message: "Only admins can reset administrator passwords" });

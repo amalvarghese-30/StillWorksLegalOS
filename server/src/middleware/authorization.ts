@@ -83,10 +83,8 @@ export async function canAccessClient(
   if (c.createdBy?.toString() === userId) return true;
 
   // 2. Directly assigned staff
-  if (
-    Array.isArray(c.assignedTo) &&
-    c.assignedTo.some((id: any) => (id?._id || id)?.toString() === userId)
-  ) {
+  const assignedList = Array.isArray(c.assignedTo) ? c.assignedTo : [];
+  if (assignedList.some((id: any) => (id?._id || id)?.toString() === userId)) {
     return true;
   }
 
@@ -100,12 +98,17 @@ export async function canAccessClient(
 
   if (linkedCase) return true;
 
-  // 4. Firm member with active clients permission
+  // If client is explicitly assigned to specific advocate(s), other unassigned employees cannot access it
+  if (assignedList.length > 0) {
+    return false;
+  }
+
+  // 4. Firm member with active clients permission (for unassigned firm clients)
   if (userPermissions && userPermissions["clients"] === true) {
     return true;
   }
 
-  // If clients permission is not explicitly disabled, allow firm employees to view client details
+  // If clients permission is not explicitly disabled, allow firm employees to view unassigned client details
   return userPermissions?.["clients"] !== false;
 }
 

@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import bcrypt from "bcryptjs";
-import { randomInt } from "node:crypto";
+import { randomInt, createHash } from "node:crypto";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import busboy from "busboy";
@@ -99,7 +99,21 @@ function clearRefreshCookie(res: Response, req?: Request): void {
       parts.push("Secure");
     }
   }
-  res.setHeader("Set-Cookie", parts.join("; "));
+}
+
+async function hashRefreshToken(token: string): Promise<string> {
+  // Pre-hash with SHA-256 to ensure length is 64 hex chars, avoiding bcrypt's 72-byte truncation
+  const digest = createHash("sha256").update(token).digest("hex");
+  return bcrypt.hash(digest, 12);
+}
+
+async function compareRefreshToken(token: string, hash?: string): Promise<boolean> {
+  if (!hash) return false;
+  const digest = createHash("sha256").update(token).digest("hex");
+  const match = await bcrypt.compare(digest, hash);
+  if (match) return true;
+  // Fallback for legacy hashes created without SHA-256 pre-hashing
+  return bcrypt.compare(token, hash);
 }
 
 // ---------------------------------------------------------------------------
@@ -174,8 +188,8 @@ router.post("/login", async (req: Request, res: Response) => {
     const accessToken = signToken(payload);
     const refreshToken = signRefreshToken(payload);
 
-    // Hash refresh token before storing
-    const refreshTokenHash = await bcrypt.hash(refreshToken, 12);
+    // Hash refresh token before storing (SHA-256 pre-hashed)
+    const refreshTokenHash = await hashRefreshToken(refreshToken);
 
     // Create session record with refresh token hash and rememberMe policy
     const device = (req.headers["user-agent"] as string) ?? "Unknown";
@@ -226,8 +240,10 @@ router.post("/login", async (req: Request, res: Response) => {
       user: user.toJSON(),
     };
 
-    // Provide refreshToken in payload for safeStorage (Electron) and fallback storage (Web)
-    body["refreshToken"] = refreshToken;
+    // Provide refreshToken in payload ONLY for safeStorage (Electron desktop)
+    if (isElectron) {
+      body["refreshToken"] = refreshToken;
+    }
 
     res.json(body);
   } catch (err) {
@@ -372,6 +388,28 @@ router.delete("/sessions", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+// Per-user async mutex to prevent concurrent refresh race conditions / double-rotation
+const userRefreshLocks = new Map<string, Promise<void>>();
+
+async function withUserRefreshLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+  const current = userRefreshLocks.get(userId) ?? Promise.resolve();
+  let release!: () => void;
+  const next = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  userRefreshLocks.set(userId, next);
+
+  try {
+    await current;
+    return await fn();
+  } finally {
+    release();
+    if (userRefreshLocks.get(userId) === next) {
+      userRefreshLocks.delete(userId);
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/auth/refresh — refresh access token using refresh token
 // ---------------------------------------------------------------------------
@@ -400,86 +438,90 @@ router.post("/refresh", async (req: Request, res: Response) => {
       return;
     }
 
-    // A user may have several concurrent sessions (web + desktop + mobile),
-    // so match the refresh token against all active sessions, not just one.
-    const activeSessions = await Session.find({
-      userId: payload.userId,
-      isRevoked: false,
-      expiresAt: { $gt: new Date() },
-    });
+    await withUserRefreshLock(payload.userId, async () => {
+      // A user may have several concurrent sessions (web + desktop + mobile),
+      // so match the refresh token against all active sessions, not just one.
+      const activeSessions = await Session.find({
+        userId: payload.userId,
+        isRevoked: false,
+        expiresAt: { $gt: new Date() },
+      });
 
-    let session: (typeof activeSessions)[number] | null = null;
-    let isGracePeriodMatch = false;
+      let session: (typeof activeSessions)[number] | null = null;
+      let isGracePeriodMatch = false;
 
-    for (const candidate of activeSessions) {
-      if (
-        candidate.refreshTokenHash &&
-        (await bcrypt.compare(refreshToken, candidate.refreshTokenHash))
-      ) {
-        session = candidate;
-        break;
+      for (const candidate of activeSessions) {
+        const matchCur = await compareRefreshToken(refreshToken, candidate.refreshTokenHash);
+        const matchPrev = await compareRefreshToken(refreshToken, candidate.previousRefreshTokenHash);
+        if (matchCur) {
+          session = candidate;
+          break;
+        }
+        // Check grace period (concurrent requests or multiple tabs within 60 seconds of last rotation)
+        if (
+          candidate.previousRefreshTokenHash &&
+          candidate.rotatedAt &&
+          Date.now() - new Date(candidate.rotatedAt).getTime() < 60_000 &&
+          matchPrev
+        ) {
+          session = candidate;
+          isGracePeriodMatch = true;
+          break;
+        }
       }
-      // Check grace period (concurrent requests or multiple tabs within 60 seconds of last rotation)
-      if (
-        candidate.previousRefreshTokenHash &&
-        candidate.rotatedAt &&
-        Date.now() - new Date(candidate.rotatedAt).getTime() < 60_000 &&
-        (await bcrypt.compare(refreshToken, candidate.previousRefreshTokenHash))
-      ) {
-        session = candidate;
-        isGracePeriodMatch = true;
-        break;
+
+      if (!session) {
+        // Reuse / replay detection: a valid signature was presented that does not match
+        // active session or recent grace period hash. Revoke session family!
+        await Session.revokeAllForUser(payload.userId);
+        clearRefreshCookie(res, req);
+        res.status(401).json({ message: "Invalid or expired refresh token" });
+        return;
       }
-    }
 
-    if (!session) {
-      // Reuse / replay detection: a valid signature was presented that does not match
-      // active session or recent grace period hash. Revoke session family!
-      await Session.revokeAllForUser(payload.userId);
-      clearRefreshCookie(res, req);
-      res.status(401).json({ message: "Invalid or expired refresh token" });
-      return;
-    }
+      // If matched within recent grace period, return the current valid access token without re-rotating
+      if (isGracePeriodMatch) {
+        const body: Record<string, unknown> = {
+          accessToken: session.token,
+        };
+        res.json(body);
+        return;
+      }
 
-    // If matched within recent grace period, return the current valid access token without re-rotating
-    if (isGracePeriodMatch) {
-      const body: Record<string, unknown> = {
-        accessToken: session.token,
+      // Standard rotation: generate new access token AND new refresh token
+      const newPayload = {
+        userId: payload.userId,
+        email: payload.email,
+        role: payload.role,
       };
+
+      const newAccessToken = signToken(newPayload);
+      const newRefreshToken = signRefreshToken(newPayload);
+      const newRefreshTokenHash = await hashRefreshToken(newRefreshToken);
+
+      // Update session: preserve current token and hash as previous for 60s grace period
+      session.previousToken = session.token;
+      session.previousRefreshTokenHash = session.refreshTokenHash;
+      session.rotatedAt = new Date();
+      session.token = newAccessToken;
+      session.refreshTokenHash = newRefreshTokenHash;
+      session.lastActiveAt = new Date();
+      await session.save();
+
+      // Always rotate the httpOnly cookie (web clients); Electron ignores it.
+      setRefreshCookie(res, newRefreshToken, Boolean(session.rememberMe), req);
+
+      const body: Record<string, unknown> = {
+        accessToken: newAccessToken,
+      };
+
+      // Return rotated refresh token ONLY for Electron safeStorage
+      if (isElectron) {
+        body["refreshToken"] = newRefreshToken;
+      }
+
       res.json(body);
-      return;
-    }
-
-    // Standard rotation: generate new access token AND new refresh token
-    const newPayload = {
-      userId: payload.userId,
-      email: payload.email,
-      role: payload.role,
-    };
-
-    const newAccessToken = signToken(newPayload);
-    const newRefreshToken = signRefreshToken(newPayload);
-    const newRefreshTokenHash = await bcrypt.hash(newRefreshToken, 12);
-
-    // Update session: preserve current hash as previous for 60s grace period
-    session.previousRefreshTokenHash = session.refreshTokenHash;
-    session.rotatedAt = new Date();
-    session.token = newAccessToken;
-    session.refreshTokenHash = newRefreshTokenHash;
-    session.lastActiveAt = new Date();
-    await session.save();
-
-    // Always rotate the httpOnly cookie (web clients); Electron ignores it.
-    setRefreshCookie(res, newRefreshToken, Boolean(session.rememberMe), req);
-
-    const body: Record<string, unknown> = {
-      accessToken: newAccessToken,
-    };
-
-    // Return rotated refresh token for safeStorage and client storage persistence
-    body["refreshToken"] = newRefreshToken;
-
-    res.json(body);
+    });
   } catch (err) {
     console.error("[auth] Refresh error:", err);
     res.status(500).json({ message: "Internal server error" });

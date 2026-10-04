@@ -1981,6 +1981,124 @@ async function run() {
     assert(lastTimeline?.event?.includes("Removed party"), "CASE-PARTY-011: Timeline event recorded for removed party");
   }
 
+  // =========================================================================
+  // Suite 22: Token Refresh Concurrency, Web Cookie Auth & Security Policy
+  // =========================================================================
+  {
+    console.log("\n--- Suite 22: Token Refresh Concurrency, Web Cookie Auth & Security Policy ---");
+
+    // Create a fresh dedicated test user for auth concurrency testing
+    const authTestUser = await createUser({
+      name: "Concurrency Test Advocate",
+      email: "concurrency.test@stillworks.in",
+      passwordHash: await bcrypt.hash("Password123!", 10),
+    });
+
+    // 1. Electron login returns refreshToken in body
+    const electronLoginRes = await request(app)
+      .post("/api/auth/login")
+      .set("x-client-type", "electron")
+      .send({ email: authTestUser.email, password: "SecurePass1!" });
+    assert(electronLoginRes.status === 200, "AUTH-CONCURR-001: Electron login succeeds (200)");
+    assert(Boolean(electronLoginRes.body.accessToken), "AUTH-CONCURR-002: Electron login returns accessToken");
+    assert(Boolean(electronLoginRes.body.refreshToken), "AUTH-CONCURR-003: Electron login returns refreshToken in JSON body");
+    const initialRefreshToken = electronLoginRes.body.refreshToken;
+
+    // 2. Web login does NOT return refreshToken in body, but sets HttpOnly cookie
+    const webLoginRes = await request(app)
+      .post("/api/auth/login")
+      .send({ email: authTestUser.email, password: "SecurePass1!" });
+    assert(webLoginRes.status === 200, "AUTH-CONCURR-004: Web login succeeds (200)");
+    assert(Boolean(webLoginRes.body.accessToken), "AUTH-CONCURR-005: Web login returns accessToken");
+    assert(!webLoginRes.body.refreshToken, "AUTH-CONCURR-006: Web login NEVER exposes refreshToken in JSON body");
+    const setCookieHeader = webLoginRes.headers["set-cookie"]?.join("; ") || "";
+    assert(setCookieHeader.includes("stillworks_refresh="), "AUTH-CONCURR-007: Web login sets stillworks_refresh cookie");
+    assert(setCookieHeader.toLowerCase().includes("httponly"), "AUTH-CONCURR-008: Refresh cookie has HttpOnly flag");
+
+    // 3. Test A: Two simultaneous refresh requests using the same valid token
+    const [resA1, resA2] = await Promise.all([
+      request(app)
+        .post("/api/auth/refresh")
+        .set("x-client-type", "electron")
+        .send({ refreshToken: initialRefreshToken }),
+      request(app)
+        .post("/api/auth/refresh")
+        .set("x-client-type", "electron")
+        .send({ refreshToken: initialRefreshToken }),
+    ]);
+    assert(resA1.status === 200, "AUTH-CONCURR-TEST-A1: First concurrent refresh succeeds (200)");
+    assert(resA2.status === 200, "AUTH-CONCURR-TEST-A2: Second concurrent refresh succeeds (200)");
+    assert(Boolean(resA1.body.accessToken && resA2.body.accessToken), "AUTH-CONCURR-TEST-A3: Both concurrent requests return valid accessToken");
+
+    // Verify both returned access tokens can access /me (user remains authenticated)
+    const meRes1 = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${resA1.body.accessToken}`);
+    const meRes2 = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${resA2.body.accessToken}`);
+    assert(meRes1.status === 200 && meRes2.status === 200, "AUTH-CONCURR-TEST-A4: Both returned access tokens allow authenticated access");
+
+    // The newer token returned from rotation
+    const rotatedToken = resA1.body.refreshToken || resA2.body.refreshToken;
+    assert(Boolean(rotatedToken), "AUTH-CONCURR-TEST-A5: Standard rotation issued new refresh token");
+
+    // 4. Test B: Multiple concurrent refresh requests (e.g. 5 tabs refreshing simultaneously)
+    const multiRefreshResults = await Promise.all([
+      request(app).post("/api/auth/refresh").set("x-client-type", "electron").send({ refreshToken: rotatedToken }),
+      request(app).post("/api/auth/refresh").set("x-client-type", "electron").send({ refreshToken: rotatedToken }),
+      request(app).post("/api/auth/refresh").set("x-client-type", "electron").send({ refreshToken: rotatedToken }),
+      request(app).post("/api/auth/refresh").set("x-client-type", "electron").send({ refreshToken: rotatedToken }),
+      request(app).post("/api/auth/refresh").set("x-client-type", "electron").send({ refreshToken: rotatedToken }),
+    ]);
+    const allSuccessful = multiRefreshResults.every((r) => r.status === 200 && Boolean(r.body.accessToken));
+    assert(allSuccessful, "AUTH-CONCURR-TEST-B1: All 5 concurrent refresh requests succeeded (200) without random logout");
+
+    // Pick active token from latest successful rotation
+    const latestRotated = multiRefreshResults.find((r) => Boolean(r.body.refreshToken))?.body.refreshToken;
+    assert(Boolean(latestRotated), "AUTH-CONCURR-TEST-B2: Active refresh token preserved across concurrent execution");
+
+    // 5. Test C: Old refresh token used after the configured grace period (>60s)
+    // Create dedicated user to isolate grace period & theft testing
+    const theftTestUser = await createUser({
+      name: "Theft Test Advocate",
+      email: "theft.test@stillworks.in",
+    });
+
+    const theftLoginRes = await request(app)
+      .post("/api/auth/login")
+      .set("x-client-type", "electron")
+      .send({ email: theftTestUser.email, password: "SecurePass1!" });
+    const theftInitialRefresh = theftLoginRes.body.refreshToken;
+
+    // Rotate once to generate previousRefreshTokenHash
+    const firstRotateRes = await request(app)
+      .post("/api/auth/refresh")
+      .set("x-client-type", "electron")
+      .send({ refreshToken: theftInitialRefresh });
+    assert(firstRotateRes.status === 200, "AUTH-CONCURR-TEST-C1: Initial rotation succeeds (200)");
+
+    // Find the session and artificially set rotatedAt to 65 seconds in the past
+    const sessionDoc = await Session.findOne({ userId: theftTestUser._id, isRevoked: false });
+    assert(Boolean(sessionDoc && sessionDoc.previousRefreshTokenHash), "AUTH-CONCURR-TEST-C2: Session has recorded previousRefreshTokenHash");
+
+    if (sessionDoc) {
+      await Session.updateOne(
+        { _id: sessionDoc._id },
+        { $set: { rotatedAt: new Date(Date.now() - 65_000) } }
+      );
+    }
+
+    // Now attempt to refresh using the initial token (predecessor) after grace period expired
+    const expiredGraceRes = await request(app)
+      .post("/api/auth/refresh")
+      .set("x-client-type", "electron")
+      .send({ refreshToken: theftInitialRefresh });
+    assert(expiredGraceRes.status === 401, "AUTH-CONCURR-TEST-C3: Refresh using expired grace period token is rejected (401)");
+    assert(expiredGraceRes.body.message === "Invalid or expired refresh token", "AUTH-CONCURR-TEST-C4: Rejected with standard invalid token message");
+
+    // 6. Test D: Refresh-token reuse/theft detection revokes entire session family
+    // Verify that session family for this user was revoked upon attempted replay
+    const userActiveSessions = await Session.find({ userId: theftTestUser._id, isRevoked: false });
+    assert(userActiveSessions.length === 0, "AUTH-CONCURR-TEST-D1: Session family fully revoked after reuse attempt");
+  }
+
   try {
     if (mongoose.connection.readyState === 1) {
       await mongoose.connection.dropDatabase();

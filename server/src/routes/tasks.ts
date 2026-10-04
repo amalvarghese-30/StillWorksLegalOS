@@ -543,19 +543,6 @@ router.post("/", async (req: Request, res: Response) => {
       userAgent: req.headers["user-agent"],
     });
 
-    if (task.isCall || task.callReminder) {
-      await AuditLog.create({
-        userId: req.userId,
-        userName: req.user?.name ?? "Unknown",
-        action: "create",
-        resource: "call_reminder",
-        resourceId: task._id.toString(),
-        resourceName: task.callReminder?.clientName ? `Call Reminder: ${task.callReminder.clientName}` : task.title,
-        ip: req.ip,
-        userAgent: req.headers["user-agent"],
-      });
-    }
-
     // Create synchronized Reminder documents if callReminder is present
     if (task.callReminder && task.callReminder.clientName) {
       const taskUserIds = (Array.isArray(assignedTo) ? assignedTo : [finalAssignedTo || task.createdBy || req.userId]).filter(Boolean);
@@ -941,19 +928,6 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       ip: req.ip,
       userAgent: req.headers["user-agent"],
     });
-
-    if (task.isCall || task.callReminder || updates["callReminder"]) {
-      await AuditLog.create({
-        userId: req.userId,
-        userName: req.user?.name ?? "Unknown",
-        action: "update",
-        resource: "call_reminder",
-        resourceId: task._id.toString(),
-        resourceName: task.callReminder?.clientName ? `Call Reminder: ${task.callReminder.clientName}` : task.title,
-        ip: req.ip,
-        userAgent: req.headers["user-agent"],
-      });
-    }
 
     const io = req.app.get("io");
     if (io) {

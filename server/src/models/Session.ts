@@ -7,6 +7,7 @@ import mongoose, { Document, Schema } from "mongoose";
 export interface ISession extends Document {
   userId: mongoose.Types.ObjectId;
   token: string;           // JWT access token (for blacklisting on logout)
+  previousToken?: string;  // immediately predecessor access token during concurrent rotation grace period
   refreshTokenHash: string; // bcrypt hash of refresh token
   previousRefreshTokenHash?: string; // bcrypt hash of immediately previous refresh token (grace period)
   rotatedAt?: Date;        // timestamp of last rotation
@@ -33,6 +34,7 @@ const SessionSchema = new Schema<ISession>(
       index: true,
     },
     token: { type: String, required: true, index: true },
+    previousToken: { type: String, index: true },
     refreshTokenHash: { type: String, required: true },
     previousRefreshTokenHash: { type: String },
     rotatedAt: { type: Date },

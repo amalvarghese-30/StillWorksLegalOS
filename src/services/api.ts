@@ -73,11 +73,12 @@ export function setAccessToken(token: string | null): void {
 }
 
 const REMEMBER_ME_KEY = "stillworks.remember_me";
-const REFRESH_STORAGE_KEY = "stillworks.refresh_token";
 
 // Persist tokens after login/refresh.
 // - access token: in-memory only.
-// - refresh token: Electron -> safeStorage OS vault (if rememberMe); web -> httpOnly cookie (never exposed to JS).
+// - refresh token:
+//     * Electron desktop: persisted in OS safeStorage vault via IPC.
+//     * Modern Web: handled exclusively via HttpOnly Secure SameSite cookie; never exposed to JS.
 export async function persistTokens(
   newAccessToken: string,
   newRefreshToken?: string,
@@ -85,11 +86,11 @@ export async function persistTokens(
 ): Promise<void> {
   accessToken = newAccessToken;
 
-  if (newRefreshToken) {
-    sessionRefreshToken = newRefreshToken;
-  }
-
   if (isElectron()) {
+    if (newRefreshToken) {
+      sessionRefreshToken = newRefreshToken;
+    }
+
     if (rememberMe !== undefined) {
       if (rememberMe) {
         window.localStorage.setItem(REMEMBER_ME_KEY, "true");
@@ -109,6 +110,7 @@ export async function persistTokens(
       }
     }
   } else if (typeof window !== "undefined") {
+    // Web: update rememberMe preference hint (tokens are NEVER saved in localStorage/sessionStorage)
     if (rememberMe !== undefined) {
       if (rememberMe) {
         window.localStorage.setItem(REMEMBER_ME_KEY, "true");
@@ -116,25 +118,13 @@ export async function persistTokens(
         window.localStorage.removeItem(REMEMBER_ME_KEY);
       }
     }
-
-    const shouldPersist = rememberMe ?? (window.localStorage.getItem(REMEMBER_ME_KEY) === "true");
-    if (newRefreshToken) {
-      if (shouldPersist) {
-        window.localStorage.setItem(REFRESH_STORAGE_KEY, newRefreshToken);
-        window.sessionStorage.removeItem(REFRESH_STORAGE_KEY);
-      } else {
-        window.sessionStorage.setItem(REFRESH_STORAGE_KEY, newRefreshToken);
-        window.localStorage.removeItem(REFRESH_STORAGE_KEY);
-      }
-    }
   }
 
-  // Cross-tab synchronization via BroadcastChannel
+  // Cross-tab synchronization via BroadcastChannel (NEVER transmits refresh credentials)
   try {
     authBroadcastChannel?.postMessage({
       type: "TOKEN_REFRESHED",
       accessToken: newAccessToken,
-      refreshToken: newRefreshToken,
     });
   } catch {
     /* ignore channel errors */
@@ -149,7 +139,7 @@ export async function persistTokens(
   }
 }
 
-// Multi-tab session coordination channel
+// Multi-tab session coordination channel (safe: access token synchronization and logout only)
 const authBroadcastChannel =
   typeof window !== "undefined" && typeof BroadcastChannel !== "undefined"
     ? new BroadcastChannel("stillworks_auth_sync")
@@ -159,9 +149,6 @@ if (authBroadcastChannel) {
   authBroadcastChannel.onmessage = (event) => {
     if (event.data?.type === "TOKEN_REFRESHED" && event.data.accessToken) {
       accessToken = event.data.accessToken;
-      if (event.data.refreshToken) {
-        sessionRefreshToken = event.data.refreshToken;
-      }
       if (typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("stillworks:token-refreshed", {
@@ -188,8 +175,11 @@ export async function clearTokens(): Promise<void> {
   if (typeof window !== "undefined") {
     try {
       window.localStorage.removeItem(REMEMBER_ME_KEY);
-      window.localStorage.removeItem(REFRESH_STORAGE_KEY);
-      window.sessionStorage.removeItem(REFRESH_STORAGE_KEY);
+      // Clean up any historical keys from older releases
+      window.localStorage.removeItem("stillworks.refresh_token");
+      window.sessionStorage.removeItem("stillworks.refresh_token");
+      window.localStorage.removeItem("stillworks_session");
+      window.sessionStorage.removeItem("stillworks_session");
     } catch {
       /* ignore */
     }
@@ -246,10 +236,7 @@ export async function refreshAccessToken(): Promise<string | null> {
     (typeof window !== "undefined" &&
       (Boolean(window.localStorage.getItem("stillworks.session")) ||
        Boolean(window.sessionStorage.getItem("stillworks.session")) ||
-       Boolean(window.localStorage.getItem("stillworks_session")) ||
-       Boolean(window.sessionStorage.getItem("stillworks_session")) ||
-       Boolean(window.localStorage.getItem(REFRESH_STORAGE_KEY)) ||
-       Boolean(window.sessionStorage.getItem(REFRESH_STORAGE_KEY))));
+       Boolean(window.localStorage.getItem(REMEMBER_ME_KEY))));
 
   if (!hasSessionHint) {
     return null;
@@ -290,20 +277,11 @@ export async function refreshAccessToken(): Promise<string | null> {
         return data.accessToken;
       }
 
-      // Web: authenticate via HttpOnly cookie AND optional fallback refreshToken in body
-      let webRefreshToken = sessionRefreshToken;
-      if (!webRefreshToken && typeof window !== "undefined") {
-        webRefreshToken =
-          window.localStorage.getItem(REFRESH_STORAGE_KEY) ||
-          window.sessionStorage.getItem(REFRESH_STORAGE_KEY) ||
-          null;
-      }
-
+      // Web: authenticate strictly via HttpOnly cookie; no refresh credentials sent in body
       const res = await fetch(`${API_BASE}/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ ...(webRefreshToken ? { refreshToken: webRefreshToken } : {}) }),
       });
 
       if (!res.ok) {
@@ -312,7 +290,7 @@ export async function refreshAccessToken(): Promise<string | null> {
       }
 
       const data = await res.json();
-      await persistTokens(data.accessToken, data.refreshToken);
+      await persistTokens(data.accessToken);
       return data.accessToken;
     } catch {
       await clearTokens();

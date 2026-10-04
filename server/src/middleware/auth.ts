@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+import { randomUUID } from "node:crypto";
 import { User, type IUser } from "../models/User.js";
 import { Session } from "../models/Session.js";
 
@@ -86,7 +87,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     // Fetch full user for permission checks
     // Also verify session is still valid in DB (not revoked, not expired)
     const session = await Session.findOne({
-      token,
+      $or: [{ token }, { previousToken: token }],
       isRevoked: false,
       expiresAt: { $gt: new Date() },
     });
@@ -190,7 +191,7 @@ export function signToken(payload: JwtPayload): string {
 // ---------------------------------------------------------------------------
 
 export function signRefreshToken(payload: JwtPayload): string {
-  return jwt.sign(payload, getJwtSecret(), {
+  return jwt.sign({ ...payload, jti: randomUUID() }, getJwtSecret(), {
     algorithm: "HS256",
     expiresIn: "7d" as jwt.SignOptions["expiresIn"],
   });
