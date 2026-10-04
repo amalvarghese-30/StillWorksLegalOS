@@ -26,6 +26,9 @@ import { APP_VERSION } from "@/version";
 import { isElectron } from "@/platform";
 
 export const Route = createFileRoute("/_shell/settings")({
+  validateSearch: (search: Record<string, unknown>): { tab?: string } => ({
+    tab: typeof search.tab === "string" ? search.tab : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Settings · S & S Legal-Tech LLP" },
@@ -49,7 +52,14 @@ const tabs = [
 
 function SettingsPage() {
   const { user, refreshUser } = useAuth();
-  const [tab, setTab] = useState("profile");
+  const search = Route.useSearch();
+  const [tab, setTab] = useState(search?.tab || "profile");
+
+  useEffect(() => {
+    if (search?.tab) {
+      setTab(search.tab);
+    }
+  }, [search?.tab]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [isRemovingAvatar, setIsRemovingAvatar] = useState(false);

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { User, Building2, Bell, Lock, Palette, HardDrive, ListChecks, Loader2 } from "lucide-react";
+import { User, Building2, Bell, Lock, Palette, HardDrive, ListChecks, Loader2, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
 import { Button } from "@/components/ui/button";
@@ -11,11 +11,17 @@ import { useAuth } from "@/lib/auth";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
 import { StorageSettings } from "@/components/settings/StorageSettings";
 import { TaskOptionsSettings } from "@/components/settings/TaskOptionsSettings";
+import { DesktopUpdateSettings } from "@/components/settings/DesktopUpdateSettings";
 import { useUpdateProfile, useUpdateFirm, useUpdatePreferences } from "@/services/admin";
 import { validatePhone, sanitizePhone } from "@/lib/validation";
 import { MobileSectionNav } from "@/components/layout/MobileSectionNav";
+import { isElectron } from "@/platform";
+import { APP_VERSION } from "@/version";
 
 export const Route = createFileRoute("/_admin/admin/settings")({
+  validateSearch: (search: Record<string, unknown>): { tab?: string } => ({
+    tab: typeof search.tab === "string" ? search.tab : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Settings · S & S Legal-Tech LLP" },
@@ -41,11 +47,19 @@ const tabs = [
   { id: "security", label: "Security", icon: Lock },
   { id: "storage", label: "Storage", icon: HardDrive },
   { id: "taskOptions", label: "Task options", icon: ListChecks },
+  { id: "updates", label: "App & Updates", icon: RefreshCw },
 ];
 
 function SettingsPage() {
   const { user } = useAuth();
-  const [tab, setTab] = useState("profile");
+  const search = Route.useSearch();
+  const [tab, setTab] = useState(search?.tab || "profile");
+
+  useEffect(() => {
+    if (search?.tab) {
+      setTab(search.tab);
+    }
+  }, [search?.tab]);
   const updateProfile = useUpdateProfile();
   const updateFirm = useUpdateFirm();
   const updatePreferences = useUpdatePreferences();
@@ -157,10 +171,33 @@ function SettingsPage() {
             onChange={(id) => setTab(id)}
             ariaLabel="Settings sections"
           />
+
+          <div className="mt-4 hidden rounded-xl border border-border/70 bg-card/60 p-3.5 shadow-2xs lg:block">
+            <div className="flex items-center gap-2">
+              <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+              <p className="text-xs font-semibold text-foreground">S &amp; S LegalOS</p>
+            </div>
+            <div className="mt-2.5 space-y-1.5 text-[11px] text-muted-foreground border-t border-border/50 pt-2">
+              <div className="flex items-center justify-between">
+                <span>Release:</span>
+                <span className="font-mono font-semibold text-foreground bg-muted/60 px-1.5 py-0.5 rounded border border-border/40">
+                  v{APP_VERSION}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Environment:</span>
+                <span className="font-medium text-foreground">
+                  {isElectron() ? "Desktop (Windows)" : "Web Browser"}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="min-w-0 space-y-6">
-          {tab === "notifications" || tab === "security" ? (
+          {tab === "updates" ? (
+            <DesktopUpdateSettings />
+          ) : tab === "notifications" || tab === "security" ? (
             <SectionCard
               title={tab === "security" ? "Security" : "Notifications"}
               description="Choose what reaches you, and how."

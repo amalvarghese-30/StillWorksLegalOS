@@ -177,9 +177,17 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         <span className="text-xs font-semibold tracking-wide text-muted-foreground">
           Powered by <span className="text-primary">stillworks.in</span>
         </span>
-        <span className="inline-flex items-center gap-1 rounded bg-background/80 border border-border/60 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground shadow-2xs">
+        <button
+          type="button"
+          onClick={() => {
+            onNavigate?.();
+            navigate({ to: "/settings", search: { tab: "updates" } });
+          }}
+          title={`LegalOS Release v${APP_VERSION} · Click to check for updates`}
+          className="inline-flex items-center gap-1 rounded bg-background/80 border border-border/60 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground shadow-2xs hover:text-foreground hover:border-primary/40 transition-colors cursor-pointer"
+        >
           v{APP_VERSION}
-        </span>
+        </button>
       </div>
     </div>
   );
