@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "./api";
+import { api, ApiError } from "./api";
 import { reportKeys } from "./reports";
 
 // ---------------------------------------------------------------------------
@@ -159,12 +159,32 @@ export function useUpdateTask() {
   });
 }
 
+export interface DeleteTaskResult {
+  message: string;
+  alreadyDeleted?: boolean;
+}
+
 export function useDeleteTask() {
   const qc = useQueryClient();
-  return useMutation<{ message: string }, Error, string>({
-    mutationFn: (id) => api.delete(`/tasks/${id}`),
-    onSuccess: () => {
+  return useMutation<DeleteTaskResult, Error, string>({
+    mutationFn: async (id: string) => {
+      try {
+        return await api.delete<DeleteTaskResult>(`/tasks/${id}`);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) {
+          return {
+            message: "Task was already deleted or is no longer available.",
+            alreadyDeleted: true,
+          };
+        }
+        throw err;
+      }
+    },
+    onSuccess: (_data, taskId) => {
+      qc.removeQueries({ queryKey: taskKeys.detail(taskId) });
+      qc.removeQueries({ queryKey: ["task", taskId] });
       qc.invalidateQueries({ queryKey: taskKeys.all });
+      qc.invalidateQueries({ queryKey: ["calendar"] });
       qc.invalidateQueries({ queryKey: reportKeys.all });
       qc.invalidateQueries({ queryKey: ["notifications"] });
     },

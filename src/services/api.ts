@@ -129,6 +129,17 @@ export async function persistTokens(
     }
   }
 
+  // Cross-tab synchronization via BroadcastChannel
+  try {
+    authBroadcastChannel?.postMessage({
+      type: "TOKEN_REFRESHED",
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
+    });
+  } catch {
+    /* ignore channel errors */
+  }
+
   if (typeof window !== "undefined") {
     window.dispatchEvent(
       new CustomEvent("stillworks:token-refreshed", {
@@ -136,6 +147,36 @@ export async function persistTokens(
       })
     );
   }
+}
+
+// Multi-tab session coordination channel
+const authBroadcastChannel =
+  typeof window !== "undefined" && typeof BroadcastChannel !== "undefined"
+    ? new BroadcastChannel("stillworks_auth_sync")
+    : null;
+
+if (authBroadcastChannel) {
+  authBroadcastChannel.onmessage = (event) => {
+    if (event.data?.type === "TOKEN_REFRESHED" && event.data.accessToken) {
+      accessToken = event.data.accessToken;
+      if (event.data.refreshToken) {
+        sessionRefreshToken = event.data.refreshToken;
+      }
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("stillworks:token-refreshed", {
+            detail: { token: accessToken },
+          })
+        );
+      }
+    } else if (event.data?.type === "LOGOUT") {
+      accessToken = null;
+      sessionRefreshToken = null;
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("stillworks:logged-out"));
+      }
+    }
+  };
 }
 
 export async function clearTokens(): Promise<void> {
@@ -152,6 +193,12 @@ export async function clearTokens(): Promise<void> {
     } catch {
       /* ignore */
     }
+  }
+
+  try {
+    authBroadcastChannel?.postMessage({ type: "LOGOUT" });
+  } catch {
+    /* ignore */
   }
 }
 
@@ -288,7 +335,22 @@ export class ApiError extends Error {
   body: unknown;
 
   constructor(status: number, body: unknown) {
-    super(`API ${status}: ${typeof body === "object" ? JSON.stringify(body) : body}`);
+    let msg = "";
+    if (body && typeof body === "object" && "message" in (body as Record<string, unknown>)) {
+      msg = String((body as Record<string, unknown>)["message"]);
+    } else if (typeof body === "string" && body.trim()) {
+      msg = body.trim();
+    }
+    if (!msg) {
+      if (status === 401) msg = "Your session has expired. Please sign in again.";
+      else if (status === 403) msg = "You don't have permission to perform this action.";
+      else if (status === 404) msg = "The requested record was not found.";
+      else if (status === 409) msg = "This record was updated by someone else. Please refresh.";
+      else if (status === 429) msg = "Too many requests. Please wait a moment.";
+      else if (status >= 500) msg = "A server error occurred. Please try again shortly.";
+      else msg = `Request failed (${status})`;
+    }
+    super(msg);
     this.name = "ApiError";
     this.status = status;
     this.body = body;

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
-import { User, Building2, Bell, Lock, Palette, HardDrive, Loader2, Laptop, LogOut, ShieldCheck, Camera, Trash2 } from "lucide-react";
+import { User, Building2, Bell, Lock, Palette, HardDrive, Loader2, Laptop, LogOut, ShieldCheck, Camera, Trash2, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
+import { DesktopUpdateSettings } from "@/components/settings/DesktopUpdateSettings";
 import {
   useUpdateProfile,
   useUpdateFirm,
@@ -42,6 +43,7 @@ const tabs = [
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "security", label: "Security", icon: Lock },
   { id: "storage", label: "Storage", icon: HardDrive },
+  { id: "updates", label: "App & Updates", icon: RefreshCw },
 ];
 
 function SettingsPage() {
@@ -299,7 +301,9 @@ function SettingsPage() {
         </nav>
 
         <div className="min-w-0 space-y-6">
-          {tab === "notifications" || tab === "security" ? (
+          {tab === "updates" ? (
+            <DesktopUpdateSettings />
+          ) : tab === "notifications" || tab === "security" ? (
             <div className="space-y-6">
               <SectionCard
                 title={tab === "security" ? "Security Policies" : "Notifications"}

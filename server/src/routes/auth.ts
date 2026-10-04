@@ -409,6 +409,8 @@ router.post("/refresh", async (req: Request, res: Response) => {
     });
 
     let session: (typeof activeSessions)[number] | null = null;
+    let isGracePeriodMatch = false;
+
     for (const candidate of activeSessions) {
       if (
         candidate.refreshTokenHash &&
@@ -417,18 +419,38 @@ router.post("/refresh", async (req: Request, res: Response) => {
         session = candidate;
         break;
       }
+      // Check grace period (concurrent requests or multiple tabs within 60 seconds of last rotation)
+      if (
+        candidate.previousRefreshTokenHash &&
+        candidate.rotatedAt &&
+        Date.now() - new Date(candidate.rotatedAt).getTime() < 60_000 &&
+        (await bcrypt.compare(refreshToken, candidate.previousRefreshTokenHash))
+      ) {
+        session = candidate;
+        isGracePeriodMatch = true;
+        break;
+      }
     }
 
     if (!session) {
       // Reuse / replay detection: a valid signature was presented that does not match
-      // any active session hash (it was already rotated or revoked). Revoke session family!
+      // active session or recent grace period hash. Revoke session family!
       await Session.revokeAllForUser(payload.userId);
       clearRefreshCookie(res, req);
       res.status(401).json({ message: "Invalid or expired refresh token" });
       return;
     }
 
-    // Rotation: generate new access token AND new refresh token
+    // If matched within recent grace period, return the current valid access token without re-rotating
+    if (isGracePeriodMatch) {
+      const body: Record<string, unknown> = {
+        accessToken: session.token,
+      };
+      res.json(body);
+      return;
+    }
+
+    // Standard rotation: generate new access token AND new refresh token
     const newPayload = {
       userId: payload.userId,
       email: payload.email,
@@ -439,7 +461,9 @@ router.post("/refresh", async (req: Request, res: Response) => {
     const newRefreshToken = signRefreshToken(newPayload);
     const newRefreshTokenHash = await bcrypt.hash(newRefreshToken, 12);
 
-    // Update session with new tokens
+    // Update session: preserve current hash as previous for 60s grace period
+    session.previousRefreshTokenHash = session.refreshTokenHash;
+    session.rotatedAt = new Date();
     session.token = newAccessToken;
     session.refreshTokenHash = newRefreshTokenHash;
     session.lastActiveAt = new Date();

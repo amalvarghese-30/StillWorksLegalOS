@@ -211,11 +211,21 @@ function EditCallDialogInner({ open, onClose, task }: { open: boolean; onClose: 
 
   const handleDelete = async () => {
     try {
-      await deleteTask.mutateAsync(task._id);
-      toast.success("Call reminder deleted");
+      const res = await deleteTask.mutateAsync(task._id);
+      if (res?.alreadyDeleted) {
+        toast.info("Reminder was already deleted or is no longer available.");
+      } else {
+        toast.success("Call reminder deleted");
+      }
       setShowDeleteConfirm(false);
       onClose();
-    } catch {
+    } catch (err: any) {
+      if (err?.status === 404 || err?.message?.includes("not found")) {
+        toast.info("Reminder was already deleted or is no longer available.");
+        setShowDeleteConfirm(false);
+        onClose();
+        return;
+      }
       toast.error("Failed to delete reminder");
     }
   };

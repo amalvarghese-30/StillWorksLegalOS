@@ -333,12 +333,22 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
   const handleDeleteTask = async (e?: React.MouseEvent) => {
     e?.preventDefault();
     try {
-      await deleteTask.mutateAsync(task._id);
-      toast.success(`Task "${task.title}" deleted`);
+      const res = await deleteTask.mutateAsync(task._id);
+      if (res?.alreadyDeleted) {
+        toast.info("Task was already deleted or is no longer available.");
+      } else {
+        toast.success(`Task "${task.title}" deleted`);
+      }
       setShowDeleteConfirm(false);
       onClose();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to delete task:", err);
+      if (err?.status === 404 || err?.message?.includes("not found")) {
+        toast.info("Task was already deleted or is no longer available.");
+        setShowDeleteConfirm(false);
+        onClose();
+        return;
+      }
       toast.error(err instanceof Error ? err.message : "Failed to delete task");
     }
   };
@@ -407,7 +417,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
   return (
     <>
       <Dialog open={open} onOpenChange={(val) => !val && onClose()}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl rounded-xl border border-border bg-card p-6 shadow-lift">
+        <DialogContent className="max-h-[92dvh] overflow-y-auto w-[95vw] sm:max-w-xl rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-lift ios-scroll">
           <DialogHeader className="border-b border-border/60 pb-4">
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">

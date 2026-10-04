@@ -8,6 +8,8 @@ export interface ISession extends Document {
   userId: mongoose.Types.ObjectId;
   token: string;           // JWT access token (for blacklisting on logout)
   refreshTokenHash: string; // bcrypt hash of refresh token
+  previousRefreshTokenHash?: string; // bcrypt hash of immediately previous refresh token (grace period)
+  rotatedAt?: Date;        // timestamp of last rotation
   device: string;          // e.g., "Windows · Chrome", "Electron Desktop"
   ip: string;
   rememberMe: boolean;
@@ -32,6 +34,8 @@ const SessionSchema = new Schema<ISession>(
     },
     token: { type: String, required: true, index: true },
     refreshTokenHash: { type: String, required: true },
+    previousRefreshTokenHash: { type: String },
+    rotatedAt: { type: Date },
     device: { type: String, default: "Unknown" },
     ip: { type: String, default: "" },
     rememberMe: { type: Boolean, default: false },

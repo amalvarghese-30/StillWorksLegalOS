@@ -278,7 +278,7 @@ interface TaskFieldErrors {
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl max-h-[90dvh] overflow-y-auto p-4 sm:p-6 rounded-2xl w-[95vw] sm:w-full ios-scroll">
         <DialogHeader>
           <DialogTitle>Create task</DialogTitle>
           <DialogDescription>

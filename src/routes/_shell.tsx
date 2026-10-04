@@ -3,11 +3,14 @@ import { useState, useEffect } from "react";
 import { ShieldAlert, ArrowLeft, Bell, X } from "lucide-react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
+import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 import { SkipLink } from "@/components/common/SkipLink";
 import { CallReminderAlerts } from "@/components/calendar/CallReminderAlerts";
 import { notifications, getNotificationPermissionStatus, isElectron } from "@/platform";
+import { useSocketEvent } from "@/lib/socket";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_shell")({
@@ -65,11 +68,39 @@ function ShellLayout() {
     user.permissions &&
     user.permissions[matchedRoute.permKey] === false;
 
+  const queryClient = useQueryClient();
+
+  // Global real-time synchronization for tasks and notifications across all routes
+  useSocketEvent("task:created", () => {
+    queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    queryClient.invalidateQueries({ queryKey: ["reports"] });
+    queryClient.invalidateQueries({ queryKey: ["calendar"] });
+    queryClient.invalidateQueries({ queryKey: ["notifications"] });
+  });
+
+  useSocketEvent("task:updated", () => {
+    queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    queryClient.invalidateQueries({ queryKey: ["calendar"] });
+    queryClient.invalidateQueries({ queryKey: ["reports"] });
+    queryClient.invalidateQueries({ queryKey: ["notifications"] });
+  });
+
+  useSocketEvent<{ taskId: string }>("task:deleted", (payload) => {
+    if (payload?.taskId) {
+      queryClient.removeQueries({ queryKey: ["tasks", payload.taskId] });
+      queryClient.removeQueries({ queryKey: ["task", payload.taskId] });
+    }
+    queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    queryClient.invalidateQueries({ queryKey: ["calendar"] });
+    queryClient.invalidateQueries({ queryKey: ["reports"] });
+    queryClient.invalidateQueries({ queryKey: ["notifications"] });
+  });
+
   return (
-    <div className="app-canvas min-h-screen">
+    <div className="app-canvas min-h-screen overflow-x-hidden">
       <SkipLink />
       <CallReminderAlerts />
-      <div className="mx-auto flex w-full max-w-[1600px] gap-6 px-3 sm:px-4 lg:px-6 pb-10">
+      <div className="mx-auto flex w-full max-w-[1600px] gap-6 px-3 sm:px-4 lg:px-6 pb-24 lg:pb-10">
         <aside className="sticky top-4 hidden h-[calc(100vh-2rem)] shrink-0 py-4 lg:block">
           <Sidebar />
         </aside>
@@ -110,7 +141,7 @@ function ShellLayout() {
               </div>
             </div>
           )}
-          <main id="main-content" className="page-enter mt-6 min-w-0">
+          <main id="main-content" className="page-enter mt-4 sm:mt-6 min-w-0">
             {isRestricted ? (
               <div className="flex flex-col items-center justify-center p-10 text-center rounded-xl border border-destructive/20 bg-card shadow-soft mt-8 max-w-lg mx-auto">
                 <div className="grid size-14 place-items-center rounded-full bg-destructive/10 text-destructive mb-4">
@@ -137,6 +168,9 @@ function ShellLayout() {
           </main>
         </div>
       </div>
+
+      {/* Mobile Application Navigation Shell */}
+      <MobileBottomNav />
     </div>
   );
 }
