@@ -3,13 +3,21 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
 import path from "node:path";
+import fs from "node:fs";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const apiTarget = env["VITE_API_PROXY_TARGET"] || "http://localhost:3001";
   const isCloudProxy = apiTarget.startsWith("https://");
 
+  const pkg = JSON.parse(
+    fs.readFileSync(path.resolve(import.meta.dirname, "package.json"), "utf8")
+  );
+
   return {
+    define: {
+      __APP_VERSION__: JSON.stringify(pkg.version || "1.0.12"),
+    },
     plugins: [TanStackRouterVite(), tailwindcss(), react()],
     resolve: {
       alias: {

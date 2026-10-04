@@ -18,6 +18,7 @@ import { useSearch } from "@/lib/search";
 import { useCreateDirectChat } from "@/services/chat";
 import { useNavigate } from "@tanstack/react-router";
 import { useTheme } from "@/lib/theme";
+import { APP_VERSION } from "@/version";
 
 export function AdminTopbar() {
   const [navOpen, setNavOpen] = useState(false);
@@ -214,7 +215,16 @@ export function AdminTopbar() {
       </div>
 
       {/* Right Side Controls */}
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+        {/* App Version Indicator */}
+        <div
+          title={`LegalOS Release v${APP_VERSION}`}
+          className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-muted/40 px-2.5 py-1 font-mono text-[11px] font-medium text-muted-foreground shadow-2xs hover:bg-muted/70 transition-colors select-none"
+        >
+          <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span>v{APP_VERSION}</span>
+        </div>
+
         <NotificationCenter />
         <Button
           variant="ghost"

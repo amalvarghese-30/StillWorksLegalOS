@@ -20,6 +20,8 @@ import {
 } from "@/services/admin";
 import { validatePhone, sanitizePhone } from "@/lib/validation";
 import { getAccessToken, getApiBase } from "@/services/api";
+import { APP_VERSION } from "@/version";
+import { isElectron } from "@/platform";
 
 export const Route = createFileRoute("/_shell/settings")({
   head: () => ({
@@ -273,6 +275,27 @@ function SettingsPage() {
               </li>
             ))}
           </ul>
+
+          <div className="mt-4 hidden rounded-lg border border-border/70 bg-card/60 p-3.5 shadow-2xs lg:block">
+            <div className="flex items-center gap-2">
+              <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+              <p className="text-xs font-semibold text-foreground">S &amp; S LegalOS</p>
+            </div>
+            <div className="mt-2.5 space-y-1.5 text-[11px] text-muted-foreground border-t border-border/50 pt-2">
+              <div className="flex items-center justify-between">
+                <span>Release:</span>
+                <span className="font-mono font-semibold text-foreground bg-muted/60 px-1.5 py-0.5 rounded border border-border/40">
+                  v{APP_VERSION}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Environment:</span>
+                <span className="font-medium text-foreground">
+                  {isElectron() ? "Desktop (Windows)" : "Web Browser"}
+                </span>
+              </div>
+            </div>
+          </div>
         </nav>
 
         <div className="min-w-0 space-y-6">

@@ -5,6 +5,7 @@
 // notification controls while providing clean no-ops for browser environments.
 // ---------------------------------------------------------------------------
 
+import { APP_VERSION } from "@/version";
 import { isElectron } from "./index";
 
 export interface AppLifecycleProvider {
@@ -24,7 +25,7 @@ class CrossPlatformLifecycleProvider implements AppLifecycleProvider {
         /* ignore */
       }
     }
-    return "1.0.0";
+    return APP_VERSION;
   }
 
   async isDev(): Promise<boolean> {

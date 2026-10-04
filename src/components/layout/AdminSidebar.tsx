@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
+import { APP_VERSION } from "@/version";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -182,10 +183,13 @@ export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
         </div>
       </div>
 
-      {/* StillWorks attribution */}
-      <div className="mt-3 flex items-center justify-center rounded-md border border-border/40 bg-muted/30 px-3 py-2">
+      {/* StillWorks attribution & Version Badge */}
+      <div className="mt-3 flex items-center justify-between rounded-md border border-border/40 bg-muted/30 px-3 py-2">
         <span className="text-xs font-semibold tracking-wide text-muted-foreground">
           Powered by <span className="text-primary">stillworks.in</span>
+        </span>
+        <span className="inline-flex items-center gap-1 rounded bg-background/80 border border-border/60 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground shadow-2xs">
+          v{APP_VERSION}
         </span>
       </div>
     </div>
