@@ -44,31 +44,11 @@ function ShellLayout() {
     return !dismissed && getNotificationPermissionStatus() === "default";
   });
 
+  const queryClient = useQueryClient();
+
   useEffect(() => {
     if (ready && !user) navigate({ to: "/login", replace: true });
   }, [ready, user, navigate]);
-
-  if (!ready || !user) {
-    return (
-      <div className="app-canvas grid min-h-screen place-items-center">
-        <p className="text-helper text-muted-foreground">Loading your workspace…</p>
-      </div>
-    );
-  }
-
-  // Check route-level permissions for non-admin employees
-  const currentPath = location.pathname;
-  const matchedRoute = ROUTE_PERMISSIONS.find(
-    (r) => currentPath === r.prefix || currentPath.startsWith(`${r.prefix}/`)
-  );
-
-  const isRestricted =
-    user.role !== "admin" &&
-    matchedRoute &&
-    user.permissions &&
-    user.permissions[matchedRoute.permKey] === false;
-
-  const queryClient = useQueryClient();
 
   // Global real-time synchronization for tasks and notifications across all routes
   useSocketEvent("task:created", () => {
@@ -95,6 +75,26 @@ function ShellLayout() {
     queryClient.invalidateQueries({ queryKey: ["reports"] });
     queryClient.invalidateQueries({ queryKey: ["notifications"] });
   });
+
+  if (!ready || !user) {
+    return (
+      <div className="app-canvas grid min-h-screen place-items-center">
+        <p className="text-helper text-muted-foreground">Loading your workspace…</p>
+      </div>
+    );
+  }
+
+  // Check route-level permissions for non-admin employees
+  const currentPath = location.pathname;
+  const matchedRoute = ROUTE_PERMISSIONS.find(
+    (r) => currentPath === r.prefix || currentPath.startsWith(`${r.prefix}/`)
+  );
+
+  const isRestricted =
+    user.role !== "admin" &&
+    matchedRoute &&
+    user.permissions &&
+    user.permissions[matchedRoute.permKey] === false;
 
   const isChatRoute = currentPath.startsWith("/chat");
   const searchParams = (location.search ?? {}) as Record<string, any>;
