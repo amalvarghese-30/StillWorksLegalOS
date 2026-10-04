@@ -27,6 +27,7 @@ export interface IChatGroup extends Document {
   pinnedBy: mongoose.Types.ObjectId[];
   mutedBy: mongoose.Types.ObjectId[];
   archivedBy: mongoose.Types.ObjectId[];
+  hiddenBy: mongoose.Types.ObjectId[];
   pinnedMessage?: {
     messageId: mongoose.Types.ObjectId;
     text: string;
@@ -102,6 +103,7 @@ const ChatGroupSchema = new Schema<IChatGroup>(
     pinnedBy: { type: [Schema.Types.ObjectId], ref: "User", default: [] },
     mutedBy: { type: [Schema.Types.ObjectId], ref: "User", default: [] },
     archivedBy: { type: [Schema.Types.ObjectId], ref: "User", default: [] },
+    hiddenBy: { type: [Schema.Types.ObjectId], ref: "User", default: [] },
     pinnedMessage: {
       type: new Schema(
         {

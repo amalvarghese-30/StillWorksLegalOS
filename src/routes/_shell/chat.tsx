@@ -24,7 +24,10 @@ import {
   useCreateGroup,
   useCreateDirectChat,
   useDeleteGroup,
+  useClearChat,
+  useDeleteChatForMe,
   useMarkRead,
+  useMarkUnread,
   useChatUsers,
   useAddGroupMembers,
   useRemoveGroupMember,
@@ -96,7 +99,7 @@ function ChatPage() {
   const [olderPages, setOlderPages] = useState<ChatMessage[][]>([]);
   const [olderCursor, setOlderCursor] = useState<string | null | undefined>(undefined);
   const [loadingOlder, setLoadingOlder] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const prevGroupRef = useRef<string | null>(null);
   const seededPresence = useRef(false);
 
@@ -122,7 +125,10 @@ function ChatPage() {
   const createGroupMutation = useCreateGroup();
   const createDirectChatMutation = useCreateDirectChat();
   const deleteGroupMutation = useDeleteGroup();
+  const clearChatMutation = useClearChat();
+  const deleteChatForMeMutation = useDeleteChatForMe();
   const markReadMutation = useMarkRead();
+  const markUnreadMutation = useMarkUnread();
   const addMembersMutation = useAddGroupMembers();
   const removeMemberMutation = useRemoveGroupMember();
   const changeRoleMutation = useChangeMemberRole();
@@ -277,6 +283,29 @@ function ChatPage() {
   useSocketEvent<{ groupId: string }>("chat:message-unpinned", (data) => {
     qc.invalidateQueries({ queryKey: chatKeys.groups() });
     qc.invalidateQueries({ queryKey: chatKeys.messages(data.groupId) });
+  });
+
+  useSocketEvent<{ groupId: string }>("chat:messages-cleared", (data) => {
+    qc.setQueryData<{ messages: ChatMessage[]; nextCursor: string | null }>(
+      chatKeys.messages(data.groupId),
+      { messages: [], nextCursor: null },
+    );
+    qc.invalidateQueries({ queryKey: chatKeys.messages(data.groupId) });
+    qc.invalidateQueries({ queryKey: chatKeys.groups() });
+  });
+
+  useSocketEvent<{ groupId: string }>("chat:group-hidden", (data) => {
+    if (activeGroupId === data.groupId) {
+      setActiveGroupId(null);
+    }
+    qc.invalidateQueries({ queryKey: chatKeys.groups() });
+  });
+
+  useSocketEvent<{ groupId: string }>("chat:group-deleted", (data) => {
+    if (activeGroupId === data.groupId) {
+      setActiveGroupId(null);
+    }
+    qc.invalidateQueries({ queryKey: chatKeys.groups() });
   });
 
   // ── Socket: reactions ────────────────────────────────────────────────────
@@ -528,13 +557,6 @@ function ChatPage() {
     changeRoleMutation.mutate({ groupId: activeGroupId, userId, role });
   };
 
-  const handleLeaveGroup = () => {
-    if (!activeGroupId) return;
-    leaveGroupMutation.mutate(activeGroupId, {
-      onSuccess: () => setActiveGroupId(null),
-    });
-  };
-
   const handleRename = (name: string) => {
     if (!activeGroupId) return;
     renameMutation.mutate({ groupId: activeGroupId, name });
@@ -553,12 +575,64 @@ function ChatPage() {
     toggleArchive.mutate({ groupId: activeGroup._id, archived: activeGroup.isArchived });
   };
 
-  const handleDeleteGroup = () => {
-    if (!activeGroupId) return;
-    deleteGroupMutation.mutate(activeGroupId, {
+  const handleClearChat = (groupId?: string) => {
+    const targetId = groupId || activeGroupId;
+    if (!targetId) return;
+    clearChatMutation.mutate(targetId, {
       onSuccess: () => {
-        setActiveGroupId(null);
+        toast.success("Chat messages cleared");
+      },
+      onError: () => {
+        toast.error("Failed to clear messages");
+      },
+    });
+  };
+
+  const handleDeleteChat = (groupId?: string) => {
+    const targetId = groupId || activeGroupId;
+    if (!targetId) return;
+    deleteChatForMeMutation.mutate(targetId, {
+      onSuccess: () => {
+        if (activeGroupId === targetId) {
+          setActiveGroupId(null);
+        }
+        toast.success("Chat deleted from your conversation list");
+      },
+      onError: () => {
+        toast.error("Failed to delete chat");
+      },
+    });
+  };
+
+  const handleLeaveGroup = (groupId?: string) => {
+    const targetId = groupId || activeGroupId;
+    if (!targetId) return;
+    leaveGroupMutation.mutate(targetId, {
+      onSuccess: () => {
+        if (activeGroupId === targetId) {
+          setActiveGroupId(null);
+        }
+        toast.success("Left group successfully");
+      },
+      onError: () => {
+        toast.error("Failed to leave group");
+      },
+    });
+  };
+
+  const handleDeleteGroup = (groupId?: string) => {
+    const targetId = groupId || activeGroupId;
+    if (!targetId) return;
+    deleteGroupMutation.mutate(targetId, {
+      onSuccess: () => {
+        if (activeGroupId === targetId) {
+          setActiveGroupId(null);
+        }
         setDeleteConfirmOpen(false);
+        toast.success("Group deleted successfully");
+      },
+      onError: () => {
+        toast.error("Failed to delete group");
       },
     });
   };
@@ -569,49 +643,51 @@ function ChatPage() {
   return (
     <div>
       <Toaster position="top-right" richColors />
-      <PageHeader
-        breadcrumb={[{ label: "S & S", to: "/" }, { label: "Chat" }]}
-        title="Chat"
-        subtitle="Private, encrypted messaging for the firm."
-        actions={
-          <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1.5 text-caption">
-              {connStatus === "connected" ? (
-                <Wifi size={14} strokeWidth={1.75} className="text-success" />
-              ) : connStatus === "connecting" ? (
-                <Loader2 size={14} strokeWidth={1.75} className="animate-spin text-primary" />
-              ) : connStatus === "reconnecting" ? (
-                <Loader2 size={14} strokeWidth={1.75} className="animate-spin text-amber-500" />
-              ) : (
-                <WifiOff size={14} strokeWidth={1.75} className="text-muted-foreground" />
-              )}
-              <span
-                className={
-                  connStatus === "connected"
-                    ? "text-success"
+      <div className={activeGroupId ? "hidden md:block" : "block"}>
+        <PageHeader
+          breadcrumb={[{ label: "S & S", to: "/" }, { label: "Chat" }]}
+          title="Chat"
+          subtitle="Private, encrypted messaging for the firm."
+          actions={
+            <div className="flex items-center gap-3">
+              <span className="flex items-center gap-1.5 text-caption">
+                {connStatus === "connected" ? (
+                  <Wifi size={14} strokeWidth={1.75} className="text-success" />
+                ) : connStatus === "connecting" ? (
+                  <Loader2 size={14} strokeWidth={1.75} className="animate-spin text-primary" />
+                ) : connStatus === "reconnecting" ? (
+                  <Loader2 size={14} strokeWidth={1.75} className="animate-spin text-amber-500" />
+                ) : (
+                  <WifiOff size={14} strokeWidth={1.75} className="text-muted-foreground" />
+                )}
+                <span
+                  className={
+                    connStatus === "connected"
+                      ? "text-success"
+                      : connStatus === "connecting"
+                      ? "text-primary"
+                      : connStatus === "reconnecting"
+                      ? "text-amber-500 font-medium"
+                      : "text-muted-foreground"
+                  }
+                >
+                  {connStatus === "connected"
+                    ? "Connected"
                     : connStatus === "connecting"
-                    ? "text-primary"
+                    ? "Connecting…"
                     : connStatus === "reconnecting"
-                    ? "text-amber-500 font-medium"
-                    : "text-muted-foreground"
-                }
-              >
-                {connStatus === "connected"
-                  ? "Connected"
-                  : connStatus === "connecting"
-                  ? "Connecting…"
-                  : connStatus === "reconnecting"
-                  ? "Reconnecting…"
-                  : "Offline"}
+                    ? "Reconnecting…"
+                    : "Offline"}
+                </span>
               </span>
-            </span>
-            <div className="flex items-center gap-2 text-caption text-muted-foreground">
-              <Lock size={14} strokeWidth={1.75} />
-              <span>E2E Encrypted</span>
+              <div className="flex items-center gap-2 text-caption text-muted-foreground">
+                <Lock size={14} strokeWidth={1.75} />
+                <span>E2E Encrypted</span>
+              </div>
             </div>
-          </div>
-        }
-      />
+          }
+        />
+      </div>
 
       {groupsLoading && (
         <div className="rounded-lg border border-border bg-card p-8 shadow-soft animate-pulse">
@@ -631,7 +707,7 @@ function ChatPage() {
       )}
 
       {!groupsLoading && !groupsError && (
-        <div className="grid h-[calc(100dvh-5.5rem)] min-h-[480px] overflow-hidden rounded-2xl border border-border/80 bg-card shadow-lift sm:h-[calc(100vh-7.5rem)] sm:min-h-[540px] md:grid-cols-[300px_minmax(0,1fr)] lg:grid-cols-[340px_minmax(0,1fr)]">
+        <div className="grid h-[calc(100dvh-5.5rem)] min-h-[480px] overflow-hidden rounded-2xl border border-border/80 bg-card shadow-lift sm:h-[calc(100vh-13.5rem)] sm:min-h-[500px] md:grid-cols-[300px_minmax(0,1fr)] lg:grid-cols-[340px_minmax(0,1fr)]">
           <div className={`${activeGroupId ? "hidden md:block" : "block"} min-h-0 min-w-0 border-r border-border/70 bg-card`}>
             <ChatSidebar
               groups={groups}
@@ -647,10 +723,19 @@ function ChatPage() {
               users={allUsers}
               onStartDirectChat={handleStartDirectChat}
               isCreatingDirectChat={createDirectChatMutation.isPending}
+              onTogglePin={(id, pinned) => togglePin.mutate({ groupId: id, pinned })}
+              onToggleMute={(id, muted) => toggleMute.mutate({ groupId: id, muted })}
+              onToggleArchive={(id, archived) => toggleArchive.mutate({ groupId: id, archived })}
+              onMarkRead={(id) => markReadMutation.mutate(id)}
+              onMarkUnread={(id) => markUnreadMutation.mutate(id)}
+              onClearChat={(id) => handleClearChat(id)}
+              onDeleteChat={(id) => handleDeleteChat(id)}
+              onLeaveGroup={(id) => handleLeaveGroup(id)}
+              onDeleteGroup={(id) => handleDeleteGroup(id)}
             />
           </div>
 
-          <section className={`${activeGroupId ? "flex" : "hidden md:flex"} min-h-0 min-w-0 flex-col bg-card`}>
+          <section className={`${activeGroupId ? "flex" : "hidden md:flex"} min-h-0 min-w-0 flex-1 flex-col bg-card overflow-hidden`}>
             {!activeGroup ? (
               <div className="chat-wallpaper flex flex-1 flex-col items-center justify-center p-8 text-center">
                 <div className="size-20 rounded-full bg-primary/10 grid place-items-center mb-4 text-primary shadow-xs">
@@ -677,7 +762,11 @@ function ChatPage() {
                   onToggleMute={handleToggleMute}
                   onToggleArchive={handleToggleArchive}
                   isAdmin={isAdmin}
+                  canManage={canManage}
                   onDeleteGroup={() => setDeleteConfirmOpen(true)}
+                  onDeleteChat={() => handleDeleteChat(activeGroup._id)}
+                  onClearChat={() => handleClearChat(activeGroup._id)}
+                  onLeaveGroup={() => handleLeaveGroup(activeGroup._id)}
                   onBack={() => setActiveGroupId(null)}
                   searchQuery={inChatSearch}
                   onSearchChange={setInChatSearch}
@@ -774,23 +863,38 @@ function ChatPage() {
         onAddMembers={() => setShowAddMembers(true)}
         onChangeRole={handleChangeRole}
         onRemoveMember={handleRemoveMember}
-        onLeave={handleLeaveGroup}
+        onLeave={() => handleLeaveGroup()}
         isLeaving={leaveGroupMutation.isPending}
+        isAdmin={isAdmin}
+        onClearChat={() => handleClearChat()}
+        onDeleteChat={() => handleDeleteChat()}
+        onDeleteGroup={() => setDeleteConfirmOpen(true)}
       />
 
       <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete group?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {activeGroup?.type === "direct" ? "Delete conversation?" : "Delete group?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently deletes “{activeGroup?.name}” and all its messages for everyone.
+              {activeGroup?.type === "direct"
+                ? `Delete conversation with “${activeGroup?.name}”? It will be removed from your chat list.`
+                : `This permanently deletes “${activeGroup?.name}” and all its messages for everyone.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-white hover:bg-destructive/90"
-              onClick={handleDeleteGroup}
+              onClick={() => {
+                if (activeGroup?.type === "direct") {
+                  handleDeleteChat();
+                  setDeleteConfirmOpen(false);
+                } else {
+                  handleDeleteGroup();
+                }
+              }}
             >
               Delete
             </AlertDialogAction>

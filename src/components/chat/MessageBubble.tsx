@@ -376,7 +376,7 @@ export function MessageBubble({
               {message.text ? (
                 <div className="flex flex-wrap items-end justify-between gap-x-2.5 gap-y-0.5">
                   <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-[13.5px] sm:text-[14px] leading-relaxed select-text">
-                    {highlightMentions(message.text, searchQuery, onCaseClick)}
+                    {highlightMentions(message.text, searchQuery, onCaseClick, isMine)}
                   </span>
                   <span
                     className={`ml-auto inline-flex shrink-0 items-center gap-1 text-[10px] tabular-nums select-none ${timeClass} self-end pb-0.5`}

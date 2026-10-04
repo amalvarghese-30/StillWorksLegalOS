@@ -16,7 +16,7 @@ interface MessageComposerProps {
   onCancelReply: () => void;
   typingNames: string[];
   onTyping: () => void;
-  inputRef: RefObject<HTMLInputElement | null>;
+  inputRef: RefObject<HTMLTextAreaElement | null>;
   /** Pass the current group's members for @mention suggestions */
   members?: ChatMember[];
 }
@@ -53,7 +53,7 @@ export function MessageComposer({
   const suggestionsRef = useRef<HTMLDivElement | null>(null);
 
   // Detect @mention in the input
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value;
     onChange(text);
     onTyping();
@@ -93,10 +93,11 @@ export function MessageComposer({
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
-  // Keyboard navigation for @mention suggestions
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  // Keyboard navigation for @mention suggestions & multiline Enter/Shift+Enter
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (mentionQuery === null || suggestions.length === 0) {
       if (e.key === "Enter" && !e.shiftKey) {
+        if ((e.nativeEvent as any).isComposing) return;
         e.preventDefault();
         handleSubmit(e as unknown as React.FormEvent);
       }
@@ -118,6 +119,15 @@ export function MessageComposer({
       setMentionStart(-1);
     }
   };
+
+  // Auto-resize textarea height to accommodate multiline messages up to max-height
+  useEffect(() => {
+    const textarea = inputRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    const nextHeight = Math.min(textarea.scrollHeight, 140);
+    textarea.style.height = `${Math.max(nextHeight, 40)}px`;
+  }, [value, inputRef]);
 
   // Close suggestions when clicking outside
   useEffect(() => {
@@ -254,6 +264,9 @@ export function MessageComposer({
     setAttachment(null);
     setMentionQuery(null);
     setMentionStart(-1);
+    if (inputRef.current) {
+      inputRef.current.style.height = "auto";
+    }
   };
 
   return (
@@ -476,14 +489,15 @@ export function MessageComposer({
                 </PopoverContent>
               </Popover>
 
-              <input
+              <textarea
                 ref={inputRef}
+                rows={1}
                 aria-label="Message"
-                placeholder="Type a message or @ to mention..."
+                placeholder="Type a message or @ to mention... (Shift+Enter for new line)"
                 value={value}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
-                className="min-w-0 flex-1 rounded-2xl border border-border/60 bg-muted/40 dark:bg-muted/20 px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/70 outline-none transition-all focus:bg-card focus:border-primary/50 focus:ring-1 focus:ring-primary/40"
+                className="min-w-0 flex-1 resize-none rounded-2xl border border-border/60 bg-muted/40 dark:bg-muted/20 px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/70 outline-none transition-all focus:bg-card focus:border-primary/50 focus:ring-1 focus:ring-primary/40 max-h-36 overflow-y-auto leading-relaxed"
               />
 
               {value.trim() || attachment ? (

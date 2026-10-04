@@ -274,14 +274,15 @@ async function requireChatMembership(
 
 router.get("/groups", async (req: Request, res: Response) => {
   try {
+    const userIdOid = new mongoose.Types.ObjectId(req.userId!);
     const groups = await ChatGroup.find({
       "members.userId": req.userId,
+      hiddenBy: { $ne: userIdOid },
     })
       .sort({ updatedAt: -1 })
       .lean();
 
     // Single aggregation for unread counts across all groups (avoids N+1).
-    const userIdOid = new mongoose.Types.ObjectId(req.userId!);
     const unreadAgg = await ChatMessage.aggregate<{
       _id: mongoose.Types.ObjectId;
       unread: number;
@@ -366,6 +367,12 @@ router.post("/groups", async (req: Request, res: Response) => {
           "members.userId": { $all: [creatorOid, otherId] },
         });
         if (existing) {
+          if (existing.hiddenBy && existing.hiddenBy.some((id: any) => id.toString() === req.userId)) {
+            await ChatGroup.findByIdAndUpdate(existing._id, {
+              $pull: { hiddenBy: creatorOid },
+            });
+            existing.hiddenBy = (existing.hiddenBy || []).filter((id: any) => id.toString() !== req.userId);
+          }
           res.json({ group: await serializeGroup(existing, req.userId!) });
           return;
         }
@@ -454,26 +461,166 @@ router.patch(
 );
 
 // ---------------------------------------------------------------------------
-// DELETE /api/chat/groups/:groupId — admin only
+// ---------------------------------------------------------------------------
+// DELETE /api/chat/groups/:groupId — user-level direct delete or admin group delete
 // ---------------------------------------------------------------------------
 
-router.delete("/groups/:groupId", requireAdmin, async (req: Request, res: Response) => {
+router.delete("/groups/:groupId", requireChatMembership, async (req: Request, res: Response) => {
   try {
-    const group = await ChatGroup.findByIdAndDelete(req.params["groupId"]);
-    if (!group) {
-      res.status(404).json({ message: "Group not found" });
+    const group = (req as any).chatGroup;
+    const isFirmAdmin = req.user?.role === "admin";
+    const isGroupCreator = group.createdBy?.toString() === req.userId;
+    const isGroupAdmin = group.members.some(
+      (m: any) => m.userId.toString() === req.userId && m.role === "admin",
+    );
+
+    if (group.type === "direct") {
+      // In direct chats, deleting the chat deletes/hides it for the calling participant
+      await ChatMessage.updateMany(
+        { groupId: group._id, deletedFor: { $nin: [req.userId] } },
+        { $addToSet: { deletedFor: req.user!._id } },
+      );
+      await ChatGroup.findByIdAndUpdate(group._id, {
+        $addToSet: { hiddenBy: req.user!._id },
+      });
+      await logChatAudit(req, "delete", group._id.toString(), group.name, {
+        action: "delete_direct_for_me",
+      });
+
+      const io = req.app.get("io");
+      if (io) {
+        io.to(`user:${req.userId}`).emit("chat:group-hidden", {
+          groupId: group._id.toString(),
+        });
+      }
+
+      res.json({ message: "Direct conversation deleted" });
       return;
     }
 
+    // For group chats, only firm admin or group admin/creator can delete the group
+    if (!isFirmAdmin && !isGroupCreator && !isGroupAdmin) {
+      res.status(403).json({
+        message: "Only group or firm administrators can delete this group",
+      });
+      return;
+    }
+
+    await ChatGroup.findByIdAndDelete(group._id);
     await ChatMessage.deleteMany({ groupId: group._id });
     await logChatAudit(req, "delete", group._id.toString(), group.name);
 
-    res.json({ message: "Group deleted" });
+    const io = req.app.get("io");
+    if (io) {
+      io.to(`chat:${group._id}`).emit("chat:group-deleted", {
+        groupId: group._id.toString(),
+      });
+    }
+
+    res.json({ message: "Group deleted successfully" });
   } catch (err) {
     console.error("[chat] Delete group error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 });
+
+// ---------------------------------------------------------------------------
+// POST /api/chat/groups/:groupId/delete-for-me — remove chat from user's list
+// ---------------------------------------------------------------------------
+
+router.post(
+  "/groups/:groupId/delete-for-me",
+  requireChatMembership,
+  async (req: Request, res: Response) => {
+    try {
+      const group = (req as any).chatGroup;
+      const groupId = group._id;
+
+      // Mark all current messages as deleted for this user
+      await ChatMessage.updateMany(
+        { groupId, deletedFor: { $nin: [req.userId] } },
+        { $addToSet: { deletedFor: req.user!._id } },
+      );
+
+      // Add user to hiddenBy so the chat vanishes from their list
+      await ChatGroup.findByIdAndUpdate(groupId, {
+        $addToSet: { hiddenBy: req.user!._id },
+      });
+
+      const io = req.app.get("io");
+      if (io) {
+        io.to(`user:${req.userId}`).emit("chat:group-hidden", {
+          groupId: groupId.toString(),
+        });
+      }
+
+      res.json({ message: "Chat removed from your conversation list" });
+    } catch (err) {
+      console.error("[chat] Delete chat for me error:", err);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// POST /api/chat/groups/:groupId/clear — clear message history for current user
+// ---------------------------------------------------------------------------
+
+router.post(
+  "/groups/:groupId/clear",
+  requireChatMembership,
+  async (req: Request, res: Response) => {
+    try {
+      const groupId = req.params["groupId"];
+      await ChatMessage.updateMany(
+        { groupId, deletedFor: { $nin: [req.userId] } },
+        { $addToSet: { deletedFor: req.user!._id } },
+      );
+
+      const io = req.app.get("io");
+      if (io) {
+        io.to(`user:${req.userId}`).emit("chat:messages-cleared", {
+          groupId,
+        });
+      }
+
+      res.json({ message: "Chat messages cleared" });
+    } catch (err) {
+      console.error("[chat] Clear chat error:", err);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// POST /api/chat/groups/:groupId/unread — mark conversation as unread for user
+// ---------------------------------------------------------------------------
+
+router.post(
+  "/groups/:groupId/unread",
+  requireChatMembership,
+  async (req: Request, res: Response) => {
+    try {
+      const groupId = req.params["groupId"];
+      const latest = await ChatMessage.findOne({
+        groupId,
+        deletedForEveryone: false,
+        deletedFor: { $nin: [req.userId] },
+      }).sort({ _id: -1 });
+
+      if (latest) {
+        await ChatMessage.findByIdAndUpdate(latest._id, {
+          $pull: { readBy: req.user!._id },
+        });
+      }
+
+      res.json({ message: "Marked conversation as unread" });
+    } catch (err) {
+      console.error("[chat] Mark unread error:", err);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  },
+);
 
 // ---------------------------------------------------------------------------
 // GET /api/chat/groups/:groupId/messages — paginated messages (member only)
@@ -617,6 +764,7 @@ router.post(
           senderName,
           at: now,
         },
+        $set: { hiddenBy: [] },
       });
 
       const serialized = serializeMessage(message);

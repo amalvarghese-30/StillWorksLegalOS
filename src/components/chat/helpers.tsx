@@ -8,6 +8,7 @@ export function highlightMentions(
   text: string,
   searchQuery?: string,
   onCaseClick?: (caseNum: string) => void,
+  isMine?: boolean,
 ): React.ReactNode {
   if (!text) return null;
 
@@ -42,7 +43,11 @@ export function highlightMentions(
       return (
         <span
           key={i}
-          className="rounded bg-primary/15 px-1 font-medium text-primary hover:bg-primary/25 transition-colors"
+          className={`rounded px-1.5 py-0.5 text-[12.5px] font-semibold transition-colors ${
+            isMine
+              ? "bg-white/25 text-white shadow-xs"
+              : "bg-primary/15 text-primary hover:bg-primary/25"
+          }`}
         >
           {part}
         </span>
@@ -62,7 +67,11 @@ export function highlightMentions(
               window.location.href = `/cases?search=${encodeURIComponent(part)}`;
             }
           }}
-          className="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[11.5px] font-semibold text-primary transition-all hover:bg-primary/20 hover:shadow-xs active:scale-95 mx-0.5"
+          className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11.5px] font-semibold transition-all hover:shadow-xs active:scale-95 mx-0.5 ${
+            isMine
+              ? "border border-white/40 bg-white/20 text-white hover:bg-white/30"
+              : "border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20"
+          }`}
           title={`Click to open Case Workspace for ${part}`}
         >
           <Briefcase size={11} strokeWidth={2} className="shrink-0" />

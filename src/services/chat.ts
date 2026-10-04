@@ -214,6 +214,27 @@ export function useDeleteGroup() {
   });
 }
 
+export function useClearChat() {
+  const qc = useQueryClient();
+  return useMutation<{ message: string }, Error, string>({
+    mutationFn: (groupId) => api.post(`/chat/groups/${groupId}/clear`),
+    onSuccess: (_data, groupId) => {
+      qc.invalidateQueries({ queryKey: chatKeys.messages(groupId) });
+      qc.invalidateQueries({ queryKey: chatKeys.groups() });
+    },
+  });
+}
+
+export function useDeleteChatForMe() {
+  const qc = useQueryClient();
+  return useMutation<{ message: string }, Error, string>({
+    mutationFn: (groupId) => api.post(`/chat/groups/${groupId}/delete-for-me`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: chatKeys.all });
+    },
+  });
+}
+
 export function useCreateDirectChat() {
   const qc = useQueryClient();
   return useMutation<{ group: ChatGroup }, Error, { userId: string }>({
@@ -229,6 +250,16 @@ export function useMarkRead() {
   const qc = useQueryClient();
   return useMutation<{ message: string }, Error, string>({
     mutationFn: (groupId) => api.post(`/chat/groups/${groupId}/read`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: chatKeys.groups() });
+    },
+  });
+}
+
+export function useMarkUnread() {
+  const qc = useQueryClient();
+  return useMutation<{ message: string }, Error, string>({
+    mutationFn: (groupId) => api.post(`/chat/groups/${groupId}/unread`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: chatKeys.groups() });
     },

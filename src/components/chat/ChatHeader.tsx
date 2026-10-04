@@ -35,7 +35,11 @@ interface ChatHeaderProps {
   onToggleMute: () => void;
   onToggleArchive: () => void;
   isAdmin: boolean;
+  canManage?: boolean;
   onDeleteGroup: () => void;
+  onDeleteChat?: () => void;
+  onClearChat?: () => void;
+  onLeaveGroup?: () => void;
   onBack?: () => void;
   searchQuery?: string;
   onSearchChange?: (q: string) => void;
@@ -54,7 +58,11 @@ export function ChatHeader({
   onToggleMute,
   onToggleArchive,
   isAdmin,
+  canManage = false,
   onDeleteGroup,
+  onDeleteChat,
+  onClearChat,
+  onLeaveGroup,
   onBack,
   searchQuery = "",
   onSearchChange,
@@ -81,12 +89,12 @@ export function ChatHeader({
 
   return (
     <header className="flex flex-col border-b border-border/70 bg-card/95 backdrop-blur-md">
-      <div className="flex items-center gap-2.5 px-3 py-2.5 sm:px-4 sm:py-3">
+      <div className="flex items-center gap-2 px-3 py-2.5 sm:px-4 sm:py-3">
         {onBack && (
           <Button
             variant="ghost"
             size="icon"
-            className="size-9 shrink-0 rounded-full md:hidden"
+            className="size-9 shrink-0 rounded-full md:hidden mr-0.5"
             onClick={onBack}
             aria-label="Back to conversations"
           >
@@ -94,33 +102,44 @@ export function ChatHeader({
           </Button>
         )}
 
-        <span className="relative grid size-10 shrink-0 place-items-center rounded-full bg-primary/12 text-helper font-semibold text-primary">
-          {isDirect ? (
-            computeInitials(group.name)
-          ) : (
-            <UsersIcon size={17} strokeWidth={1.75} />
-          )}
-          {isDirect && otherOnline && (
-            <span className="absolute bottom-0 right-0 size-3 rounded-full border-2 border-card bg-success" />
-          )}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium sm:text-base">{group.name}</p>
-          <p
-            className={`truncate text-[11px] sm:text-caption ${
-              subtitle === "online" ? "text-success font-medium" : "text-muted-foreground"
-            }`}
-          >
-            {subtitle}
-          </p>
-        </div>
+        {/* Clickable Header Contact/Group Info Button */}
+        <button
+          type="button"
+          onClick={onOpenInfo}
+          className="group flex min-w-0 flex-1 items-center gap-2.5 rounded-xl p-1 -ml-1 text-left transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40"
+          title={`Click to view ${isDirect ? "contact" : "group"} details`}
+          aria-label={`Open ${isDirect ? "contact" : "group"} info for ${group.name}`}
+        >
+          <span className="relative grid size-10 shrink-0 place-items-center rounded-full bg-primary/12 text-helper font-semibold text-primary transition-transform group-hover:scale-105">
+            {isDirect ? (
+              computeInitials(group.name)
+            ) : (
+              <UsersIcon size={17} strokeWidth={1.75} />
+            )}
+            {isDirect && otherOnline && (
+              <span className="absolute bottom-0 right-0 size-3 rounded-full border-2 border-card bg-success" />
+            )}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-foreground group-hover:text-primary transition-colors sm:text-base">
+              {group.name}
+            </p>
+            <p
+              className={`truncate text-[11px] sm:text-caption ${
+                subtitle === "online" ? "text-success font-medium" : "text-muted-foreground"
+              }`}
+            >
+              {subtitle}
+            </p>
+          </div>
+        </button>
 
-        <div className="flex items-center gap-0.5">
-          {/* In-chat search button */}
+        <div className="flex items-center gap-1 shrink-0">
+          {/* In-chat search toggle */}
           <Button
             variant="ghost"
             size="icon"
-            className={`size-9 rounded-full ${showSearch ? "bg-accent text-foreground" : ""}`}
+            className={`size-9 rounded-full ${showSearch ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
             onClick={() => {
               if (showSearch) {
                 onSearchChange?.("");
@@ -134,67 +153,113 @@ export function ChatHeader({
             <Search size={17} strokeWidth={1.75} />
           </Button>
 
-          {!isDirect && (
-            <Button variant="ghost" size="icon" className="size-9 rounded-full" onClick={onOpenInfo} title="Group info">
-              <Info size={17} strokeWidth={1.75} />
-            </Button>
-          )}
-
-          {/* Action icons on tablet / desktop */}
+          {/* Quick info button for instant access */}
           <Button
             variant="ghost"
             size="icon"
-            className="hidden size-9 rounded-full sm:inline-flex"
-            onClick={onTogglePin}
-            title={group.isPinned ? "Unpin chat" : "Pin chat"}
+            className="size-9 rounded-full text-muted-foreground hover:text-foreground"
+            onClick={onOpenInfo}
+            title={isDirect ? "Contact info" : "Group info"}
           >
-            {group.isPinned ? <PinOff size={17} strokeWidth={1.75} /> : <Pin size={17} strokeWidth={1.75} />}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="hidden size-9 rounded-full sm:inline-flex"
-            onClick={onToggleMute}
-            title={group.isMuted ? "Unmute chat" : "Mute chat"}
-          >
-            {group.isMuted ? <BellOff size={17} strokeWidth={1.75} /> : <Bell size={17} strokeWidth={1.75} />}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="hidden size-9 rounded-full sm:inline-flex"
-            onClick={onToggleArchive}
-            title={group.isArchived ? "Unarchive chat" : "Archive chat"}
-          >
-            {group.isArchived ? <ArchiveRestore size={17} strokeWidth={1.75} /> : <Archive size={17} strokeWidth={1.75} />}
+            <Info size={17} strokeWidth={1.75} />
           </Button>
 
-          {/* Dropdown with mobile options and admin options */}
+          {/* WhatsApp-Style 3-Dot Options Menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="size-9 rounded-full" title="More options">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-9 rounded-full text-muted-foreground hover:text-foreground"
+                title="More options"
+                aria-label="More options"
+              >
                 <MoreVertical size={17} strokeWidth={1.75} />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <div className="sm:hidden">
-                <DropdownMenuItem onClick={onTogglePin}>
-                  {group.isPinned ? <PinOff size={15} className="mr-2" /> : <Pin size={15} className="mr-2" />}
-                  {group.isPinned ? "Unpin chat" : "Pin chat"}
+            <DropdownMenuContent align="end" className="w-56 shadow-lift">
+              <DropdownMenuItem onClick={onOpenInfo}>
+                <Info size={15} className="mr-2.5 text-muted-foreground" />
+                {isDirect ? "Contact info" : "Group info"}
+              </DropdownMenuItem>
+
+              <DropdownMenuItem
+                onClick={() => {
+                  setShowSearch(true);
+                }}
+              >
+                <Search size={15} className="mr-2.5 text-muted-foreground" />
+                Search in chat
+              </DropdownMenuItem>
+
+              <DropdownMenuSeparator />
+
+              <DropdownMenuItem onClick={onTogglePin}>
+                {group.isPinned ? (
+                  <PinOff size={15} className="mr-2.5 text-muted-foreground" />
+                ) : (
+                  <Pin size={15} className="mr-2.5 text-muted-foreground" />
+                )}
+                {group.isPinned ? "Unpin chat" : "Pin chat"}
+              </DropdownMenuItem>
+
+              <DropdownMenuItem onClick={onToggleMute}>
+                {group.isMuted ? (
+                  <Bell size={15} className="mr-2.5 text-muted-foreground" />
+                ) : (
+                  <BellOff size={15} className="mr-2.5 text-muted-foreground" />
+                )}
+                {group.isMuted ? "Unmute chat" : "Mute chat"}
+              </DropdownMenuItem>
+
+              <DropdownMenuItem onClick={onToggleArchive}>
+                {group.isArchived ? (
+                  <ArchiveRestore size={15} className="mr-2.5 text-muted-foreground" />
+                ) : (
+                  <Archive size={15} className="mr-2.5 text-muted-foreground" />
+                )}
+                {group.isArchived ? "Unarchive chat" : "Archive chat"}
+              </DropdownMenuItem>
+
+              <DropdownMenuSeparator />
+
+              {/* Clear chat history */}
+              {onClearChat && (
+                <DropdownMenuItem onClick={onClearChat}>
+                  <X size={15} className="mr-2.5 text-muted-foreground" />
+                  Clear messages
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={onToggleMute}>
-                  {group.isMuted ? <Bell size={15} className="mr-2" /> : <BellOff size={15} className="mr-2" />}
-                  {group.isMuted ? "Unmute chat" : "Mute chat"}
+              )}
+
+              {/* Direct chat: Delete chat for me */}
+              {isDirect && onDeleteChat && (
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={onDeleteChat}
+                >
+                  <Trash2 size={15} strokeWidth={1.75} className="mr-2.5" />
+                  Delete chat
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={onToggleArchive}>
-                  {group.isArchived ? <ArchiveRestore size={15} className="mr-2" /> : <Archive size={15} className="mr-2" />}
-                  {group.isArchived ? "Unarchive chat" : "Archive chat"}
+              )}
+
+              {/* Group chat: Leave group */}
+              {!isDirect && onLeaveGroup && (
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={onLeaveGroup}
+                >
+                  <ArrowLeft size={15} strokeWidth={1.75} className="mr-2.5" />
+                  Leave group
                 </DropdownMenuItem>
-                {isAdmin && !isDirect && <DropdownMenuSeparator />}
-              </div>
-              {isAdmin && !isDirect && (
-                <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={onDeleteGroup}>
-                  <Trash2 size={15} strokeWidth={1.75} className="mr-2" />
+              )}
+
+              {/* Group chat: Admin delete group */}
+              {!isDirect && (isAdmin || canManage) && (
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={onDeleteGroup}
+                >
+                  <Trash2 size={15} strokeWidth={1.75} className="mr-2.5" />
                   Delete group
                 </DropdownMenuItem>
               )}
