@@ -360,7 +360,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
           )}
 
           {/* ── Type & Tag ── */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="text-helper">Client type</Label>
               <div className="flex rounded-md border border-border">

@@ -77,9 +77,9 @@ function CaseCard({
     <Link
       to="/cases/$caseId"
       params={{ caseId: c._id }}
-      className="lift group relative rounded-lg border border-border bg-card p-6 shadow-soft transition-all duration-150 hover:border-primary/40"
+      className="lift group relative rounded-xl border border-border bg-card p-4 sm:p-6 shadow-soft transition-all duration-150 hover:border-primary/40"
     >
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 sm:gap-4">
         <div className="min-w-0">
           <p className="num text-caption text-muted-foreground font-mono">{c.number}</p>
           <h2 className="mt-1 truncate text-title font-semibold group-hover:text-primary transition-colors">

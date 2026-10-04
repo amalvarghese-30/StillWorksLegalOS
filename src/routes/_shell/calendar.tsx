@@ -277,7 +277,7 @@ function CalendarPage() {
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-lg border border-border bg-card p-4 shadow-soft sm:p-6">
+            <div className="overflow-x-auto touch-scroll rounded-lg border border-border bg-card p-4 shadow-soft sm:p-6">
               <div className="grid min-w-[640px] grid-cols-7 gap-2 pb-3 text-caption font-medium text-muted-foreground">
                 {WEEKDAYS.map((d) => <div key={d} className="px-2">{d}</div>)}
               </div>

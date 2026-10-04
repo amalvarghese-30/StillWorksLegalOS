@@ -1123,7 +1123,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
               ) : null}
             </div>
 
-            <div className="flex items-center justify-end gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <Button type="button" variant="outline" size="sm" onClick={onClose} className="rounded-md">
                 Close
               </Button>

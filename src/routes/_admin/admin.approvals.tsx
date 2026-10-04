@@ -250,9 +250,9 @@ function ApprovalsPage() {
               const Icon = iconFor(a.kind);
               const busy = processingIds.has(a._id);
               return (
-                <article key={a._id} className="lift rounded-lg border border-border bg-card p-6 shadow-soft">
-                  <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-4">
-                    <span className="grid size-12 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
+                <article key={a._id} className="lift rounded-xl border border-border bg-card p-4 sm:p-6 shadow-soft">
+                  <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 sm:gap-4">
+                    <span className="grid size-10 sm:size-12 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
                       <Icon size={20} strokeWidth={1.75} />
                     </span>
                     <div className="min-w-0">
@@ -265,9 +265,9 @@ function ApprovalsPage() {
                     </span>
                   </div>
 
-                  <div className="mt-5 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-border pt-4">
+                  <div className="mt-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-border pt-4">
                     <p className="truncate text-helper text-muted-foreground">Pending review</p>
-                    <div className="flex shrink-0 gap-2">
+                    <div className="flex shrink-0 items-center gap-2">
                       <Button
                         variant="outline"
                         size="sm"

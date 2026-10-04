@@ -463,7 +463,7 @@ function EditEmployeeDialogInner({ employee, onClose }: { employee: EmployeeReco
               </p>
               <div className="rounded-md border border-border p-4 bg-background/50">
                 <p className="mb-3 text-caption font-semibold text-muted-foreground uppercase tracking-wider">Core modules</p>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
                   {CORE_PERMISSIONS.map((p) => (
                     <label key={p.key} className="flex items-center justify-between gap-2 py-0.5 cursor-pointer">
                       <span className="text-helper">{p.label}</span>
@@ -477,7 +477,7 @@ function EditEmployeeDialogInner({ employee, onClose }: { employee: EmployeeReco
               </div>
               <div className="rounded-md border border-border p-4 bg-background/50">
                 <p className="mb-3 text-caption font-semibold text-muted-foreground uppercase tracking-wider">Admin modules</p>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
                   {ADMIN_PERMISSIONS.map((p) => (
                     <label key={p.key} className="flex items-center justify-between gap-2 py-0.5 cursor-pointer">
                       <span className="text-helper">{p.label}</span>
@@ -492,7 +492,7 @@ function EditEmployeeDialogInner({ employee, onClose }: { employee: EmployeeReco
             </div>
 
             <DialogFooter className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 border-t border-border/60 pt-4">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
                   variant="ghost"
@@ -521,7 +521,7 @@ function EditEmployeeDialogInner({ employee, onClose }: { employee: EmployeeReco
                 </Button>
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 <Button type="button" variant="outline" onClick={onClose} className="rounded-md">
                   Cancel
                 </Button>

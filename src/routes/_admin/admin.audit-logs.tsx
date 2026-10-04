@@ -93,7 +93,7 @@ function AuditLogsPage() {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto touch-scroll">
               <table className="w-full min-w-[780px] border-separate border-spacing-y-1 p-2 text-left">
                 <thead>
                   <tr className="text-caption text-muted-foreground">

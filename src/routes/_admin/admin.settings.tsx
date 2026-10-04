@@ -13,6 +13,7 @@ import { StorageSettings } from "@/components/settings/StorageSettings";
 import { TaskOptionsSettings } from "@/components/settings/TaskOptionsSettings";
 import { useUpdateProfile, useUpdateFirm, useUpdatePreferences } from "@/services/admin";
 import { validatePhone, sanitizePhone } from "@/lib/validation";
+import { MobileSectionNav } from "@/components/layout/MobileSectionNav";
 
 export const Route = createFileRoute("/_admin/admin/settings")({
   head: () => ({
@@ -149,26 +150,14 @@ function SettingsPage() {
       />
 
       <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
-        <nav aria-label="Settings sections" className="lg:sticky lg:top-28 lg:self-start">
-          <ul className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-card p-2 shadow-soft lg:flex-col lg:overflow-visible">
-            {tabs.map((t) => (
-              <li key={t.id} className="shrink-0 lg:shrink">
-                <button
-                  onClick={() => setTab(t.id)}
-                  aria-current={tab === t.id ? "true" : undefined}
-                  className={`flex min-h-11 w-full items-center gap-2.5 rounded-sm px-3 text-helper font-medium transition-colors duration-150 ${
-                    tab === t.id
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                  }`}
-                >
-                  <t.icon size={18} strokeWidth={1.75} />
-                  {t.label}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </nav>
+        <div className="lg:sticky lg:top-28 lg:self-start">
+          <MobileSectionNav
+            sections={tabs}
+            active={tab}
+            onChange={(id) => setTab(id)}
+            ariaLabel="Settings sections"
+          />
+        </div>
 
         <div className="min-w-0 space-y-6">
           {tab === "notifications" || tab === "security" ? (

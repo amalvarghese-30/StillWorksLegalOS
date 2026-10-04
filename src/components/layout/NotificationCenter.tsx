@@ -307,7 +307,7 @@ export function NotificationCenter() {
         )}
 
         {/* Filter Tabs */}
-        <div className="flex items-center gap-1.5 border-b border-border/60 bg-muted/30 px-5 py-2 overflow-x-auto no-scrollbar">
+        <div className="flex items-center gap-1.5 border-b border-border/60 bg-muted/30 px-5 py-2 overflow-x-auto no-scrollbar touch-scroll">
           {(
             [
               ["all", "All"],

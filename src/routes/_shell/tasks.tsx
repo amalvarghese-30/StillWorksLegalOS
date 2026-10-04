@@ -702,7 +702,7 @@ function TasksPage() {
 
       {/* Data */}
       {!isLoading && !isError && tasks.length > 0 && view === "kanban" ? (
-        <div className="flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-3 xl:grid-cols-5">
+        <div className="flex gap-4 overflow-x-auto touch-scroll pb-4 snap-x snap-mandatory sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-3 xl:grid-cols-5">
           {BUCKETS.map((b) => {
             const bucketTasks = tasks.filter((t) => getBucket(t) === b);
             return (
@@ -744,7 +744,7 @@ function TasksPage() {
           </div>
 
           {/* Calendar grid wrapper for mobile responsiveness */}
-          <div className="overflow-x-auto rounded-lg border border-border bg-card shadow-soft">
+          <div className="overflow-x-auto touch-scroll rounded-lg border border-border bg-card shadow-soft">
             <div className="min-w-[620px]">
               {/* Weekday headers */}
               <div className="grid grid-cols-7 border-b border-border bg-muted/50">

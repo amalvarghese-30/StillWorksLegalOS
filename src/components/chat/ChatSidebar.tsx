@@ -591,7 +591,7 @@ export function ChatSidebar({
 
       {/* WhatsApp-Style Filter Pills */}
       {!showArchivedView && !query && (
-        <div className="flex items-center gap-1.5 px-3 pb-2 pt-1 overflow-x-auto no-scrollbar">
+        <div className="flex items-center gap-1.5 px-3 pb-2 pt-1 overflow-x-auto no-scrollbar touch-scroll">
           <button
             type="button"
             onClick={() => setFilter("all")}
