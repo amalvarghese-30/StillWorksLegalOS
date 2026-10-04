@@ -49,7 +49,11 @@ router.get("/", async (req: Request, res: Response) => {
     let filter: Record<string, unknown> = {};
 
     if (state && state !== "all") filter["state"] = state;
-    if (caseId) filter["caseId"] = caseId;
+    if (caseId && caseId !== "all" && caseId !== "undefined" && caseId !== "null") {
+      if (Types.ObjectId.isValid(caseId)) {
+        filter["caseId"] = new Types.ObjectId(caseId);
+      }
+    }
 
     if (search && search.trim()) {
       const regex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
@@ -78,7 +82,7 @@ router.get("/", async (req: Request, res: Response) => {
 
     const documents = rawDocuments.map((doc: any) => {
       const userReqs = (doc.accessRequests || []).filter(
-        (ar: any) => (ar.userId?._id || ar.userId)?.toString() === currentUserId
+        (ar: any) => (ar?.userId?._id || ar?.userId)?.toString() === currentUserId
       );
       const latestReq = userReqs.length > 0 ? userReqs[userReqs.length - 1] : null;
 
@@ -114,26 +118,34 @@ router.get("/", async (req: Request, res: Response) => {
       const authorizedUsers: { id: string; name: string; role?: string }[] = [];
       if (doc.uploadedBy) {
         const uId = (doc.uploadedBy._id || doc.uploadedBy).toString();
-        const uName = typeof doc.uploadedBy === "object" ? doc.uploadedBy.name : "Uploader";
+        const uName = (doc.uploadedBy && typeof doc.uploadedBy === "object" && doc.uploadedBy.name)
+          ? doc.uploadedBy.name
+          : "Uploader";
         authorizedUsers.push({ id: uId, name: uName, role: "Uploader" });
       }
       (doc.accessRequests || []).forEach((ar: any) => {
-        if (ar.status === "approved" && ar.userId) {
+        if (ar && ar.status === "approved" && ar.userId) {
           const aId = (ar.userId._id || ar.userId).toString();
           if (!authorizedUsers.some((u) => u.id === aId)) {
             authorizedUsers.push({
               id: aId,
-              name: typeof ar.userId === "object" ? ar.userId.name : "Authorized",
+              name: (ar.userId && typeof ar.userId === "object" && ar.userId.name)
+                ? ar.userId.name
+                : "Authorized",
               role: "Granted",
             });
           }
         }
       });
 
+      const uploaderName = (doc.uploadedBy && typeof doc.uploadedBy === "object" && doc.uploadedBy.name)
+        ? doc.uploadedBy.name
+        : "Colleague";
+
       return {
         ...doc,
-        caseName: doc.caseId?.title || doc.caseName,
-        uploadedByName: typeof doc.uploadedBy === "object" ? doc.uploadedBy.name : "Colleague",
+        caseName: doc.caseId?.title || doc.caseName || "General",
+        uploadedByName: uploaderName,
         canAccess,
         accessStatus,
         authorizedUsers,

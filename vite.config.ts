@@ -35,6 +35,11 @@ export default defineConfig(({ mode }) => {
         "localhost",
         "127.0.0.1",
       ],
+      hmr: process.env.VITE_HMR === "false"
+        ? false
+        : {
+            clientPort: process.env.VITE_HMR_PORT ? Number(process.env.VITE_HMR_PORT) : undefined,
+          },
       proxy: {
         "/api": {
           target: apiTarget,
