@@ -2011,7 +2011,8 @@ async function run() {
     assert(webLoginRes.status === 200, "AUTH-CONCURR-004: Web login succeeds (200)");
     assert(Boolean(webLoginRes.body.accessToken), "AUTH-CONCURR-005: Web login returns accessToken");
     assert(!webLoginRes.body.refreshToken, "AUTH-CONCURR-006: Web login NEVER exposes refreshToken in JSON body");
-    const setCookieHeader = webLoginRes.headers["set-cookie"]?.join("; ") || "";
+    const rawCookies = webLoginRes.headers["set-cookie"];
+    const setCookieHeader = Array.isArray(rawCookies) ? rawCookies.join("; ") : String(rawCookies || "");
     assert(setCookieHeader.includes("stillworks_refresh="), "AUTH-CONCURR-007: Web login sets stillworks_refresh cookie");
     assert(setCookieHeader.toLowerCase().includes("httponly"), "AUTH-CONCURR-008: Refresh cookie has HttpOnly flag");
 

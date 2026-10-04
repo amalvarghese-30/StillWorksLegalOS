@@ -21,6 +21,7 @@ import {
   KeyRound,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { MobileSectionNav } from "@/components/layout/MobileSectionNav";
 import { StatusPill, toneForStatus } from "@/components/common/StatusPill";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -87,11 +88,11 @@ export const Route = createFileRoute("/_shell/documents")({
 });
 
 const SHELVES = [
-  { key: "recent", label: "Recent", icon: Clock3 },
-  { key: "favourites", label: "Favourites", icon: Star },
-  { key: "cases", label: "Assigned cases", icon: Briefcase },
-  { key: "shared", label: "Shared with me", icon: Share2 },
-  { key: "court", label: "Court filings", icon: ShieldCheck },
+  { id: "recent", key: "recent", label: "Recent", icon: Clock3 },
+  { id: "favourites", key: "favourites", label: "Favourites", icon: Star },
+  { id: "cases", key: "cases", label: "Assigned cases", icon: Briefcase },
+  { id: "shared", key: "shared", label: "Shared with me", icon: Share2 },
+  { id: "court", key: "court", label: "Court filings", icon: ShieldCheck },
 ];
 
 function formatDate(iso: string): string {
@@ -447,27 +448,16 @@ function DocumentsPage() {
 
       <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)_300px]">
         {/* Left: Shelves nav */}
-        <nav aria-label="Library" className="lg:sticky lg:top-28 lg:self-start">
-          <ul className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-card p-2 shadow-soft lg:flex-col lg:overflow-visible">
-            {SHELVES.map((s) => (
-              <li key={s.key} className="shrink-0 lg:shrink">
-                <button
-                  onClick={() => setActiveShelf(s.key)}
-                  className={`flex min-h-11 w-full items-center gap-2.5 rounded-sm px-3 text-helper font-medium transition-colors duration-150 ${
-                    activeShelf === s.key
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                  }`}
-                >
-                  <s.icon size={18} strokeWidth={1.75} />
-                  {s.label}
-                </button>
-              </li>
-            ))}
-          </ul>
+        <div className="lg:sticky lg:top-28 lg:self-start">
+          <MobileSectionNav
+            sections={SHELVES}
+            active={activeShelf}
+            onChange={(id) => setActiveShelf(id)}
+            ariaLabel="Library"
+          />
 
           {/* Access requests */}
-          <div className="mt-4 hidden rounded-lg border border-border bg-card p-4 shadow-soft lg:block">
+          <div className="mt-4 hidden rounded-xl border border-border bg-card p-4 shadow-soft lg:block">
             <p className="flex items-center gap-1.5 text-helper font-semibold">
               <KeyRound size={15} className="text-warning" /> Access requests
             </p>
@@ -484,7 +474,7 @@ function DocumentsPage() {
               Request access
             </Button>
           </div>
-        </nav>
+        </div>
 
         {/* Center: Document grid */}
         <div className="min-w-0">

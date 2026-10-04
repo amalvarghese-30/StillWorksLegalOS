@@ -17,12 +17,12 @@ export function PageHeader({
   className?: string;
 }) {
   return (
-    <header className={cn("mb-8", className)}>
-      <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1 text-caption">
+    <header className={cn("mb-4 sm:mb-6 lg:mb-8", className)}>
+      <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1 text-[11px] sm:text-caption">
         {breadcrumb.map((crumb, i) => (
           <span key={crumb.label} className="flex items-center gap-1">
             {i > 0 ? (
-              <ChevronRight size={14} strokeWidth={1.75} className="text-muted-foreground/60" />
+              <ChevronRight size={13} strokeWidth={1.75} className="text-muted-foreground/60" />
             ) : null}
             {crumb.to ? (
               <Link
@@ -37,14 +37,14 @@ export function PageHeader({
           </span>
         ))}
       </nav>
-      <div className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+      <div className="mt-2.5 sm:mt-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-page font-semibold tracking-tight">{title}</h1>
+          <h1 className="text-xl sm:text-2xl lg:text-page font-semibold tracking-tight leading-tight">{title}</h1>
           {subtitle ? (
-            <p className="mt-1.5 max-w-2xl text-body text-muted-foreground">{subtitle}</p>
+            <p className="mt-1 max-w-2xl text-xs sm:text-sm lg:text-body text-muted-foreground leading-normal">{subtitle}</p>
           ) : null}
         </div>
-        {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+        {actions ? <div className="flex flex-wrap items-center gap-2 shrink-0">{actions}</div> : null}
       </div>
     </header>
   );

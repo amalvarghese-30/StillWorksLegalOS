@@ -51,7 +51,7 @@ function toneForKYC(kyc: string): "primary" | "success" | "warning" | "destructi
 function ClientCard({ c }: { c: ClientRecord }) {
   return (
     <Link to="/clients/$clientId" params={{ clientId: c._id }}>
-      <article className="lift rounded-lg border border-border bg-card p-6 shadow-soft transition-colors hover:border-primary/30">
+      <article className="lift rounded-xl sm:rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-soft transition-colors hover:border-primary/30">
         <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
           <span className="gradient-primary grid size-12 shrink-0 place-items-center rounded-full font-display font-semibold text-primary-foreground">
             {c.name.slice(0, 1)}

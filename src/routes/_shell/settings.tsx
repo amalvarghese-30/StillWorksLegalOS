@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { User, Building2, Bell, Lock, Palette, HardDrive, Loader2, Laptop, LogOut, ShieldCheck, Camera, Trash2, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
+import { MobileSectionNav } from "@/components/layout/MobileSectionNav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -258,27 +259,15 @@ function SettingsPage() {
       />
 
       <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
-        <nav aria-label="Settings sections" className="lg:sticky lg:top-28 lg:self-start">
-          <ul className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-card p-2 shadow-soft lg:flex-col lg:overflow-visible">
-            {tabs.map((t) => (
-              <li key={t.id} className="shrink-0 lg:shrink">
-                <button
-                  onClick={() => setTab(t.id)}
-                  aria-current={tab === t.id ? "true" : undefined}
-                  className={`flex min-h-11 w-full items-center gap-2.5 rounded-sm px-3 text-helper font-medium transition-colors duration-150 ${
-                    tab === t.id
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                  }`}
-                >
-                  <t.icon size={18} strokeWidth={1.75} />
-                  {t.label}
-                </button>
-              </li>
-            ))}
-          </ul>
+        <div className="lg:sticky lg:top-28 lg:self-start">
+          <MobileSectionNav
+            sections={tabs}
+            active={tab}
+            onChange={(id) => setTab(id)}
+            ariaLabel="Settings sections"
+          />
 
-          <div className="mt-4 hidden rounded-lg border border-border/70 bg-card/60 p-3.5 shadow-2xs lg:block">
+          <div className="mt-4 hidden rounded-xl border border-border/70 bg-card/60 p-3.5 shadow-2xs lg:block">
             <div className="flex items-center gap-2">
               <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
               <p className="text-xs font-semibold text-foreground">S &amp; S LegalOS</p>
@@ -298,7 +287,7 @@ function SettingsPage() {
               </div>
             </div>
           </div>
-        </nav>
+        </div>
 
         <div className="min-w-0 space-y-6">
           {tab === "updates" ? (

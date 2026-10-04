@@ -591,11 +591,14 @@
   --sar: env(safe-area-inset-right, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
   --sal: env(safe-area-inset-left, 0px);
+  --mobile-nav-height: 4rem;
+  --mobile-header-height: 3.75rem;
 }
 
 html, body {
   overflow-x: hidden;
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .ios-scroll {
@@ -609,5 +612,34 @@ html, body {
 
 .safe-bottom {
   padding-bottom: max(env(safe-area-inset-bottom, 0px), 0.75rem);
+}
+
+/* Hide scrollbars while preserving touch scroll functionality */
+@utility no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility touch-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+/* Prevent iOS Safari 16px automatic page zoom on input focus */
+@media screen and (max-width: 768px) {
+  input[type="text"],
+  input[type="search"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="tel"],
+  input[type="url"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
 }
 

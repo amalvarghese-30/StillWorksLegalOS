@@ -56,7 +56,9 @@ function CalendarPage() {
   const today = new Date();
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
-  const [view, setView] = useState("Month");
+  const [view, setView] = useState(() =>
+    typeof window !== "undefined" && window.innerWidth < 640 ? "Agenda" : "Month"
+  );
   const [search, setSearch] = useState("");
   const [filterEmployee, setFilterEmployee] = useState(isAdmin ? "all" : "me");
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
@@ -178,13 +180,13 @@ function CalendarPage() {
         }
       />
 
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="inline-flex rounded-pill border border-border bg-card p-1 shadow-soft">
+      <div className="mb-4 sm:mb-6 flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="inline-flex rounded-pill border border-border bg-card p-1 shadow-soft self-start sm:self-auto">
           {["Month", "Week", "Day", "Agenda"].map((v) => (
             <button
               key={v}
               onClick={() => setView(v)}
-              className={`min-h-11 rounded-pill px-4 text-helper font-medium transition-all duration-200 ${
+              className={`min-h-9 sm:min-h-11 rounded-pill px-2.5 sm:px-4 text-xs sm:text-helper font-medium transition-all duration-200 ${
                 view === v ? "gradient-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -194,29 +196,29 @@ function CalendarPage() {
         </div>
 
         {/* Search events */}
-        <label className="flex min-w-0 flex-1 items-center gap-3 rounded-pill border border-border bg-card px-4 py-2.5 shadow-soft sm:max-w-xs">
-          <Search size={18} strokeWidth={1.75} className="shrink-0 text-muted-foreground" />
+        <label className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3 rounded-pill border border-border bg-card px-3 sm:px-4 py-2 sm:py-2.5 shadow-soft sm:max-w-xs">
+          <Search size={16} strokeWidth={1.75} className="shrink-0 text-muted-foreground" />
           <input
             type="search"
             aria-label="Search events"
             placeholder="Search hearings or cases…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="min-w-0 flex-1 bg-transparent text-helper outline-none"
+            className="min-w-0 flex-1 bg-transparent text-xs sm:text-helper outline-none"
           />
         </label>
 
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="rounded-md" onClick={prevMonth}><ChevronLeft size={16} /></Button>
-          <Button variant="outline" size="sm" className="rounded-md" onClick={goToday}>Today</Button>
-          <Button variant="outline" size="sm" className="rounded-md" onClick={nextMonth}><ChevronRight size={16} /></Button>
+        <div className="flex items-center gap-2 self-end sm:self-auto">
+          <Button variant="outline" size="sm" className="rounded-md h-9 px-2.5" onClick={prevMonth} aria-label="Previous month"><ChevronLeft size={16} /></Button>
+          <Button variant="outline" size="sm" className="rounded-md h-9 px-3 text-xs" onClick={goToday}>Today</Button>
+          <Button variant="outline" size="sm" className="rounded-md h-9 px-2.5" onClick={nextMonth} aria-label="Next month"><ChevronRight size={16} /></Button>
         </div>
       </div>
 
-      <ul className="mb-4 flex flex-wrap items-center gap-4 rounded-md border border-border bg-card p-3">
+      <ul className="mb-4 flex flex-wrap items-center gap-2.5 sm:gap-4 rounded-xl border border-border bg-card p-2.5 sm:p-3">
         {LEGEND.map((l) => (
-          <li key={l.label} className="flex items-center gap-2 text-caption text-muted-foreground">
-            <span className={`size-2.5 rounded-full ${l.cls}`} />{l.label}
+          <li key={l.label} className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-caption text-muted-foreground">
+            <span className={`size-2 sm:size-2.5 rounded-full ${l.cls}`} />{l.label}
           </li>
         ))}
       </ul>

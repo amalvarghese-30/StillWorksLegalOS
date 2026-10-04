@@ -82,6 +82,24 @@ function ChatPage() {
 
   const navigate = useNavigate();
   const [activeGroupId, setActiveGroupId] = useState<string | null>(search["groupId"] ?? null);
+
+  const handleSelectGroup = useCallback(
+    (id: string | null) => {
+      setActiveGroupId(id);
+      navigate({
+        to: "/chat",
+        search: id ? { groupId: id } : {},
+        replace: true,
+      });
+    },
+    [navigate]
+  );
+
+  useEffect(() => {
+    if (search["groupId"] !== undefined && search["groupId"] !== activeGroupId) {
+      setActiveGroupId(search["groupId"] ?? null);
+    }
+  }, [search["groupId"]]);
   const [searchConv, setSearchConv] = useState("");
   const [inChatSearch, setInChatSearch] = useState("");
   const [chatInput, setChatInput] = useState("");
@@ -359,9 +377,12 @@ function ChatPage() {
   const autoSelected = useRef(false);
   useEffect(() => {
     if (autoSelected.current || groups.length === 0) return;
-    setActiveGroupId((prev) => prev ?? groups[0]!._id);
+    const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
+    if (!isMobile && !search["groupId"]) {
+      handleSelectGroup(groups[0]!._id);
+    }
     autoSelected.current = true;
-  }, [groups]);
+  }, [groups, search, handleSelectGroup]);
 
   // Mark read when switching groups
   useEffect(() => {
@@ -707,7 +728,13 @@ function ChatPage() {
       )}
 
       {!groupsLoading && !groupsError && (
-        <div className="grid h-[calc(100dvh-5.5rem)] min-h-[480px] overflow-hidden rounded-2xl border border-border/80 bg-card shadow-lift sm:h-[calc(100vh-13.5rem)] sm:min-h-[500px] md:grid-cols-[300px_minmax(0,1fr)] lg:grid-cols-[340px_minmax(0,1fr)]">
+        <div
+          className={`grid overflow-hidden bg-card transition-all md:grid-cols-[300px_minmax(0,1fr)] lg:grid-cols-[340px_minmax(0,1fr)] ${
+            activeGroupId
+              ? "h-[100dvh] rounded-none border-0 md:h-[calc(100vh-13.5rem)] md:min-h-[500px] md:rounded-2xl md:border md:border-border/80 md:shadow-lift"
+              : "h-[calc(100dvh-var(--mobile-nav-height,4rem)-7.5rem)] rounded-xl border border-border/80 shadow-soft md:h-[calc(100vh-13.5rem)] md:min-h-[500px] md:rounded-2xl md:shadow-lift"
+          }`}
+        >
           <div className={`${activeGroupId ? "hidden md:block" : "block"} min-h-0 min-w-0 border-r border-border/70 bg-card`}>
             <ChatSidebar
               groups={groups}
@@ -717,7 +744,7 @@ function ChatPage() {
               search={searchConv}
               onSearchChange={setSearchConv}
               isAdmin={isAdmin}
-              onSelect={setActiveGroupId}
+              onSelect={handleSelectGroup}
               onNewGroup={() => setShowCreateGroup(true)}
               onNewChat={() => setShowNewChat(true)}
               users={allUsers}
@@ -767,7 +794,7 @@ function ChatPage() {
                   onDeleteChat={() => handleDeleteChat(activeGroup._id)}
                   onClearChat={() => handleClearChat(activeGroup._id)}
                   onLeaveGroup={() => handleLeaveGroup(activeGroup._id)}
-                  onBack={() => setActiveGroupId(null)}
+                  onBack={() => handleSelectGroup(null)}
                   searchQuery={inChatSearch}
                   onSearchChange={setInChatSearch}
                   matchCount={searchMatchesCount}

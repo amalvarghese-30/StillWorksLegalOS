@@ -22,6 +22,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { MobileSectionNav } from "@/components/layout/MobileSectionNav";
 import {
   useClient, useUpdateClient, useDeleteClient,
   useClientCases, useClientDocuments,
@@ -225,8 +226,8 @@ function ClientProfile() {
       />
 
       {/* Hero card */}
-      <div className="gradient-primary mb-6 rounded-lg p-6 text-primary-foreground shadow-lift">
-        <div className="grid gap-6 md:grid-cols-4">
+      <div className="gradient-primary mb-6 rounded-xl sm:rounded-2xl p-4 sm:p-6 text-primary-foreground shadow-lift">
+        <div className="grid gap-3.5 sm:gap-6 grid-cols-2 sm:grid-cols-4">
           {[
             ["Type", record.type],
             ["Tag", record.tag],
@@ -234,12 +235,12 @@ function ClientProfile() {
             ["Created", formatDate(record.createdAt)],
           ].map(([label, value]) => (
             <div key={label} className="min-w-0">
-              <p className="text-caption opacity-85">{label}</p>
-              <p className="mt-1 truncate text-body font-semibold">{value}</p>
+              <p className="text-[11px] sm:text-caption opacity-85">{label}</p>
+              <p className="mt-0.5 sm:mt-1 truncate text-sm sm:text-body font-semibold">{value}</p>
             </div>
           ))}
         </div>
-        <div className="mt-4 flex flex-wrap gap-3 text-caption opacity-85">
+        <div className="mt-3.5 sm:mt-4 flex flex-wrap gap-2.5 sm:gap-3 text-caption opacity-85">
           {record.phone && (
             <span className="flex items-center gap-1"><Phone size={13} /> {record.phone}</span>
           )}
@@ -254,26 +255,12 @@ function ClientProfile() {
 
       <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
         {/* Section nav */}
-        <nav aria-label="Client sections" className="lg:sticky lg:top-28 lg:self-start">
-          <ul className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-card p-2 shadow-soft lg:flex-col lg:overflow-visible">
-            {sections.map((s) => (
-              <li key={s.id} className="shrink-0 lg:shrink">
-                <button
-                  onClick={() => setActive(s.id)}
-                  aria-current={active === s.id ? "true" : undefined}
-                  className={`flex min-h-11 w-full items-center gap-2.5 rounded-sm px-3 text-helper font-medium transition-colors duration-150 ${
-                    active === s.id
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                  }`}
-                >
-                  <s.icon size={18} strokeWidth={1.75} />
-                  {s.label}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </nav>
+        <MobileSectionNav
+          sections={sections}
+          active={active}
+          onChange={(id) => setActive(id as typeof active)}
+          ariaLabel="Client sections"
+        />
 
         {/* Content */}
         <div className="min-w-0 space-y-6">

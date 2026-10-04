@@ -465,7 +465,7 @@ export function MessageComposer({
                   <button
                     type="button"
                     aria-label="Emoji"
-                    className="grid size-11 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground"
+                    className="hidden sm:grid size-10 sm:size-11 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground"
                   >
                     <Smile size={19} strokeWidth={1.75} />
                   </button>
@@ -493,11 +493,11 @@ export function MessageComposer({
                 ref={inputRef}
                 rows={1}
                 aria-label="Message"
-                placeholder="Type a message or @ to mention... (Shift+Enter for new line)"
+                placeholder="Type a message..."
                 value={value}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
-                className="min-w-0 flex-1 resize-none rounded-2xl border border-border/60 bg-muted/40 dark:bg-muted/20 px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/70 outline-none transition-all focus:bg-card focus:border-primary/50 focus:ring-1 focus:ring-primary/40 max-h-36 overflow-y-auto leading-relaxed"
+                className="min-w-0 flex-1 resize-none rounded-2xl border border-border/60 bg-muted/40 dark:bg-muted/20 px-3.5 sm:px-4 py-2 sm:py-2.5 text-sm text-foreground placeholder:text-muted-foreground/70 outline-none transition-all focus:bg-card focus:border-primary/50 focus:ring-1 focus:ring-primary/40 max-h-36 overflow-y-auto leading-relaxed"
               />
 
               {value.trim() || attachment ? (
@@ -505,12 +505,12 @@ export function MessageComposer({
                   type="submit"
                   aria-label="Send message"
                   disabled={isSending || isUploading}
-                  className="gradient-primary grid size-11 shrink-0 place-items-center rounded-full text-primary-foreground shadow-soft transition-transform duration-200 hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0"
+                  className="gradient-primary grid size-9 sm:size-11 shrink-0 place-items-center rounded-full text-primary-foreground shadow-soft transition-transform duration-200 hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0 active:scale-95"
                 >
                   {isSending || isUploading ? (
-                    <Loader2 size={18} className="animate-spin" />
+                    <Loader2 size={17} className="animate-spin" />
                   ) : (
-                    <Send size={18} strokeWidth={1.75} />
+                    <Send size={17} strokeWidth={1.75} />
                   )}
                 </button>
               ) : (
@@ -520,9 +520,9 @@ export function MessageComposer({
                       type="button"
                       onClick={startRecording}
                       aria-label="Record voice note"
-                      className="grid size-11 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground"
+                      className="grid size-9 sm:size-11 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground active:scale-95"
                     >
-                      <Mic size={19} strokeWidth={1.75} />
+                      <Mic size={18} strokeWidth={1.75} />
                     </button>
                   </TooltipTrigger>
                   <TooltipContent>Record voice note</TooltipContent>

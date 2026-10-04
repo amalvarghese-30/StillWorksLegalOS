@@ -367,23 +367,23 @@ function TasksPage() {
         title="Tasks"
         subtitle={`${tasks.length} items visible · ${stats.overdue} overdue · ${stats.calls} call reminders.`}
         actions={
-          <>
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
-              className="rounded-md shadow-soft transition-transform duration-200 hover:-translate-y-0.5"
+              className="rounded-md shadow-soft transition-transform duration-200 hover:-translate-y-0.5 text-xs sm:text-helper"
               onClick={() => setShowQuickCall(true)}
             >
-              <PhoneCall size={17} strokeWidth={1.75} />
-              Call reminder
+              <PhoneCall size={16} strokeWidth={1.75} />
+              <span>Call reminder</span>
             </Button>
             <Button
-              className="gradient-primary rounded-md text-primary-foreground shadow-soft transition-transform duration-200 hover:-translate-y-0.5"
+              className="gradient-primary rounded-md text-primary-foreground shadow-soft transition-transform duration-200 hover:-translate-y-0.5 text-xs sm:text-helper"
               onClick={() => setShowAddDialog(true)}
             >
-              <Plus size={17} strokeWidth={2} />
-              Create task
+              <Plus size={16} strokeWidth={2} />
+              <span>Create task</span>
             </Button>
-          </>
+          </div>
         }
       />
 
@@ -482,14 +482,14 @@ function TasksPage() {
               <button
                 key={v.id}
                 onClick={() => setView(v.id)}
-                className={`flex min-h-10 items-center gap-2 rounded-pill px-3.5 text-helper font-medium transition-all duration-200 ${
+                className={`flex min-h-9 sm:min-h-10 items-center gap-1.5 sm:gap-2 rounded-pill px-2.5 sm:px-3.5 text-xs sm:text-helper font-medium transition-all duration-200 ${
                   view === v.id
                     ? "gradient-primary text-primary-foreground"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <v.icon size={16} strokeWidth={1.75} />
-                {v.label}
+                <v.icon size={15} strokeWidth={1.75} />
+                <span>{v.label}</span>
               </button>
             ))}
           </div>

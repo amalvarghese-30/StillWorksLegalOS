@@ -287,7 +287,7 @@ function CasesPage() {
         <button
           type="button"
           onClick={() => setStatusFilter("All")}
-          className={`lift flex flex-col items-start rounded-xl border p-4 text-left transition-all duration-150 ${
+          className={`lift col-span-2 sm:col-span-1 flex flex-col items-start rounded-xl border p-3.5 sm:p-4 text-left transition-all duration-150 ${
             statusFilter === "All"
               ? "border-primary bg-primary/10 shadow-sm"
               : "border-border bg-card hover:border-primary/40"

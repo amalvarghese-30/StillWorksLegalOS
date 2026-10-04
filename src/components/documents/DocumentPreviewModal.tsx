@@ -151,7 +151,7 @@ export function DocumentPreviewModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 md:p-10">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6 md:p-10">
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-background/80 backdrop-blur-sm transition-opacity"
@@ -160,11 +160,11 @@ export function DocumentPreviewModal({
       />
 
       {/* Dialog Window */}
-      <div className="relative z-10 flex flex-col h-[90vh] w-full max-w-5xl rounded-xl border border-border bg-card shadow-lift overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div className="relative z-10 flex flex-col h-[calc(100dvh-1.5rem)] sm:h-[88vh] max-h-[92dvh] w-full max-w-5xl rounded-2xl border border-border bg-card shadow-lift overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-border bg-muted/40">
-          <div className="flex items-center gap-3 min-w-0 mr-4">
-            <span className="grid size-9 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
+        <div className="flex items-center justify-between px-3 sm:px-5 py-2.5 sm:py-3.5 border-b border-border bg-muted/40">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 mr-2 sm:mr-4">
+            <span className="grid size-8 sm:size-9 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
               {previewType === "image" ? (
                 <FileImage size={18} strokeWidth={1.75} />
               ) : (

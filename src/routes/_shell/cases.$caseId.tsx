@@ -5,6 +5,7 @@ import {
   LayoutDashboard, Plus, Loader2, ChevronDown, Clock,
   Send, Check, X, UserPlus, Activity as ActivityIcon,
   CalendarDays, Edit3, Trash2, RotateCcw, Download, Eye,
+  MoreHorizontal,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
@@ -13,6 +14,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,6 +31,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { MobileSectionNav } from "@/components/layout/MobileSectionNav";
 import {
   useCase, useUpdateCase, useDeleteCase, useAddCaseNote, useAddCaseParty, useRemoveCaseParty,
   type CaseRecord, type CaseParty,
@@ -400,33 +409,71 @@ function CaseWorkspace() {
           </span>
         }
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" className="rounded-md" asChild>
-              <Link to="/calendar"><CalendarDays size={17} strokeWidth={1.75} /> View calendar</Link>
-            </Button>
-            {record.status === "Closed" && (
-              <Button
-                variant="default"
-                className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-md gap-1.5 shadow-soft"
-                disabled={updateCase.isPending}
-                onClick={() => setShowReopenConfirm(true)}
-              >
-                <RotateCcw size={15} strokeWidth={1.75} />
-                Reopen Case
-              </Button>
-            )}
+          <div className="flex items-center gap-2">
             <Button variant="outline" className="rounded-md" onClick={() => setShowEditDialog(true)}>
               <Edit3 size={15} strokeWidth={1.75} />
-              Edit Case
+              <span>Edit Case</span>
             </Button>
-            <Button
-              variant="outline"
-              className="rounded-md text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
-              onClick={() => setShowDeleteConfirm(true)}
-            >
-              <Trash2 size={15} strokeWidth={1.75} />
-              Delete Case
-            </Button>
+            {/* Desktop Full Actions */}
+            <div className="hidden sm:flex items-center gap-2">
+              <Button variant="outline" className="rounded-md" asChild>
+                <Link to="/calendar"><CalendarDays size={17} strokeWidth={1.75} /> View calendar</Link>
+              </Button>
+              {record.status === "Closed" && (
+                <Button
+                  variant="default"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-md gap-1.5 shadow-soft"
+                  disabled={updateCase.isPending}
+                  onClick={() => setShowReopenConfirm(true)}
+                >
+                  <RotateCcw size={15} strokeWidth={1.75} />
+                  Reopen Case
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                className="rounded-md text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
+                onClick={() => setShowDeleteConfirm(true)}
+              >
+                <Trash2 size={15} strokeWidth={1.75} />
+                Delete Case
+              </Button>
+            </div>
+            {/* Mobile Dropdown for Secondary Actions */}
+            <div className="sm:hidden">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon" className="size-9 rounded-md" aria-label="More options">
+                    <MoreHorizontal size={17} />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem asChild>
+                    <Link to="/calendar" className="flex items-center gap-2 w-full">
+                      <CalendarDays size={15} />
+                      <span>View calendar</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  {record.status === "Closed" && (
+                    <DropdownMenuItem
+                      className="text-emerald-600 dark:text-emerald-400 font-medium"
+                      onClick={() => setShowReopenConfirm(true)}
+                    >
+                      <RotateCcw size={15} />
+                      <span>Reopen Case</span>
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                    onClick={() => setShowDeleteConfirm(true)}
+                  >
+                    <Trash2 size={15} />
+                    <span>Delete Case</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         }
       />
@@ -458,8 +505,8 @@ function CaseWorkspace() {
       )}
 
       {/* Hero card */}
-      <div className="gradient-primary mb-6 rounded-lg p-6 text-primary-foreground shadow-lift">
-        <div className="grid gap-6 md:grid-cols-5">
+      <div className="gradient-primary mb-6 rounded-xl sm:rounded-2xl p-4 sm:p-6 text-primary-foreground shadow-lift">
+        <div className="grid gap-3.5 sm:gap-6 grid-cols-2 sm:grid-cols-3 md:grid-cols-5">
           {[
             ["Status", record.status],
             ["Priority", record.priority],
@@ -467,28 +514,28 @@ function CaseWorkspace() {
             ["Next hearing", formatDate(record.nextHearing)],
           ].map(([label, value]) => (
             <div key={label} className="min-w-0">
-              <p className="text-caption opacity-85">{label}</p>
-              <p className="mt-1 truncate text-body font-semibold">{value}</p>
+              <p className="text-[11px] sm:text-caption opacity-85">{label}</p>
+              <p className="mt-0.5 sm:mt-1 truncate text-sm sm:text-body font-semibold">{value}</p>
             </div>
           ))}
-          <div className="min-w-0">
-            <p className="text-caption opacity-85">Primary Client</p>
+          <div className="min-w-0 col-span-2 sm:col-span-1">
+            <p className="text-[11px] sm:text-caption opacity-85">Primary Client</p>
             {primaryClientId ? (
               <Link
                 to="/clients/$clientId"
                 params={{ clientId: primaryClientId }}
-                className="mt-1 block truncate text-body font-semibold underline underline-offset-2 hover:opacity-90"
+                className="mt-0.5 sm:mt-1 block truncate text-sm sm:text-body font-semibold underline underline-offset-2 hover:opacity-90"
               >
                 {primaryClientParty?.name || "View Client"}
               </Link>
             ) : (
-              <p className="mt-1 truncate text-body font-semibold">
+              <p className="mt-0.5 sm:mt-1 truncate text-sm sm:text-body font-semibold">
                 {primaryClientParty?.name || "None"}
               </p>
             )}
           </div>
         </div>
-        <div className="mt-6 flex items-center gap-3">
+        <div className="mt-4 sm:mt-6 flex items-center gap-3">
           <Progress value={record.progress} className="h-1.5 bg-white/25" />
           <span className="num shrink-0 text-caption">{record.progress}% complete</span>
         </div>
@@ -496,26 +543,12 @@ function CaseWorkspace() {
 
       <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
         {/* Section nav */}
-        <nav aria-label="Case sections" className="lg:sticky lg:top-28 lg:self-start">
-          <ul className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-card p-2 shadow-soft lg:flex-col lg:overflow-visible">
-            {sections.map((s) => (
-              <li key={s.id} className="shrink-0 lg:shrink">
-                <button
-                  onClick={() => setActive(s.id)}
-                  aria-current={active === s.id ? "true" : undefined}
-                  className={`flex min-h-11 w-full items-center gap-2.5 rounded-sm px-3 text-helper font-medium transition-colors duration-150 ${
-                    active === s.id
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                  }`}
-                >
-                  <s.icon size={18} strokeWidth={1.75} />
-                  {s.label}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </nav>
+        <MobileSectionNav
+          sections={sections}
+          active={active}
+          onChange={(id) => setActive(id as typeof active)}
+          ariaLabel="Case sections"
+        />
 
         {/* Tab content */}
         <div className="min-w-0 space-y-6">

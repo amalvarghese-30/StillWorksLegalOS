@@ -54,12 +54,12 @@ export function Topbar() {
   };
 
   return (
-    <header className="glass sticky top-2 sm:top-4 z-30 flex h-16 sm:h-18 items-center gap-2 sm:gap-3 rounded-xl sm:rounded-2xl px-3 sm:px-4">
+    <header className="glass sticky top-2 sm:top-4 z-30 flex h-14 sm:h-18 items-center gap-2 sm:gap-3 rounded-xl sm:rounded-2xl px-2.5 sm:px-4">
       {/* Navigation Sheet */}
       <Sheet open={navOpen} onOpenChange={setNavOpen}>
         <SheetTrigger asChild>
-          <Button variant="ghost" size="icon" className="rounded-md lg:hidden" aria-label="Open navigation">
-            <Menu size={20} strokeWidth={1.75} />
+          <Button variant="ghost" size="icon" className="size-9 sm:size-10 rounded-md lg:hidden shrink-0" aria-label="Open navigation">
+            <Menu size={19} strokeWidth={1.75} />
           </Button>
         </SheetTrigger>
         <SheetContent side="left" className="w-[320px] border-none bg-transparent p-3">
@@ -71,9 +71,9 @@ export function Topbar() {
       {/* Search Container */}
       <div className="relative min-w-0 flex-1">
         <Search
-          size={18}
+          size={17}
           strokeWidth={1.75}
-          className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground"
+          className="pointer-events-none absolute top-1/2 left-2.5 sm:left-3 -translate-y-1/2 text-muted-foreground"
         />
         <input
           type="search"
@@ -85,9 +85,9 @@ export function Topbar() {
               (e.target as HTMLInputElement).blur();
             }
           }}
-          placeholder="Search cases, clients, documents… (Esc to close)"
+          placeholder="Search workspace…"
           aria-label="Search"
-          className="h-10 w-full rounded-md border border-border/70 bg-card/70 pr-3 pl-10 text-helper outline-none transition-colors focus:border-primary/50"
+          className="h-9 sm:h-10 w-full rounded-md border border-border/70 bg-card/70 pr-2.5 sm:pr-3 pl-8 sm:pl-10 text-xs sm:text-helper outline-none transition-colors focus:border-primary/50"
         />
         {/* Backdrop for click outside dismiss */}
         {searchTerm.trim() !== "" && (
@@ -248,7 +248,7 @@ export function Topbar() {
       </div>
 
       {/* Right Side Controls */}
-      <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+      <div className="flex shrink-0 items-center gap-1 sm:gap-2">
         {/* App Version Indicator */}
         <div
           title={`LegalOS Release v${APP_VERSION}`}
@@ -258,20 +258,22 @@ export function Topbar() {
           <span>v{APP_VERSION}</span>
         </div>
 
-        <QuickActionsMenu
-          renderTrigger={(toggle) => (
-            <Button variant="ghost" size="icon" className="rounded-md" aria-label="Quick actions" onClick={toggle}>
-              <Sparkles size={19} strokeWidth={1.75} />
-            </Button>
-          )}
-        />
+        <div className="hidden sm:block">
+          <QuickActionsMenu
+            renderTrigger={(toggle) => (
+              <Button variant="ghost" size="icon" className="rounded-md" aria-label="Quick actions" onClick={toggle}>
+                <Sparkles size={19} strokeWidth={1.75} />
+              </Button>
+            )}
+          />
+        </div>
         {/* Notifications */}
         <NotificationCenter />
         {/* Theme Toggle */}
         <Button
           variant="ghost"
           size="icon"
-          className="rounded-md"
+          className="hidden sm:inline-flex rounded-md"
           onClick={toggleTheme}
           aria-label="Toggle theme"
         >
@@ -290,10 +292,10 @@ export function Topbar() {
           <img
             src={user.avatarUrl}
             alt={user.name}
-            className="size-10 rounded-full object-cover border border-border shrink-0"
+            className="size-8 sm:size-10 rounded-full object-cover border border-border shrink-0"
           />
         ) : (
-          <span className="grid size-10 place-items-center rounded-full bg-primary/12 font-display text-helper font-semibold text-primary shrink-0">
+          <span className="grid size-8 sm:size-10 place-items-center rounded-full bg-primary/12 font-display text-xs sm:text-helper font-semibold text-primary shrink-0">
             {user?.initials ?? "SW"}
           </span>
         )}

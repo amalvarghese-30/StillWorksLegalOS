@@ -96,17 +96,29 @@ function ShellLayout() {
     queryClient.invalidateQueries({ queryKey: ["notifications"] });
   });
 
+  const isChatRoute = currentPath.startsWith("/chat");
+  const searchParams = (location.search ?? {}) as Record<string, any>;
+  const isChatActiveOnMobile = isChatRoute && Boolean(searchParams?.groupId);
+
   return (
     <div className="app-canvas min-h-screen overflow-x-hidden">
       <SkipLink />
       <CallReminderAlerts />
-      <div className="mx-auto flex w-full max-w-[1600px] gap-6 px-3 sm:px-4 lg:px-6 pb-24 lg:pb-10">
+      <div
+        className={
+          isChatActiveOnMobile
+            ? "mx-auto flex w-full max-w-[1600px] gap-6 px-0 lg:px-6 pb-0 lg:pb-10"
+            : "mx-auto flex w-full max-w-[1600px] gap-6 px-2.5 sm:px-4 lg:px-6 pb-20 sm:pb-24 lg:pb-10"
+        }
+      >
         <aside className="sticky top-4 hidden h-[calc(100vh-2rem)] shrink-0 py-4 lg:block">
           <Sidebar />
         </aside>
-        <div className="flex min-w-0 flex-1 flex-col py-4">
-          <Topbar />
-          {!isElectron() && notifPromptVisible && (
+        <div className={`flex min-w-0 flex-1 flex-col ${isChatActiveOnMobile ? "py-0 lg:py-4" : "py-2 sm:py-4"}`}>
+          <div className={isChatActiveOnMobile ? "hidden lg:block" : "block"}>
+            <Topbar />
+          </div>
+          {!isElectron() && notifPromptVisible && !isChatActiveOnMobile && (
             <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-primary/25 bg-primary/5 px-4 py-2.5 shadow-xs transition-all">
               <div className="flex items-center gap-2.5 min-w-0">
                 <Bell size={16} className="text-primary shrink-0" />
@@ -141,7 +153,7 @@ function ShellLayout() {
               </div>
             </div>
           )}
-          <main id="main-content" className="page-enter mt-4 sm:mt-6 min-w-0">
+          <main id="main-content" className={`page-enter min-w-0 ${isChatActiveOnMobile ? "mt-0 lg:mt-6" : "mt-3 sm:mt-6"}`}>
             {isRestricted ? (
               <div className="flex flex-col items-center justify-center p-10 text-center rounded-xl border border-destructive/20 bg-card shadow-soft mt-8 max-w-lg mx-auto">
                 <div className="grid size-14 place-items-center rounded-full bg-destructive/10 text-destructive mb-4">

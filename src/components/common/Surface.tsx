@@ -23,27 +23,27 @@ export function SectionCard({
   return (
     <section
       className={cn(
-        "rounded-lg border border-border bg-card p-6 shadow-soft transition-shadow duration-200",
+        "rounded-xl sm:rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-soft transition-shadow duration-200",
         className,
       )}
     >
-      <header className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4">
+      <header className="flex flex-col sm:grid sm:grid-cols-[minmax(0,1fr)_auto] items-start gap-3 sm:gap-4">
         <div className="flex min-w-0 items-start gap-3">
           {Icon ? (
-            <span className="grid size-10 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
-              <Icon size={20} strokeWidth={1.75} />
+            <span className="grid size-9 sm:size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+              <Icon size={19} strokeWidth={1.75} />
             </span>
           ) : null}
           <div className="min-w-0">
-            <h2 className="truncate text-title font-semibold">{title}</h2>
+            <h2 className="truncate text-base sm:text-title font-semibold">{title}</h2>
             {description ? (
-              <p className="mt-0.5 text-helper text-muted-foreground">{description}</p>
+              <p className="mt-0.5 text-xs sm:text-helper text-muted-foreground">{description}</p>
             ) : null}
           </div>
         </div>
-        {action}
+        {action ? <div className="w-full sm:w-auto shrink-0">{action}</div> : null}
       </header>
-      <div className={cn("mt-5", bodyClassName)}>{children}</div>
+      <div className={cn("mt-4 sm:mt-5 min-w-0", bodyClassName)}>{children}</div>
     </section>
   );
 }
@@ -66,17 +66,17 @@ export function StatCard({
   const content = (
     <article
       className={cn(
-        "lift rounded-lg border p-6 transition-all duration-200",
+        "lift rounded-xl sm:rounded-2xl border p-3.5 sm:p-5 transition-all duration-200",
         to && "cursor-pointer group hover:border-primary/50 hover:shadow-lift",
         accent
           ? "gradient-primary border-transparent text-primary-foreground shadow-lift"
           : "border-border bg-card shadow-soft",
       )}
     >
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-2 sm:gap-3">
         <p
           className={cn(
-            "text-helper font-medium transition-colors",
+            "text-xs sm:text-helper font-medium transition-colors truncate",
             accent ? "opacity-90" : "text-muted-foreground group-hover:text-foreground",
           )}
         >
@@ -84,16 +84,16 @@ export function StatCard({
         </p>
         <span
           className={cn(
-            "grid size-9 shrink-0 place-items-center rounded-md transition-transform group-hover:scale-105",
+            "grid size-8 sm:size-9 shrink-0 place-items-center rounded-lg transition-transform group-hover:scale-105",
             accent ? "bg-white/20" : "bg-primary/10 text-primary",
           )}
         >
-          <Icon size={18} strokeWidth={1.75} />
+          <Icon size={17} strokeWidth={1.75} />
         </span>
       </div>
-      <p className="num mt-4 text-page font-semibold tracking-tight">{value}</p>
+      <p className="num mt-2 sm:mt-3 text-xl sm:text-page font-semibold tracking-tight truncate">{value}</p>
       {hint ? (
-        <p className={cn("mt-1 text-caption", accent ? "opacity-85" : "text-muted-foreground")}>
+        <p className={cn("mt-0.5 sm:mt-1 text-[11px] sm:text-caption truncate", accent ? "opacity-85" : "text-muted-foreground")}>
           {hint}
         </p>
       ) : null}
@@ -102,7 +102,7 @@ export function StatCard({
 
   if (to) {
     return (
-      <Link to={to} className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+      <Link to={to} className="block rounded-xl sm:rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
         {content}
       </Link>
     );
