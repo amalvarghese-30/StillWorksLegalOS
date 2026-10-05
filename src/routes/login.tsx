@@ -364,11 +364,16 @@ function LoginPage() {
           </div>
         </div>
 
-        {/* Bottom Jurisdiction & Security Status Card */}
+        {/* Bottom Data Security Status Card */}
         <div className="relative z-10 flex items-center justify-between rounded-xl bg-white/10 backdrop-blur-md p-4 border border-white/15 shadow-lg">
-          <div>
-            <p className="text-[11px] text-white/60 uppercase tracking-wider font-semibold">Firm Jurisdiction</p>
-            <p className="text-sm font-semibold text-white mt-0.5">Bombay High Court &amp; City Civil</p>
+          <div className="flex items-center gap-3">
+            <div className="grid size-9 place-items-center rounded-lg bg-emerald-500/20 text-emerald-300">
+              <ShieldCheck size={18} />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-white">Enterprise Practice System</p>
+              <p className="text-[11px] text-white/60">Bank-grade encryption &amp; secure audit trails</p>
+            </div>
           </div>
           <div className="text-right">
             <p className="text-[11px] text-white/60 uppercase tracking-wider font-semibold">Data Security</p>

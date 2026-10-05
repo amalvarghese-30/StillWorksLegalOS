@@ -36,6 +36,8 @@ export const DEFAULT_TASK_OPTIONS: TaskOptions = {
   categories: [
     "Agreement",
     "Sale Deed / Soc Doc",
+    "Gift Deed",
+    "Registration",
     "CIDCO Doc",
     "CIDCO Transfer",
     "CIDCO Mortgage",
@@ -131,8 +133,21 @@ AppSettingsSchema.statics.setSynologyConfig = async function (
 AppSettingsSchema.statics.getTaskOptions = async function (): Promise<TaskOptions> {
   const doc = await this.findOne({ key: "task_options" });
   const stored = (doc?.value ?? {}) as Partial<TaskOptions>;
+  const baseCategories = stored.categories ? [...stored.categories] : [...DEFAULT_TASK_OPTIONS.categories];
+  const required = ["Gift Deed", "Registration"];
+  for (const reqCat of required) {
+    if (!baseCategories.includes(reqCat)) {
+      const prevIdx = baseCategories.indexOf(reqCat === "Registration" ? "Gift Deed" : "Sale Deed / Soc Doc");
+      if (prevIdx !== -1) {
+        baseCategories.splice(prevIdx + 1, 0, reqCat);
+      } else {
+        baseCategories.push(reqCat);
+      }
+    }
+  }
+
   return {
-    categories: stored.categories ?? DEFAULT_TASK_OPTIONS.categories,
+    categories: baseCategories,
     checklistTemplates: stored.checklistTemplates ?? DEFAULT_TASK_OPTIONS.checklistTemplates,
     agents: stored.agents ?? DEFAULT_TASK_OPTIONS.agents,
   };

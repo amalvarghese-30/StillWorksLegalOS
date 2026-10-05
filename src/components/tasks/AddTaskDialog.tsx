@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useMemo } from "react";
 import { Plus, Trash2, CheckSquare, PhoneCall, Loader2, ListChecks, UserRound, BadgeCheck, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -125,9 +125,35 @@ interface TaskFieldErrors {
   const isPending = createTask.isPending;
   const isError = createTask.isError;
 
-  if (!open) return null;
-
-  const categories = options?.categories ?? [];
+  const categories = useMemo(() => {
+    const list = [...(options?.categories ?? [
+      "Agreement",
+      "Sale Deed / Soc Doc",
+      "Gift Deed",
+      "Registration",
+      "CIDCO Doc",
+      "CIDCO Transfer",
+      "CIDCO Mortgage",
+      "CIDCO Other",
+      "Other Documents",
+      "Other Work",
+      "Court Case",
+      "Meeting",
+      "Personal",
+    ])];
+    const required = ["Gift Deed", "Registration"];
+    for (const reqCat of required) {
+      if (!list.includes(reqCat)) {
+        const prevIdx = list.indexOf(reqCat === "Registration" ? "Gift Deed" : "Sale Deed / Soc Doc");
+        if (prevIdx !== -1) {
+          list.splice(prevIdx + 1, 0, reqCat);
+        } else {
+          list.push(reqCat);
+        }
+      }
+    }
+    return list;
+  }, [options?.categories]);
   const templates = options?.checklistTemplates ?? [];
   const agents = options?.agents ?? [];
   const staff = (options?.staff ?? []).filter((s) => s._id !== (user?._id ?? ""));

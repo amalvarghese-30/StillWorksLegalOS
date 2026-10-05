@@ -951,7 +951,7 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
 
 router.patch("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskId"), async (req: Request, res: Response) => {
   try {
-    const { done } = req.body;
+    const { done, text } = req.body;
     const task = await Task.findById(req.params["taskId"]);
     if (!task) {
       res.status(404).json({ message: "Task not found" });
@@ -968,7 +968,12 @@ router.patch("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskId
       return;
     }
 
-    item.done = Boolean(done);
+    if (done !== undefined) {
+      item.done = Boolean(done);
+    }
+    if (text !== undefined && typeof text === "string" && text.trim()) {
+      item.text = sanitizeInputText(text, 500);
+    }
     await task.save();
 
     await AuditLog.create({
@@ -978,7 +983,7 @@ router.patch("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskId
       resource: "task",
       resourceId: task._id.toString(),
       resourceName: task.title,
-      details: `Checklist item ${done ? "completed" : "uncompleted"}`,
+      details: text !== undefined ? `Checklist item edited: "${item.text}"` : `Checklist item ${done ? "completed" : "uncompleted"}`,
       ip: req.ip,
       userAgent: req.headers["user-agent"],
     });

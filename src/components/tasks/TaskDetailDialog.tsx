@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   CheckCircle2,
   Circle,
@@ -18,6 +18,8 @@ import {
   Copy,
   MoreVertical,
   RotateCcw,
+  Pencil,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -95,6 +97,9 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
   const [manualCase, setManualCase] = useState(false);
   const [manualClient, setManualClient] = useState(false);
   const [newChecklistText, setNewChecklistText] = useState("");
+  const [editableChecklist, setEditableChecklist] = useState<ChecklistItem[]>([]);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingText, setEditingText] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Broker / Agent state
@@ -120,6 +125,39 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
 
   const { data: optionsData } = useTaskOptions();
   const predefinedAgents = optionsData?.agents ?? [];
+
+  const availableCategories = useMemo(() => {
+    const list = [...(optionsData?.categories ?? [
+      "Agreement",
+      "Sale Deed / Soc Doc",
+      "Gift Deed",
+      "Registration",
+      "CIDCO Doc",
+      "CIDCO Transfer",
+      "CIDCO Mortgage",
+      "CIDCO Other",
+      "Other Documents",
+      "Other Work",
+      "Court Case",
+      "Meeting",
+      "Personal",
+    ])];
+    const required = ["Gift Deed", "Registration"];
+    for (const reqCat of required) {
+      if (!list.includes(reqCat)) {
+        const prevIdx = list.indexOf(reqCat === "Registration" ? "Gift Deed" : "Sale Deed / Soc Doc");
+        if (prevIdx !== -1) {
+          list.splice(prevIdx + 1, 0, reqCat);
+        } else {
+          list.push(reqCat);
+        }
+      }
+    }
+    if (category && !list.includes(category)) {
+      list.push(category);
+    }
+    return list;
+  }, [optionsData?.categories, category]);
 
   const updateTask = useUpdateTask();
   const deleteTask = useDeleteTask();
@@ -178,6 +216,15 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
       setManualClient(false);
       setIsEditing(false);
       setNewChecklistText("");
+      setEditableChecklist(
+        task.checklist?.map((c) => ({
+          _id: c._id,
+          text: c.text,
+          done: Boolean(c.done),
+        })) ?? []
+      );
+      setEditingIndex(null);
+      setEditingText("");
     }
   }, [task, predefinedAgents]);
 
@@ -213,6 +260,15 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
     e.preventDefault();
     if (!newChecklistText.trim()) return;
 
+    if (isEditing) {
+      setEditableChecklist((prev) => [
+        ...prev,
+        { text: newChecklistText.trim(), done: false },
+      ]);
+      setNewChecklistText("");
+      return;
+    }
+
     const updatedChecklist = [
       ...checklist.map((c) => ({ text: c.text, done: c.done })),
       { text: newChecklistText.trim(), done: false },
@@ -230,6 +286,11 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
   };
 
   const handleRemoveChecklistItem = async (indexToRemove: number) => {
+    if (isEditing) {
+      setEditableChecklist((prev) => prev.filter((_, idx) => idx !== indexToRemove));
+      return;
+    }
+
     const updatedChecklist = checklist
       .filter((_, idx) => idx !== indexToRemove)
       .map((c) => ({ text: c.text, done: c.done }));
@@ -241,6 +302,25 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
       });
     } catch (err) {
       console.error("Failed to remove checklist item:", err);
+    }
+  };
+
+  const handleSaveInlineChecklistText = async (idx: number) => {
+    if (!editingText.trim()) return;
+    const updatedChecklist = checklist.map((c, i) =>
+      i === idx ? { text: editingText.trim(), done: Boolean(c.done) } : { text: c.text, done: Boolean(c.done) }
+    );
+    try {
+      await updateTask.mutateAsync({
+        id: task._id,
+        data: { checklist: updatedChecklist },
+      });
+      setEditingIndex(null);
+      setEditingText("");
+      toast.success("Checklist item updated");
+    } catch (err) {
+      console.error("Failed to update checklist item:", err);
+      toast.error("Failed to update checklist item");
     }
   };
 
@@ -284,7 +364,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
           ? agentCustom.trim()
           : agentSelect.trim();
 
-      const payload: Partial<CreateTaskPayload> = {
+      const payload: Partial<CreateTaskPayload> & { checklist?: Array<{ text: string; done: boolean }> } = {
         title: title.trim(),
         description: description.trim(),
         category: category.trim(),
@@ -292,6 +372,12 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
         caseId: caseId.trim() ? caseId.trim() : null,
         clientId: clientId.trim() ? clientId.trim() : null,
         agent: resolvedAgent,
+        checklist: editableChecklist
+          .filter((c) => c.text.trim())
+          .map((c) => ({
+            text: c.text.trim(),
+            done: Boolean(c.done),
+          })),
       };
       if (deadline) {
         const iso = toSafeIso(deadline);
@@ -471,7 +557,19 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setIsEditing(!isEditing)}
+                  onClick={() => {
+                    if (!isEditing) {
+                      setEditableChecklist(
+                        task.checklist?.map((c) => ({
+                          _id: c._id,
+                          text: c.text,
+                          done: Boolean(c.done),
+                        })) ?? []
+                      );
+                      setEditingIndex(null);
+                    }
+                    setIsEditing(!isEditing);
+                  }}
                   className="rounded-md h-8 text-xs"
                 >
                   <Edit2 size={13} className="mr-1.5" />
@@ -627,12 +725,19 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="task-cat" className="text-helper font-medium">Category</Label>
-                  <Input
+                  <select
                     id="task-cat"
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
-                    className="h-10 rounded-md"
-                  />
+                    className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="">Select category…</option>
+                    {availableCategories.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="space-y-1.5">
@@ -876,7 +981,21 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" size="sm" onClick={() => setIsEditing(false)} className="rounded-md">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setEditableChecklist(
+                      task.checklist?.map((c) => ({
+                        _id: c._id,
+                        text: c.text,
+                        done: Boolean(c.done),
+                      })) ?? []
+                    );
+                    setIsEditing(false);
+                  }}
+                  className="rounded-md"
+                >
                   Cancel
                 </Button>
                 <Button
@@ -1040,50 +1159,166 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
             <div className="flex items-center justify-between mb-2">
               <h4 className="text-helper font-semibold text-foreground flex items-center gap-2">
                 Checklist
-                <span className="text-caption font-normal text-muted-foreground">
-                  ({doneCount} of {total} completed)
-                </span>
+                {isEditing ? (
+                  <span className="rounded-full bg-primary/10 border border-primary/20 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                    Editing Mode ({editableChecklist.length} {editableChecklist.length === 1 ? "item" : "items"})
+                  </span>
+                ) : (
+                  <span className="text-caption font-normal text-muted-foreground">
+                    ({doneCount} of {total} completed)
+                  </span>
+                )}
               </h4>
-              <span className="text-caption font-semibold text-primary">{pct}%</span>
+              {!isEditing && <span className="text-caption font-semibold text-primary">{pct}%</span>}
             </div>
 
-            <Progress value={pct} className="h-1.5 mb-3" />
+            {!isEditing && <Progress value={pct} className="h-1.5 mb-3" />}
 
-            {/* Scrollable list of all items without cutting off */}
-            <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1">
-              {checklist.length === 0 ? (
-                <p className="py-4 text-center text-helper text-muted-foreground">No checklist items yet.</p>
+            {/* Scrollable list of items */}
+            <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
+              {isEditing ? (
+                /* Editable list in Task Edit mode */
+                editableChecklist.length === 0 ? (
+                  <p className="py-4 text-center text-helper text-muted-foreground">No checklist items yet. Add one below.</p>
+                ) : (
+                  editableChecklist.map((item, idx) => (
+                    <div
+                      key={item._id || idx}
+                      className="flex items-center gap-2 rounded-lg p-2 bg-muted/40 border border-border/70 focus-within:border-primary/60 transition-colors"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditableChecklist((prev) =>
+                            prev.map((c, i) => (i === idx ? { ...c, done: !c.done } : c))
+                          );
+                        }}
+                        className="shrink-0 p-1 text-muted-foreground hover:text-foreground"
+                        title={item.done ? "Mark incomplete" : "Mark complete"}
+                      >
+                        {item.done ? (
+                          <CheckCircle2 size={17} className="text-success" />
+                        ) : (
+                          <Circle size={17} className="text-muted-foreground" />
+                        )}
+                      </button>
+                      <Input
+                        value={item.text}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setEditableChecklist((prev) =>
+                            prev.map((c, i) => (i === idx ? { ...c, text: val } : c))
+                          );
+                        }}
+                        placeholder="Checklist step description…"
+                        className="h-8 text-helper rounded bg-background flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleRemoveChecklistItem(idx)}
+                        className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
+                        title="Remove checklist item"
+                      >
+                        <Trash2 size={14} />
+                      </Button>
+                    </div>
+                  ))
+                )
               ) : (
-                checklist.map((item, idx) => (
-                  <div
-                    key={item._id || idx}
-                    className="group flex items-center justify-between gap-2 rounded-md p-2 hover:bg-muted/60 transition-colors"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => handleToggle(item)}
-                      disabled={toggleItem.isPending}
-                      className="flex min-w-0 flex-1 items-center gap-2.5 text-left text-helper"
+                /* View list with inline editing capability */
+                checklist.length === 0 ? (
+                  <p className="py-4 text-center text-helper text-muted-foreground">No checklist items yet.</p>
+                ) : (
+                  checklist.map((item, idx) => (
+                    <div
+                      key={item._id || idx}
+                      className="group flex items-center justify-between gap-2 rounded-md p-2 hover:bg-muted/60 transition-colors"
                     >
-                      {item.done ? (
-                        <CheckCircle2 size={17} className="shrink-0 text-success" />
+                      {editingIndex === idx ? (
+                        <div className="flex items-center gap-2 flex-1">
+                          <Input
+                            value={editingText}
+                            onChange={(e) => setEditingText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleSaveInlineChecklistText(idx);
+                              } else if (e.key === "Escape") {
+                                setEditingIndex(null);
+                              }
+                            }}
+                            autoFocus
+                            className="h-8 text-helper rounded bg-background flex-1"
+                          />
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleSaveInlineChecklistText(idx)}
+                            disabled={!editingText.trim() || updateTask.isPending}
+                            className="size-8 text-success hover:bg-success/10 shrink-0"
+                            title="Save"
+                          >
+                            <Check size={14} />
+                          </Button>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => setEditingIndex(null)}
+                            className="size-8 text-muted-foreground hover:text-foreground shrink-0"
+                            title="Cancel"
+                          >
+                            <X size={14} />
+                          </Button>
+                        </div>
                       ) : (
-                        <Circle size={17} className="shrink-0 text-muted-foreground group-hover:text-foreground" />
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleToggle(item)}
+                            disabled={toggleItem.isPending}
+                            className="flex min-w-0 flex-1 items-center gap-2.5 text-left text-helper"
+                          >
+                            {item.done ? (
+                              <CheckCircle2 size={17} className="shrink-0 text-success" />
+                            ) : (
+                              <Circle size={17} className="shrink-0 text-muted-foreground group-hover:text-foreground" />
+                            )}
+                            <span className={`truncate ${item.done ? "text-muted-foreground line-through" : "text-foreground"}`}>
+                              {item.text}
+                            </span>
+                          </button>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingIndex(idx);
+                                setEditingText(item.text);
+                              }}
+                              className="p-1 text-muted-foreground hover:text-foreground rounded"
+                              aria-label="Edit item text"
+                              title="Edit item"
+                            >
+                              <Pencil size={13} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveChecklistItem(idx)}
+                              className="p-1 text-muted-foreground hover:text-destructive rounded"
+                              aria-label="Remove item"
+                              title="Remove item"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </>
                       )}
-                      <span className={`truncate ${item.done ? "text-muted-foreground line-through" : "text-foreground"}`}>
-                        {item.text}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveChecklistItem(idx)}
-                      className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive transition-opacity"
-                      aria-label="Remove item"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                ))
+                    </div>
+                  ))
+                )
               )}
             </div>
 
@@ -1105,6 +1340,45 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                 <Plus size={14} className="mr-1" /> Add
               </Button>
             </form>
+
+            {/* In Edit mode, show convenient Save All Changes bar below the checklist */}
+            {isEditing && (
+              <div className="mt-4 flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 p-3">
+                <span className="text-xs text-muted-foreground">
+                  Ready with task details &amp; checklist?
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setEditableChecklist(
+                        task.checklist?.map((c) => ({
+                          _id: c._id,
+                          text: c.text,
+                          done: Boolean(c.done),
+                        })) ?? []
+                      );
+                      setIsEditing(false);
+                    }}
+                    className="rounded-md h-8 text-xs"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="gradient-primary rounded-md text-primary-foreground h-8 text-xs font-semibold shadow-soft"
+                    onClick={handleSaveDetails}
+                    disabled={updateTask.isPending}
+                  >
+                    {updateTask.isPending ? <Loader2 size={13} className="animate-spin mr-1.5" /> : <Check size={13} className="mr-1.5" />}
+                    Save Details
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
 
           <DialogFooter className="mt-6 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 border-t border-border/60 pt-4">
