@@ -51,7 +51,6 @@ interface FormState {
   title: string;
   description: string;
   category: string;
-  court: string;
   localPath: string;
   status: "Active" | "On Hold" | "Closed" | "Urgent";
   priority: "High" | "Medium" | "Low";
@@ -62,26 +61,11 @@ const EMPTY_FORM: FormState = {
   title: "",
   description: "",
   category: "Other Work",
-  court: "",
   localPath: "",
   status: "Active",
   priority: "Medium",
   tags: "",
 };
-
-const COURTS = [
-  "Bombay High Court",
-  "City Civil Court, Mumbai",
-  "NCLT Mumbai",
-  "NCLAT",
-  "District Court, Thane",
-  "District Court, Pune",
-  "Family Court, Mumbai",
-  "Consumer Forum",
-  "RERA Tribunal",
-  "Supreme Court",
-  "Other",
-];
 
 // ---------------------------------------------------------------------------
 // Props
@@ -148,7 +132,6 @@ export function AddCaseDialog({
       Boolean(form.title.trim()) ||
       Boolean(form.description.trim()) ||
       form.category !== "Other Work" ||
-      Boolean(form.court.trim()) ||
       Boolean(form.localPath.trim()) ||
       form.status !== "Active" ||
       form.priority !== "Medium" ||
@@ -291,7 +274,6 @@ export function AddCaseDialog({
         title: form.title.trim(),
         description: form.description.trim() || undefined,
         category: form.category || "Other Work",
-        court: form.court.trim() || undefined,
         localPath: form.localPath.trim() || undefined,
         status: form.status,
         priority: form.priority,
@@ -378,36 +360,19 @@ export function AddCaseDialog({
               />
             </div>
 
-            {/* ── Category & Court ── */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="case-category" className="text-helper">Category</Label>
-                <select
-                  id="case-category"
-                  value={form.category}
-                  onChange={(e) => update("category", e.target.value)}
-                  className="h-11 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary"
-                >
-                  {categories.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="case-court" className="text-helper">Court / Tribunal</Label>
-                <select
-                  id="case-court"
-                  value={form.court}
-                  onChange={(e) => update("court", e.target.value)}
-                  className="h-11 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary"
-                >
-                  <option value="">Select court (optional)</option>
-                  {COURTS.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
+            {/* ── Category ── */}
+            <div className="space-y-1.5">
+              <Label htmlFor="case-category" className="text-helper">Category</Label>
+              <select
+                id="case-category"
+                value={form.category}
+                onChange={(e) => update("category", e.target.value)}
+                className="h-11 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary"
+              >
+                {categories.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
             </div>
 
             {/* ── Local File / Folder Path ── */}
@@ -643,7 +608,7 @@ export function AddCaseDialog({
                         </Button>
                       </div>
 
-                      <div className="grid gap-2 sm:grid-cols-4">
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         <div className="space-y-1.5">
                           <Label htmlFor={`task-cat-${idx}`} className="text-helper">Category</Label>
                           <select
@@ -679,7 +644,7 @@ export function AddCaseDialog({
                             type="datetime-local"
                             value={t.deadline}
                             onChange={(e) => updateTask(idx, "deadline", e.target.value)}
-                            className="h-10 rounded-md"
+                            className="h-10 w-full min-w-[210px] rounded-md text-xs sm:text-sm px-2.5 font-sans"
                           />
                         </div>
 

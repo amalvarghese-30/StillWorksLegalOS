@@ -25,21 +25,6 @@ import { useCategories } from "@/services/categories";
 import { useAuth } from "@/lib/auth";
 import { DiscardConfirmationDialog } from "@/components/ui/discard-confirmation-dialog";
 
-const COURTS = [
-  "Supreme Court of India",
-  "Bombay High Court",
-  "City Civil Court, Mumbai",
-  "Sessions Court, Mumbai",
-  "NCLT Mumbai",
-  "NCLAT",
-  "District Court, Thane",
-  "District Court, Pune",
-  "Family Court, Mumbai",
-  "Consumer Forum",
-  "RERA Tribunal",
-  "Other",
-];
-
 interface EditCaseDialogProps {
   open: boolean;
   onClose: () => void;
@@ -51,7 +36,6 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
   const [title, setTitle] = useState(record.title || "");
   const [description, setDescription] = useState(record.description || "");
   const [category, setCategory] = useState(record.category || record.practice || "Other Work");
-  const [court, setCourt] = useState(record.court || "");
   const [localPath, setLocalPath] = useState(record.localPath || "");
   const [status, setStatus] = useState<"Active" | "Urgent" | "On Hold" | "Closed">(
     (record.status as any) || "Active"
@@ -80,7 +64,6 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
       setTitle(record.title || "");
       setDescription(record.description || "");
       setCategory(record.category || record.practice || "Other Work");
-      setCourt(record.court || "");
       setLocalPath(record.localPath || "");
       setStatus((record.status as any) || "Active");
       setPriority(record.priority || "Medium");
@@ -98,7 +81,6 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
       title !== (record.title || "") ||
       description !== (record.description || "") ||
       category !== (record.category || record.practice || "Other Work") ||
-      court !== (record.court || "") ||
       localPath !== (record.localPath || "") ||
       status !== (record.status || "Active") ||
       priority !== (record.priority || "Medium") ||
@@ -106,7 +88,7 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
       assignedTo !== (record.assignedTo?._id || "") ||
       tags !== origTags
     );
-  }, [title, description, category, court, localPath, status, priority, progress, assignedTo, tags, record]);
+  }, [title, description, category, localPath, status, priority, progress, assignedTo, tags, record]);
 
   const handleAttemptClose = () => {
     if (isDirty) {
@@ -142,7 +124,6 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
         title: title.trim(),
         description: description.trim(),
         category,
-        court: court.trim(),
         localPath: localPath.trim(),
         status,
         priority,
@@ -237,45 +218,21 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
               />
             </div>
 
-            {/* Category & Court */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="case-category" className="text-helper font-medium">
-                  Category
-                </Label>
-                <select
-                  id="case-category"
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                >
-                  {categories.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="case-court" className="text-helper font-medium flex items-center gap-1.5">
-                  <Building size={14} className="text-muted-foreground" />
-                  Court / Tribunal
-                </Label>
-                <div className="relative">
-                  <input
-                    id="case-court"
-                    list="courts-list"
-                    value={court}
-                    onChange={(e) => setCourt(e.target.value)}
-                    placeholder="Select or enter court"
-                    className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                  <datalist id="courts-list">
-                    {COURTS.map((c) => (
-                      <option key={c} value={c} />
-                    ))}
-                  </datalist>
-                </div>
-              </div>
+            {/* Category */}
+            <div className="space-y-1.5">
+              <Label htmlFor="case-category" className="text-helper font-medium">
+                Category
+              </Label>
+              <select
+                id="case-category"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                {categories.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
             </div>
 
             {/* Local Folder / Document Path */}

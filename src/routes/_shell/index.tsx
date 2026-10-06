@@ -445,7 +445,7 @@ function Dashboard() {
                       <div className="min-w-0">
                         <p className="truncate font-medium">{c.title}</p>
                         <p className="num mt-0.5 truncate text-caption text-muted-foreground">
-                          {c.number} · {c.court}
+                          {c.number} · {c.category || c.practice || "General Legal"}
                         </p>
                       </div>
                       <StatusPill tone={toneForStatus(c.status)}>{c.status}</StatusPill>

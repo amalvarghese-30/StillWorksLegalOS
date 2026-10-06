@@ -469,7 +469,7 @@ function CaseWorkspace() {
               <span>No client</span>
             )}
             <span>·</span>
-            <span>{record.court || "No court"}</span>
+            <span>{record.category || record.practice || "General Legal"}</span>
           </span>
         }
         actions={
@@ -651,7 +651,6 @@ function CaseWorkspace() {
                 <dl className="mt-6 grid gap-4 sm:grid-cols-3">
                   {[
                     ["Category", record.category || record.practice || "General Legal"],
-                    ["Court / Forum", record.court || "Not specified"],
                     ["Filed on", formatDate(record.createdAt)],
                     ["Case number", record.number],
                     ["Created by", typeof record.createdBy === "object" ? record.createdBy?.name : "System"],

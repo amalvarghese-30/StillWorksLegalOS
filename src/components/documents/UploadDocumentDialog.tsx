@@ -191,7 +191,7 @@ export function UploadDocumentDialog({ open, onClose, preSelectedCaseId }: Uploa
                   <SelectItem key={c._id} value={c._id}>
                     <div className="flex flex-col">
                       <span className="font-medium">{c.number} — {c.title}</span>
-                      <span className="text-caption text-muted-foreground">{c.court}</span>
+                      <span className="text-caption text-muted-foreground">{c.category || c.practice || "General Legal"}</span>
                     </div>
                   </SelectItem>
                 ))}

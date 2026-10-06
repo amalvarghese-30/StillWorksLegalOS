@@ -75,7 +75,6 @@ export function RequestAccessDialog({
       (c) =>
         c.title.toLowerCase().includes(q) ||
         c.number.toLowerCase().includes(q) ||
-        (c.court && c.court.toLowerCase().includes(q)) ||
         (c.practice && c.practice.toLowerCase().includes(q))
     );
   }, [cases, searchQuery]);
@@ -215,7 +214,7 @@ export function RequestAccessDialog({
               placeholder={
                 activeTab === "document"
                   ? "Search documents by filename or case…"
-                  : "Search cases by matter title, number, or court…"
+                  : "Search cases by matter title, number, or category…"
               }
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -322,7 +321,7 @@ export function RequestAccessDialog({
                           {c.number} — {c.title}
                         </p>
                         <p className="truncate text-[11px] text-muted-foreground">
-                          {c.court || "Court"} · Counsel: {c.assignedToName}
+                          {c.practice || "General Legal"} · Counsel: {c.assignedToName}
                         </p>
                       </div>
                     </div>

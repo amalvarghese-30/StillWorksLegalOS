@@ -86,7 +86,7 @@ function CaseCard({
             {c.title}
           </h2>
           <p className="mt-1 truncate text-helper text-muted-foreground">
-            {c.parties?.[0]?.name ?? "—"} · {c.court || "—"}
+            {c.parties?.[0]?.name ?? "—"} · {c.category || c.practice || "General Legal"}
           </p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-2">
@@ -154,7 +154,6 @@ function CasesPage() {
   const [priorityFilter, setPriorityFilter] = useState<string>("All");
   const [categoryFilter, setCategoryFilter] = useState<string>("All");
   const [selectedStaff, setSelectedStaff] = useState<string[]>([]);
-  const [courtFilter, setCourtFilter] = useState("");
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(24);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
@@ -178,9 +177,8 @@ function CasesPage() {
       f["practice"] = categoryFilter;
     }
     if (selectedStaff.length > 0) f["assignedTo"] = selectedStaff.join(",");
-    if (courtFilter.trim()) f["court"] = courtFilter.trim();
     return f;
-  }, [page, limit, search, statusFilter, priorityFilter, categoryFilter, selectedStaff, courtFilter]);
+  }, [page, limit, search, statusFilter, priorityFilter, categoryFilter, selectedStaff]);
 
   // Fetch cases with server-side query parameters
   const queryClient = useQueryClient();
@@ -243,7 +241,6 @@ function CasesPage() {
     setPriorityFilter("All");
     setCategoryFilter("All");
     setSelectedStaff([]);
-    setCourtFilter("");
     setPage(1);
   };
 
@@ -251,7 +248,6 @@ function CasesPage() {
     (statusFilter !== "All" ? 1 : 0) +
     (priorityFilter !== "All" ? 1 : 0) +
     (categoryFilter !== "All" ? 1 : 0) +
-    (courtFilter.trim() ? 1 : 0) +
     selectedStaff.length +
     (search.trim() ? 1 : 0);
 
@@ -352,7 +348,7 @@ function CasesPage() {
           <input
             type="search"
             aria-label="Search cases"
-            placeholder="Search by case number, title, court, client or staff…"
+            placeholder="Search by case number, title, client or staff…"
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
@@ -480,21 +476,6 @@ function CasesPage() {
                   })
                 )}
               </div>
-            </div>
-
-            {/* Court / Forum */}
-            <div>
-              <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Court / Forum</label>
-              <input
-                type="text"
-                placeholder="e.g. High Court / Civil Court"
-                value={courtFilter}
-                onChange={(e) => {
-                  setCourtFilter(e.target.value);
-                  setPage(1);
-                }}
-                className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs outline-none focus:border-primary"
-              />
             </div>
           </div>
         </div>
