@@ -608,7 +608,7 @@ export function AddCaseDialog({
                         </Button>
                       </div>
 
-                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <div className="grid gap-3 sm:grid-cols-2">
                         <div className="space-y-1.5">
                           <Label htmlFor={`task-cat-${idx}`} className="text-helper">Category</Label>
                           <select
@@ -644,7 +644,7 @@ export function AddCaseDialog({
                             type="datetime-local"
                             value={t.deadline}
                             onChange={(e) => updateTask(idx, "deadline", e.target.value)}
-                            className="h-10 w-full min-w-[210px] rounded-md text-xs sm:text-sm px-2.5 font-sans"
+                            className="h-10 w-full rounded-md text-xs sm:text-sm px-3 font-sans"
                           />
                         </div>
 
