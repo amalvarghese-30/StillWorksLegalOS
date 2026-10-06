@@ -60,19 +60,39 @@ export interface CaseAccessRequest {
   createdAt: Date;
 }
 
+export interface AssignmentHistoryEntry {
+  _id?: string;
+  fromUser?: mongoose.Types.ObjectId | null;
+  toUser: mongoose.Types.ObjectId;
+  assignedBy: mongoose.Types.ObjectId;
+  action: "assigned" | "reassigned" | "forwarded";
+  note?: string;
+  timestamp: Date;
+}
+
 export interface ICase extends Document {
   number: string;                        // Internal case ID (e.g., SW-2026-0001)
   courtCaseId?: string;                  // External case ID/CNR (e.g., CNR123456789)
   title: string;
   description: string;
-  practice: CasePractice;
+  category: string;
+  practice?: CasePractice;
   court: string;
-  judge: string;
+  judge?: string;
   status: CaseStatus;
   priority: CasePriority;
-  nextHearing: Date | null;
+  nextHearing?: Date | null;
   parties: CaseParty[];
-  assignedTo: mongoose.Types.ObjectId;
+  assignedTo?: mongoose.Types.ObjectId | null;
+  assignedBy?: mongoose.Types.ObjectId | null;
+  assignedAt?: Date | null;
+  startedAt?: Date | null;
+  completedAt?: Date | null;
+  submittedForApprovalAt?: Date | null;
+  approvedAt?: Date | null;
+  rejectedAt?: Date | null;
+  localPath?: string;
+  assignmentHistory: AssignmentHistoryEntry[];
   createdBy: mongoose.Types.ObjectId;
   notes: CaseNote[];
   timeline: CaseTimelineEntry[];
@@ -123,6 +143,22 @@ const CaseTimelineSchema = new Schema<CaseTimelineEntry>(
   { _id: true },
 );
 
+const AssignmentHistorySchema = new Schema<AssignmentHistoryEntry>(
+  {
+    fromUser: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    toUser: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    assignedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    action: {
+      type: String,
+      enum: ["assigned", "reassigned", "forwarded"],
+      required: true,
+    },
+    note: { type: String, default: "" },
+    timestamp: { type: Date, default: Date.now },
+  },
+  { _id: true },
+);
+
 const CaseSchema = new Schema<ICase>(
   {
     number: {
@@ -139,10 +175,16 @@ const CaseSchema = new Schema<ICase>(
     },
     title: { type: String, required: true, trim: true, index: true },
     description: { type: String, default: "" },
+    category: {
+      type: String,
+      trim: true,
+      default: "Other Work",
+      index: true,
+    },
     practice: {
       type: String,
       trim: true,
-      default: "Property",
+      default: "Other Work",
     },
     court: { type: String, default: "" },
     judge: { type: String, default: "" },
@@ -160,6 +202,15 @@ const CaseSchema = new Schema<ICase>(
     nextHearing: { type: Date, default: null },
     parties: { type: [CasePartySchema], default: [] },
     assignedTo: { type: Schema.Types.ObjectId, ref: "User", index: true },
+    assignedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    assignedAt: { type: Date },
+    startedAt: { type: Date },
+    completedAt: { type: Date },
+    submittedForApprovalAt: { type: Date },
+    approvedAt: { type: Date },
+    rejectedAt: { type: Date },
+    localPath: { type: String, default: "", trim: true },
+    assignmentHistory: { type: [AssignmentHistorySchema], default: [] },
     createdBy: { type: Schema.Types.ObjectId, ref: "User" },
     notes: { type: [CaseNoteSchema], default: [] },
     timeline: { type: [CaseTimelineSchema], default: [] },
@@ -197,25 +248,27 @@ const CaseSchema = new Schema<ICase>(
 );
 
 // ---------------------------------------------------------------------------
-// Text index for search (updated to include courtCaseId)
+// Text index for search (updated to include courtCaseId and category)
 // ---------------------------------------------------------------------------
 
 CaseSchema.index({
   number: "text",
   title: "text",
   court: "text",
+  category: "text",
   "parties.name": "text",
   courtCaseId: "text",
 });
 
 CaseSchema.index({ status: 1, priority: 1, updatedAt: -1 });
 CaseSchema.index({ assignedTo: 1, status: 1 });
+CaseSchema.index({ category: 1, updatedAt: -1 });
 CaseSchema.index({ practice: 1, updatedAt: -1 });
 CaseSchema.index({ nextHearing: 1 });
 CaseSchema.index({ "parties.clientId": 1 });
 
 // ---------------------------------------------------------------------------
-// Auto-generate case number on save — uses atomic Counter to prevent races
+// Auto-generate case number on save & sync category / practice
 // ---------------------------------------------------------------------------
 
 CaseSchema.pre("validate", async function (next) {
@@ -226,6 +279,32 @@ CaseSchema.pre("validate", async function (next) {
       const seq = await nextSequence(counterKey);
       this.number = `SW-${year}-${String(seq).padStart(4, "0")}`;
     }
+
+    // Two-way synchronization for category and legacy practice field
+    if (!this.category && this.practice) {
+      this.category = this.practice;
+    } else if (this.category && !this.practice) {
+      this.practice = this.category;
+    }
+
+    // Set initial assignment timestamps and history if assigned
+    if (this.isNew && this.assignedTo) {
+      if (!this.assignedAt) this.assignedAt = new Date();
+      if (!this.assignedBy) this.assignedBy = this.createdBy;
+      if (!this.assignmentHistory || this.assignmentHistory.length === 0) {
+        this.assignmentHistory = [
+          {
+            fromUser: null,
+            toUser: this.assignedTo,
+            assignedBy: this.assignedBy || this.createdBy,
+            action: "assigned",
+            note: "Initial case assignment",
+            timestamp: this.assignedAt || new Date(),
+          },
+        ];
+      }
+    }
+
     next();
   } catch (err) {
     next(err as any);

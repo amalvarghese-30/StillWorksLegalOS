@@ -385,8 +385,13 @@ router.get("/:id", requireResourceAccess("task"), async (req: Request, res: Resp
   try {
     const task = await Task.findById(req.params["id"])
       .populate("assignedTo", "name email title")
+      .populate("assignedBy", "name email title")
+      .populate("createdBy", "name email title")
       .populate("caseId", "title number")
-      .populate("clientId", "name phone");
+      .populate("clientId", "name phone")
+      .populate("assignmentHistory.fromUser", "name email")
+      .populate("assignmentHistory.toUser", "name email")
+      .populate("assignmentHistory.assignedBy", "name email");
     if (!task) {
       res.status(404).json({ message: "Task not found" });
       return;
@@ -502,10 +507,21 @@ router.post("/", async (req: Request, res: Response) => {
       clientId: cleanClientId,
       checklist: Array.isArray(checklist)
         ? checklist.map((item) => ({
+            id: item.id || (item._id ? String(item._id) : undefined),
             text: sanitizeInputText(item.text, 500),
             done: Boolean(item.done),
+            subItems: Array.isArray(item.subItems)
+              ? item.subItems.map((sub: any) => ({
+                  id: sub.id || (sub._id ? String(sub._id) : undefined),
+                  text: sanitizeInputText(sub.text, 500),
+                  done: Boolean(sub.done),
+                }))
+              : [],
           }))
         : [],
+      localPath: typeof req.body.localPath === "string" ? req.body.localPath.trim() : "",
+      assignedBy: finalAssignedTo ? req.userId : null,
+      assignedAt: finalAssignedTo ? new Date() : null,
       callReminder: parsedCallReminder,
       agent: cleanAgent,
       isCall: Boolean(isCall),
@@ -592,7 +608,7 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
 
     const updates: Record<string, unknown> = {};
 
-    const allowed = ["title", "description", "category", "priority", "status", "deadline", "assignedTo", "caseId", "clientId", "agent", "isCall", "checklist"];
+    const allowed = ["title", "description", "category", "priority", "status", "deadline", "assignedTo", "caseId", "clientId", "agent", "isCall", "checklist", "localPath"];
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     }
@@ -603,11 +619,22 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
     if (updates["agent"] !== undefined) {
       updates["agent"] = sanitizeInputText(updates["agent"], 100);
     }
+    if (updates["localPath"] !== undefined) {
+      updates["localPath"] = typeof updates["localPath"] === "string" ? updates["localPath"].trim() : "";
+    }
     if (updates["checklist"] !== undefined) {
       if (Array.isArray(updates["checklist"])) {
         updates["checklist"] = (updates["checklist"] as any[]).map((item) => ({
+          id: item.id || (item._id ? String(item._id) : undefined),
           text: sanitizeInputText(item.text, 500),
           done: Boolean(item.done),
+          subItems: Array.isArray(item.subItems)
+            ? item.subItems.map((sub: any) => ({
+                id: sub.id || (sub._id ? String(sub._id) : undefined),
+                text: sanitizeInputText(sub.text, 500),
+                done: Boolean(sub.done),
+              }))
+            : [],
         }));
       }
     }
@@ -695,6 +722,30 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       }
     }
 
+    // Fetch the original task to detect changes
+    const originalTask = await Task.findById(req.params["id"]);
+    if (!originalTask) {
+      res.status(404).json({ message: "Task not found" });
+      return;
+    }
+
+    // Check if checklist auto-completion should trigger
+    if (updates["checklist"] !== undefined && updates["status"] === undefined) {
+      const chk = updates["checklist"] as any[];
+      if (chk.length > 0) {
+        const allDone = chk.every((ci) => {
+          if (!ci.done) return false;
+          if (Array.isArray(ci.subItems) && ci.subItems.length > 0) {
+            return ci.subItems.every((sub: any) => sub.done);
+          }
+          return true;
+        });
+        if (allDone && originalTask.status !== "completed" && originalTask.status !== "pending_approval") {
+          updates["status"] = req.user!.role === "admin" ? "completed" : "pending_approval";
+        }
+      }
+    }
+
     // Non-admins attempting to mark task completed submit it for admin approval
     if (updates["status"] !== undefined) {
       if (req.user!.role !== "admin" && updates["status"] === "completed") {
@@ -702,8 +753,39 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       }
     }
 
-    // Fetch the original task to detect changes
-    const originalTask = await Task.findById(req.params["id"]);
+    // Manage explicit workflow timestamps
+    const now = new Date();
+    if (updates["status"] !== undefined && updates["status"] !== originalTask.status) {
+      if (updates["status"] === "in_progress") {
+        updates["startedAt"] = now;
+      } else if (updates["status"] === "pending_approval") {
+        updates["completedAt"] = now;
+        updates["submittedForApprovalAt"] = now;
+      } else if (updates["status"] === "completed") {
+        updates["completedAt"] = now;
+        if (req.user!.role === "admin") {
+          updates["approvedAt"] = now;
+        }
+      }
+    }
+
+    // Track assignment change in history
+    if (updates["assignedTo"] !== undefined && String(updates["assignedTo"] ?? "") !== String(originalTask.assignedTo ?? "")) {
+      updates["assignedBy"] = req.userId;
+      updates["assignedAt"] = updates["assignedTo"] ? now : null;
+      if (updates["assignedTo"]) {
+        const histEntry = {
+          fromUser: originalTask.assignedTo || null,
+          toUser: updates["assignedTo"],
+          assignedBy: req.userId,
+          action: "assigned",
+          note: "Task assignment updated",
+          timestamp: now,
+        };
+        if (!updates["$push"]) updates["$push"] = {};
+        (updates["$push"] as any)["assignmentHistory"] = histEntry;
+      }
+    }
 
     // Synchronize callReminder completed state with task status if relevant
     if (updates["callReminder"]) {
@@ -732,15 +814,25 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
         { $set: updates },
         { new: true, runValidators: true }
       )
-        .populate("assignedTo", "name email")
+        .populate("assignedTo", "name email title")
+        .populate("assignedBy", "name email title")
+        .populate("createdBy", "name email title")
         .populate("caseId", "title number")
-        .populate("clientId", "name");
+        .populate("clientId", "name phone")
+        .populate("assignmentHistory.fromUser", "name email")
+        .populate("assignmentHistory.toUser", "name email")
+        .populate("assignmentHistory.assignedBy", "name email");
 
       if (!task) {
         const existing = await Task.findById(req.params["id"])
-          .populate("assignedTo", "name email")
+          .populate("assignedTo", "name email title")
+          .populate("assignedBy", "name email title")
+          .populate("createdBy", "name email title")
           .populate("caseId", "title number")
-          .populate("clientId", "name");
+          .populate("clientId", "name phone")
+          .populate("assignmentHistory.fromUser", "name email")
+          .populate("assignmentHistory.toUser", "name email")
+          .populate("assignmentHistory.assignedBy", "name email");
         if (existing) {
           res.json({ task: existing, code: "ALREADY_PROCESSED", message: "This task has already been reviewed." });
           return;
@@ -753,9 +845,14 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
         new: true,
         runValidators: true,
       })
-        .populate("assignedTo", "name email")
+        .populate("assignedTo", "name email title")
+        .populate("assignedBy", "name email title")
+        .populate("createdBy", "name email title")
         .populate("caseId", "title number")
-        .populate("clientId", "name");
+        .populate("clientId", "name phone")
+        .populate("assignmentHistory.fromUser", "name email")
+        .populate("assignmentHistory.toUser", "name email")
+        .populate("assignmentHistory.assignedBy", "name email");
 
       if (!task) {
         res.status(404).json({ message: "Task not found" });
@@ -946,22 +1043,115 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
 });
 
 // ---------------------------------------------------------------------------
-// PATCH /api/tasks/:taskId/checklist/:itemId — toggle checklist item (with authorization)
+// POST /api/tasks/:taskId/checklist — add checklist item
 // ---------------------------------------------------------------------------
 
-router.patch("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskId"), async (req: Request, res: Response) => {
+router.post("/:taskId/checklist", requireResourceAccess("task", "taskId"), async (req: Request, res: Response) => {
   try {
-    const { done, text } = req.body;
+    const { text, subItems } = req.body;
+    if (!text || typeof text !== "string" || !text.trim()) {
+      res.status(400).json({ message: "Checklist item text is required" });
+      return;
+    }
+
     const task = await Task.findById(req.params["taskId"]);
     if (!task) {
       res.status(404).json({ message: "Task not found" });
       return;
     }
 
-    // ChecklistItem does not extend Mongoose Document, so use find on
-    // the subdocument array directly (cast _id to string for comparison).
+    const parsedSubItems = Array.isArray(subItems)
+      ? subItems.map((s: any) => ({
+          text: sanitizeInputText(s.text, 500),
+          done: Boolean(s.done),
+        }))
+      : [];
+
+    task.checklist.push({
+      text: sanitizeInputText(text, 500),
+      done: false,
+      subItems: parsedSubItems,
+    });
+
+    await task.save();
+
+    const populated = await Task.findById(task._id)
+      .populate("assignedTo", "name email title")
+      .populate("assignedBy", "name email title")
+      .populate("createdBy", "name email title")
+      .populate("caseId", "title number")
+      .populate("clientId", "name phone")
+      .populate("assignmentHistory.fromUser", "name email")
+      .populate("assignmentHistory.toUser", "name email")
+      .populate("assignmentHistory.assignedBy", "name email");
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("task:updated", { task: populated });
+    }
+
+    res.status(201).json({ task: populated });
+  } catch (err: any) {
+    console.error("[tasks] Add checklist item error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/tasks/:taskId/checklist/:itemId — delete checklist item
+// ---------------------------------------------------------------------------
+
+router.delete("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskId"), async (req: Request, res: Response) => {
+  try {
+    const task = await Task.findById(req.params["taskId"]);
+    if (!task) {
+      res.status(404).json({ message: "Task not found" });
+      return;
+    }
+
+    task.checklist = task.checklist.filter(
+      (c) => (c as any)._id?.toString() !== req.params["itemId"] && c.id !== req.params["itemId"]
+    );
+
+    await task.save();
+
+    const populated = await Task.findById(task._id)
+      .populate("assignedTo", "name email title")
+      .populate("assignedBy", "name email title")
+      .populate("createdBy", "name email title")
+      .populate("caseId", "title number")
+      .populate("clientId", "name phone")
+      .populate("assignmentHistory.fromUser", "name email")
+      .populate("assignmentHistory.toUser", "name email")
+      .populate("assignmentHistory.assignedBy", "name email");
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("task:updated", { task: populated });
+    }
+
+    res.json({ task: populated });
+  } catch (err: any) {
+    console.error("[tasks] Delete checklist item error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/tasks/:taskId/checklist/:itemId — toggle/edit checklist item & subitems
+// ---------------------------------------------------------------------------
+
+router.patch("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskId"), async (req: Request, res: Response) => {
+  try {
+    const { done, text, subItems, subItemId, subDone, subText } = req.body;
+    const task = await Task.findById(req.params["taskId"]);
+    if (!task) {
+      res.status(404).json({ message: "Task not found" });
+      return;
+    }
+
     const item = task.checklist.find(
-      (c) => (c as any)._id?.toString() === req.params["itemId"],
+      (c) => (c as any)._id?.toString() === req.params["itemId"] || c.id === req.params["itemId"],
     );
     if (!item) {
       res.status(404).json({ message: "Checklist item not found" });
@@ -970,10 +1160,93 @@ router.patch("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskId
 
     if (done !== undefined) {
       item.done = Boolean(done);
+      // If item marked done, optionally mark all sub-items done too
+      if (item.done && Array.isArray(item.subItems)) {
+        for (const sub of item.subItems) {
+          sub.done = true;
+        }
+      }
     }
     if (text !== undefined && typeof text === "string" && text.trim()) {
       item.text = sanitizeInputText(text, 500);
     }
+    if (Array.isArray(subItems)) {
+      item.subItems = subItems.map((s: any) => ({
+        id: s.id || (s._id ? String(s._id) : undefined),
+        text: sanitizeInputText(s.text, 500),
+        done: Boolean(s.done),
+      }));
+    }
+
+    // Direct sub-item update inside item payload if provided
+    if (subItemId && Array.isArray(item.subItems)) {
+      const sub = item.subItems.find((s) => (s as any)._id?.toString() === subItemId || s.id === subItemId);
+      if (sub) {
+        if (subDone !== undefined) sub.done = Boolean(subDone);
+        if (subText !== undefined && typeof subText === "string" && subText.trim()) {
+          sub.text = sanitizeInputText(subText, 500);
+        }
+      }
+    }
+
+    // Auto-update parent item done if all subitems are done
+    if (Array.isArray(item.subItems) && item.subItems.length > 0) {
+      const allSubsDone = item.subItems.every((s) => s.done);
+      if (allSubsDone && !item.done) {
+        item.done = true;
+      }
+    }
+
+    // Automatic task completion evaluation
+    const isAllDone = task.checklist.length > 0 && task.checklist.every((ci) => {
+      if (!ci.done) return false;
+      if (Array.isArray(ci.subItems) && ci.subItems.length > 0) {
+        return ci.subItems.every((sub) => sub.done);
+      }
+      return true;
+    });
+
+    const now = new Date();
+    if (isAllDone && task.status !== "completed" && task.status !== "pending_approval") {
+      if (req.user?.role === "admin") {
+        task.status = "completed";
+        task.completedAt = now;
+        task.approvedAt = now;
+      } else {
+        task.status = "pending_approval";
+        task.completedAt = now;
+        task.submittedForApprovalAt = now;
+
+        const admins = await User.find({ role: "admin" }).select("_id");
+        for (const admin of admins) {
+          if (admin._id.toString() !== req.userId) {
+            await NotificationService.createNotification(
+              {
+                userId: admin._id as Types.ObjectId,
+                type: "TASK_APPROVAL_REQUIRED",
+                title: "Task Completion Approval Required",
+                message: `${req.user?.name ?? "Employee"} completed all checklist items for "${task.title}". Approval required.`,
+                relatedId: task._id as any,
+                relatedModel: "Task",
+                actorId: new Types.ObjectId(req.userId),
+                metadata: {
+                  taskTitle: task.title,
+                  taskId: task._id.toString(),
+                  action: "pending_approval",
+                },
+              },
+              req.app.get("io")
+            );
+          }
+        }
+      }
+    } else if (!isAllDone && (task.status === "completed" || task.status === "pending_approval")) {
+      task.status = "in_progress";
+      task.completedAt = null;
+      task.submittedForApprovalAt = null;
+      task.approvedAt = null;
+    }
+
     await task.save();
 
     await AuditLog.create({
@@ -988,19 +1261,498 @@ router.patch("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskId
       userAgent: req.headers["user-agent"],
     });
 
+    const populated = await Task.findById(task._id)
+      .populate("assignedTo", "name email title")
+      .populate("assignedBy", "name email title")
+      .populate("createdBy", "name email title")
+      .populate("caseId", "title number")
+      .populate("clientId", "name phone")
+      .populate("assignmentHistory.fromUser", "name email")
+      .populate("assignmentHistory.toUser", "name email")
+      .populate("assignmentHistory.assignedBy", "name email");
+
     const io = req.app.get("io");
     if (io) {
       io.emit("task:updated", {
-        task,
+        task: populated,
         assignedTo: task.assignedTo ? task.assignedTo.toString() : null,
         createdBy: task.createdBy ? task.createdBy.toString() : null,
       });
     }
 
-    res.json({ task });
+    res.json({ task: populated });
   } catch (err) {
     console.error("[tasks] Checklist toggle error:", err);
     res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/tasks/:taskId/checklist/:itemId/subitems — add sub-item
+// ---------------------------------------------------------------------------
+
+router.post("/:taskId/checklist/:itemId/subitems", requireResourceAccess("task", "taskId"), async (req: Request, res: Response) => {
+  try {
+    const { text } = req.body;
+    if (!text || typeof text !== "string" || !text.trim()) {
+      res.status(400).json({ message: "Sub-item text is required" });
+      return;
+    }
+
+    const task = await Task.findById(req.params["taskId"]);
+    if (!task) {
+      res.status(404).json({ message: "Task not found" });
+      return;
+    }
+
+    const item = task.checklist.find(
+      (c) => (c as any)._id?.toString() === req.params["itemId"] || c.id === req.params["itemId"]
+    );
+    if (!item) {
+      res.status(404).json({ message: "Checklist item not found" });
+      return;
+    }
+
+    if (!Array.isArray(item.subItems)) {
+      item.subItems = [];
+    }
+
+    item.subItems.push({
+      text: sanitizeInputText(text, 500),
+      done: false,
+    });
+
+    await task.save();
+
+    const populated = await Task.findById(task._id)
+      .populate("assignedTo", "name email title")
+      .populate("assignedBy", "name email title")
+      .populate("createdBy", "name email title")
+      .populate("caseId", "title number")
+      .populate("clientId", "name phone")
+      .populate("assignmentHistory.fromUser", "name email")
+      .populate("assignmentHistory.toUser", "name email")
+      .populate("assignmentHistory.assignedBy", "name email");
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("task:updated", { task: populated });
+    }
+
+    res.status(201).json({ task: populated });
+  } catch (err: any) {
+    console.error("[tasks] Add sub-item error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/tasks/:taskId/checklist/:itemId/subitems/:subId — delete sub-item
+// ---------------------------------------------------------------------------
+
+router.delete("/:taskId/checklist/:itemId/subitems/:subId", requireResourceAccess("task", "taskId"), async (req: Request, res: Response) => {
+  try {
+    const task = await Task.findById(req.params["taskId"]);
+    if (!task) {
+      res.status(404).json({ message: "Task not found" });
+      return;
+    }
+
+    const item = task.checklist.find(
+      (c) => (c as any)._id?.toString() === req.params["itemId"] || c.id === req.params["itemId"]
+    );
+    if (!item) {
+      res.status(404).json({ message: "Checklist item not found" });
+      return;
+    }
+
+    if (Array.isArray(item.subItems)) {
+      item.subItems = item.subItems.filter(
+        (s) => (s as any)._id?.toString() !== req.params["subId"] && s.id !== req.params["subId"]
+      );
+    }
+
+    await task.save();
+
+    const populated = await Task.findById(task._id)
+      .populate("assignedTo", "name email title")
+      .populate("assignedBy", "name email title")
+      .populate("createdBy", "name email title")
+      .populate("caseId", "title number")
+      .populate("clientId", "name phone")
+      .populate("assignmentHistory.fromUser", "name email")
+      .populate("assignmentHistory.toUser", "name email")
+      .populate("assignmentHistory.assignedBy", "name email");
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("task:updated", { task: populated });
+    }
+
+    res.json({ task: populated });
+  } catch (err: any) {
+    console.error("[tasks] Delete sub-item error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/tasks/:id/approve — admin approves task completion
+// ---------------------------------------------------------------------------
+
+router.post("/:id/approve", requireResourceAccess("task"), async (req: Request, res: Response) => {
+  try {
+    if (req.user?.role !== "admin" && !req.user?.permissions?.tasks) {
+      res.status(403).json({ message: "Only administrators can approve tasks" });
+      return;
+    }
+
+    const task = await Task.findById(req.params["id"]);
+    if (!task) {
+      res.status(404).json({ message: "Task not found" });
+      return;
+    }
+
+    const now = new Date();
+    task.status = "completed";
+    if (!task.completedAt) task.completedAt = now;
+    task.approvedAt = now;
+    task.rejectedAt = null;
+    await task.save();
+
+    const populated = await Task.findById(task._id)
+      .populate("assignedTo", "name email title")
+      .populate("assignedBy", "name email title")
+      .populate("createdBy", "name email title")
+      .populate("caseId", "title number")
+      .populate("clientId", "name phone")
+      .populate("assignmentHistory.fromUser", "name email")
+      .populate("assignmentHistory.toUser", "name email")
+      .populate("assignmentHistory.assignedBy", "name email");
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("task:updated", { task: populated });
+    }
+
+    // Notify assignee
+    const assigneeId = (task.assignedTo as any)?._id?.toString() ?? task.assignedTo?.toString();
+    if (assigneeId && assigneeId !== req.userId) {
+      await NotificationService.createNotification(
+        {
+          userId: new Types.ObjectId(assigneeId),
+          type: "TASK_APPROVED",
+          title: "Task Approved & Verified",
+          message: `${req.user?.name ?? "Administrator"} approved completion of task "${task.title}".`,
+          relatedId: task._id as any,
+          relatedModel: "Task",
+          actorId: new Types.ObjectId(req.userId!),
+          metadata: {
+            taskId: task._id.toString(),
+            taskTitle: task.title,
+            action: "approved",
+          },
+        },
+        io
+      );
+    }
+
+    await AuditLog.create({
+      userId: req.userId,
+      userName: req.user?.name ?? "Unknown",
+      action: "update",
+      resource: "task",
+      resourceId: task._id.toString(),
+      resourceName: task.title,
+      details: "Task completion approved by admin",
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    res.json({ message: "Task approved successfully", task: populated });
+  } catch (err: any) {
+    console.error("[tasks] Approve error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/tasks/:id/reject — admin rejects task completion
+// ---------------------------------------------------------------------------
+
+router.post("/:id/reject", requireResourceAccess("task"), async (req: Request, res: Response) => {
+  try {
+    if (req.user?.role !== "admin" && !req.user?.permissions?.tasks) {
+      res.status(403).json({ message: "Only administrators can reject tasks" });
+      return;
+    }
+
+    const { reason } = req.body;
+    const task = await Task.findById(req.params["id"]);
+    if (!task) {
+      res.status(404).json({ message: "Task not found" });
+      return;
+    }
+
+    const now = new Date();
+    task.status = "in_progress";
+    task.completedAt = null;
+    task.submittedForApprovalAt = null;
+    task.approvedAt = null;
+    task.rejectedAt = now;
+    await task.save();
+
+    const populated = await Task.findById(task._id)
+      .populate("assignedTo", "name email title")
+      .populate("assignedBy", "name email title")
+      .populate("createdBy", "name email title")
+      .populate("caseId", "title number")
+      .populate("clientId", "name phone")
+      .populate("assignmentHistory.fromUser", "name email")
+      .populate("assignmentHistory.toUser", "name email")
+      .populate("assignmentHistory.assignedBy", "name email");
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("task:updated", { task: populated });
+    }
+
+    // Notify assignee
+    const assigneeId = (task.assignedTo as any)?._id?.toString() ?? task.assignedTo?.toString();
+    if (assigneeId && assigneeId !== req.userId) {
+      await NotificationService.createNotification(
+        {
+          userId: new Types.ObjectId(assigneeId),
+          type: "TASK_REJECTED",
+          title: "Task Changes Requested / Rejected",
+          message: `${req.user?.name ?? "Administrator"} requested revisions on task "${task.title}"${reason ? `: ${reason}` : ""}.`,
+          relatedId: task._id as any,
+          relatedModel: "Task",
+          actorId: new Types.ObjectId(req.userId!),
+          metadata: {
+            taskId: task._id.toString(),
+            taskTitle: task.title,
+            reason: reason || "",
+            action: "rejected",
+          },
+        },
+        io
+      );
+    }
+
+    await AuditLog.create({
+      userId: req.userId,
+      userName: req.user?.name ?? "Unknown",
+      action: "update",
+      resource: "task",
+      resourceId: task._id.toString(),
+      resourceName: task.title,
+      details: `Task rejected by admin: ${reason || "Revisions needed"}`,
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    res.json({ message: "Task rejected and returned to in_progress", task: populated });
+  } catch (err: any) {
+    console.error("[tasks] Reject error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/tasks/:id/forward — forward task to another user
+// ---------------------------------------------------------------------------
+
+router.post("/:id/forward", requireResourceAccess("task"), async (req: Request, res: Response) => {
+  try {
+    const { toUserId, note } = req.body;
+    if (!toUserId || !Types.ObjectId.isValid(toUserId)) {
+      res.status(400).json({ message: "Valid target user ID (toUserId) is required" });
+      return;
+    }
+
+    const targetUser = await User.findById(toUserId).select("name email").lean();
+    if (!targetUser) {
+      res.status(404).json({ message: "Target user not found" });
+      return;
+    }
+
+    const task = await Task.findById(req.params["id"]);
+    if (!task) {
+      res.status(404).json({ message: "Task not found" });
+      return;
+    }
+
+    const fromUser = task.assignedTo || task.createdBy;
+    const now = new Date();
+
+    task.assignedTo = new Types.ObjectId(toUserId);
+    task.assignedBy = new Types.ObjectId(req.userId!);
+    task.assignedAt = now;
+
+    task.assignmentHistory.push({
+      fromUser: fromUser ? new Types.ObjectId(fromUser.toString()) : null,
+      toUser: new Types.ObjectId(toUserId),
+      assignedBy: new Types.ObjectId(req.userId!),
+      action: "forwarded",
+      note: typeof note === "string" ? note.trim() : "Task forwarded",
+      timestamp: now,
+    });
+
+    await task.save();
+
+    const populated = await Task.findById(task._id)
+      .populate("assignedTo", "name email title")
+      .populate("assignedBy", "name email title")
+      .populate("createdBy", "name email title")
+      .populate("caseId", "title number")
+      .populate("clientId", "name phone")
+      .populate("assignmentHistory.fromUser", "name email")
+      .populate("assignmentHistory.toUser", "name email")
+      .populate("assignmentHistory.assignedBy", "name email");
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("task:updated", { task: populated });
+    }
+
+    if (String(toUserId) !== String(req.userId)) {
+      await NotificationService.createNotification(
+        {
+          userId: new Types.ObjectId(toUserId),
+          type: "TASK_FORWARDED",
+          title: "Task Forwarded to You",
+          message: `${req.user?.name ?? "A colleague"} forwarded task "${task.title}" to you${note ? `: ${note}` : ""}`,
+          relatedId: task._id as any,
+          relatedModel: "Task",
+          actorId: new Types.ObjectId(req.userId!),
+          metadata: {
+            taskId: task._id.toString(),
+            taskTitle: task.title,
+            note: note || "",
+          },
+        },
+        io
+      );
+    }
+
+    await AuditLog.create({
+      userId: req.userId,
+      userName: req.user?.name ?? "Unknown",
+      action: "update",
+      resource: "task",
+      resourceId: task._id.toString(),
+      resourceName: task.title,
+      details: `Task forwarded to ${targetUser.name}`,
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    res.json({ message: "Task forwarded successfully", task: populated });
+  } catch (err: any) {
+    console.error("[tasks] Forward error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/tasks/:id/reassign — reassign task (admin or authorized)
+// ---------------------------------------------------------------------------
+
+router.post("/:id/reassign", requireResourceAccess("task"), async (req: Request, res: Response) => {
+  try {
+    if (req.user?.role !== "admin" && !req.user?.permissions?.tasks) {
+      res.status(403).json({ message: "Only administrators can reassign tasks" });
+      return;
+    }
+
+    const { toUserId, note } = req.body;
+    if (!toUserId || !Types.ObjectId.isValid(toUserId)) {
+      res.status(400).json({ message: "Valid target user ID (toUserId) is required" });
+      return;
+    }
+
+    const targetUser = await User.findById(toUserId).select("name email").lean();
+    if (!targetUser) {
+      res.status(404).json({ message: "Target user not found" });
+      return;
+    }
+
+    const task = await Task.findById(req.params["id"]);
+    if (!task) {
+      res.status(404).json({ message: "Task not found" });
+      return;
+    }
+
+    const fromUser = task.assignedTo;
+    const now = new Date();
+
+    task.assignedTo = new Types.ObjectId(toUserId);
+    task.assignedBy = new Types.ObjectId(req.userId!);
+    task.assignedAt = now;
+
+    task.assignmentHistory.push({
+      fromUser: fromUser ? new Types.ObjectId(fromUser.toString()) : null,
+      toUser: new Types.ObjectId(toUserId),
+      assignedBy: new Types.ObjectId(req.userId!),
+      action: "reassigned",
+      note: typeof note === "string" ? note.trim() : "Task reassigned",
+      timestamp: now,
+    });
+
+    await task.save();
+
+    const populated = await Task.findById(task._id)
+      .populate("assignedTo", "name email title")
+      .populate("assignedBy", "name email title")
+      .populate("createdBy", "name email title")
+      .populate("caseId", "title number")
+      .populate("clientId", "name phone")
+      .populate("assignmentHistory.fromUser", "name email")
+      .populate("assignmentHistory.toUser", "name email")
+      .populate("assignmentHistory.assignedBy", "name email");
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("task:updated", { task: populated });
+    }
+
+    if (String(toUserId) !== String(req.userId)) {
+      await NotificationService.createNotification(
+        {
+          userId: new Types.ObjectId(toUserId),
+          type: "TASK_REASSIGNED",
+          title: "Task Reassigned to You",
+          message: `${req.user?.name ?? "Administrator"} reassigned task "${task.title}" to you${note ? `: ${note}` : ""}`,
+          relatedId: task._id as any,
+          relatedModel: "Task",
+          actorId: new Types.ObjectId(req.userId!),
+          metadata: {
+            taskId: task._id.toString(),
+            taskTitle: task.title,
+            note: note || "",
+          },
+        },
+        io
+      );
+    }
+
+    await AuditLog.create({
+      userId: req.userId,
+      userName: req.user?.name ?? "Unknown",
+      action: "update",
+      resource: "task",
+      resourceId: task._id.toString(),
+      resourceName: task.title,
+      details: `Task reassigned to ${targetUser.name}`,
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    res.json({ message: "Task reassigned successfully", task: populated });
+  } catch (err: any) {
+    console.error("[tasks] Reassign error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
   }
 });
 

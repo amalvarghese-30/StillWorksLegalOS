@@ -6,17 +6,8 @@ import { User } from "../models/User.js";
 // Types
 // ---------------------------------------------------------------------------
 
-export type NotificationType =
-  | "HEARING_REMINDER"
-  | "APPROVAL_REQUEST"
-  | "DOCUMENT_SHARED"
-  | "TASK_ASSIGNED"
-  | "TASK_DUE"
-  | "OVERDUE_TASK"
-  | "CASE_UPDATE"
-  | "COMMENT_MENTION"
-  | "SYSTEM_ALERT"
-  | "CUSTOM";
+import { NOTIFICATION_TYPES, type NotificationType } from "../models/Notification.js";
+export type { NotificationType };
 
 export interface NotificationData {
   userId: Types.ObjectId; // The user to notify
@@ -146,6 +137,8 @@ export class NotificationService {
       if (
         notification.type === "SYSTEM_ALERT" ||
         notification.type === "APPROVAL_REQUEST" ||
+        notification.type === "TASK_APPROVAL_REQUIRED" ||
+        notification.type === "CASE_APPROVAL_REQUIRED" ||
         notification.type === "DOCUMENT_SHARED" ||
         notification.type === "CASE_UPDATE"
       ) {

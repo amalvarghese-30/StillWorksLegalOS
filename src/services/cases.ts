@@ -28,20 +28,41 @@ export interface CaseTimelineEntry {
   when: string;
 }
 
+export interface AssignmentHistoryEntry {
+  _id?: string;
+  fromUser?: { _id: string; name: string; email?: string } | null;
+  toUser: { _id: string; name: string; email?: string };
+  assignedBy: { _id: string; name: string; email?: string };
+  action: "assigned" | "reassigned" | "forwarded";
+  note?: string;
+  timestamp: string;
+}
+
 export interface CaseRecord {
   _id: string;
   number: string;
+  courtCaseId?: string;
   title: string;
   description: string;
+  category?: string;
   practice: string;
   court: string;
-  judge: string;
-  status: "Active" | "On Hold" | "Closed" | "Urgent";
+  judge?: string;
+  status: "Active" | "On Hold" | "Closed" | "Urgent" | "Archived";
   priority: "High" | "Medium" | "Low";
-  nextHearing: string | null;
+  nextHearing?: string | null;
+  localPath?: string;
   parties: CaseParty[];
   assignedTo?: { _id: string; name: string; email?: string; title?: string };
-  createdBy?: { _id: string; name: string };
+  assignedBy?: { _id: string; name: string; email?: string; title?: string };
+  assignedAt?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  submittedForApprovalAt?: string | null;
+  approvedAt?: string | null;
+  rejectedAt?: string | null;
+  assignmentHistory?: AssignmentHistoryEntry[];
+  createdBy?: { _id: string; name: string; email?: string };
   notes: CaseNote[];
   timeline: CaseTimelineEntry[];
   progress: number;
@@ -82,12 +103,14 @@ export interface CaseTaskPayload {
 export interface CreateCasePayload {
   title: string;
   description?: string;
+  category?: string;
   practice?: string;
   court?: string;
   judge?: string;
   status?: string;
   priority?: string;
   nextHearing?: string;
+  localPath?: string;
   parties?: CaseParty[];
   assignedTo?: string;
   tags?: string[];
@@ -235,4 +258,31 @@ export function useReviewCaseAccessRequest() {
     },
   });
 }
+
+export function useForwardCase() {
+  const qc = useQueryClient();
+  return useMutation<CaseResponse, Error, { caseId: string; toUserId: string; note?: string }>({
+    mutationFn: ({ caseId, toUserId, note }) =>
+      api.post(`/cases/${caseId}/forward`, { toUserId, note }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: caseKeys.detail(vars.caseId) });
+      qc.invalidateQueries({ queryKey: caseKeys.all });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+export function useReassignCase() {
+  const qc = useQueryClient();
+  return useMutation<CaseResponse, Error, { caseId: string; toUserId: string; note?: string }>({
+    mutationFn: ({ caseId, toUserId, note }) =>
+      api.post(`/cases/${caseId}/reassign`, { toUserId, note }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: caseKeys.detail(vars.caseId) });
+      qc.invalidateQueries({ queryKey: caseKeys.all });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
 

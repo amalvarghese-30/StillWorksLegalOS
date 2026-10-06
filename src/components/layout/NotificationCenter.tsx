@@ -152,6 +152,8 @@ export function NotificationCenter() {
       navigate({ to: "/cases/$caseId", params: { caseId: n.relatedId } });
     } else if (n.relatedModel === "Document") {
       navigate({ to: "/documents" });
+    } else if (n.relatedModel === "Task" && n.relatedId) {
+      navigate({ to: "/tasks", search: { taskId: n.relatedId } as any });
     } else if (n.relatedModel === "Task") {
       navigate({ to: "/tasks" });
     } else if (n.relatedModel === "CalendarEvent") {
@@ -162,8 +164,12 @@ export function NotificationCenter() {
         to: "/chat",
         search: { groupId: typeof gid === "string" ? gid : undefined },
       });
-    } else if (n.type === "APPROVAL_REQUEST") {
-      navigate({ to: "/admin/approvals" });
+    } else if (n.type === "APPROVAL_REQUEST" || n.type === "TASK_APPROVAL_REQUIRED") {
+      if (n.relatedModel === "Task" && n.relatedId) {
+        navigate({ to: "/tasks", search: { taskId: n.relatedId } as any });
+      } else {
+        navigate({ to: "/admin/approvals" });
+      }
     }
   };
 

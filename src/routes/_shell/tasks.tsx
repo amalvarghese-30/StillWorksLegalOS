@@ -31,6 +31,10 @@ export const Route = createFileRoute("/_shell/tasks")({
       },
     ],
   }),
+  validateSearch: (search: Record<string, unknown>): { taskId?: string; search?: string } => ({
+    ...(typeof search["taskId"] === "string" ? { taskId: search["taskId"] } : {}),
+    ...(typeof search["search"] === "string" ? { search: search["search"] } : {}),
+  }),
   component: TasksPage,
 });
 
@@ -188,8 +192,9 @@ function TaskCard({ task, onSelect }: { task: TaskRecord; onSelect?: (task: Task
 }
 
 function TasksPage() {
+  const routeSearch = Route.useSearch();
   const [view, setView] = useState("list");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(routeSearch.search ?? "");
   const [statusFilter, setStatusFilter] = useState<string>("All");
   const [priorityFilter, setPriorityFilter] = useState<string>("All");
   const [categoryFilter, setCategoryFilter] = useState<string>("All");
@@ -273,6 +278,16 @@ function TasksPage() {
   });
 
   const allTasks = data?.tasks ?? [];
+
+  // Deep linking: auto-open task dialog if taskId matches URL param
+  useEffect(() => {
+    if (routeSearch.taskId && allTasks.length > 0) {
+      const matched = allTasks.find((t) => t._id === routeSearch.taskId);
+      if (matched) {
+        setSelectedTask(matched);
+      }
+    }
+  }, [routeSearch.taskId, allTasks]);
 
   // Unique categories
   const categories = useMemo(() => {

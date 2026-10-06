@@ -5,8 +5,9 @@ import {
   LayoutDashboard, Plus, Loader2, ChevronDown, Clock,
   Send, Check, X, UserPlus, Activity as ActivityIcon,
   CalendarDays, Edit3, Trash2, RotateCcw, Download, Eye,
-  MoreHorizontal,
+  MoreHorizontal, FolderOpen, Share2, UserCheck,
 } from "lucide-react";
+import { openLocalPath } from "@/platform/localPath";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
 import { StatusPill, toneForStatus } from "@/components/common/StatusPill";
@@ -34,13 +35,24 @@ import {
 import { MobileSectionNav } from "@/components/layout/MobileSectionNav";
 import {
   useCase, useUpdateCase, useDeleteCase, useAddCaseNote, useAddCaseParty, useRemoveCaseParty,
+  useForwardCase, useReassignCase,
   type CaseRecord, type CaseParty,
 } from "@/services/cases";
 import { useTasks, type TaskRecord } from "@/services/tasks";
 import { useDocuments, downloadDocument } from "@/services/documents";
 import { DocumentPreviewModal } from "@/components/documents/DocumentPreviewModal";
 import { useClients } from "@/services/clients";
+import { useEmployees } from "@/services/admin";
 import { useCalendarEvents } from "@/services/calendar";
+import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { EditCaseDialog } from "@/components/cases/EditCaseDialog";
 import { AddTaskDialog } from "@/components/tasks/AddTaskDialog";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
@@ -319,9 +331,17 @@ function CaseWorkspace() {
   const navigate = useNavigate();
   const updateCase = useUpdateCase();
   const deleteCase = useDeleteCase();
+  const forwardCase = useForwardCase();
+  const reassignCase = useReassignCase();
+  const { data: empData } = useEmployees();
+  const employees = empData?.employees ?? [];
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showReopenConfirm, setShowReopenConfirm] = useState(false);
+  const [showForwardDialog, setShowForwardDialog] = useState(false);
+  const [showReassignDialog, setShowReassignDialog] = useState(false);
+  const [targetUserId, setTargetUserId] = useState("");
+  const [actionNote, setActionNote] = useState("");
   const [showAddTaskDialog, setShowAddTaskDialog] = useState(false);
   const [showUploadDocDialog, setShowUploadDocDialog] = useState(false);
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
@@ -329,6 +349,48 @@ function CaseWorkspace() {
   const [previewDoc, setPreviewDoc] = useState<any | null>(null);
   const [partyToDelete, setPartyToDelete] = useState<CaseParty | null>(null);
   const removeParty = useRemoveCaseParty();
+
+  const handleForwardCase = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!targetUserId) {
+      toast.error("Please select a colleague to forward this matter to");
+      return;
+    }
+    try {
+      await forwardCase.mutateAsync({
+        id: caseId,
+        toUserId: targetUserId,
+        note: actionNote.trim() || undefined,
+      });
+      toast.success("Case forwarded successfully");
+      setShowForwardDialog(false);
+      setTargetUserId("");
+      setActionNote("");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "Failed to forward case");
+    }
+  };
+
+  const handleReassignCase = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!targetUserId) {
+      toast.error("Please select an assignee");
+      return;
+    }
+    try {
+      await reassignCase.mutateAsync({
+        id: caseId,
+        toUserId: targetUserId,
+        note: actionNote.trim() || undefined,
+      });
+      toast.success("Case reassigned successfully");
+      setShowReassignDialog(false);
+      setTargetUserId("");
+      setActionNote("");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "Failed to reassign case");
+    }
+  };
 
   const handleDeleteCase = async () => {
     setIsDeleting(true);
@@ -413,6 +475,14 @@ function CaseWorkspace() {
             <Button variant="outline" className="rounded-md" onClick={() => setShowEditDialog(true)}>
               <Edit3 size={15} strokeWidth={1.75} />
               <span>Edit Case</span>
+            </Button>
+            <Button variant="outline" className="rounded-md" onClick={() => setShowForwardDialog(true)}>
+              <Share2 size={15} strokeWidth={1.75} />
+              <span>Forward</span>
+            </Button>
+            <Button variant="outline" className="rounded-md" onClick={() => setShowReassignDialog(true)}>
+              <UserCheck size={15} strokeWidth={1.75} />
+              <span>Reassign</span>
             </Button>
             {/* Desktop Full Actions */}
             <div className="hidden sm:flex items-center gap-2">
@@ -506,12 +576,12 @@ function CaseWorkspace() {
 
       {/* Hero card */}
       <div className="gradient-primary mb-6 rounded-xl sm:rounded-2xl p-4 sm:p-6 text-primary-foreground shadow-lift">
-        <div className="grid gap-3.5 sm:gap-6 grid-cols-2 sm:grid-cols-3 md:grid-cols-5">
+        <div className="grid gap-3.5 sm:gap-6 grid-cols-2 sm:grid-cols-4">
           {[
             ["Status", record.status],
             ["Priority", record.priority],
-            ["Assigned", record.assignedTo?.name ?? "Unassigned"],
-            ["Next hearing", formatDate(record.nextHearing)],
+            ["Category", record.category || record.practice || "General Legal"],
+            ["Assigned Counsel", record.assignedTo?.name ?? "Unassigned"],
           ].map(([label, value]) => (
             <div key={label} className="min-w-0">
               <p className="text-[11px] sm:text-caption opacity-85">{label}</p>
@@ -534,6 +604,23 @@ function CaseWorkspace() {
               </p>
             )}
           </div>
+          {record.localPath && (
+            <div className="min-w-0 col-span-2 sm:col-span-2 flex items-center justify-between rounded-lg bg-white/10 px-3 py-2 mt-1">
+              <div className="min-w-0">
+                <p className="text-[10px] uppercase font-bold tracking-wider opacity-80">Local Matter Folder</p>
+                <p className="truncate font-mono text-xs text-white/95">{record.localPath}</p>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="h-7 text-xs rounded-md bg-white text-primary hover:bg-white/90 shrink-0 ml-2"
+                onClick={() => openLocalPath(record.localPath!)}
+              >
+                <FolderOpen size={12} className="mr-1" /> Open
+              </Button>
+            </div>
+          )}
         </div>
         <div className="mt-4 sm:mt-6 flex items-center gap-3">
           <Progress value={record.progress} className="h-1.5 bg-white/25" />
@@ -561,9 +648,12 @@ function CaseWorkspace() {
                 </p>
                 <dl className="mt-6 grid gap-4 sm:grid-cols-3">
                   {[
-                    ["Practice area", record.practice],
+                    ["Category", record.category || record.practice || "General Legal"],
+                    ["Court / Forum", record.court || "Not specified"],
                     ["Filed on", formatDate(record.createdAt)],
                     ["Case number", record.number],
+                    ["Created by", typeof record.createdBy === "object" ? record.createdBy?.name : "System"],
+                    ["Assigned by", typeof record.assignedBy === "object" ? record.assignedBy?.name : record.assignedBy || "Direct"],
                   ].map(([k, v]) => (
                     <div key={k} className="rounded-md bg-muted/60 p-4">
                       <dt className="text-caption text-muted-foreground">{k}</dt>
@@ -579,6 +669,25 @@ function CaseWorkspace() {
                   </div>
                 )}
               </SectionCard>
+
+              {record.assignmentHistory && record.assignmentHistory.length > 0 && (
+                <SectionCard title="Assignment audit trail" description="Who assigned or forwarded this matter." icon={History}>
+                  <ol className="relative space-y-4 border-l border-border pl-6">
+                    {record.assignmentHistory.slice().reverse().map((h, i) => (
+                      <li key={i} className="relative text-xs">
+                        <span className="absolute top-1.5 -left-[1.9rem] size-2 rounded-full bg-primary ring-4 ring-card" />
+                        <p className="font-semibold text-foreground">
+                          {h.action ? h.action.toUpperCase() : "ASSIGNED"}: {typeof h.fromUser === "object" ? h.fromUser?.name : "—"} → {typeof h.toUser === "object" ? h.toUser?.name : "—"}
+                        </p>
+                        <p className="text-muted-foreground mt-0.5">
+                          By {typeof h.assignedBy === "object" ? h.assignedBy?.name : "Admin"} • {formatDate(h.timestamp)}
+                        </p>
+                        {h.note && <p className="text-muted-foreground italic mt-0.5">"{h.note}"</p>}
+                      </li>
+                    ))}
+                  </ol>
+                </SectionCard>
+              )}
 
               {record.timeline && record.timeline.length > 0 && (
                 <SectionCard title="Recent timeline" description="How the matter progressed." icon={History}>
@@ -1032,6 +1141,116 @@ function CaseWorkspace() {
           documentSize={previewDoc.sizeFormatted ?? previewDoc.size}
         />
       )}
+
+      {/* Forward Case Dialog */}
+      <Dialog open={showForwardDialog} onOpenChange={setShowForwardDialog}>
+        <DialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-title font-semibold text-foreground flex items-center gap-2">
+              <Share2 size={18} /> Forward Case
+            </DialogTitle>
+            <DialogDescription className="text-helper text-muted-foreground mt-1">
+              Forward case "{record.number} — {record.title}" to another colleague.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleForwardCase} className="mt-4 space-y-4">
+            <div className="space-y-1.5">
+              <Label className="text-helper">Forward To</Label>
+              <select
+                value={targetUserId}
+                onChange={(e) => setTargetUserId(e.target.value)}
+                className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper"
+                required
+              >
+                <option value="">Select team member...</option>
+                {employees.map((emp) => (
+                  <option key={emp._id} value={emp._id}>
+                    {emp.name} ({emp.title || emp.role})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-helper">Transfer Note / Reason (Optional)</Label>
+              <Input
+                value={actionNote}
+                onChange={(e) => setActionNote(e.target.value)}
+                placeholder="Reason for forwarding..."
+                className="h-10 rounded-md"
+              />
+            </div>
+            <DialogFooter className="mt-5 flex justify-end gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setShowForwardDialog(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                className="gradient-primary text-primary-foreground"
+                disabled={forwardCase.isPending}
+              >
+                {forwardCase.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : <Share2 size={14} className="mr-1" />}
+                Forward Case
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reassign Case Dialog */}
+      <Dialog open={showReassignDialog} onOpenChange={setShowReassignDialog}>
+        <DialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-title font-semibold text-foreground flex items-center gap-2">
+              <UserCheck size={18} /> Reassign Case
+            </DialogTitle>
+            <DialogDescription className="text-helper text-muted-foreground mt-1">
+              Reassign matter lead counsel for "{record.number} — {record.title}".
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleReassignCase} className="mt-4 space-y-4">
+            <div className="space-y-1.5">
+              <Label className="text-helper">New Assignee</Label>
+              <select
+                value={targetUserId}
+                onChange={(e) => setTargetUserId(e.target.value)}
+                className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper"
+                required
+              >
+                <option value="">Select counsel...</option>
+                {employees.map((emp) => (
+                  <option key={emp._id} value={emp._id}>
+                    {emp.name} ({emp.title || emp.role})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-helper">Reassignment Note (Optional)</Label>
+              <Input
+                value={actionNote}
+                onChange={(e) => setActionNote(e.target.value)}
+                placeholder="Reason or assignment details..."
+                className="h-10 rounded-md"
+              />
+            </div>
+            <DialogFooter className="mt-5 flex justify-end gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setShowReassignDialog(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                className="gradient-primary text-primary-foreground"
+                disabled={reassignCase.isPending}
+              >
+                {reassignCase.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : <UserCheck size={14} className="mr-1" />}
+                Reassign Case
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

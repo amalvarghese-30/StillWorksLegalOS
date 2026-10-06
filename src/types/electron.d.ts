@@ -22,6 +22,7 @@ export interface ElectronAPI {
   isNotificationsPaused?: () => Promise<boolean>;
   setNotificationsPaused?: (paused: boolean) => Promise<{ success: boolean; paused: boolean }>;
   openExternal?: (url: string) => Promise<{ success: boolean; error?: string }>;
+  openPath?: (path: string) => Promise<{ success: boolean; error?: string }>;
   saveFile?: (options: {
     defaultFilename: string;
     buffer: Uint8Array | number[];

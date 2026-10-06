@@ -6,10 +6,29 @@ import { reportKeys } from "./reports";
 // Types
 // ---------------------------------------------------------------------------
 
-export interface ChecklistItem {
+export interface ChecklistSubItem {
   _id?: string;
+  id?: string;
   text: string;
   done: boolean;
+}
+
+export interface ChecklistItem {
+  _id?: string;
+  id?: string;
+  text: string;
+  done: boolean;
+  subItems?: ChecklistSubItem[];
+}
+
+export interface AssignmentHistoryEntry {
+  _id?: string;
+  fromUser?: { _id: string; name: string; email?: string } | null;
+  toUser: { _id: string; name: string; email?: string };
+  assignedBy: { _id: string; name: string; email?: string };
+  action: "assigned" | "reassigned" | "forwarded";
+  note?: string;
+  timestamp: string;
 }
 
 export interface CallReminder {
@@ -49,7 +68,16 @@ export interface TaskRecord {
   priority: "High" | "Medium" | "Low";
   status: "pending" | "in_progress" | "pending_approval" | "completed" | "overdue";
   deadline: string | null;
-  assignedTo?: { _id: string; name: string };
+  assignedTo?: { _id: string; name: string; email?: string; title?: string };
+  assignedBy?: { _id: string; name: string; email?: string; title?: string };
+  assignedAt?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  submittedForApprovalAt?: string | null;
+  approvedAt?: string | null;
+  rejectedAt?: string | null;
+  localPath?: string;
+  assignmentHistory?: AssignmentHistoryEntry[];
   caseId?: string | { _id: string; title: string; number?: string } | null;
   caseName?: string;
   clientId?: string | { _id: string; name: string; phone?: string } | null;
@@ -58,7 +86,7 @@ export interface TaskRecord {
   callReminder?: CallReminder;
   agent?: string;
   isCall?: boolean;
-  createdBy: string;
+  createdBy: string | { _id: string; name: string; email?: string };
   createdAt: string;
   updatedAt: string;
 }
@@ -87,9 +115,10 @@ export interface CreateTaskPayload {
   status?: "pending" | "in_progress" | "pending_approval" | "completed" | "overdue" | undefined;
   deadline?: string | undefined;
   assignedTo?: string | undefined;
+  localPath?: string | undefined;
   caseId?: string | null | undefined;
   clientId?: string | null | undefined;
-  checklist?: { text: string; done: boolean }[] | undefined;
+  checklist?: { text: string; done: boolean; subItems?: { text: string; done: boolean }[] }[] | undefined;
   callReminder?: {
     clientName: string;
     phone: string;
@@ -193,9 +222,13 @@ export function useDeleteTask() {
 
 export function useToggleChecklistItem() {
   const qc = useQueryClient();
-  return useMutation<{ task: TaskRecord }, Error, { taskId: string; itemId: string; done: boolean }>({
-    mutationFn: ({ taskId, itemId, done }) =>
-      api.patch(`/tasks/${taskId}/checklist/${itemId}`, { done }),
+  return useMutation<
+    { task: TaskRecord },
+    Error,
+    { taskId: string; itemId: string; done?: boolean; text?: string; subItems?: ChecklistSubItem[] }
+  >({
+    mutationFn: ({ taskId, itemId, ...body }) =>
+      api.patch(`/tasks/${taskId}/checklist/${itemId}`, body),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
       qc.invalidateQueries({ queryKey: taskKeys.all });
@@ -203,3 +236,129 @@ export function useToggleChecklistItem() {
     },
   });
 }
+
+export function useAddChecklistItem() {
+  const qc = useQueryClient();
+  return useMutation<{ task: TaskRecord }, Error, { taskId: string; text: string; subItems?: ChecklistSubItem[] }>({
+    mutationFn: ({ taskId, text, subItems }) =>
+      api.post(`/tasks/${taskId}/checklist`, { text, subItems }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
+      qc.invalidateQueries({ queryKey: taskKeys.all });
+      qc.invalidateQueries({ queryKey: reportKeys.all });
+    },
+  });
+}
+
+export function useDeleteChecklistItem() {
+  const qc = useQueryClient();
+  return useMutation<{ task: TaskRecord }, Error, { taskId: string; itemId: string }>({
+    mutationFn: ({ taskId, itemId }) =>
+      api.delete(`/tasks/${taskId}/checklist/${itemId}`),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
+      qc.invalidateQueries({ queryKey: taskKeys.all });
+      qc.invalidateQueries({ queryKey: reportKeys.all });
+    },
+  });
+}
+
+export function useAddChecklistSubItem() {
+  const qc = useQueryClient();
+  return useMutation<{ task: TaskRecord }, Error, { taskId: string; itemId: string; text: string }>({
+    mutationFn: ({ taskId, itemId, text }) =>
+      api.post(`/tasks/${taskId}/checklist/${itemId}/subitems`, { text }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
+      qc.invalidateQueries({ queryKey: taskKeys.all });
+      qc.invalidateQueries({ queryKey: reportKeys.all });
+    },
+  });
+}
+
+export function useToggleChecklistSubItem() {
+  const qc = useQueryClient();
+  return useMutation<
+    { task: TaskRecord },
+    Error,
+    { taskId: string; itemId: string; subId: string; done?: boolean; text?: string }
+  >({
+    mutationFn: ({ taskId, itemId, subId, done, text }) =>
+      api.patch(`/tasks/${taskId}/checklist/${itemId}`, { subItemId: subId, subDone: done, subText: text }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
+      qc.invalidateQueries({ queryKey: taskKeys.all });
+      qc.invalidateQueries({ queryKey: reportKeys.all });
+    },
+  });
+}
+
+export function useDeleteChecklistSubItem() {
+  const qc = useQueryClient();
+  return useMutation<{ task: TaskRecord }, Error, { taskId: string; itemId: string; subId: string }>({
+    mutationFn: ({ taskId, itemId, subId }) =>
+      api.delete(`/tasks/${taskId}/checklist/${itemId}/subitems/${subId}`),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
+      qc.invalidateQueries({ queryKey: taskKeys.all });
+      qc.invalidateQueries({ queryKey: reportKeys.all });
+    },
+  });
+}
+
+export const useAddSubItem = useAddChecklistSubItem;
+export const useToggleSubItem = useToggleChecklistSubItem;
+export const useDeleteSubItem = useDeleteChecklistSubItem;
+
+export function useApproveTask() {
+  const qc = useQueryClient();
+  return useMutation<{ task: TaskRecord }, Error, { taskId: string }>({
+    mutationFn: ({ taskId }) => api.post(`/tasks/${taskId}/approve`, {}),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
+      qc.invalidateQueries({ queryKey: taskKeys.all });
+      qc.invalidateQueries({ queryKey: reportKeys.all });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+export function useRejectTask() {
+  const qc = useQueryClient();
+  return useMutation<{ task: TaskRecord }, Error, { taskId: string; reason?: string }>({
+    mutationFn: ({ taskId, reason }) => api.post(`/tasks/${taskId}/reject`, { reason }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
+      qc.invalidateQueries({ queryKey: taskKeys.all });
+      qc.invalidateQueries({ queryKey: reportKeys.all });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+export function useForwardTask() {
+  const qc = useQueryClient();
+  return useMutation<{ task: TaskRecord }, Error, { taskId: string; toUserId: string; note?: string }>({
+    mutationFn: ({ taskId, toUserId, note }) =>
+      api.post(`/tasks/${taskId}/forward`, { toUserId, note }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
+      qc.invalidateQueries({ queryKey: taskKeys.all });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+export function useReassignTask() {
+  const qc = useQueryClient();
+  return useMutation<{ task: TaskRecord }, Error, { taskId: string; toUserId: string; note?: string }>({
+    mutationFn: ({ taskId, toUserId, note }) =>
+      api.post(`/tasks/${taskId}/reassign`, { toUserId, note }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
+      qc.invalidateQueries({ queryKey: taskKeys.all });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+

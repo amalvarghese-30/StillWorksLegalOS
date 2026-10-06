@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
-import { User, Building2, Bell, Lock, Palette, HardDrive, Loader2, Laptop, LogOut, ShieldCheck, Camera, Trash2, RefreshCw } from "lucide-react";
+import { User, Building2, Bell, Lock, Palette, HardDrive, Loader2, Laptop, LogOut, ShieldCheck, Camera, Trash2, RefreshCw, Mail } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
 import { MobileSectionNav } from "@/components/layout/MobileSectionNav";
@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
 import { DesktopUpdateSettings } from "@/components/settings/DesktopUpdateSettings";
+import { GmailIntegrationSettings } from "@/components/settings/GmailIntegrationSettings";
 import {
   useUpdateProfile,
   useUpdateFirm,
@@ -43,6 +44,7 @@ export const Route = createFileRoute("/_shell/settings")({
 const tabs = [
   { id: "profile", label: "Profile", icon: User },
   { id: "firm", label: "Firm details", icon: Building2 },
+  { id: "gmail", label: "Gmail Integration", icon: Mail },
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "security", label: "Security", icon: Lock },
@@ -586,6 +588,8 @@ function SettingsPage() {
                     )}
                   </div>
                 </form>
+              ) : tab === "gmail" ? (
+                <GmailIntegrationSettings />
               ) : tab === "appearance" ? (
                 <AppearanceSettings />
               ) : tab === "storage" ? (

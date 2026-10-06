@@ -628,6 +628,28 @@ ipcMain.handle("shell:openExternal", async (event: Electron.IpcMainInvokeEvent, 
   }
 });
 
+// Safe Local Path Opener (opens local folder or file with system default handler)
+ipcMain.handle("shell:openPath", async (event: Electron.IpcMainInvokeEvent, rawPath: string) => {
+  assertTrustedIpcSender(event);
+  try {
+    if (!rawPath || typeof rawPath !== "string") {
+      return { success: false, error: "Invalid path specified" };
+    }
+    const cleanPath = path.normalize(rawPath.trim());
+    if (!fs.existsSync(cleanPath)) {
+      return { success: false, error: "Path does not exist on this machine" };
+    }
+    const errString = await shell.openPath(cleanPath);
+    if (errString) {
+      return { success: false, error: errString };
+    }
+    return { success: true };
+  } catch (err) {
+    console.error("[IPC shell:openPath] Error:", err);
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 // Native Windows Save Dialog & File Downloader
 ipcMain.handle("dialog:saveFile", async (event: Electron.IpcMainInvokeEvent, options: { defaultFilename: string; buffer: Uint8Array | number[]; mimeType?: string }) => {
   assertTrustedIpcSender(event);

@@ -32,22 +32,36 @@ export interface TaskOptions {
   agents: string[];
 }
 
+export const UNIFIED_CATEGORIES: string[] = [
+  "Property Tax Transfer",
+  "MGL Transfer",
+  "MSEDCL Transfer",
+  "CIDCO Papers",
+  "Society Bye-Laws Papers",
+  "MOU",
+  "Agreement for Sale",
+  "Sale Deed",
+  "Sale Deed / Soc Doc",
+  "POA",
+  "Water Tax Transfer",
+  "Will",
+  "Paper Notice",
+  "Registration",
+  "Agreement",
+  "Gift Deed",
+  "CIDCO Doc",
+  "CIDCO Transfer",
+  "CIDCO Mortgage",
+  "CIDCO Other",
+  "Other Documents",
+  "Other Work",
+  "Court Case",
+  "Meeting",
+  "Personal",
+];
+
 export const DEFAULT_TASK_OPTIONS: TaskOptions = {
-  categories: [
-    "Agreement",
-    "Sale Deed / Soc Doc",
-    "Gift Deed",
-    "Registration",
-    "CIDCO Doc",
-    "CIDCO Transfer",
-    "CIDCO Mortgage",
-    "CIDCO Other",
-    "Other Documents",
-    "Other Work",
-    "Court Case",
-    "Meeting",
-    "Personal",
-  ],
+  categories: UNIFIED_CATEGORIES,
   checklistTemplates: [
     "Agreement",
     "Sale Deed / Soc Doc",
@@ -134,15 +148,11 @@ AppSettingsSchema.statics.getTaskOptions = async function (): Promise<TaskOption
   const doc = await this.findOne({ key: "task_options" });
   const stored = (doc?.value ?? {}) as Partial<TaskOptions>;
   const baseCategories = stored.categories ? [...stored.categories] : [...DEFAULT_TASK_OPTIONS.categories];
-  const required = ["Gift Deed", "Registration"];
-  for (const reqCat of required) {
-    if (!baseCategories.includes(reqCat)) {
-      const prevIdx = baseCategories.indexOf(reqCat === "Registration" ? "Gift Deed" : "Sale Deed / Soc Doc");
-      if (prevIdx !== -1) {
-        baseCategories.splice(prevIdx + 1, 0, reqCat);
-      } else {
-        baseCategories.push(reqCat);
-      }
+  
+  // Ensure all unified categories are present without duplicates, while preserving custom categories
+  for (const cat of UNIFIED_CATEGORIES) {
+    if (!baseCategories.some((c) => c.toLowerCase() === cat.toLowerCase())) {
+      baseCategories.push(cat);
     }
   }
 

@@ -13,6 +13,7 @@ const ALLOWED_IPC_CHANNELS = [
   "notification:isPaused",
   "notification:setPaused",
   "shell:openExternal",
+  "shell:openPath",
   "dialog:saveFile",
   "app:checkForUpdates",
   "app:installUpdate",
@@ -35,6 +36,7 @@ interface ElectronAPI {
   isNotificationsPaused: () => Promise<boolean>;
   setNotificationsPaused: (paused: boolean) => Promise<{ success: boolean; paused: boolean }>;
   openExternal: (url: string) => Promise<{ success: boolean; error?: string }>;
+  openPath: (path: string) => Promise<{ success: boolean; error?: string }>;
   saveFile: (options: { defaultFilename: string; buffer: Uint8Array | number[]; mimeType?: string }) => Promise<{ canceled: boolean; filePath?: string; error?: string }>;
   checkForUpdates: () => Promise<{ success: boolean; updateInfo?: any; isDev?: boolean; message?: string; error?: string }>;
   installUpdate: () => Promise<{ success: boolean; error?: string }>;
@@ -62,6 +64,9 @@ const electronAPI: ElectronAPI = {
 
   // Native external link opener
   openExternal: (url) => ipcRenderer.invoke("shell:openExternal", url),
+
+  // Native local file/folder path opener
+  openPath: (path) => ipcRenderer.invoke("shell:openPath", path),
 
   // Native save file dialog
   saveFile: (options) => ipcRenderer.invoke("dialog:saveFile", options),

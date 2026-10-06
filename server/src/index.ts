@@ -21,6 +21,8 @@ import adminRoutes from "./routes/admin.js";
 import notificationsRoutes from "./routes/notifications.js";
 import searchRoutes from "./routes/search.js";
 import remindersRoutes from "./routes/reminders.js";
+import categoriesRoutes from "./routes/categories.js";
+import gmailRoutes from "./routes/gmail.js";
 import { ChatGroup, ChatMessage } from "./models/Chat.js";
 import { Session } from "./models/Session.js";
 import { User } from "./models/User.js";
@@ -327,6 +329,8 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/notifications", notificationsRoutes);
 app.use("/api/reminders", remindersRoutes);
 app.use("/api/search", searchRoutes);
+app.use("/api/categories", categoriesRoutes);
+app.use("/api/gmail", gmailRoutes);
 
 // Unmatched API routes return standard JSON 404
 app.all("/api/*", (_req: Request, res: Response) => {

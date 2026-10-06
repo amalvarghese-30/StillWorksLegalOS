@@ -7,6 +7,7 @@ import { Task } from "../models/Task.js";
 import { DocumentModel } from "../models/Document.js";
 import { initSequence } from "../models/Counter.js";
 import { AuditLog } from "../models/AuditLog.js";
+import { User } from "../models/User.js";
 import { NotificationService } from "../services/notifications.js";
 import { requireAuth } from "../middleware/auth.js";
 import { canAccessCase, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
@@ -91,11 +92,12 @@ router.get("/", async (req: Request, res: Response) => {
       }
     }
 
-    // Practice / Practice area filter
-    const practiceFilterVal = practice || practiceArea;
-    if (practiceFilterVal && practiceFilterVal !== "All") {
-      const escapedPractice = practiceFilterVal.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      filter["practice"] = new RegExp(`^${escapedPractice}$`, "i");
+    // Category / Practice area filter
+    const categoryFilterVal = (req.query.category as string) || practice || practiceArea;
+    if (categoryFilterVal && categoryFilterVal !== "All") {
+      const escapedCategory = categoryFilterVal.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const catRegex = new RegExp(`^${escapedCategory}$`, "i");
+      filter["$or"] = [{ category: catRegex }, { practice: catRegex }];
     }
 
     // Assigned staff: single or comma-separated
@@ -149,13 +151,15 @@ router.get("/", async (req: Request, res: Response) => {
       filter["updatedAt"] = updatedCond;
     }
 
-    // Search query: matches across title, number, court, judge, parties, tags
+    // Search query: matches across title, number, court, category, parties, tags
     if (search && search.trim()) {
       const escaped = search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const regex = new RegExp(escaped, "i");
       filter["$or"] = [
         { number: regex },
         { title: regex },
+        { category: regex },
+        { practice: regex },
         { court: regex },
         { judge: regex },
         { "parties.name": regex },
@@ -171,6 +175,7 @@ router.get("/", async (req: Request, res: Response) => {
     const [cases, total, statusCounts] = await Promise.all([
       Case.find(filter)
         .populate("assignedTo", "name email")
+        .populate("assignedBy", "name email")
         .populate("createdBy", "name")
         .sort({ updatedAt: -1 })
         .skip(skip)
@@ -255,9 +260,13 @@ router.get("/:id", requireResourceAccess("case"), async (req: Request, res: Resp
   try {
     const record = await Case.findById(req.params["id"])
       .populate("assignedTo", "name email title")
-      .populate("createdBy", "name")
+      .populate("assignedBy", "name email title")
+      .populate("createdBy", "name email title")
       .populate("parties.clientId", "name email phone")
       .populate("notes.authorId", "name")
+      .populate("assignmentHistory.fromUser", "name email")
+      .populate("assignmentHistory.toUser", "name email")
+      .populate("assignmentHistory.assignedBy", "name email")
       .lean();
 
     if (!record) {
@@ -285,6 +294,7 @@ router.post("/", async (req: Request, res: Response) => {
     const {
       title,
       description,
+      category,
       practice,
       court,
       judge,
@@ -293,6 +303,7 @@ router.post("/", async (req: Request, res: Response) => {
       nextHearing,
       parties,
       assignedTo,
+      localPath,
       tags,
       tasks,
     } = req.body;
@@ -436,10 +447,18 @@ router.post("/", async (req: Request, res: Response) => {
 
     console.log(`[cases:create] [corrId: ${corrId}] [stage: db_create]`);
 
+    const resolvedCategory =
+      typeof category === "string" && category.trim()
+        ? category.trim()
+        : typeof practice === "string" && practice.trim()
+        ? practice.trim()
+        : "Other Work";
+
     const caseData: Record<string, unknown> = {
       title: cleanTitle,
       description: typeof description === "string" ? description.trim() : "",
-      practice: typeof practice === "string" && practice.trim() ? practice.trim() : "Property",
+      category: resolvedCategory,
+      practice: resolvedCategory,
       court: typeof court === "string" ? court.trim() : "",
       judge: typeof judge === "string" ? judge.trim() : "",
       status: status || "Active",
@@ -447,6 +466,9 @@ router.post("/", async (req: Request, res: Response) => {
       nextHearing: parsedNextHearing,
       parties: sanitizedParties,
       assignedTo: finalAssignedTo,
+      assignedBy: finalAssignedTo ? userId : null,
+      assignedAt: finalAssignedTo ? new Date() : null,
+      localPath: typeof localPath === "string" ? localPath.trim() : "",
       createdBy: userId,
       tags: Array.isArray(tags) ? tags.map((t) => String(t).trim()).filter(Boolean) : [],
       timeline: [timelineEntry],
@@ -633,8 +655,8 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
     // are server-controlled and must not be modifiable via this endpoint.
     // ---------------------------------------------------------------------------
     const ALLOWED_FIELDS = [
-      "title", "description", "practice", "court", "judge", "courtCaseId",
-      "status", "priority", "nextHearing", "parties", "tags", "progress",
+      "title", "description", "category", "practice", "court", "judge", "courtCaseId",
+      "status", "priority", "nextHearing", "parties", "tags", "progress", "localPath",
     ] as const;
 
     const updates: Record<string, unknown> = {};
@@ -642,13 +664,44 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     }
 
+    if (updates["category"] !== undefined) {
+      updates["practice"] = updates["category"];
+    } else if (updates["practice"] !== undefined) {
+      updates["category"] = updates["practice"];
+    }
+
+    const existing = await Case.findById(req.params["id"]);
+    if (!existing) {
+      res.status(404).json({ message: "Case not found" });
+      return;
+    }
+
     // assignedTo: only admins may reassign to other users.
     if (req.body["assignedTo"] !== undefined) {
-      if (req.user?.role === "admin") {
-        updates["assignedTo"] = req.body["assignedTo"];
-      } else if (req.body["assignedTo"] === req.userId) {
-        // Non-admins may assign to themselves only.
-        updates["assignedTo"] = req.userId;
+      let targetAssignee = req.body["assignedTo"];
+      if (targetAssignee === "none" || targetAssignee === "" || targetAssignee === null) {
+        targetAssignee = null;
+      }
+
+      if (req.user?.role === "admin" || String(targetAssignee) === String(req.userId)) {
+        if (String(existing.assignedTo ?? "") !== String(targetAssignee ?? "")) {
+          updates["assignedTo"] = targetAssignee;
+          updates["assignedBy"] = req.userId;
+          updates["assignedAt"] = targetAssignee ? new Date() : null;
+
+          if (targetAssignee) {
+            const histEntry = {
+              fromUser: existing.assignedTo || null,
+              toUser: targetAssignee,
+              assignedBy: req.userId,
+              action: "assigned",
+              note: "Case assignment updated",
+              timestamp: new Date(),
+            };
+            if (!updates["$push"]) updates["$push"] = {};
+            (updates["$push"] as any)["assignmentHistory"] = histEntry;
+          }
+        }
       } else {
         res.status(403).json({ message: "Cannot assign case to another user" });
         return;
@@ -662,16 +715,14 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
     }
 
     // Add timeline entry if status is changing
-    if (updates["status"]) {
-      const existing = await Case.findById(req.params["id"]);
-      if (existing && existing.status !== updates["status"]) {
-        const timelineEntry = {
-          event: `Status changed to ${updates["status"]}`,
-          by: req.user?.name ?? "Unknown",
-          when: new Date(),
-        };
-        updates["$push"] = { timeline: timelineEntry };
-      }
+    if (updates["status"] && existing.status !== updates["status"]) {
+      const timelineEntry = {
+        event: `Status changed to ${updates["status"]}`,
+        by: req.user?.name ?? "Unknown",
+        when: new Date(),
+      };
+      if (!updates["$push"]) updates["$push"] = {};
+      (updates["$push"] as any)["timeline"] = timelineEntry;
     }
 
     // Parties validation stage for PATCH
@@ -732,8 +783,12 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
       runValidators: true,
     })
       .populate("assignedTo", "name email title")
-      .populate("createdBy", "name")
-      .populate("parties.clientId", "name email phone");
+      .populate("assignedBy", "name email title")
+      .populate("createdBy", "name email")
+      .populate("parties.clientId", "name email phone")
+      .populate("assignmentHistory.fromUser", "name email")
+      .populate("assignmentHistory.toUser", "name email")
+      .populate("assignmentHistory.assignedBy", "name email");
 
     if (!record) {
       res.status(404).json({ message: "Case not found" });
@@ -846,6 +901,222 @@ router.delete("/:id", requireResourceAccess("case"), async (req: Request, res: R
   } catch (err) {
     console.error("[cases] Archive error:", err);
     res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/cases/:id/forward — forward case to another user
+// ---------------------------------------------------------------------------
+router.post("/:id/forward", requireResourceAccess("case"), async (req: Request, res: Response) => {
+  try {
+    const { toUserId, note } = req.body;
+    if (!toUserId || !mongoose.Types.ObjectId.isValid(toUserId)) {
+      res.status(400).json({ message: "Valid target user ID (toUserId) is required" });
+      return;
+    }
+
+    const targetUser = await User.findById(toUserId).select("name email").lean();
+    if (!targetUser) {
+      res.status(404).json({ message: "Target user not found" });
+      return;
+    }
+
+    const record = await Case.findById(req.params["id"]);
+    if (!record) {
+      res.status(404).json({ message: "Case not found" });
+      return;
+    }
+
+    const previousAssignee = record.assignedTo;
+    const fromUser = previousAssignee || record.createdBy;
+    const now = new Date();
+
+    record.assignedTo = new mongoose.Types.ObjectId(toUserId);
+    record.assignedBy = new mongoose.Types.ObjectId(req.userId!);
+    record.assignedAt = now;
+
+    record.assignmentHistory.push({
+      fromUser: fromUser ? new mongoose.Types.ObjectId(fromUser) : null,
+      toUser: new mongoose.Types.ObjectId(toUserId),
+      assignedBy: new mongoose.Types.ObjectId(req.userId!),
+      action: "forwarded",
+      note: typeof note === "string" ? note.trim() : "Case forwarded",
+      timestamp: now,
+    });
+
+    record.timeline.push({
+      event: `Case forwarded to ${targetUser.name}${note ? `: "${note}"` : ""}`,
+      by: req.user?.name ?? "Unknown",
+      when: now,
+    });
+
+    await record.save();
+
+    const populatedRecord = await Case.findById(record._id)
+      .populate("assignedTo", "name email title")
+      .populate("assignedBy", "name email title")
+      .populate("createdBy", "name email")
+      .populate("parties.clientId", "name email phone")
+      .populate("assignmentHistory.fromUser", "name email")
+      .populate("assignmentHistory.toUser", "name email")
+      .populate("assignmentHistory.assignedBy", "name email")
+      .lean();
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("case:updated", { caseId: record._id.toString() });
+    }
+
+    // Notify the forwarded user
+    if (String(toUserId) !== String(req.userId)) {
+      await NotificationService.createNotification(
+        {
+          userId: new mongoose.Types.ObjectId(toUserId),
+          type: "CASE_FORWARDED",
+          title: "Case Forwarded to You",
+          message: `${req.user?.name ?? "A colleague"} forwarded case "${record.title}" to you${note ? `: ${note}` : ""}`,
+          relatedId: record._id,
+          relatedModel: "Case",
+          actorId: new mongoose.Types.ObjectId(req.userId!),
+          metadata: {
+            caseId: record._id.toString(),
+            caseTitle: record.title,
+            note: note || "",
+          },
+        },
+        io
+      );
+    }
+
+    await AuditLog.logWithActivity(
+      {
+        userId: new mongoose.Types.ObjectId(req.userId!),
+        userName: req.user?.name ?? "Unknown",
+        action: "update",
+        resource: "case",
+        resourceId: record._id.toString(),
+        resourceName: record.title,
+        details: `Case forwarded to ${targetUser.name}`,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+      },
+      io
+    );
+
+    res.json({ message: "Case forwarded successfully", case: populatedRecord });
+  } catch (err: any) {
+    console.error("[cases] Forward error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/cases/:id/reassign — reassign case (admin or authorized)
+// ---------------------------------------------------------------------------
+router.post("/:id/reassign", requireResourceAccess("case"), async (req: Request, res: Response) => {
+  try {
+    if (req.user?.role !== "admin" && !req.user?.permissions?.cases) {
+      res.status(403).json({ message: "Only administrators can reassign cases" });
+      return;
+    }
+
+    const { toUserId, note } = req.body;
+    if (!toUserId || !mongoose.Types.ObjectId.isValid(toUserId)) {
+      res.status(400).json({ message: "Valid target user ID (toUserId) is required" });
+      return;
+    }
+
+    const targetUser = await User.findById(toUserId).select("name email").lean();
+    if (!targetUser) {
+      res.status(404).json({ message: "Target user not found" });
+      return;
+    }
+
+    const record = await Case.findById(req.params["id"]);
+    if (!record) {
+      res.status(404).json({ message: "Case not found" });
+      return;
+    }
+
+    const fromUser = record.assignedTo;
+    const now = new Date();
+
+    record.assignedTo = new mongoose.Types.ObjectId(toUserId);
+    record.assignedBy = new mongoose.Types.ObjectId(req.userId!);
+    record.assignedAt = now;
+
+    record.assignmentHistory.push({
+      fromUser: fromUser ? new mongoose.Types.ObjectId(fromUser) : null,
+      toUser: new mongoose.Types.ObjectId(toUserId),
+      assignedBy: new mongoose.Types.ObjectId(req.userId!),
+      action: "reassigned",
+      note: typeof note === "string" ? note.trim() : "Case reassigned",
+      timestamp: now,
+    });
+
+    record.timeline.push({
+      event: `Case reassigned to ${targetUser.name}${note ? `: "${note}"` : ""}`,
+      by: req.user?.name ?? "Unknown",
+      when: now,
+    });
+
+    await record.save();
+
+    const populatedRecord = await Case.findById(record._id)
+      .populate("assignedTo", "name email title")
+      .populate("assignedBy", "name email title")
+      .populate("createdBy", "name email")
+      .populate("parties.clientId", "name email phone")
+      .populate("assignmentHistory.fromUser", "name email")
+      .populate("assignmentHistory.toUser", "name email")
+      .populate("assignmentHistory.assignedBy", "name email")
+      .lean();
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("case:updated", { caseId: record._id.toString() });
+    }
+
+    // Notify the reassigned user
+    if (String(toUserId) !== String(req.userId)) {
+      await NotificationService.createNotification(
+        {
+          userId: new mongoose.Types.ObjectId(toUserId),
+          type: "CASE_REASSIGNED",
+          title: "Case Reassigned to You",
+          message: `${req.user?.name ?? "Administrator"} reassigned case "${record.title}" to you${note ? `: ${note}` : ""}`,
+          relatedId: record._id,
+          relatedModel: "Case",
+          actorId: new mongoose.Types.ObjectId(req.userId!),
+          metadata: {
+            caseId: record._id.toString(),
+            caseTitle: record.title,
+            note: note || "",
+          },
+        },
+        io
+      );
+    }
+
+    await AuditLog.logWithActivity(
+      {
+        userId: new mongoose.Types.ObjectId(req.userId!),
+        userName: req.user?.name ?? "Unknown",
+        action: "update",
+        resource: "case",
+        resourceId: record._id.toString(),
+        resourceName: record.title,
+        details: `Case reassigned to ${targetUser.name}`,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+      },
+      io
+    );
+
+    res.json({ message: "Case reassigned successfully", case: populatedRecord });
+  } catch (err: any) {
+    console.error("[cases] Reassign error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
   }
 });
 

@@ -20,6 +20,11 @@ import {
   RotateCcw,
   Pencil,
   X,
+  Share2,
+  UserCheck,
+  FolderOpen,
+  ChevronRight,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,6 +65,13 @@ import {
   useCreateTask,
   useTaskOptions,
   useToggleChecklistItem,
+  useApproveTask,
+  useRejectTask,
+  useForwardTask,
+  useReassignTask,
+  useAddSubItem,
+  useToggleSubItem,
+  useDeleteSubItem,
   type TaskRecord,
   type ChecklistItem,
   type CreateTaskPayload,
@@ -69,6 +81,8 @@ import { useClients } from "@/services/clients";
 import { useEmployees } from "@/services/admin";
 import { useAuth } from "@/lib/auth";
 import { formatSafeDateTime, toSafeIso } from "@/lib/dates";
+import { openLocalPath } from "@/platform/localPath";
+import { DiscardConfirmationDialog } from "@/components/ui/discard-confirmation-dialog";
 import { toast } from "sonner";
 
 interface TaskDetailDialogProps {
@@ -163,6 +177,23 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
   const deleteTask = useDeleteTask();
   const createTask = useCreateTask();
   const toggleItem = useToggleChecklistItem();
+  const approveTask = useApproveTask();
+  const rejectTask = useRejectTask();
+  const forwardTask = useForwardTask();
+  const reassignTask = useReassignTask();
+  const addSubItem = useAddSubItem();
+  const toggleSubItem = useToggleSubItem();
+  const deleteSubItem = useDeleteSubItem();
+
+  const [showForwardModal, setShowForwardModal] = useState(false);
+  const [showReassignModal, setShowReassignModal] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [targetUserId, setTargetUserId] = useState("");
+  const [actionNote, setActionNote] = useState("");
+  const [rejectReason, setRejectReason] = useState("");
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  const [newSubItemText, setNewSubItemText] = useState<{ [itemId: string]: string }>({});
+  const [expandedItems, setExpandedItems] = useState<{ [itemId: string]: boolean }>({});
 
   useEffect(() => {
     if (task) {
@@ -500,10 +531,44 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
       (typeof task.createdBy === "object" ? (task.createdBy as any)._id : task.createdBy)?.toString() ===
         user?._id?.toString());
 
+  const isDirty = useMemo(() => {
+    if (!isEditing) return false;
+    return (
+      title !== (task.title || "") ||
+      description !== (task.description || "") ||
+      category !== (task.category || "General") ||
+      priority !== (task.priority || "Medium") ||
+      assignedTo !== (task.assignedTo?._id || "")
+    );
+  }, [isEditing, title, description, category, priority, assignedTo, task]);
+
+  const handleAttemptClose = () => {
+    if (isEditing && isDirty) {
+      setShowDiscardConfirm(true);
+    } else {
+      onClose();
+    }
+  };
+
   return (
     <>
-      <Dialog open={open} onOpenChange={(val) => !val && onClose()}>
-        <DialogContent className="max-h-[92dvh] overflow-y-auto w-[95vw] sm:max-w-xl rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-lift ios-scroll">
+      <Dialog
+        open={open}
+        onOpenChange={(val) => {
+          if (!val) handleAttemptClose();
+        }}
+      >
+        <DialogContent
+          onInteractOutside={(e) => {
+            e.preventDefault();
+            handleAttemptClose();
+          }}
+          onEscapeKeyDown={(e) => {
+            e.preventDefault();
+            handleAttemptClose();
+          }}
+          className="max-h-[92dvh] overflow-y-auto w-[95vw] sm:max-w-xl rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-lift ios-scroll"
+        >
           <DialogHeader className="border-b border-border/60 pb-4">
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">
@@ -631,6 +696,16 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                         )}
                       </DropdownMenuSubContent>
                     </DropdownMenuSub>
+
+                    <DropdownMenuItem className="text-xs" onClick={() => setShowForwardModal(true)}>
+                      <Share2 size={14} className="mr-2" />
+                      Forward Task
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem className="text-xs" onClick={() => setShowReassignModal(true)}>
+                      <UserCheck size={14} className="mr-2" />
+                      Reassign Task
+                    </DropdownMenuItem>
 
                     <DropdownMenuItem className="text-xs" onClick={handleDuplicateTask}>
                       <Copy size={14} className="mr-2" />
@@ -1059,7 +1134,92 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                     </span>
                   </div>
                 )}
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <User size={15} />
+                  <span>
+                    Created By:{" "}
+                    <strong className="text-foreground">
+                      {typeof task.createdBy === "object" ? task.createdBy?.name : "System"}
+                    </strong>
+                  </span>
+                </div>
+                {task.assignedBy && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <UserCheck size={15} />
+                    <span>
+                      Assigned By:{" "}
+                      <strong className="text-foreground">
+                        {typeof task.assignedBy === "object" ? task.assignedBy?.name : "Admin"}
+                      </strong>
+                    </span>
+                  </div>
+                )}
+                {task.startedAt && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Clock size={15} />
+                    <span>Started: <strong className="text-foreground">{formatSafeDateTime(task.startedAt)}</strong></span>
+                  </div>
+                )}
+                {task.completedAt && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <CheckCircle2 size={15} className="text-success" />
+                    <span>Completed: <strong className="text-foreground">{formatSafeDateTime(task.completedAt)}</strong></span>
+                  </div>
+                )}
+                {task.submittedForApprovalAt && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Clock size={15} className="text-amber-500" />
+                    <span>Submitted for Review: <strong className="text-foreground">{formatSafeDateTime(task.submittedForApprovalAt)}</strong></span>
+                  </div>
+                )}
+                {task.approvedAt && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Check size={15} className="text-emerald-500" />
+                    <span>Approved: <strong className="text-foreground">{formatSafeDateTime(task.approvedAt)}</strong></span>
+                  </div>
+                )}
               </div>
+
+              {/* Local Folder / File Path */}
+              {task.localPath && (
+                <div className="flex items-center justify-between rounded-lg border border-border/80 bg-muted/40 p-3 text-xs">
+                  <div className="min-w-0">
+                    <p className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">Local Task Folder</p>
+                    <p className="font-mono text-xs text-foreground truncate mt-0.5">{task.localPath}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs rounded-md shrink-0 ml-2"
+                    onClick={() => openLocalPath(task.localPath!)}
+                  >
+                    <FolderOpen size={13} className="mr-1" /> Open Path
+                  </Button>
+                </div>
+              )}
+
+              {/* Assignment Audit History */}
+              {task.assignmentHistory && task.assignmentHistory.length > 0 && (
+                <div className="rounded-lg border border-border/70 bg-card p-3.5 space-y-2">
+                  <h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <UserCheck size={13} /> Assignment History & Audit Trail
+                  </h5>
+                  <div className="divide-y divide-border/50 max-h-36 overflow-y-auto pr-1">
+                    {task.assignmentHistory.slice().reverse().map((h, i) => (
+                      <div key={i} className="py-2 first:pt-1 text-xs">
+                        <p className="font-medium text-foreground">
+                          {h.action ? h.action.toUpperCase() : "ASSIGNED"}: {typeof h.fromUser === "object" ? h.fromUser?.name : "—"} → {typeof h.toUser === "object" ? h.toUser?.name : "—"}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          By {typeof h.assignedBy === "object" ? h.assignedBy?.name : "Admin"} • {formatSafeDateTime(h.timestamp)}
+                        </p>
+                        {h.note && <p className="text-[11px] text-muted-foreground italic mt-0.5">"{h.note}"</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Dedicated Call Reminder Card */}
               {(task.isCall || task.callReminder) && (
@@ -1232,8 +1392,8 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                   <p className="py-4 text-center text-helper text-muted-foreground">No checklist items yet.</p>
                 ) : (
                   checklist.map((item, idx) => (
+                  <div key={item._id || idx} className="space-y-1">
                     <div
-                      key={item._id || idx}
                       className="group flex items-center justify-between gap-2 rounded-md p-2 hover:bg-muted/60 transition-colors"
                     >
                       {editingIndex === idx ? (
@@ -1306,6 +1466,20 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                             </button>
                             <button
                               type="button"
+                              onClick={() => {
+                                setExpandedItems((prev) => ({
+                                  ...prev,
+                                  [item._id || String(idx)]: !prev[item._id || String(idx)],
+                                }));
+                              }}
+                              className="p-1 text-muted-foreground hover:text-primary rounded"
+                              aria-label="Add or view sub-tasks"
+                              title="Sub-tasks"
+                            >
+                              <Plus size={13} />
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => handleRemoveChecklistItem(idx)}
                               className="p-1 text-muted-foreground hover:text-destructive rounded"
                               aria-label="Remove item"
@@ -1317,6 +1491,104 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                         </>
                       )}
                     </div>
+
+                    {/* Nested Sub-Items */}
+                    {item._id && (item.subItems?.length || expandedItems[item._id]) && (
+                      <div className="ml-6 pl-2 border-l border-border/70 space-y-1.5 my-1.5">
+                        {item.subItems?.map((sub) => (
+                          <div
+                            key={sub._id || sub.text}
+                            className="group/sub flex items-center justify-between gap-2 text-xs py-1 px-2 rounded hover:bg-muted/40"
+                          >
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (!sub._id) return;
+                                await toggleSubItem.mutateAsync({
+                                  taskId: task._id,
+                                  itemId: item._id!,
+                                  subId: sub._id,
+                                  done: !sub.done,
+                                });
+                              }}
+                              className="flex items-center gap-2 text-left min-w-0 flex-1"
+                            >
+                              {sub.done ? (
+                                <CheckCircle2 size={13} className="text-success shrink-0" />
+                              ) : (
+                                <Circle size={13} className="text-muted-foreground shrink-0" />
+                              )}
+                              <span className={`truncate ${sub.done ? "line-through text-muted-foreground" : "text-foreground"}`}>
+                                {sub.text}
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (!sub._id) return;
+                                await deleteSubItem.mutateAsync({
+                                  taskId: task._id,
+                                  itemId: item._id!,
+                                  subId: sub._id,
+                                });
+                              }}
+                              className="opacity-0 group-hover/sub:opacity-100 p-0.5 text-muted-foreground hover:text-destructive"
+                              title="Remove sub-item"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        ))}
+
+                        {/* Add Sub-Item Inline Form */}
+                        <div className="flex items-center gap-1.5 pt-1">
+                          <Input
+                            value={newSubItemText[item._id] || ""}
+                            onChange={(e) =>
+                              setNewSubItemText((prev) => ({
+                                ...prev,
+                                [item._id!]: e.target.value,
+                              }))
+                            }
+                            onKeyDown={async (e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                const text = (newSubItemText[item._id!] || "").trim();
+                                if (!text) return;
+                                await addSubItem.mutateAsync({
+                                  taskId: task._id,
+                                  itemId: item._id!,
+                                  text,
+                                });
+                                setNewSubItemText((prev) => ({ ...prev, [item._id!]: "" }));
+                              }
+                            }}
+                            placeholder="Add sub-item (press Enter)..."
+                            className="h-7 text-xs rounded bg-background flex-1"
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-xs"
+                            disabled={!(newSubItemText[item._id] || "").trim() || addSubItem.isPending}
+                            onClick={async () => {
+                              const text = (newSubItemText[item._id!] || "").trim();
+                              if (!text) return;
+                              await addSubItem.mutateAsync({
+                                taskId: task._id,
+                                itemId: item._id!,
+                                text,
+                              });
+                              setNewSubItemText((prev) => ({ ...prev, [item._id!]: "" }));
+                            }}
+                          >
+                            <Plus size={12} />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   ))
                 )
               )}
@@ -1492,6 +1764,227 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Forward Task Dialog */}
+      <Dialog open={showForwardModal} onOpenChange={setShowForwardModal}>
+        <DialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-title font-semibold text-foreground flex items-center gap-2">
+              <Share2 size={18} /> Forward Task
+            </DialogTitle>
+            <DialogDescription className="text-helper text-muted-foreground mt-1">
+              Forward task "{task.title}" to a team member.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!targetUserId) {
+                toast.error("Please select an employee");
+                return;
+              }
+              try {
+                await forwardTask.mutateAsync({
+                  taskId: task._id,
+                  toUserId: targetUserId,
+                  note: actionNote.trim() || undefined,
+                });
+                toast.success("Task forwarded successfully");
+                setShowForwardModal(false);
+                setTargetUserId("");
+                setActionNote("");
+              } catch (err: any) {
+                toast.error(err?.response?.data?.message || "Failed to forward task");
+              }
+            }}
+            className="mt-4 space-y-4"
+          >
+            <div className="space-y-1.5">
+              <Label className="text-helper">Forward To</Label>
+              <select
+                value={targetUserId}
+                onChange={(e) => setTargetUserId(e.target.value)}
+                className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper"
+                required
+              >
+                <option value="">Select team member...</option>
+                {employees.map((emp) => (
+                  <option key={emp._id} value={emp._id}>
+                    {emp.name} ({emp.title || emp.role})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-helper">Note / Reason (Optional)</Label>
+              <Input
+                value={actionNote}
+                onChange={(e) => setActionNote(e.target.value)}
+                placeholder="Reason for forwarding..."
+                className="h-10 rounded-md"
+              />
+            </div>
+            <DialogFooter className="mt-5 flex justify-end gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setShowForwardModal(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                className="gradient-primary text-primary-foreground"
+                disabled={forwardTask.isPending}
+              >
+                {forwardTask.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : <Share2 size={14} className="mr-1" />}
+                Forward Task
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reassign Task Dialog */}
+      <Dialog open={showReassignModal} onOpenChange={setShowReassignModal}>
+        <DialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-title font-semibold text-foreground flex items-center gap-2">
+              <UserCheck size={18} /> Reassign Task
+            </DialogTitle>
+            <DialogDescription className="text-helper text-muted-foreground mt-1">
+              Reassign task "{task.title}" to another employee.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!targetUserId) {
+                toast.error("Please select an employee");
+                return;
+              }
+              try {
+                await reassignTask.mutateAsync({
+                  taskId: task._id,
+                  toUserId: targetUserId,
+                  note: actionNote.trim() || undefined,
+                });
+                toast.success("Task reassigned successfully");
+                setShowReassignModal(false);
+                setTargetUserId("");
+                setActionNote("");
+              } catch (err: any) {
+                toast.error(err?.response?.data?.message || "Failed to reassign task");
+              }
+            }}
+            className="mt-4 space-y-4"
+          >
+            <div className="space-y-1.5">
+              <Label className="text-helper">New Assignee</Label>
+              <select
+                value={targetUserId}
+                onChange={(e) => setTargetUserId(e.target.value)}
+                className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper"
+                required
+              >
+                <option value="">Select team member...</option>
+                {employees.map((emp) => (
+                  <option key={emp._id} value={emp._id}>
+                    {emp.name} ({emp.title || emp.role})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-helper">Reassignment Note (Optional)</Label>
+              <Input
+                value={actionNote}
+                onChange={(e) => setActionNote(e.target.value)}
+                placeholder="Reason or instructions..."
+                className="h-10 rounded-md"
+              />
+            </div>
+            <DialogFooter className="mt-5 flex justify-end gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setShowReassignModal(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                className="gradient-primary text-primary-foreground"
+                disabled={reassignTask.isPending}
+              >
+                {reassignTask.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : <UserCheck size={14} className="mr-1" />}
+                Reassign Task
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reject Task / Request Changes Dialog */}
+      <Dialog open={showRejectModal} onOpenChange={setShowRejectModal}>
+        <DialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-title font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-2">
+              <Clock size={18} /> Request Changes
+            </DialogTitle>
+            <DialogDescription className="text-helper text-muted-foreground mt-1">
+              Send task "{task.title}" back to the assignee with feedback.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              try {
+                await rejectTask.mutateAsync({
+                  taskId: task._id,
+                  reason: rejectReason.trim() || undefined,
+                });
+                toast.success("Changes requested. Task returned to assignee.");
+                setShowRejectModal(false);
+                setRejectReason("");
+              } catch (err: any) {
+                toast.error(err?.response?.data?.message || "Failed to request changes");
+              }
+            }}
+            className="mt-4 space-y-4"
+          >
+            <div className="space-y-1.5">
+              <Label className="text-helper">Feedback / Change Notes</Label>
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="What needs to be updated before approval..."
+                rows={3}
+                className="w-full rounded-md border border-border bg-background p-2.5 text-xs text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+            <DialogFooter className="mt-5 flex justify-end gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setShowRejectModal(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                className="bg-amber-600 hover:bg-amber-700 text-white"
+                disabled={rejectTask.isPending}
+              >
+                {rejectTask.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : <Clock size={14} className="mr-1" />}
+                Send Feedback
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Discard Confirmation Dialog */}
+      <DiscardConfirmationDialog
+        open={showDiscardConfirm}
+        onOpenChange={setShowDiscardConfirm}
+        onConfirmDiscard={() => {
+          setShowDiscardConfirm(false);
+          setIsEditing(false);
+          onClose();
+        }}
+      />
     </>
   );
 }

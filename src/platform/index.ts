@@ -54,3 +54,4 @@ export * from "./externalLinks";
 export * from "./storage";
 export * from "./microphone";
 export * from "./appLifecycle";
+export * from "./localPath";
