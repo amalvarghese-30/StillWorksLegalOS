@@ -358,6 +358,7 @@ function CaseWorkspace() {
     }
     try {
       await forwardCase.mutateAsync({
+        caseId,
         id: caseId,
         toUserId: targetUserId,
         note: actionNote.trim() || undefined,
@@ -379,6 +380,7 @@ function CaseWorkspace() {
     }
     try {
       await reassignCase.mutateAsync({
+        caseId,
         id: caseId,
         toUserId: targetUserId,
         note: actionNote.trim() || undefined,

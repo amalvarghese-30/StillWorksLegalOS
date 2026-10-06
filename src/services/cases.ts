@@ -261,11 +261,16 @@ export function useReviewCaseAccessRequest() {
 
 export function useForwardCase() {
   const qc = useQueryClient();
-  return useMutation<CaseResponse, Error, { caseId: string; toUserId: string; note?: string }>({
-    mutationFn: ({ caseId, toUserId, note }) =>
-      api.post(`/cases/${caseId}/forward`, { toUserId, note }),
+  return useMutation<CaseResponse, Error, { caseId?: string; id?: string; toUserId: string; note?: string }>({
+    mutationFn: ({ caseId, id, toUserId, note }) => {
+      const targetId = caseId || id;
+      return api.post(`/cases/${targetId}/forward`, { toUserId, note });
+    },
     onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: caseKeys.detail(vars.caseId) });
+      const targetId = vars.caseId || vars.id;
+      if (targetId) {
+        qc.invalidateQueries({ queryKey: caseKeys.detail(targetId) });
+      }
       qc.invalidateQueries({ queryKey: caseKeys.all });
       qc.invalidateQueries({ queryKey: ["notifications"] });
     },
@@ -274,11 +279,16 @@ export function useForwardCase() {
 
 export function useReassignCase() {
   const qc = useQueryClient();
-  return useMutation<CaseResponse, Error, { caseId: string; toUserId: string; note?: string }>({
-    mutationFn: ({ caseId, toUserId, note }) =>
-      api.post(`/cases/${caseId}/reassign`, { toUserId, note }),
+  return useMutation<CaseResponse, Error, { caseId?: string; id?: string; toUserId: string; note?: string }>({
+    mutationFn: ({ caseId, id, toUserId, note }) => {
+      const targetId = caseId || id;
+      return api.post(`/cases/${targetId}/reassign`, { toUserId, note });
+    },
     onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: caseKeys.detail(vars.caseId) });
+      const targetId = vars.caseId || vars.id;
+      if (targetId) {
+        qc.invalidateQueries({ queryKey: caseKeys.detail(targetId) });
+      }
       qc.invalidateQueries({ queryKey: caseKeys.all });
       qc.invalidateQueries({ queryKey: ["notifications"] });
     },
