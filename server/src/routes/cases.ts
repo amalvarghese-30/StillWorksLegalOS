@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import { randomUUID } from "node:crypto";
 import { Case } from "../models/Case.js";
 import { Client } from "../models/Client.js";
+import { Task } from "../models/Task.js";
 import { DocumentModel } from "../models/Document.js";
 import { initSequence } from "../models/Counter.js";
 import { AuditLog } from "../models/AuditLog.js";
@@ -293,6 +294,7 @@ router.post("/", async (req: Request, res: Response) => {
       parties,
       assignedTo,
       tags,
+      tasks,
     } = req.body;
 
     console.log(`[cases:create] [corrId: ${corrId}] [stage: start] [userId: ${userId}] [title: ${typeof title === "string" ? title.slice(0, 50) : "empty"}]`);
@@ -512,6 +514,91 @@ router.post("/", async (req: Request, res: Response) => {
         number: record.number,
         title: record.title,
       });
+    }
+
+    // 6. Optional Initial Tasks Creation
+    if (Array.isArray(tasks) && tasks.length > 0) {
+      console.log(`[cases:create] [corrId: ${corrId}] [stage: initial_tasks] Creating ${tasks.length} initial tasks`);
+      const primaryClientParty = sanitizedParties.find((p) => p.clientId);
+      const resolvedClientId = primaryClientParty?.clientId || (req.body.clientId ? new mongoose.Types.ObjectId(req.body.clientId) : undefined);
+
+      for (const t of tasks) {
+        if (!t || !t.title || !String(t.title).trim()) continue;
+        const taskTitle = String(t.title).trim();
+        const taskDesc = typeof t.description === "string" ? t.description.trim() : "";
+        const taskCategory = typeof t.category === "string" && t.category.trim() ? t.category.trim() : "Court Case";
+        const taskPriority = ["High", "Medium", "Low"].includes(t.priority) ? t.priority : "Medium";
+
+        let parsedDeadline: Date | null = null;
+        if (t.deadline) {
+          const d = new Date(t.deadline);
+          if (!isNaN(d.getTime())) parsedDeadline = d;
+        }
+
+        const taskAssignee =
+          userRole === "admin" && t.assignedTo && mongoose.Types.ObjectId.isValid(t.assignedTo)
+            ? t.assignedTo
+            : userId;
+
+        const checklistItems = Array.isArray(t.checklist)
+          ? t.checklist
+              .map((item: any) => {
+                const text = typeof item === "string" ? item.trim() : String(item?.text || "").trim();
+                return text ? { text, done: Boolean(item?.done) } : null;
+              })
+              .filter(Boolean)
+          : [];
+
+        try {
+          const createdTask = await Task.create({
+            title: taskTitle,
+            description: taskDesc,
+            category: taskCategory,
+            priority: taskPriority,
+            status: "pending",
+            deadline: parsedDeadline,
+            assignedTo: taskAssignee,
+            caseId: record._id,
+            clientId: resolvedClientId,
+            checklist: checklistItems,
+            agent: typeof t.agent === "string" ? t.agent.trim().slice(0, 100) : "",
+            createdBy: userId,
+          });
+
+          if (io) {
+            io.emit("task:created", {
+              taskId: createdTask._id.toString(),
+              title: createdTask.title,
+              caseId: record._id.toString(),
+            });
+          }
+
+          if (taskAssignee && taskAssignee.toString() !== userId.toString()) {
+            try {
+              const isUrgent = createdTask.priority === "High";
+              await NotificationService.createNotification({
+                userId: taskAssignee,
+                type: "TASK_ASSIGNED",
+                title: isUrgent ? "🚨 Urgent Task Assigned" : "New Task Assigned",
+                message: `${req.user?.name ?? "Admin"} assigned you ${isUrgent ? "an urgent" : "a"} task: "${createdTask.title}" on case "${record.title}"`,
+                relatedId: createdTask._id as any,
+                relatedModel: "Task",
+                actorId: new mongoose.Types.ObjectId(userId),
+                metadata: {
+                  taskTitle: createdTask.title,
+                  taskId: createdTask._id.toString(),
+                  caseId: record._id.toString(),
+                  priority: createdTask.priority,
+                },
+              }, io);
+            } catch (notifErr) {
+              console.warn(`[cases:create] Task assignment notification error:`, notifErr);
+            }
+          }
+        } catch (taskErr: any) {
+          console.warn(`[cases:create] Error creating initial task "${taskTitle}":`, taskErr?.message);
+        }
+      }
     }
 
     res.status(201).json({ case: record });

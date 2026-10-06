@@ -68,6 +68,17 @@ export interface CaseResponse {
   case: CaseRecord;
 }
 
+export interface CaseTaskPayload {
+  title: string;
+  description?: string;
+  category?: string;
+  priority?: "High" | "Medium" | "Low";
+  deadline?: string;
+  assignedTo?: string;
+  checklist?: { text: string; done?: boolean }[];
+  agent?: string;
+}
+
 export interface CreateCasePayload {
   title: string;
   description?: string;
@@ -81,6 +92,7 @@ export interface CreateCasePayload {
   assignedTo?: string;
   tags?: string[];
   progress?: number;
+  tasks?: CaseTaskPayload[];
 }
 
 // ---------------------------------------------------------------------------
@@ -119,6 +131,8 @@ export function useCreateCase() {
     mutationFn: (payload) => api.post("/cases", payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: caseKeys.all });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["reports"] });
     },
   });
 }

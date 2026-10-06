@@ -12,9 +12,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/lib/auth";
+import { toast } from "sonner";
 import { useCreateTask, useTaskOptions, type CreateTaskPayload } from "@/services/tasks";
 import { useCases } from "@/services/cases";
 import { useClients } from "@/services/clients";
+import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
 import {
   Dialog,
   DialogContent,
@@ -119,6 +121,7 @@ interface TaskFieldErrors {
   const [appliedTemplates, setAppliedTemplates] = useState<string[]>([]);
   const [manualCase, setManualCase] = useState(false);
   const [manualClient, setManualClient] = useState(false);
+  const [showCreateCaseDialog, setShowCreateCaseDialog] = useState(false);
   const templateInsertions = useRef<Record<string, string[]>>({});
 
   const createTask = useCreateTask();
@@ -219,7 +222,7 @@ interface TaskFieldErrors {
     onClose();
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent, isAddAnother = false) => {
     e.preventDefault();
     const errors: TaskFieldErrors = {};
 
@@ -296,8 +299,28 @@ interface TaskFieldErrors {
 
     createTask.mutate(payload, {
       onSuccess: () => {
-        reset();
-        onClose();
+        if (isAddAnother) {
+          toast.success(`Task "${cleanTitle}" created! You can now add another task.`);
+          setForm((prev) => ({
+            ...EMPTY_FORM,
+            caseId: prev.caseId,
+            clientId: prev.clientId,
+            assignedTo: prev.assignedTo,
+            category: prev.category,
+            priority: prev.priority,
+          }));
+          setChecklist([]);
+          setAddCallReminder(false);
+          setAgentSelect("");
+          setAgentCustom("");
+          setFieldErrors({});
+          setAppliedTemplates([]);
+          templateInsertions.current = {};
+        } else {
+          toast.success(`Task "${cleanTitle}" created!`);
+          reset();
+          onClose();
+        }
       },
     });
   };
@@ -454,13 +477,23 @@ interface TaskFieldErrors {
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <Label htmlFor="task-caseid" className="text-helper">Case (optional)</Label>
-                <button
-                  type="button"
-                  onClick={() => setManualCase((prev) => !prev)}
-                  className="text-xs text-primary hover:underline font-normal"
-                >
-                  {manualCase ? "Select from list" : "Enter manually"}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateCaseDialog(true)}
+                    className="text-xs text-primary hover:underline font-normal"
+                  >
+                    + New Case
+                  </button>
+                  <span className="text-muted-foreground/60 text-xs">•</span>
+                  <button
+                    type="button"
+                    onClick={() => setManualCase((prev) => !prev)}
+                    className="text-xs text-primary hover:underline font-normal"
+                  >
+                    {manualCase ? "Select from list" : "Enter manually"}
+                  </button>
+                </div>
               </div>
               {manualCase ? (
                 <Input
@@ -703,9 +736,19 @@ interface TaskFieldErrors {
           </div>
 
           {/* ── Actions ── */}
-          <DialogFooter>
+          <DialogFooter className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2">
             <Button type="button" variant="outline" onClick={handleClose}>
               Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isPending || !form.title.trim()}
+              onClick={(e) => handleSubmit(e, true)}
+              className="rounded-md"
+            >
+              {isPending ? <Loader2 size={16} className="animate-spin mr-1.5" /> : <Plus size={16} className="mr-1.5" />}
+              Create &amp; Add Another
             </Button>
             <Button
               type="submit"
@@ -722,6 +765,15 @@ interface TaskFieldErrors {
           )}
         </form>
       </DialogContent>
+
+      <AddCaseDialog
+        open={showCreateCaseDialog}
+        onClose={() => setShowCreateCaseDialog(false)}
+        onCaseCreated={(newCase) => {
+          update("caseId", newCase._id);
+          setShowCreateCaseDialog(false);
+        }}
+      />
     </Dialog>
   );
 }
