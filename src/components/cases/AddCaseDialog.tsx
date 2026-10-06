@@ -8,6 +8,7 @@ import {
   Loader2,
   CheckSquare,
   FolderOpen,
+  CornerDownRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useCreateCase, type CaseRecord } from "@/services/cases";
 import { useClients } from "@/services/clients";
-import { useTaskOptions } from "@/services/tasks";
+import { useTaskOptions, type ChecklistItem } from "@/services/tasks";
 import { useCategories } from "@/services/categories";
 import { DiscardConfirmationDialog } from "@/components/ui/discard-confirmation-dialog";
 import {
@@ -37,7 +38,7 @@ export interface CaseTaskEntry {
   priority: "High" | "Medium" | "Low";
   deadline: string;
   assignedTo: string;
-  checklist: string[];
+  checklist: ChecklistItem[];
 }
 
 interface PartyEntry {
@@ -204,24 +205,98 @@ export function AddCaseDialog({
     setTasks((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const addSubtaskToTask = (taskIdx: number) => {
+  const addChecklistItemToTask = (taskIdx: number) => {
     const input = (subtaskInput[taskIdx] || "").trim();
     if (!input) return;
+    const newItem: ChecklistItem = {
+      id: Math.random().toString(36).substring(2, 9),
+      text: input,
+      done: false,
+      subItems: [],
+    };
     setTasks((prev) =>
       prev.map((t, i) =>
-        i === taskIdx ? { ...t, checklist: [...t.checklist, input] } : t,
+        i === taskIdx ? { ...t, checklist: [...t.checklist, newItem] } : t,
       ),
     );
     setSubtaskInput((prev) => ({ ...prev, [taskIdx]: "" }));
   };
 
-  const removeSubtaskFromTask = (taskIdx: number, subIdx: number) => {
+  const updateChecklistItemText = (taskIdx: number, itemIdx: number, text: string) => {
+    setTasks((prev) =>
+      prev.map((t, i) => {
+        if (i !== taskIdx) return t;
+        const nextCl = [...t.checklist];
+        if (nextCl[itemIdx]) {
+          nextCl[itemIdx] = { ...nextCl[itemIdx], text };
+        }
+        return { ...t, checklist: nextCl };
+      }),
+    );
+  };
+
+  const removeChecklistItemFromTask = (taskIdx: number, itemIdx: number) => {
     setTasks((prev) =>
       prev.map((t, i) =>
         i === taskIdx
-          ? { ...t, checklist: t.checklist.filter((_, ci) => ci !== subIdx) }
+          ? { ...t, checklist: t.checklist.filter((_, ci) => ci !== itemIdx) }
           : t,
       ),
+    );
+  };
+
+  const addSubItemToTaskChecklist = (taskIdx: number, itemIdx: number) => {
+    setTasks((prev) =>
+      prev.map((t, i) => {
+        if (i !== taskIdx) return t;
+        const nextCl = [...t.checklist];
+        const target = nextCl[itemIdx];
+        if (target) {
+          const newSub = {
+            id: Math.random().toString(36).substring(2, 9),
+            text: "",
+            done: false,
+          };
+          nextCl[itemIdx] = {
+            ...target,
+            subItems: [...(target.subItems || []), newSub],
+          };
+        }
+        return { ...t, checklist: nextCl };
+      }),
+    );
+  };
+
+  const updateSubItemText = (taskIdx: number, itemIdx: number, subIdx: number, text: string) => {
+    setTasks((prev) =>
+      prev.map((t, i) => {
+        if (i !== taskIdx) return t;
+        const nextCl = [...t.checklist];
+        const target = nextCl[itemIdx];
+        if (target && target.subItems && target.subItems[subIdx]) {
+          const nextSubs = [...target.subItems];
+          nextSubs[subIdx] = { ...nextSubs[subIdx], text };
+          nextCl[itemIdx] = { ...target, subItems: nextSubs };
+        }
+        return { ...t, checklist: nextCl };
+      }),
+    );
+  };
+
+  const removeSubItemFromTaskChecklist = (taskIdx: number, itemIdx: number, subIdx: number) => {
+    setTasks((prev) =>
+      prev.map((t, i) => {
+        if (i !== taskIdx) return t;
+        const nextCl = [...t.checklist];
+        const target = nextCl[itemIdx];
+        if (target && target.subItems) {
+          nextCl[itemIdx] = {
+            ...target,
+            subItems: target.subItems.filter((_, si) => si !== subIdx),
+          };
+        }
+        return { ...t, checklist: nextCl };
+      }),
     );
   };
 
@@ -267,7 +342,18 @@ export function AddCaseDialog({
           priority: t.priority,
           deadline: t.deadline ? new Date(t.deadline).toISOString() : undefined,
           assignedTo: t.assignedTo || undefined,
-          checklist: t.checklist.map((item) => ({ text: item, done: false })),
+          checklist: t.checklist
+            .filter((item) => item.text && item.text.trim())
+            .map((item) => ({
+              text: item.text.trim(),
+              done: Boolean(item.done),
+              subItems: (item.subItems || [])
+                .filter((sub) => sub.text && sub.text.trim())
+                .map((sub) => ({
+                  text: sub.text.trim(),
+                  done: Boolean(sub.done),
+                })),
+            })),
         }));
 
       const payload = {
@@ -666,7 +752,15 @@ export function AddCaseDialog({
 
                       {/* Subtasks / Checklist */}
                       <div className="space-y-2 pt-2 border-t border-border/50">
-                        <Label className="text-xs text-muted-foreground">Checklist / Subtasks (optional)</Label>
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+                            <CheckSquare size={13} className="text-primary" />
+                            Checklist & Sub-checklists
+                          </Label>
+                          <span className="text-caption text-muted-foreground">
+                            {t.checklist.length} checklist item(s)
+                          </span>
+                        </div>
                         <div className="flex gap-2">
                           <Input
                             value={subtaskInput[idx] || ""}
@@ -674,39 +768,80 @@ export function AddCaseDialog({
                             onKeyDown={(e) => {
                               if (e.key === "Enter") {
                                 e.preventDefault();
-                                addSubtaskToTask(idx);
+                                addChecklistItemToTask(idx);
                               }
                             }}
-                            placeholder="Add subtask and press Enter"
+                            placeholder="Add checklist item and press Enter..."
                             className="h-9 text-xs rounded-md"
                           />
                           <Button
                             type="button"
                             variant="outline"
                             size="sm"
-                            className="h-9 px-2.5 text-xs rounded-md"
-                            onClick={() => addSubtaskToTask(idx)}
+                            className="h-9 px-3 text-xs rounded-md font-medium"
+                            onClick={() => addChecklistItemToTask(idx)}
                           >
-                            <Plus size={13} className="mr-1" /> Add
+                            <Plus size={13} className="mr-1" /> Add item
                           </Button>
                         </div>
 
                         {t.checklist.length > 0 && (
-                          <div className="space-y-1 mt-1.5">
+                          <div className="space-y-2 mt-2">
                             {t.checklist.map((item, cIdx) => (
                               <div
-                                key={cIdx}
-                                className="flex items-center justify-between rounded bg-background px-2.5 py-1 text-xs border border-border/50"
+                                key={item.id || cIdx}
+                                className="space-y-2 rounded-md border border-border/70 bg-card p-2.5 text-xs"
                               >
-                                <span className="text-muted-foreground truncate">{item}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => removeSubtaskFromTask(idx, cIdx)}
-                                  className="text-muted-foreground hover:text-destructive p-0.5 ml-2"
-                                  aria-label="Remove subtask"
-                                >
-                                  <X size={12} />
-                                </button>
+                                <div className="flex items-center gap-2">
+                                  <Input
+                                    value={item.text}
+                                    onChange={(e) => updateChecklistItemText(idx, cIdx, e.target.value)}
+                                    placeholder="Checklist step description..."
+                                    className="h-8 flex-1 text-xs font-medium rounded-md"
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => addSubItemToTaskChecklist(idx, cIdx)}
+                                    className="h-8 text-xs text-primary hover:bg-primary/10 px-2"
+                                  >
+                                    <Plus size={12} className="mr-1" /> Sub-item
+                                  </Button>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeChecklistItemFromTask(idx, cIdx)}
+                                    className="grid size-7 shrink-0 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                    aria-label="Remove checklist item"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+
+                                {/* Nested sub-items */}
+                                {Array.isArray(item.subItems) && item.subItems.length > 0 && (
+                                  <div className="pl-4 space-y-1.5 border-l-2 border-primary/20 ml-2 mt-1.5">
+                                    {item.subItems.map((sub, sIdx) => (
+                                      <div key={sub.id || sIdx} className="flex items-center gap-2">
+                                        <CornerDownRight size={12} className="text-muted-foreground shrink-0" />
+                                        <Input
+                                          value={sub.text}
+                                          onChange={(e) => updateSubItemText(idx, cIdx, sIdx, e.target.value)}
+                                          placeholder="Sub-step detail…"
+                                          className="h-7 text-xs rounded-md"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => removeSubItemFromTaskChecklist(idx, cIdx, sIdx)}
+                                          className="grid size-6 shrink-0 place-items-center text-muted-foreground hover:text-destructive"
+                                          aria-label="Remove sub-item"
+                                        >
+                                          <Trash2 size={12} />
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             ))}
                           </div>

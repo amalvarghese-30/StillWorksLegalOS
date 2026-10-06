@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo, useEffect } from "react";
-import { Plus, PhoneCall, ListTodo, LayoutGrid, CalendarDays, CheckCircle2, Circle, Clock, Loader2, ChevronLeft, ChevronRight, Search, Briefcase, Filter, X, SlidersHorizontal, UserCheck, AlertCircle, Check, Edit2, PhoneForwarded } from "lucide-react";
+import { Plus, PhoneCall, ListTodo, CalendarDays, CheckCircle2, Circle, Clock, Loader2, ChevronLeft, ChevronRight, Search, Briefcase, Filter, X, SlidersHorizontal, UserCheck, AlertCircle, Check, Edit2, PhoneForwarded } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
 import { StatusPill, toneForStatus } from "@/components/common/StatusPill";
@@ -41,7 +41,6 @@ export const Route = createFileRoute("/_shell/tasks")({
 const BUCKETS = ["Overdue", "Due Today", "Upcoming", "In Review", "Completed"] as const;
 const VIEWS = [
   { id: "list", label: "List", icon: ListTodo },
-  { id: "kanban", label: "Kanban", icon: LayoutGrid },
   { id: "calendar", label: "Calendar", icon: CalendarDays },
 ];
 
@@ -716,29 +715,7 @@ function TasksPage() {
       )}
 
       {/* Data */}
-      {!isLoading && !isError && tasks.length > 0 && view === "kanban" ? (
-        <div className="flex gap-4 overflow-x-auto touch-scroll pb-4 snap-x snap-mandatory sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-3 xl:grid-cols-5">
-          {BUCKETS.map((b) => {
-            const bucketTasks = tasks.filter((t) => getBucket(t) === b);
-            return (
-              <div key={b} className="w-[85vw] shrink-0 snap-center rounded-lg border border-border bg-card/70 p-4 sm:w-auto">
-                <div className="mb-4 flex items-center justify-between">
-                  <h2 className="text-helper font-semibold">{b}</h2>
-                  <StatusPill tone={toneForStatus(b)}>{bucketTasks.length}</StatusPill>
-                </div>
-                <div className="space-y-3 stagger-children">
-                  {bucketTasks.map((t) => (
-                    <TaskCard key={t._id} task={t} onSelect={setSelectedTask} />
-                  ))}
-                  {bucketTasks.length === 0 && (
-                    <p className="py-4 text-center text-caption text-muted-foreground">No tasks</p>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : !isLoading && !isError && tasks.length > 0 && view === "calendar" ? (
+      {!isLoading && !isError && tasks.length > 0 && view === "calendar" ? (
         <div className="space-y-6">
           {/* Calendar header */}
           <div className="flex items-center justify-between">

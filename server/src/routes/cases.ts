@@ -566,7 +566,20 @@ router.post("/", async (req: Request, res: Response) => {
           ? t.checklist
               .map((item: any) => {
                 const text = typeof item === "string" ? item.trim() : String(item?.text || "").trim();
-                return text ? { text, done: Boolean(item?.done) } : null;
+                if (!text) return null;
+                const subItems = Array.isArray(item?.subItems)
+                  ? item.subItems
+                      .map((sub: any) => {
+                        const subText = typeof sub === "string" ? sub.trim() : String(sub?.text || "").trim();
+                        return subText ? { text: subText, done: Boolean(sub?.done) } : null;
+                      })
+                      .filter(Boolean)
+                  : [];
+                return {
+                  text,
+                  done: Boolean(item?.done),
+                  subItems,
+                };
               })
               .filter(Boolean)
           : [];
