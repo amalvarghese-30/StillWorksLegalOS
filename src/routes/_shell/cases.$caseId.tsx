@@ -345,6 +345,15 @@ function CaseWorkspace() {
   const [showAddTaskDialog, setShowAddTaskDialog] = useState(false);
   const [showUploadDocDialog, setShowUploadDocDialog] = useState(false);
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
+
+  useEffect(() => {
+    if (selectedTask?._id && tasksData?.tasks && tasksData.tasks.length > 0) {
+      const updated = tasksData.tasks.find((t) => t._id === selectedTask._id);
+      if (updated && updated !== selectedTask) {
+        setSelectedTask(updated);
+      }
+    }
+  }, [tasksData?.tasks, selectedTask?._id]);
   const [isDeleting, setIsDeleting] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<any | null>(null);
   const [partyToDelete, setPartyToDelete] = useState<CaseParty | null>(null);

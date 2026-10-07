@@ -25,6 +25,7 @@ import {
   FolderOpen,
   ChevronRight,
   ChevronDown,
+  CheckCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,11 +61,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  useTask,
   useUpdateTask,
   useDeleteTask,
   useCreateTask,
   useTaskOptions,
   useToggleChecklistItem,
+  useAddChecklistItem,
+  useDeleteChecklistItem,
   useApproveTask,
   useRejectTask,
   useForwardTask,
@@ -74,6 +78,7 @@ import {
   useDeleteSubItem,
   type TaskRecord,
   type ChecklistItem,
+  type ChecklistSubItem,
   type CreateTaskPayload,
 } from "@/services/tasks";
 import { useCases } from "@/services/cases";
@@ -97,20 +102,24 @@ export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps)
 }
 
 function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose: () => void; task: TaskRecord }) {
+  const { data: taskQueryData } = useTask(task._id, task);
+  const activeTask = taskQueryData?.task ?? task;
+
   const [isEditing, setIsEditing] = useState(false);
-  const [title, setTitle] = useState(task.title || "");
-  const [description, setDescription] = useState(task.description || "");
-  const [category, setCategory] = useState(task.category || "General");
-  const [priority, setPriority] = useState(task.priority || "Medium");
+  const [title, setTitle] = useState(activeTask.title || "");
+  const [description, setDescription] = useState(activeTask.description || "");
+  const [category, setCategory] = useState(activeTask.category || "General");
+  const [priority, setPriority] = useState(activeTask.priority || "Medium");
   const [deadline, setDeadline] = useState(
-    task.deadline ? new Date(task.deadline).toISOString().slice(0, 16) : ""
+    activeTask.deadline ? new Date(activeTask.deadline).toISOString().slice(0, 16) : ""
   );
-  const [assignedTo, setAssignedTo] = useState(task.assignedTo?._id || "");
+  const [assignedTo, setAssignedTo] = useState(activeTask.assignedTo?._id || "");
   const [caseId, setCaseId] = useState("");
   const [clientId, setClientId] = useState("");
   const [manualCase, setManualCase] = useState(false);
   const [manualClient, setManualClient] = useState(false);
   const [newChecklistText, setNewChecklistText] = useState("");
+  const [liveChecklist, setLiveChecklist] = useState<ChecklistItem[]>(activeTask.checklist ?? []);
   const [editableChecklist, setEditableChecklist] = useState<ChecklistItem[]>([]);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingText, setEditingText] = useState("");
@@ -121,7 +130,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
   const [agentCustom, setAgentCustom] = useState("");
 
   // Call reminder state
-  const isCallTask = Boolean(task?.isCall || task?.callReminder);
+  const isCallTask = Boolean(activeTask?.isCall || activeTask?.callReminder);
   const [callClientName, setCallClientName] = useState("");
   const [callPhone, setCallPhone] = useState("");
   const [callScheduledAt, setCallScheduledAt] = useState("");
@@ -177,6 +186,8 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
   const deleteTask = useDeleteTask();
   const createTask = useCreateTask();
   const toggleItem = useToggleChecklistItem();
+  const addChecklistItem = useAddChecklistItem();
+  const deleteChecklistItem = useDeleteChecklistItem();
   const approveTask = useApproveTask();
   const rejectTask = useRejectTask();
   const forwardTask = useForwardTask();
@@ -196,32 +207,32 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
   const [expandedItems, setExpandedItems] = useState<{ [itemId: string]: boolean }>({});
 
   useEffect(() => {
-    if (task) {
-      setTitle(task.title || "");
-      setDescription(task.description || "");
-      setCategory(task.category || "General");
-      setPriority(task.priority || "Medium");
-      setDeadline(task.deadline ? new Date(task.deadline).toISOString().slice(0, 16) : "");
-      setAssignedTo(task.assignedTo?._id || "");
+    if (activeTask) {
+      setTitle(activeTask.title || "");
+      setDescription(activeTask.description || "");
+      setCategory(activeTask.category || "General");
+      setPriority(activeTask.priority || "Medium");
+      setDeadline(activeTask.deadline ? new Date(activeTask.deadline).toISOString().slice(0, 16) : "");
+      setAssignedTo(activeTask.assignedTo?._id || "");
 
       // Handle Agent / Broker initialization
-      if (task.agent) {
-        if (predefinedAgents.includes(task.agent)) {
-          setAgentSelect(task.agent);
+      if (activeTask.agent) {
+        if (predefinedAgents.includes(activeTask.agent)) {
+          setAgentSelect(activeTask.agent);
           setAgentCustom("");
         } else {
           setAgentSelect("__other__");
-          setAgentCustom(task.agent);
+          setAgentCustom(activeTask.agent);
         }
       } else {
         setAgentSelect("");
         setAgentCustom("");
       }
 
-      const cr = task.callReminder;
-      setCallClientName(cr?.clientName || (task.isCall ? task.title.replace(/^📞\s*CALL:\s*/i, "") : ""));
+      const cr = activeTask.callReminder;
+      setCallClientName(cr?.clientName || (activeTask.isCall ? activeTask.title.replace(/^📞\s*CALL:\s*/i, "") : ""));
       setCallPhone(cr?.phone || "");
-      const sched = cr?.scheduledAt ? new Date(cr.scheduledAt) : task.deadline ? new Date(task.deadline) : null;
+      const sched = cr?.scheduledAt ? new Date(cr.scheduledAt) : activeTask.deadline ? new Date(activeTask.deadline) : null;
       if (sched && !isNaN(sched.getTime())) {
         const localIso = new Date(sched.getTime() - sched.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
         setCallScheduledAt(localIso);
@@ -229,61 +240,137 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
         setCallScheduledAt("");
       }
       setCallNotes(cr?.notes || "");
-      setCallCompleted(Boolean(cr?.completed || task.status === "completed"));
+      setCallCompleted(Boolean(cr?.completed || activeTask.status === "completed"));
 
       const initialCaseId =
-        task.caseId && typeof task.caseId === "object"
-          ? (task.caseId as any)._id
-          : task.caseId || "";
+        activeTask.caseId && typeof activeTask.caseId === "object"
+          ? (activeTask.caseId as any)._id
+          : activeTask.caseId || "";
       setCaseId(initialCaseId || "");
 
       const initialClientId =
-        task.clientId && typeof task.clientId === "object"
-          ? (task.clientId as any)._id
-          : task.clientId || "";
+        activeTask.clientId && typeof activeTask.clientId === "object"
+          ? (activeTask.clientId as any)._id
+          : activeTask.clientId || "";
       setClientId(initialClientId || "");
 
       setManualCase(false);
       setManualClient(false);
       setIsEditing(false);
       setNewChecklistText("");
+      setLiveChecklist(activeTask.checklist ?? []);
       setEditableChecklist(
-        task.checklist?.map((c) => ({
+        (activeTask.checklist || []).map((c) => ({
           _id: c._id,
+          id: c.id,
           text: c.text,
           done: Boolean(c.done),
-        })) ?? []
+          subItems: Array.isArray(c.subItems)
+            ? c.subItems.map((s) => ({
+                _id: s._id,
+                id: s.id,
+                text: s.text,
+                done: Boolean(s.done),
+              }))
+            : [],
+        }))
       );
       setEditingIndex(null);
       setEditingText("");
     }
-  }, [task, predefinedAgents]);
+  }, [activeTask._id, predefinedAgents]);
+
+  useEffect(() => {
+    if (activeTask?.checklist) {
+      setLiveChecklist(activeTask.checklist);
+    }
+  }, [activeTask?.checklist]);
 
   const caseDisplay =
-    task.caseId && typeof task.caseId === "object"
-      ? (task.caseId.number ? `${task.caseId.number} — ${task.caseId.title}` : task.caseId.title)
-      : task.caseName || null;
+    activeTask.caseId && typeof activeTask.caseId === "object"
+      ? (activeTask.caseId.number ? `${activeTask.caseId.number} — ${activeTask.caseId.title}` : activeTask.caseId.title)
+      : activeTask.caseName || null;
 
   const clientDisplay =
-    task.clientId && typeof task.clientId === "object"
-      ? task.clientId.name
-      : task.clientName || null;
+    activeTask.clientId && typeof activeTask.clientId === "object"
+      ? activeTask.clientId.name
+      : activeTask.clientName || null;
 
-  const checklist: ChecklistItem[] = task.checklist ?? [];
+  const checklist: ChecklistItem[] = liveChecklist;
   const total = checklist.length;
   const doneCount = checklist.filter((c) => c.done).length;
   const pct = total === 0 ? 0 : Math.round((doneCount / total) * 100);
 
-  const handleToggle = async (item: ChecklistItem) => {
-    if (!item._id) return;
+  const handleToggle = async (item: ChecklistItem, idx: number) => {
+    const targetId = item._id || item.id;
+    const nextDone = !item.done;
+
+    // 1. Instant 0ms optimistic UI update
+    setLiveChecklist((prev) =>
+      prev.map((c, i) => {
+        const matches = (targetId && (c._id === targetId || c.id === targetId)) || i === idx;
+        if (!matches) return c;
+        return {
+          ...c,
+          done: nextDone,
+          subItems: nextDone && Array.isArray(c.subItems)
+            ? c.subItems.map((s) => ({ ...s, done: true }))
+            : c.subItems,
+        };
+      })
+    );
+
     try {
       await toggleItem.mutateAsync({
-        taskId: task._id,
-        itemId: item._id,
-        done: !item.done,
+        taskId: activeTask._id,
+        itemId: targetId || String(idx),
+        done: nextDone,
+        text: item.text,
+        itemText: item.text,
       });
+      if (nextDone && doneCount + 1 === total) {
+        toast.success("All checklist items completed!");
+      }
     } catch (err) {
       console.error("Failed to toggle checklist item:", err);
+      setLiveChecklist(activeTask.checklist ?? []);
+      toast.error("Failed to update checklist item");
+    }
+  };
+
+  const handleMarkAllChecklist = async (allDone: boolean) => {
+    if (total === 0) return;
+    const updated = checklist.map((c) => ({
+      ...c,
+      done: allDone,
+      subItems: Array.isArray(c.subItems) ? c.subItems.map((s) => ({ ...s, done: allDone })) : [],
+    }));
+
+    setLiveChecklist(updated);
+
+    try {
+      await updateTask.mutateAsync({
+        id: activeTask._id,
+        data: {
+          checklist: updated.map((c) => ({
+            id: c.id || (c._id ? String(c._id) : undefined),
+            text: c.text,
+            done: c.done,
+            subItems: Array.isArray(c.subItems)
+              ? c.subItems.map((s) => ({
+                  id: s.id || (s._id ? String(s._id) : undefined),
+                  text: s.text,
+                  done: s.done,
+                }))
+              : [],
+          })),
+        },
+      });
+      toast.success(allDone ? "All checklist items marked as completed!" : "Checklist items marked as pending");
+    } catch (err) {
+      console.error("Failed to update all checklist items:", err);
+      setLiveChecklist(activeTask.checklist ?? []);
+      toast.error("Failed to update checklist items");
     }
   };
 
@@ -294,25 +381,26 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
     if (isEditing) {
       setEditableChecklist((prev) => [
         ...prev,
-        { text: newChecklistText.trim(), done: false },
+        { text: newChecklistText.trim(), done: false, subItems: [] },
       ]);
       setNewChecklistText("");
       return;
     }
 
-    const updatedChecklist = [
-      ...checklist.map((c) => ({ text: c.text, done: c.done })),
-      { text: newChecklistText.trim(), done: false },
-    ];
+    const textToAdd = newChecklistText.trim();
+    setNewChecklistText("");
+    setLiveChecklist((prev) => [...prev, { text: textToAdd, done: false, subItems: [] }]);
 
     try {
-      await updateTask.mutateAsync({
-        id: task._id,
-        data: { checklist: updatedChecklist },
+      await addChecklistItem.mutateAsync({
+        taskId: activeTask._id,
+        text: textToAdd,
       });
-      setNewChecklistText("");
+      toast.success("Checklist item added");
     } catch (err) {
       console.error("Failed to add checklist item:", err);
+      setLiveChecklist(activeTask.checklist ?? []);
+      toast.error("Failed to add checklist item");
     }
   };
 
@@ -322,36 +410,119 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
       return;
     }
 
-    const updatedChecklist = checklist
-      .filter((_, idx) => idx !== indexToRemove)
-      .map((c) => ({ text: c.text, done: c.done }));
+    const item = checklist[indexToRemove];
+    const itemId = item?._id || item?.id || String(indexToRemove);
+
+    setLiveChecklist((prev) => prev.filter((_, idx) => idx !== indexToRemove));
 
     try {
-      await updateTask.mutateAsync({
-        id: task._id,
-        data: { checklist: updatedChecklist },
+      await deleteChecklistItem.mutateAsync({
+        taskId: activeTask._id,
+        itemId,
       });
+      toast.success("Checklist item removed");
     } catch (err) {
       console.error("Failed to remove checklist item:", err);
+      setLiveChecklist(activeTask.checklist ?? []);
+      toast.error("Failed to remove checklist item");
     }
   };
 
   const handleSaveInlineChecklistText = async (idx: number) => {
     if (!editingText.trim()) return;
-    const updatedChecklist = checklist.map((c, i) =>
-      i === idx ? { text: editingText.trim(), done: Boolean(c.done) } : { text: c.text, done: Boolean(c.done) }
+    const item = checklist[idx];
+    const itemId = item?._id || item?.id || String(idx);
+    const newText = editingText.trim();
+
+    setLiveChecklist((prev) =>
+      prev.map((c, i) => (i === idx ? { ...c, text: newText } : c))
     );
+    setEditingIndex(null);
+    setEditingText("");
+
     try {
-      await updateTask.mutateAsync({
-        id: task._id,
-        data: { checklist: updatedChecklist },
+      await toggleItem.mutateAsync({
+        taskId: activeTask._id,
+        itemId,
+        text: newText,
       });
-      setEditingIndex(null);
-      setEditingText("");
       toast.success("Checklist item updated");
     } catch (err) {
       console.error("Failed to update checklist item:", err);
+      setLiveChecklist(activeTask.checklist ?? []);
       toast.error("Failed to update checklist item");
+    }
+  };
+
+  const handleToggleSubItemClick = async (item: ChecklistItem, sub: ChecklistSubItem, itemIdx: number, subIdx: number) => {
+    const parentId = item._id || item.id || String(itemIdx);
+    const subId = sub._id || sub.id || String(subIdx);
+    const nextDone = !sub.done;
+
+    // Instant optimistic update
+    setLiveChecklist((prev) =>
+      prev.map((ci, i) => {
+        const matchesParent = (item._id && ci._id === item._id) || (item.id && ci.id === item.id) || i === itemIdx;
+        if (!matchesParent) return ci;
+        const newSubs = (ci.subItems || []).map((si, sI) => {
+          const matchesSub = (sub._id && si._id === sub._id) || (sub.id && si.id === sub.id) || sI === subIdx;
+          return matchesSub ? { ...si, done: nextDone } : si;
+        });
+        const allSubsDone = newSubs.length > 0 && newSubs.every((s) => s.done);
+        return {
+          ...ci,
+          done: allSubsDone ? true : ci.done,
+          subItems: newSubs,
+        };
+      })
+    );
+
+    try {
+      await toggleSubItem.mutateAsync({
+        taskId: activeTask._id,
+        itemId: parentId,
+        subId,
+        done: nextDone,
+        text: sub.text,
+        subText: sub.text,
+      });
+    } catch (err) {
+      console.error("Failed to toggle sub-item:", err);
+      setLiveChecklist(activeTask.checklist ?? []);
+      toast.error("Failed to toggle sub-item");
+    }
+  };
+
+  const handleAddSubItemSubmit = async (item: ChecklistItem, itemIdx: number) => {
+    const itemId = item._id || item.id || String(itemIdx);
+    const text = (newSubItemText[itemId] || "").trim();
+    if (!text) return;
+
+    // Optimistic add
+    const tempSub: ChecklistSubItem = { id: `temp-${Date.now()}`, text, done: false };
+    setLiveChecklist((prev) =>
+      prev.map((ci, i) => {
+        const matches = (item._id && ci._id === item._id) || (item.id && ci.id === item.id) || i === itemIdx;
+        if (!matches) return ci;
+        return {
+          ...ci,
+          subItems: [...(ci.subItems || []), tempSub],
+        };
+      })
+    );
+    setNewSubItemText((prev) => ({ ...prev, [itemId]: "" }));
+
+    try {
+      await addSubItem.mutateAsync({
+        taskId: activeTask._id,
+        itemId,
+        text,
+      });
+      toast.success("Sub-item added successfully");
+    } catch (err) {
+      console.error("Failed to add sub-item:", err);
+      setLiveChecklist(activeTask.checklist ?? []);
+      toast.error("Failed to add sub-item");
     }
   };
 
@@ -395,7 +566,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
           ? agentCustom.trim()
           : agentSelect.trim();
 
-      const payload: Partial<CreateTaskPayload> & { checklist?: Array<{ text: string; done: boolean }> } = {
+      const payload: Partial<CreateTaskPayload> & { checklist?: any[] } = {
         title: title.trim(),
         description: description.trim(),
         category: category.trim(),
@@ -406,8 +577,20 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
         checklist: editableChecklist
           .filter((c) => c.text.trim())
           .map((c) => ({
+            ...(c._id ? { _id: c._id } : {}),
+            id: c.id || (c._id ? String(c._id) : undefined),
             text: c.text.trim(),
             done: Boolean(c.done),
+            subItems: Array.isArray(c.subItems)
+              ? c.subItems
+                  .filter((s) => s.text.trim())
+                  .map((s) => ({
+                    ...(s._id ? { _id: s._id } : {}),
+                    id: s.id || (s._id ? String(s._id) : undefined),
+                    text: s.text.trim(),
+                    done: Boolean(s.done),
+                  }))
+              : [],
           })),
       };
       if (deadline) {
@@ -436,10 +619,10 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
       }
 
       await updateTask.mutateAsync({
-        id: task._id,
+        id: activeTask._id,
         data: payload,
       });
-      toast.success("Task details saved");
+      toast.success("Task details saved successfully");
       setIsEditing(false);
     } catch (err) {
       console.error("Failed to update task details:", err);
@@ -450,11 +633,11 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
   const handleDeleteTask = async (e?: React.MouseEvent) => {
     e?.preventDefault();
     try {
-      const res = await deleteTask.mutateAsync(task._id);
+      const res = await deleteTask.mutateAsync(activeTask._id);
       if (res?.alreadyDeleted) {
         toast.info("Task was already deleted or is no longer available.");
       } else {
-        toast.success(`Task "${task.title}" deleted`);
+        toast.success(`Task "${activeTask.title}" deleted`);
       }
       setShowDeleteConfirm(false);
       onClose();
@@ -473,27 +656,27 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
   const handleDuplicateTask = async () => {
     try {
       const duplicatePayload: CreateTaskPayload = {
-        title: `${task.title} (Copy)`,
-        description: task.description,
-        category: task.category,
-        priority: task.priority,
-        agent: task.agent,
-        checklist: (task.checklist || []).map((c) => ({ text: c.text, done: false })),
-        caseId: task.caseId && typeof task.caseId === "object" ? (task.caseId as any)._id : task.caseId || null,
-        clientId: task.clientId && typeof task.clientId === "object" ? (task.clientId as any)._id : task.clientId || null,
+        title: `${activeTask.title} (Copy)`,
+        description: activeTask.description,
+        category: activeTask.category,
+        priority: activeTask.priority,
+        agent: activeTask.agent,
+        checklist: (activeTask.checklist || []).map((c) => ({ text: c.text, done: false })),
+        caseId: activeTask.caseId && typeof activeTask.caseId === "object" ? (activeTask.caseId as any)._id : activeTask.caseId || null,
+        clientId: activeTask.clientId && typeof activeTask.clientId === "object" ? (activeTask.clientId as any)._id : activeTask.clientId || null,
       };
-      if (task.deadline) {
-        duplicatePayload.deadline = task.deadline;
+      if (activeTask.deadline) {
+        duplicatePayload.deadline = activeTask.deadline;
       }
-      if (task.callReminder) {
+      if (activeTask.callReminder) {
         duplicatePayload.callReminder = {
-          clientName: task.callReminder.clientName,
-          phone: task.callReminder.phone,
-          scheduledAt: task.callReminder.scheduledAt,
-          notes: task.callReminder.notes,
+          clientName: activeTask.callReminder.clientName,
+          phone: activeTask.callReminder.phone,
+          scheduledAt: activeTask.callReminder.scheduledAt,
+          notes: activeTask.callReminder.notes,
           completed: false,
         };
-        duplicatePayload.isCall = task.isCall;
+        duplicatePayload.isCall = activeTask.isCall;
       }
       await createTask.mutateAsync(duplicatePayload);
       toast.success("Task duplicated successfully");
@@ -507,7 +690,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
   const handleSetStatus = async (status: "pending" | "in_progress" | "pending_approval" | "completed") => {
     try {
       await updateTask.mutateAsync({
-        id: task._id,
+        id: activeTask._id,
         data: { status },
       });
       if (status === "pending_approval") {
@@ -527,20 +710,20 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
 
   const isCreatorOrAdmin =
     isAdmin ||
-    (task.createdBy &&
-      (typeof task.createdBy === "object" ? (task.createdBy as any)._id : task.createdBy)?.toString() ===
+    (activeTask.createdBy &&
+      (typeof activeTask.createdBy === "object" ? (activeTask.createdBy as any)._id : activeTask.createdBy)?.toString() ===
         user?._id?.toString());
 
   const isDirty = useMemo(() => {
     if (!isEditing) return false;
     return (
-      title !== (task.title || "") ||
-      description !== (task.description || "") ||
-      category !== (task.category || "General") ||
-      priority !== (task.priority || "Medium") ||
-      assignedTo !== (task.assignedTo?._id || "")
+      title !== (activeTask.title || "") ||
+      description !== (activeTask.description || "") ||
+      category !== (activeTask.category || "General") ||
+      priority !== (activeTask.priority || "Medium") ||
+      assignedTo !== (activeTask.assignedTo?._id || "")
     );
-  }, [isEditing, title, description, category, priority, assignedTo, task]);
+  }, [isEditing, title, description, category, priority, assignedTo, activeTask]);
 
   const handleAttemptClose = () => {
     if (isEditing && isDirty) {
@@ -574,41 +757,41 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
               <div className="space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded-pill bg-primary/10 px-2.5 py-0.5 text-caption font-semibold text-primary">
-                    {task.category || "Task"}
+                    {activeTask.category || "Task"}
                   </span>
                   <span
                     className={`rounded-pill px-2.5 py-0.5 text-caption font-semibold ${
-                      task.priority === "High"
+                      activeTask.priority === "High"
                         ? "bg-destructive/15 text-destructive"
-                        : task.priority === "Medium"
+                        : activeTask.priority === "Medium"
                         ? "bg-warning/15 text-warning"
                         : "bg-muted text-muted-foreground"
                     }`}
                   >
-                    {task.priority || "Medium"}
+                    {activeTask.priority || "Medium"}
                   </span>
-                  {task.status === "completed" ? (
+                  {activeTask.status === "completed" ? (
                     <span className="rounded-pill bg-success/15 text-success px-2.5 py-0.5 text-caption font-semibold flex items-center gap-1">
                       <CheckCircle2 size={12} /> Completed
                     </span>
-                  ) : task.status === "pending_approval" ? (
+                  ) : activeTask.status === "pending_approval" ? (
                     <span className="rounded-pill bg-amber-500/15 text-amber-600 dark:text-amber-400 px-2.5 py-0.5 text-caption font-semibold flex items-center gap-1">
                       <Clock size={12} /> Pending Approval
                     </span>
-                  ) : task.status === "overdue" ? (
+                  ) : activeTask.status === "overdue" ? (
                     <span className="rounded-pill bg-destructive text-destructive-foreground px-2.5 py-0.5 text-caption font-bold">
                       Overdue
                     </span>
                   ) : null}
 
-                  {task.agent && (
+                  {activeTask.agent && (
                     <span className="rounded-pill bg-secondary/80 px-2.5 py-0.5 text-caption font-medium text-foreground border border-border">
-                      Agent: {task.agent}
+                      Agent: {activeTask.agent}
                     </span>
                   )}
                 </div>
                 <DialogTitle className="text-title font-semibold text-foreground pt-1">
-                  {task.title}
+                  {activeTask.title}
                 </DialogTitle>
                 {caseDisplay && (
                   <DialogDescription className="text-helper text-muted-foreground flex items-center gap-1.5">
@@ -625,11 +808,20 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                   onClick={() => {
                     if (!isEditing) {
                       setEditableChecklist(
-                        task.checklist?.map((c) => ({
+                        (activeTask.checklist || []).map((c) => ({
                           _id: c._id,
+                          id: c.id,
                           text: c.text,
                           done: Boolean(c.done),
-                        })) ?? []
+                          subItems: Array.isArray(c.subItems)
+                            ? c.subItems.map((s) => ({
+                                _id: s._id,
+                                id: s.id,
+                                text: s.text,
+                                done: Boolean(s.done),
+                              }))
+                            : [],
+                        }))
                       );
                       setEditingIndex(null);
                     }
@@ -638,7 +830,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                   className="rounded-md h-8 text-xs"
                 >
                   <Edit2 size={13} className="mr-1.5" />
-                  {isEditing ? "View" : "Edit"}
+                  {isEditing ? "View Details" : "Edit"}
                 </Button>
 
                 {/* More Options Dropdown */}
@@ -657,14 +849,14 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                       <DropdownMenuSubContent className="w-44">
                         <DropdownMenuItem
                           className="text-xs"
-                          disabled={task.status === "pending"}
+                          disabled={activeTask.status === "pending"}
                           onClick={() => handleSetStatus("pending")}
                         >
                           Mark as Pending
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-xs"
-                          disabled={task.status === "in_progress"}
+                          disabled={activeTask.status === "in_progress"}
                           onClick={() => handleSetStatus("in_progress")}
                         >
                           Mark as In Progress
@@ -672,7 +864,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                         {isAdmin ? (
                           <DropdownMenuItem
                             className="text-xs font-medium text-emerald-600 dark:text-emerald-400"
-                            disabled={task.status === "completed"}
+                            disabled={activeTask.status === "completed"}
                             onClick={() => handleSetStatus("completed")}
                           >
                             Approve & Complete
@@ -680,13 +872,13 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                         ) : (
                           <DropdownMenuItem
                             className="text-xs font-medium text-amber-600 dark:text-amber-400"
-                            disabled={task.status === "pending_approval" || task.status === "completed"}
+                            disabled={activeTask.status === "pending_approval" || activeTask.status === "completed"}
                             onClick={() => handleSetStatus("pending_approval")}
                           >
                             Submit for Approval
                           </DropdownMenuItem>
                         )}
-                        {isAdmin && task.status === "pending_approval" && (
+                        {isAdmin && activeTask.status === "pending_approval" && (
                           <DropdownMenuItem
                             className="text-xs text-amber-600 dark:text-amber-400"
                             onClick={() => handleSetStatus("in_progress")}
@@ -731,7 +923,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
           </DialogHeader>
 
           {/* Clean Informational Status Banners (No redundant duplicate action buttons) */}
-          {task.status === "pending_approval" && (
+          {activeTask.status === "pending_approval" && (
             <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5 flex items-start gap-2.5">
               <Clock size={18} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
               <div>
@@ -747,7 +939,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
             </div>
           )}
 
-          {task.status === "completed" && (
+          {activeTask.status === "completed" && (
             <div className="mt-4 rounded-lg border border-success/30 bg-success/10 p-3.5 flex items-center gap-2.5">
               <CheckCircle2 size={18} className="shrink-0 text-success" />
               <div>
@@ -757,7 +949,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
             </div>
           )}
 
-          {task.status !== "completed" && task.status !== "pending_approval" && total > 0 && doneCount === total && (
+          {activeTask.status !== "completed" && activeTask.status !== "pending_approval" && total > 0 && doneCount === total && (
             <div className="mt-4 rounded-lg border border-primary/30 bg-primary/5 p-3.5 flex items-center gap-2.5">
               <CheckCircle2 size={18} className="shrink-0 text-primary" />
               <div>
@@ -1061,11 +1253,20 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                   size="sm"
                   onClick={() => {
                     setEditableChecklist(
-                      task.checklist?.map((c) => ({
+                      (activeTask.checklist || []).map((c) => ({
                         _id: c._id,
+                        id: c.id,
                         text: c.text,
                         done: Boolean(c.done),
-                      })) ?? []
+                        subItems: Array.isArray(c.subItems)
+                          ? c.subItems.map((s) => ({
+                              _id: s._id,
+                              id: s.id,
+                              text: s.text,
+                              done: Boolean(s.done),
+                            }))
+                          : [],
+                      }))
                     );
                     setIsEditing(false);
                   }}
@@ -1075,35 +1276,35 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                 </Button>
                 <Button
                   size="sm"
-                  className="gradient-primary rounded-md text-primary-foreground"
+                  className="gradient-primary rounded-md text-primary-foreground font-semibold shadow-soft"
                   onClick={handleSaveDetails}
                   disabled={updateTask.isPending}
                 >
                   {updateTask.isPending ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Check size={14} className="mr-1.5" />}
-                  Save Details
+                  Save Changes
                 </Button>
               </div>
             </div>
           ) : (
             /* View Details */
             <div className="mt-4 space-y-4">
-              {task.description && (
+              {activeTask.description && (
                 <div className="rounded-md bg-muted/50 p-3 text-helper text-foreground/90 whitespace-pre-wrap">
-                  {task.description}
+                  {activeTask.description}
                 </div>
               )}
 
               <div className="grid gap-3 sm:grid-cols-2 text-helper">
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <User size={15} />
-                  <span>Assignee: <strong className="text-foreground">{task.assignedTo?.name || "Unassigned"}</strong></span>
+                  <span>Assignee: <strong className="text-foreground">{activeTask.assignedTo?.name || "Unassigned"}</strong></span>
                 </div>
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Calendar size={15} />
                   <span>
                     Deadline:{" "}
                     <strong className="text-foreground">
-                      {formatSafeDateTime(task.deadline, "No deadline")}
+                      {formatSafeDateTime(activeTask.deadline, "No deadline")}
                     </strong>
                   </span>
                 </div>
@@ -1125,12 +1326,12 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                     </span>
                   </div>
                 )}
-                {task.agent && (
+                {activeTask.agent && (
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Tag size={15} />
                     <span>
                       Agent / Broker:{" "}
-                      <strong className="text-foreground">{task.agent}</strong>
+                      <strong className="text-foreground">{activeTask.agent}</strong>
                     </span>
                   </div>
                 )}
@@ -1139,60 +1340,60 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                   <span>
                     Created By:{" "}
                     <strong className="text-foreground">
-                      {typeof task.createdBy === "object" ? task.createdBy?.name : "System"}
+                      {typeof activeTask.createdBy === "object" ? activeTask.createdBy?.name : "System"}
                     </strong>
                   </span>
                 </div>
-                {task.assignedBy && (
+                {activeTask.assignedBy && (
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <UserCheck size={15} />
                     <span>
                       Assigned By:{" "}
                       <strong className="text-foreground">
-                        {typeof task.assignedBy === "object" ? task.assignedBy?.name : "Admin"}
+                        {typeof activeTask.assignedBy === "object" ? activeTask.assignedBy?.name : "Admin"}
                       </strong>
                     </span>
                   </div>
                 )}
-                {task.startedAt && (
+                {activeTask.startedAt && (
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Clock size={15} />
-                    <span>Started: <strong className="text-foreground">{formatSafeDateTime(task.startedAt)}</strong></span>
+                    <span>Started: <strong className="text-foreground">{formatSafeDateTime(activeTask.startedAt)}</strong></span>
                   </div>
                 )}
-                {task.completedAt && (
+                {activeTask.completedAt && (
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <CheckCircle2 size={15} className="text-success" />
-                    <span>Completed: <strong className="text-foreground">{formatSafeDateTime(task.completedAt)}</strong></span>
+                    <span>Completed: <strong className="text-foreground">{formatSafeDateTime(activeTask.completedAt)}</strong></span>
                   </div>
                 )}
-                {task.submittedForApprovalAt && (
+                {activeTask.submittedForApprovalAt && (
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Clock size={15} className="text-amber-500" />
-                    <span>Submitted for Review: <strong className="text-foreground">{formatSafeDateTime(task.submittedForApprovalAt)}</strong></span>
+                    <span>Submitted for Review: <strong className="text-foreground">{formatSafeDateTime(activeTask.submittedForApprovalAt)}</strong></span>
                   </div>
                 )}
-                {task.approvedAt && (
+                {activeTask.approvedAt && (
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Check size={15} className="text-emerald-500" />
-                    <span>Approved: <strong className="text-foreground">{formatSafeDateTime(task.approvedAt)}</strong></span>
+                    <span>Approved: <strong className="text-foreground">{formatSafeDateTime(activeTask.approvedAt)}</strong></span>
                   </div>
                 )}
               </div>
 
               {/* Local Folder / File Path */}
-              {task.localPath && (
+              {activeTask.localPath && (
                 <div className="flex items-center justify-between rounded-lg border border-border/80 bg-muted/40 p-3 text-xs">
                   <div className="min-w-0">
                     <p className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">Local Task Folder</p>
-                    <p className="font-mono text-xs text-foreground truncate mt-0.5">{task.localPath}</p>
+                    <p className="font-mono text-xs text-foreground truncate mt-0.5">{activeTask.localPath}</p>
                   </div>
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
                     className="h-7 text-xs rounded-md shrink-0 ml-2"
-                    onClick={() => openLocalPath(task.localPath!)}
+                    onClick={() => openLocalPath(activeTask.localPath!)}
                   >
                     <FolderOpen size={13} className="mr-1" /> Open Path
                   </Button>
@@ -1200,13 +1401,13 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
               )}
 
               {/* Assignment Audit History */}
-              {task.assignmentHistory && task.assignmentHistory.length > 0 && (
+              {activeTask.assignmentHistory && activeTask.assignmentHistory.length > 0 && (
                 <div className="rounded-lg border border-border/70 bg-card p-3.5 space-y-2">
                   <h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                     <UserCheck size={13} /> Assignment History & Audit Trail
                   </h5>
                   <div className="divide-y divide-border/50 max-h-36 overflow-y-auto pr-1">
-                    {task.assignmentHistory.slice().reverse().map((h, i) => (
+                    {activeTask.assignmentHistory.slice().reverse().map((h, i) => (
                       <div key={i} className="py-2 first:pt-1 text-xs">
                         <p className="font-medium text-foreground">
                           {h.action ? h.action.toUpperCase() : "ASSIGNED"}: {typeof h.fromUser === "object" ? h.fromUser?.name : "—"} → {typeof h.toUser === "object" ? h.toUser?.name : "—"}
@@ -1222,7 +1423,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
               )}
 
               {/* Dedicated Call Reminder Card */}
-              {(task.isCall || task.callReminder) && (
+              {(activeTask.isCall || activeTask.callReminder) && (
                 <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 shadow-soft">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
@@ -1244,7 +1445,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                         </div>
                         <p className="text-[11px] text-muted-foreground flex items-center gap-1 mt-0.5">
                           <Clock size={11} />
-                          {formatSafeDateTime(task.callReminder?.scheduledAt, "No scheduled time")}
+                          {formatSafeDateTime(activeTask.callReminder?.scheduledAt, "No scheduled time")}
                         </p>
                       </div>
                     </div>
@@ -1276,16 +1477,16 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                   <div className="mt-3 grid gap-2 sm:grid-cols-2 text-xs">
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <User size={13} />
-                      <span>Contact: <strong className="text-foreground">{task.callReminder?.clientName || task.title}</strong></span>
+                      <span>Contact: <strong className="text-foreground">{activeTask.callReminder?.clientName || activeTask.title}</strong></span>
                     </div>
-                    {task.callReminder?.phone && (
+                    {activeTask.callReminder?.phone && (
                       <div className="flex items-center justify-between rounded border border-border/60 bg-card px-2.5 py-1">
-                        <span className="font-mono text-xs font-medium text-foreground">{task.callReminder.phone}</span>
+                        <span className="font-mono text-xs font-medium text-foreground">{activeTask.callReminder.phone}</span>
                         <div className="flex items-center gap-1">
                           <button
                             type="button"
                             onClick={() => {
-                              navigator.clipboard.writeText(task.callReminder!.phone);
+                              navigator.clipboard.writeText(activeTask.callReminder!.phone);
                               toast.success("Phone number copied to clipboard");
                             }}
                             className="rounded p-1 text-muted-foreground hover:text-foreground"
@@ -1294,7 +1495,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                             <Copy size={12} />
                           </button>
                           <a
-                            href={`tel:${task.callReminder.phone}`}
+                            href={`tel:${activeTask.callReminder.phone}`}
                             className="rounded bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
                           >
                             Call
@@ -1304,9 +1505,9 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                     )}
                   </div>
 
-                  {task.callReminder?.notes && (
+                  {activeTask.callReminder?.notes && (
                     <p className="mt-2.5 rounded border border-border/50 bg-background/60 p-2.5 text-xs text-foreground/90 italic">
-                      &ldquo;{task.callReminder.notes}&rdquo;
+                      &ldquo;{activeTask.callReminder.notes}&rdquo;
                     </p>
                   )}
                 </div>
@@ -1329,13 +1530,42 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                   </span>
                 )}
               </h4>
-              {!isEditing && <span className="text-caption font-semibold text-primary">{pct}%</span>}
+              {!isEditing && total > 0 && (
+                <div className="flex items-center gap-2">
+                  {doneCount < total ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleMarkAllChecklist(true)}
+                      disabled={updateTask.isPending}
+                      className="h-7 px-2 text-xs text-primary hover:bg-primary/10 font-medium rounded-md"
+                      title="Mark all checklist items as completed in one click"
+                    >
+                      <CheckCheck size={14} className="mr-1" /> Mark All Done
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleMarkAllChecklist(false)}
+                      disabled={updateTask.isPending}
+                      className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground font-medium rounded-md"
+                      title="Reset all checklist items"
+                    >
+                      <RotateCcw size={12} className="mr-1" /> Reset All
+                    </Button>
+                  )}
+                  <span className="text-caption font-semibold text-primary min-w-[32px] text-right">{pct}%</span>
+                </div>
+              )}
             </div>
 
             {!isEditing && <Progress value={pct} className="h-1.5 mb-3" />}
 
             {/* Scrollable list of items */}
-            <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
+            <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
               {isEditing ? (
                 /* Editable list in Task Edit mode */
                 editableChecklist.length === 0 ? (
@@ -1343,46 +1573,175 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                 ) : (
                   editableChecklist.map((item, idx) => (
                     <div
-                      key={item._id || idx}
-                      className="flex items-center gap-2 rounded-lg p-2 bg-muted/40 border border-border/70 focus-within:border-primary/60 transition-colors"
+                      key={item._id || item.id || idx}
+                      className="rounded-lg p-2.5 bg-muted/40 border border-border/70 space-y-2 focus-within:border-primary/60 transition-colors"
                     >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditableChecklist((prev) =>
-                            prev.map((c, i) => (i === idx ? { ...c, done: !c.done } : c))
-                          );
-                        }}
-                        className="shrink-0 p-1 text-muted-foreground hover:text-foreground"
-                        title={item.done ? "Mark incomplete" : "Mark complete"}
-                      >
-                        {item.done ? (
-                          <CheckCircle2 size={17} className="text-success" />
-                        ) : (
-                          <Circle size={17} className="text-muted-foreground" />
-                        )}
-                      </button>
-                      <Input
-                        value={item.text}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setEditableChecklist((prev) =>
-                            prev.map((c, i) => (i === idx ? { ...c, text: val } : c))
-                          );
-                        }}
-                        placeholder="Checklist step description…"
-                        className="h-8 text-helper rounded bg-background flex-1"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleRemoveChecklistItem(idx)}
-                        className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
-                        title="Remove checklist item"
-                      >
-                        <Trash2 size={14} />
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditableChecklist((prev) =>
+                              prev.map((c, i) => (i === idx ? { ...c, done: !c.done } : c))
+                            );
+                          }}
+                          className="shrink-0 p-1 text-muted-foreground hover:text-foreground"
+                          title={item.done ? "Mark incomplete" : "Mark complete"}
+                        >
+                          {item.done ? (
+                            <CheckCircle2 size={17} className="text-success" />
+                          ) : (
+                            <Circle size={17} className="text-muted-foreground" />
+                          )}
+                        </button>
+                        <Input
+                          value={item.text}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setEditableChecklist((prev) =>
+                              prev.map((c, i) => (i === idx ? { ...c, text: val } : c))
+                            );
+                          }}
+                          placeholder="Checklist step description…"
+                          className="h-8 text-helper rounded bg-background flex-1"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleRemoveChecklistItem(idx)}
+                          className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
+                          title="Remove checklist item"
+                        >
+                          <Trash2 size={14} />
+                        </Button>
+                      </div>
+
+                      {/* Sub-items in Edit Mode */}
+                      <div className="ml-6 pl-2.5 border-l-2 border-border/60 space-y-1.5">
+                        {item.subItems?.map((sub, sIdx) => (
+                          <div key={sub._id || sub.id || sIdx} className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditableChecklist((prev) =>
+                                  prev.map((c, i) =>
+                                    i === idx
+                                      ? {
+                                          ...c,
+                                          subItems: c.subItems?.map((s, si) =>
+                                            si === sIdx ? { ...s, done: !s.done } : s
+                                          ),
+                                        }
+                                      : c
+                                  )
+                                );
+                              }}
+                              className="shrink-0 p-1 text-muted-foreground hover:text-foreground"
+                            >
+                              {sub.done ? (
+                                <CheckCircle2 size={14} className="text-success" />
+                              ) : (
+                                <Circle size={14} className="text-muted-foreground" />
+                              )}
+                            </button>
+                            <Input
+                              value={sub.text}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditableChecklist((prev) =>
+                                  prev.map((c, i) =>
+                                    i === idx
+                                      ? {
+                                          ...c,
+                                          subItems: c.subItems?.map((s, si) =>
+                                            si === sIdx ? { ...s, text: val } : s
+                                          ),
+                                        }
+                                      : c
+                                  )
+                                );
+                              }}
+                              placeholder="Sub-item step..."
+                              className="h-7 text-xs rounded bg-background flex-1"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                setEditableChecklist((prev) =>
+                                  prev.map((c, i) =>
+                                    i === idx
+                                      ? { ...c, subItems: c.subItems?.filter((_, si) => si !== sIdx) }
+                                      : c
+                                  )
+                                );
+                              }}
+                              className="size-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
+                              title="Remove sub-item"
+                            >
+                              <X size={12} />
+                            </Button>
+                          </div>
+                        ))}
+
+                        {/* Add sub-item in edit mode */}
+                        <div className="flex items-center gap-1.5 pt-1">
+                          <Input
+                            value={newSubItemText[item._id || item.id || String(idx)] || ""}
+                            onChange={(e) =>
+                              setNewSubItemText((prev) => ({
+                                ...prev,
+                                [item._id || item.id || String(idx)]: e.target.value,
+                              }))
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                const text = (newSubItemText[item._id || item.id || String(idx)] || "").trim();
+                                if (!text) return;
+                                setEditableChecklist((prev) =>
+                                  prev.map((c, i) =>
+                                    i === idx
+                                      ? {
+                                          ...c,
+                                          subItems: [...(c.subItems || []), { text, done: false }],
+                                        }
+                                      : c
+                                  )
+                                );
+                                setNewSubItemText((prev) => ({ ...prev, [item._id || item.id || String(idx)]: "" }));
+                              }
+                            }}
+                            placeholder="Add sub-item step..."
+                            className="h-7 text-xs rounded bg-background flex-1"
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            className="h-7 px-2.5 text-xs shrink-0"
+                            disabled={!(newSubItemText[item._id || item.id || String(idx)] || "").trim()}
+                            onClick={() => {
+                              const text = (newSubItemText[item._id || item.id || String(idx)] || "").trim();
+                              if (!text) return;
+                              setEditableChecklist((prev) =>
+                                prev.map((c, i) =>
+                                  i === idx
+                                    ? {
+                                        ...c,
+                                        subItems: [...(c.subItems || []), { text, done: false }],
+                                      }
+                                    : c
+                                )
+                              );
+                              setNewSubItemText((prev) => ({ ...prev, [item._id || item.id || String(idx)]: "" }));
+                            }}
+                          >
+                            <Plus size={12} className="mr-1" /> Add
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   ))
                 )
@@ -1392,7 +1751,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                   <p className="py-4 text-center text-helper text-muted-foreground">No checklist items yet.</p>
                 ) : (
                   checklist.map((item, idx) => (
-                  <div key={item._id || idx} className="space-y-1">
+                  <div key={item._id || item.id || idx} className="space-y-1">
                     <div
                       className="group flex items-center justify-between gap-2 rounded-md p-2 hover:bg-muted/60 transition-colors"
                     >
@@ -1438,16 +1797,15 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                         <>
                           <button
                             type="button"
-                            onClick={() => handleToggle(item)}
-                            disabled={toggleItem.isPending}
-                            className="flex min-w-0 flex-1 items-center gap-2.5 text-left text-helper"
+                            onClick={() => handleToggle(item, idx)}
+                            className="flex min-w-0 flex-1 items-center gap-2.5 text-left text-helper py-0.5 cursor-pointer"
                           >
                             {item.done ? (
-                              <CheckCircle2 size={17} className="shrink-0 text-success" />
+                              <CheckCircle2 size={17} className="shrink-0 text-success transition-transform active:scale-95" />
                             ) : (
-                              <Circle size={17} className="shrink-0 text-muted-foreground group-hover:text-foreground" />
+                              <Circle size={17} className="shrink-0 text-muted-foreground group-hover:text-foreground transition-transform active:scale-95" />
                             )}
-                            <span className={`truncate ${item.done ? "text-muted-foreground line-through" : "text-foreground"}`}>
+                            <span className={`truncate ${item.done ? "text-muted-foreground line-through" : "text-foreground font-medium"}`}>
                               {item.text}
                             </span>
                           </button>
@@ -1467,9 +1825,10 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                             <button
                               type="button"
                               onClick={() => {
+                                const key = item._id || item.id || String(idx);
                                 setExpandedItems((prev) => ({
                                   ...prev,
-                                  [item._id || String(idx)]: !prev[item._id || String(idx)],
+                                  [key]: !prev[key],
                                 }));
                               }}
                               className="p-1 text-muted-foreground hover:text-primary rounded"
@@ -1492,98 +1851,93 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                       )}
                     </div>
 
-                    {/* Nested Sub-Items */}
-                    {item._id && (item.subItems?.length || expandedItems[item._id]) && (
-                      <div className="ml-6 pl-2 border-l border-border/70 space-y-1.5 my-1.5">
-                        {item.subItems?.map((sub) => (
-                          <div
-                            key={sub._id || sub.text}
-                            className="group/sub flex items-center justify-between gap-2 text-xs py-1 px-2 rounded hover:bg-muted/40"
-                          >
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                if (!sub._id) return;
-                                await toggleSubItem.mutateAsync({
-                                  taskId: task._id,
-                                  itemId: item._id!,
-                                  subId: sub._id,
-                                  done: !sub.done,
-                                });
-                              }}
-                              className="flex items-center gap-2 text-left min-w-0 flex-1"
-                            >
-                              {sub.done ? (
-                                <CheckCircle2 size={13} className="text-success shrink-0" />
-                              ) : (
-                                <Circle size={13} className="text-muted-foreground shrink-0" />
-                              )}
-                              <span className={`truncate ${sub.done ? "line-through text-muted-foreground" : "text-foreground"}`}>
-                                {sub.text}
-                              </span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                if (!sub._id) return;
-                                await deleteSubItem.mutateAsync({
-                                  taskId: task._id,
-                                  itemId: item._id!,
-                                  subId: sub._id,
-                                });
-                              }}
-                              className="opacity-0 group-hover/sub:opacity-100 p-0.5 text-muted-foreground hover:text-destructive"
-                              title="Remove sub-item"
-                            >
-                              <X size={12} />
-                            </button>
+                    {/* Nested Sub-Items in View Mode */}
+                    {(Boolean(item.subItems?.length) || expandedItems[item._id || item.id || String(idx)]) && (
+                      <div className="ml-6 pl-2.5 border-l-2 border-primary/25 space-y-2 my-2 py-1">
+                        {item.subItems && item.subItems.length > 0 && (
+                          <div className="space-y-1">
+                            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                              Sub-items ({item.subItems.filter((s) => s.done).length}/{item.subItems.length})
+                            </span>
+                            {item.subItems.map((sub, sIdx) => (
+                              <div
+                                key={sub._id || sub.id || sIdx}
+                                className="group/sub flex items-center justify-between gap-2 text-xs py-1.5 px-2 rounded-md hover:bg-muted/50 border border-transparent hover:border-border/60 transition-colors"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleSubItemClick(item, sub, idx, sIdx)}
+                                  className="flex items-center gap-2 text-left min-w-0 flex-1 cursor-pointer"
+                                >
+                                  {sub.done ? (
+                                    <CheckCircle2 size={15} className="text-success shrink-0" />
+                                  ) : (
+                                    <Circle size={15} className="text-muted-foreground group-hover/sub:text-foreground shrink-0" />
+                                  )}
+                                  <span className={`truncate ${sub.done ? "line-through text-muted-foreground" : "text-foreground font-medium"}`}>
+                                    {sub.text}
+                                  </span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const subId = sub._id || sub.id || String(sIdx);
+                                    try {
+                                      setLiveChecklist((prev) =>
+                                        prev.map((ci, cIdx) =>
+                                          cIdx === idx
+                                            ? { ...ci, subItems: ci.subItems?.filter((_, i) => i !== sIdx) }
+                                            : ci
+                                        )
+                                      );
+                                      await deleteSubItem.mutateAsync({
+                                        taskId: activeTask._id,
+                                        itemId: item._id || item.id || String(idx),
+                                        subId,
+                                      });
+                                      toast.success("Sub-item removed");
+                                    } catch {
+                                      setLiveChecklist(activeTask.checklist ?? []);
+                                      toast.error("Failed to remove sub-item");
+                                    }
+                                  }}
+                                  className="opacity-0 group-hover/sub:opacity-100 p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded transition-all"
+                                  title="Remove sub-item"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            ))}
                           </div>
-                        ))}
+                        )}
 
-                        {/* Add Sub-Item Inline Form */}
+                        {/* Add Sub-Item Inline Form with Prominent Button */}
                         <div className="flex items-center gap-1.5 pt-1">
                           <Input
-                            value={newSubItemText[item._id] || ""}
+                            value={newSubItemText[item._id || item.id || String(idx)] || ""}
                             onChange={(e) =>
                               setNewSubItemText((prev) => ({
                                 ...prev,
-                                [item._id!]: e.target.value,
+                                [item._id || item.id || String(idx)]: e.target.value,
                               }))
                             }
-                            onKeyDown={async (e) => {
+                            onKeyDown={(e) => {
                               if (e.key === "Enter") {
                                 e.preventDefault();
-                                const text = (newSubItemText[item._id!] || "").trim();
-                                if (!text) return;
-                                await addSubItem.mutateAsync({
-                                  taskId: task._id,
-                                  itemId: item._id!,
-                                  text,
-                                });
-                                setNewSubItemText((prev) => ({ ...prev, [item._id!]: "" }));
+                                handleAddSubItemSubmit(item, idx);
                               }
                             }}
-                            placeholder="Add sub-item (press Enter)..."
-                            className="h-7 text-xs rounded bg-background flex-1"
+                            placeholder="Add sub-item checklist step..."
+                            className="h-8 text-xs rounded bg-background flex-1"
                           />
                           <Button
                             type="button"
                             size="sm"
-                            variant="ghost"
-                            className="h-7 px-2 text-xs"
-                            disabled={!(newSubItemText[item._id] || "").trim() || addSubItem.isPending}
-                            onClick={async () => {
-                              const text = (newSubItemText[item._id!] || "").trim();
-                              if (!text) return;
-                              await addSubItem.mutateAsync({
-                                taskId: task._id,
-                                itemId: item._id!,
-                                text,
-                              });
-                              setNewSubItemText((prev) => ({ ...prev, [item._id!]: "" }));
-                            }}
+                            className="h-8 px-3 text-xs gradient-primary text-primary-foreground font-medium rounded-md shadow-soft shrink-0"
+                            disabled={!(newSubItemText[item._id || item.id || String(idx)] || "").trim() || addSubItem.isPending}
+                            onClick={() => handleAddSubItemSubmit(item, idx)}
                           >
-                            <Plus size={12} />
+                            <Plus size={13} className="mr-1" /> Add Sub-item
                           </Button>
                         </div>
                       </div>
@@ -1606,8 +1960,8 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                 type="submit"
                 size="sm"
                 variant="outline"
-                className="h-9 shrink-0 rounded-md"
-                disabled={!newChecklistText.trim() || updateTask.isPending}
+                className="h-9 shrink-0 rounded-md font-medium"
+                disabled={!newChecklistText.trim() || addChecklistItem.isPending}
               >
                 <Plus size={14} className="mr-1" /> Add
               </Button>
@@ -1616,7 +1970,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
             {/* In Edit mode, show convenient Save All Changes bar below the checklist */}
             {isEditing && (
               <div className="mt-4 flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 p-3">
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs text-muted-foreground font-medium">
                   Ready with task details &amp; checklist?
                 </span>
                 <div className="flex items-center gap-2">
@@ -1625,14 +1979,11 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      setEditableChecklist(
-                        task.checklist?.map((c) => ({
-                          _id: c._id,
-                          text: c.text,
-                          done: Boolean(c.done),
-                        })) ?? []
-                      );
-                      setIsEditing(false);
+                      if (isDirty) {
+                        setShowDiscardConfirm(true);
+                      } else {
+                        setIsEditing(false);
+                      }
                     }}
                     className="rounded-md h-8 text-xs"
                   >
@@ -1646,7 +1997,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                     disabled={updateTask.isPending}
                   >
                     {updateTask.isPending ? <Loader2 size={13} className="animate-spin mr-1.5" /> : <Check size={13} className="mr-1.5" />}
-                    Save Details
+                    Save Changes
                   </Button>
                 </div>
               </div>
@@ -1670,70 +2021,106 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
             </div>
 
             <div className="flex flex-wrap items-center justify-end gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={onClose} className="rounded-md">
-                Close
-              </Button>
-
-              {/* Single Contextual Action Button */}
-              {task.status === "pending_approval" ? (
-                isAdmin ? (
-                  <>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={updateTask.isPending}
-                      onClick={() => handleSetStatus("in_progress")}
-                      className="rounded-md"
-                    >
-                      Request Changes
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="gradient-primary rounded-md text-primary-foreground"
-                      disabled={updateTask.isPending}
-                      onClick={() => handleSetStatus("completed")}
-                    >
-                      {updateTask.isPending ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Check size={14} className="mr-1.5" />}
-                      Approve & Complete
-                    </Button>
-                  </>
-                ) : (
-                  <Button type="button" size="sm" variant="secondary" disabled className="rounded-md opacity-80">
-                    <Clock size={14} className="mr-1.5 text-amber-500" />
-                    Awaiting Approval
-                  </Button>
-                )
-              ) : task.status === "completed" ? (
-                isAdmin ? (
+              {isEditing ? (
+                <>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
+                    onClick={() => {
+                      if (isDirty) {
+                        setShowDiscardConfirm(true);
+                      } else {
+                        setIsEditing(false);
+                      }
+                    }}
                     className="rounded-md"
-                    disabled={updateTask.isPending}
-                    onClick={() => handleSetStatus("in_progress")}
                   >
-                    <RotateCcw size={14} className="mr-1.5" />
-                    Reopen Task
+                    Cancel
                   </Button>
-                ) : null
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="gradient-primary rounded-md text-primary-foreground font-semibold shadow-soft"
+                    disabled={updateTask.isPending}
+                    onClick={handleSaveDetails}
+                  >
+                    {updateTask.isPending ? (
+                      <Loader2 size={14} className="animate-spin mr-1.5" />
+                    ) : (
+                      <Check size={14} className="mr-1.5" />
+                    )}
+                    Save Changes
+                  </Button>
+                </>
               ) : (
-                <Button
-                  type="button"
-                  size="sm"
-                  className="gradient-primary rounded-md text-primary-foreground"
-                  disabled={updateTask.isPending}
-                  onClick={() => handleSetStatus(isAdmin ? "completed" : "pending_approval")}
-                >
-                  {updateTask.isPending ? (
-                    <Loader2 size={14} className="animate-spin mr-1.5" />
+                <>
+                  <Button type="button" variant="outline" size="sm" onClick={onClose} className="rounded-md">
+                    Close
+                  </Button>
+
+                  {/* Single Contextual Action Button */}
+                  {activeTask.status === "pending_approval" ? (
+                    isAdmin ? (
+                      <>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={updateTask.isPending}
+                          onClick={() => handleSetStatus("in_progress")}
+                          className="rounded-md"
+                        >
+                          Request Changes
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="gradient-primary rounded-md text-primary-foreground font-semibold shadow-soft"
+                          disabled={updateTask.isPending}
+                          onClick={() => handleSetStatus("completed")}
+                        >
+                          {updateTask.isPending ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Check size={14} className="mr-1.5" />}
+                          Approve & Complete
+                        </Button>
+                      </>
+                    ) : (
+                      <Button type="button" size="sm" variant="secondary" disabled className="rounded-md opacity-80">
+                        <Clock size={14} className="mr-1.5 text-amber-500" />
+                        Awaiting Approval
+                      </Button>
+                    )
+                  ) : activeTask.status === "completed" ? (
+                    isAdmin ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="rounded-md"
+                        disabled={updateTask.isPending}
+                        onClick={() => handleSetStatus("in_progress")}
+                      >
+                        <RotateCcw size={14} className="mr-1.5" />
+                        Reopen Task
+                      </Button>
+                    ) : null
                   ) : (
-                    <Check size={14} className="mr-1.5" />
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="gradient-primary rounded-md text-primary-foreground font-semibold shadow-soft"
+                      disabled={updateTask.isPending}
+                      onClick={() => handleSetStatus(isAdmin ? "completed" : "pending_approval")}
+                    >
+                      {updateTask.isPending ? (
+                        <Loader2 size={14} className="animate-spin mr-1.5" />
+                      ) : (
+                        <Check size={14} className="mr-1.5" />
+                      )}
+                      {isAdmin ? "Mark as Completed" : "Submit for Approval"}
+                    </Button>
                   )}
-                  {isAdmin ? "Mark as Completed" : "Submit for Approval"}
-                </Button>
+                </>
               )}
             </div>
           </DialogFooter>

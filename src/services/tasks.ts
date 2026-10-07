@@ -155,6 +155,28 @@ export function useTasks(filters: Record<string, string> = {}) {
   });
 }
 
+export function useTask(id?: string | null, initialData?: TaskRecord) {
+  return useQuery<{ task: TaskRecord }>({
+    queryKey: taskKeys.detail(id || ""),
+    queryFn: () => api.get(`/tasks/${id}`),
+    enabled: Boolean(id),
+    initialData: initialData ? { task: initialData } : undefined,
+    staleTime: 5 * 1000,
+  });
+}
+
+export function updateTaskInQueryCache(qc: QueryClient, updatedTask: TaskRecord) {
+  if (!updatedTask?._id) return;
+  qc.setQueryData(taskKeys.detail(updatedTask._id), { task: updatedTask });
+  qc.setQueriesData<TasksResponse>({ queryKey: taskKeys.all }, (old) => {
+    if (!old || !Array.isArray(old.tasks)) return old;
+    return {
+      ...old,
+      tasks: old.tasks.map((t) => (t._id === updatedTask._id ? { ...t, ...updatedTask } : t)),
+    };
+  });
+}
+
 export function useTaskOptions() {
   return useQuery<TaskOptionsResponse>({
     queryKey: taskKeys.options,
@@ -167,7 +189,8 @@ export function useCreateTask() {
   const qc = useQueryClient();
   return useMutation<{ task: TaskRecord }, Error, CreateTaskPayload>({
     mutationFn: (payload) => api.post("/tasks", payload),
-    onSuccess: () => {
+    onSuccess: (res) => {
+      if (res?.task) updateTaskInQueryCache(qc, res.task);
       qc.invalidateQueries({ queryKey: taskKeys.all });
       qc.invalidateQueries({ queryKey: reportKeys.all });
       qc.invalidateQueries({ queryKey: ["notifications"] });
@@ -179,7 +202,8 @@ export function useUpdateTask() {
   const qc = useQueryClient();
   return useMutation<{ task: TaskRecord }, Error, { id: string; data: Partial<CreateTaskPayload> }>({
     mutationFn: ({ id, data }) => api.patch(`/tasks/${id}`, data),
-    onSuccess: (_data, vars) => {
+    onSuccess: (res, vars) => {
+      if (res?.task) updateTaskInQueryCache(qc, res.task);
       qc.invalidateQueries({ queryKey: taskKeys.detail(vars.id) });
       qc.invalidateQueries({ queryKey: taskKeys.all });
       qc.invalidateQueries({ queryKey: reportKeys.all });
@@ -225,11 +249,12 @@ export function useToggleChecklistItem() {
   return useMutation<
     { task: TaskRecord },
     Error,
-    { taskId: string; itemId: string; done?: boolean; text?: string; subItems?: ChecklistSubItem[] }
+    { taskId: string; itemId: string; done?: boolean; text?: string; itemText?: string; subItems?: ChecklistSubItem[] }
   >({
     mutationFn: ({ taskId, itemId, ...body }) =>
       api.patch(`/tasks/${taskId}/checklist/${itemId}`, body),
-    onSuccess: (_data, vars) => {
+    onSuccess: (res, vars) => {
+      if (res?.task) updateTaskInQueryCache(qc, res.task);
       qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
       qc.invalidateQueries({ queryKey: taskKeys.all });
       qc.invalidateQueries({ queryKey: reportKeys.all });
@@ -242,7 +267,8 @@ export function useAddChecklistItem() {
   return useMutation<{ task: TaskRecord }, Error, { taskId: string; text: string; subItems?: ChecklistSubItem[] }>({
     mutationFn: ({ taskId, text, subItems }) =>
       api.post(`/tasks/${taskId}/checklist`, { text, subItems }),
-    onSuccess: (_data, vars) => {
+    onSuccess: (res, vars) => {
+      if (res?.task) updateTaskInQueryCache(qc, res.task);
       qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
       qc.invalidateQueries({ queryKey: taskKeys.all });
       qc.invalidateQueries({ queryKey: reportKeys.all });
@@ -255,7 +281,8 @@ export function useDeleteChecklistItem() {
   return useMutation<{ task: TaskRecord }, Error, { taskId: string; itemId: string }>({
     mutationFn: ({ taskId, itemId }) =>
       api.delete(`/tasks/${taskId}/checklist/${itemId}`),
-    onSuccess: (_data, vars) => {
+    onSuccess: (res, vars) => {
+      if (res?.task) updateTaskInQueryCache(qc, res.task);
       qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
       qc.invalidateQueries({ queryKey: taskKeys.all });
       qc.invalidateQueries({ queryKey: reportKeys.all });
@@ -268,7 +295,8 @@ export function useAddChecklistSubItem() {
   return useMutation<{ task: TaskRecord }, Error, { taskId: string; itemId: string; text: string }>({
     mutationFn: ({ taskId, itemId, text }) =>
       api.post(`/tasks/${taskId}/checklist/${itemId}/subitems`, { text }),
-    onSuccess: (_data, vars) => {
+    onSuccess: (res, vars) => {
+      if (res?.task) updateTaskInQueryCache(qc, res.task);
       qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
       qc.invalidateQueries({ queryKey: taskKeys.all });
       qc.invalidateQueries({ queryKey: reportKeys.all });
@@ -281,11 +309,12 @@ export function useToggleChecklistSubItem() {
   return useMutation<
     { task: TaskRecord },
     Error,
-    { taskId: string; itemId: string; subId: string; done?: boolean; text?: string }
+    { taskId: string; itemId: string; subId: string; done?: boolean; text?: string; subText?: string }
   >({
-    mutationFn: ({ taskId, itemId, subId, done, text }) =>
-      api.patch(`/tasks/${taskId}/checklist/${itemId}`, { subItemId: subId, subDone: done, subText: text }),
-    onSuccess: (_data, vars) => {
+    mutationFn: ({ taskId, itemId, subId, done, text, subText }) =>
+      api.patch(`/tasks/${taskId}/checklist/${itemId}`, { subItemId: subId, subDone: done, subText: text || subText }),
+    onSuccess: (res, vars) => {
+      if (res?.task) updateTaskInQueryCache(qc, res.task);
       qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
       qc.invalidateQueries({ queryKey: taskKeys.all });
       qc.invalidateQueries({ queryKey: reportKeys.all });
@@ -298,7 +327,8 @@ export function useDeleteChecklistSubItem() {
   return useMutation<{ task: TaskRecord }, Error, { taskId: string; itemId: string; subId: string }>({
     mutationFn: ({ taskId, itemId, subId }) =>
       api.delete(`/tasks/${taskId}/checklist/${itemId}/subitems/${subId}`),
-    onSuccess: (_data, vars) => {
+    onSuccess: (res, vars) => {
+      if (res?.task) updateTaskInQueryCache(qc, res.task);
       qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
       qc.invalidateQueries({ queryKey: taskKeys.all });
       qc.invalidateQueries({ queryKey: reportKeys.all });
@@ -314,7 +344,8 @@ export function useApproveTask() {
   const qc = useQueryClient();
   return useMutation<{ task: TaskRecord }, Error, { taskId: string }>({
     mutationFn: ({ taskId }) => api.post(`/tasks/${taskId}/approve`, {}),
-    onSuccess: (_data, vars) => {
+    onSuccess: (res, vars) => {
+      if (res?.task) updateTaskInQueryCache(qc, res.task);
       qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
       qc.invalidateQueries({ queryKey: taskKeys.all });
       qc.invalidateQueries({ queryKey: reportKeys.all });
@@ -327,7 +358,8 @@ export function useRejectTask() {
   const qc = useQueryClient();
   return useMutation<{ task: TaskRecord }, Error, { taskId: string; reason?: string }>({
     mutationFn: ({ taskId, reason }) => api.post(`/tasks/${taskId}/reject`, { reason }),
-    onSuccess: (_data, vars) => {
+    onSuccess: (res, vars) => {
+      if (res?.task) updateTaskInQueryCache(qc, res.task);
       qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
       qc.invalidateQueries({ queryKey: taskKeys.all });
       qc.invalidateQueries({ queryKey: reportKeys.all });
@@ -341,7 +373,8 @@ export function useForwardTask() {
   return useMutation<{ task: TaskRecord }, Error, { taskId: string; toUserId: string; note?: string }>({
     mutationFn: ({ taskId, toUserId, note }) =>
       api.post(`/tasks/${taskId}/forward`, { toUserId, note }),
-    onSuccess: (_data, vars) => {
+    onSuccess: (res, vars) => {
+      if (res?.task) updateTaskInQueryCache(qc, res.task);
       qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
       qc.invalidateQueries({ queryKey: taskKeys.all });
       qc.invalidateQueries({ queryKey: ["notifications"] });
@@ -354,7 +387,8 @@ export function useReassignTask() {
   return useMutation<{ task: TaskRecord }, Error, { taskId: string; toUserId: string; note?: string }>({
     mutationFn: ({ taskId, toUserId, note }) =>
       api.post(`/tasks/${taskId}/reassign`, { toUserId, note }),
-    onSuccess: (_data, vars) => {
+    onSuccess: (res, vars) => {
+      if (res?.task) updateTaskInQueryCache(qc, res.task);
       qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
       qc.invalidateQueries({ queryKey: taskKeys.all });
       qc.invalidateQueries({ queryKey: ["notifications"] });

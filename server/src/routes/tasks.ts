@@ -625,11 +625,13 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
     if (updates["checklist"] !== undefined) {
       if (Array.isArray(updates["checklist"])) {
         updates["checklist"] = (updates["checklist"] as any[]).map((item) => ({
+          ...(item._id ? { _id: item._id } : {}),
           id: item.id || (item._id ? String(item._id) : undefined),
           text: sanitizeInputText(item.text, 500),
           done: Boolean(item.done),
           subItems: Array.isArray(item.subItems)
             ? item.subItems.map((sub: any) => ({
+                ...(sub._id ? { _id: sub._id } : {}),
                 id: sub.id || (sub._id ? String(sub._id) : undefined),
                 text: sanitizeInputText(sub.text, 500),
                 done: Boolean(sub.done),
@@ -1143,16 +1145,30 @@ router.delete("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskI
 
 router.patch("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskId"), async (req: Request, res: Response) => {
   try {
-    const { done, text, subItems, subItemId, subDone, subText } = req.body;
-    const task = await Task.findById(req.params["taskId"]);
+    const { done, text, subItems, subItemId, subDone, subText, itemText } = req.body;
+    const taskId = String(req.params["taskId"] || "");
+    const itemId = String(req.params["itemId"] || "");
+    const task = await Task.findById(taskId);
     if (!task) {
       res.status(404).json({ message: "Task not found" });
       return;
     }
 
-    const item = task.checklist.find(
-      (c) => (c as any)._id?.toString() === req.params["itemId"] || c.id === req.params["itemId"],
+    let item = task.checklist.find(
+      (c) => (c as any)._id?.toString() === itemId || c.id === itemId,
     );
+    if (!item && /^\d+$/.test(itemId)) {
+      const idx = parseInt(itemId, 10);
+      if (idx >= 0 && idx < task.checklist.length) {
+        item = task.checklist[idx];
+      }
+    }
+    if (!item && itemText) {
+      item = task.checklist.find((c) => c.text === itemText);
+    }
+    if (!item && text) {
+      item = task.checklist.find((c) => c.text === text);
+    }
     if (!item) {
       res.status(404).json({ message: "Checklist item not found" });
       return;
@@ -1172,6 +1188,7 @@ router.patch("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskId
     }
     if (Array.isArray(subItems)) {
       item.subItems = subItems.map((s: any) => ({
+        ...(s._id ? { _id: s._id } : {}),
         id: s.id || (s._id ? String(s._id) : undefined),
         text: sanitizeInputText(s.text, 500),
         done: Boolean(s.done),
@@ -1180,7 +1197,16 @@ router.patch("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskId
 
     // Direct sub-item update inside item payload if provided
     if (subItemId && Array.isArray(item.subItems)) {
-      const sub = item.subItems.find((s) => (s as any)._id?.toString() === subItemId || s.id === subItemId);
+      let sub = item.subItems.find((s) => (s as any)._id?.toString() === subItemId || s.id === subItemId);
+      if (!sub && /^\d+$/.test(subItemId)) {
+        const sIdx = parseInt(subItemId, 10);
+        if (sIdx >= 0 && sIdx < item.subItems.length) {
+          sub = item.subItems[sIdx];
+        }
+      }
+      if (!sub && subText) {
+        sub = item.subItems.find((s) => s.text === subText);
+      }
       if (sub) {
         if (subDone !== undefined) sub.done = Boolean(subDone);
         if (subText !== undefined && typeof subText === "string" && subText.trim()) {
@@ -1299,15 +1325,23 @@ router.post("/:taskId/checklist/:itemId/subitems", requireResourceAccess("task",
       return;
     }
 
-    const task = await Task.findById(req.params["taskId"]);
+    const taskId = String(req.params["taskId"] || "");
+    const itemId = String(req.params["itemId"] || "");
+    const task = await Task.findById(taskId);
     if (!task) {
       res.status(404).json({ message: "Task not found" });
       return;
     }
 
-    const item = task.checklist.find(
-      (c) => (c as any)._id?.toString() === req.params["itemId"] || c.id === req.params["itemId"]
+    let item = task.checklist.find(
+      (c) => (c as any)._id?.toString() === itemId || c.id === itemId
     );
+    if (!item && /^\d+$/.test(itemId)) {
+      const idx = parseInt(itemId, 10);
+      if (idx >= 0 && idx < task.checklist.length) {
+        item = task.checklist[idx];
+      }
+    }
     if (!item) {
       res.status(404).json({ message: "Checklist item not found" });
       return;
@@ -1352,15 +1386,24 @@ router.post("/:taskId/checklist/:itemId/subitems", requireResourceAccess("task",
 
 router.delete("/:taskId/checklist/:itemId/subitems/:subId", requireResourceAccess("task", "taskId"), async (req: Request, res: Response) => {
   try {
-    const task = await Task.findById(req.params["taskId"]);
+    const taskId = String(req.params["taskId"] || "");
+    const itemId = String(req.params["itemId"] || "");
+    const subId = String(req.params["subId"] || "");
+    const task = await Task.findById(taskId);
     if (!task) {
       res.status(404).json({ message: "Task not found" });
       return;
     }
 
-    const item = task.checklist.find(
-      (c) => (c as any)._id?.toString() === req.params["itemId"] || c.id === req.params["itemId"]
+    let item = task.checklist.find(
+      (c) => (c as any)._id?.toString() === itemId || c.id === itemId
     );
+    if (!item && /^\d+$/.test(itemId)) {
+      const idx = parseInt(itemId, 10);
+      if (idx >= 0 && idx < task.checklist.length) {
+        item = task.checklist[idx];
+      }
+    }
     if (!item) {
       res.status(404).json({ message: "Checklist item not found" });
       return;
@@ -1368,7 +1411,7 @@ router.delete("/:taskId/checklist/:itemId/subitems/:subId", requireResourceAcces
 
     if (Array.isArray(item.subItems)) {
       item.subItems = item.subItems.filter(
-        (s) => (s as any)._id?.toString() !== req.params["subId"] && s.id !== req.params["subId"]
+        (s) => (s as any)._id?.toString() !== subId && s.id !== subId
       );
     }
 

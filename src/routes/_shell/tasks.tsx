@@ -125,23 +125,21 @@ function TaskCard({ task, onSelect }: { task: TaskRecord; onSelect?: (task: Task
       {/* Checklist preview */}
       {total > 0 && (
         <div className="mt-3 space-y-1">
-          {task.checklist.slice(0, 3).map((item) => {
-            const toggle = item._id
-              ? (e: React.MouseEvent) => {
-                  e.stopPropagation();
-                  toggleChecklist.mutate({
-                    taskId: task._id,
-                    itemId: item._id!,
-                    done: !item.done,
-                  });
-                }
-              : undefined;
+          {task.checklist.slice(0, 3).map((item, idx) => {
+            const effectiveItemId = item._id || (item as any).id || String(idx);
+            const toggle = (e: React.MouseEvent) => {
+              e.stopPropagation();
+              toggleChecklist.mutate({
+                taskId: task._id,
+                itemId: effectiveItemId,
+                done: !item.done,
+              });
+            };
             return (
               <button
                 type="button"
-                key={item._id ?? item.text}
+                key={effectiveItemId || item.text}
                 onClick={toggle}
-                disabled={!toggle || toggleChecklist.isPending}
                 className="flex w-full items-center gap-2 rounded text-helper transition-colors hover:bg-muted/50 disabled:cursor-default disabled:opacity-60 text-left"
               >
                 {item.done ? (
@@ -287,6 +285,16 @@ function TasksPage() {
       }
     }
   }, [routeSearch.taskId, allTasks]);
+
+  // Keep selectedTask in sync with latest queryClient/allTasks data
+  useEffect(() => {
+    if (selectedTask?._id && allTasks.length > 0) {
+      const updated = allTasks.find((t) => t._id === selectedTask._id);
+      if (updated && updated !== selectedTask) {
+        setSelectedTask(updated);
+      }
+    }
+  }, [allTasks, selectedTask?._id]);
 
   // Unique categories
   const categories = useMemo(() => {

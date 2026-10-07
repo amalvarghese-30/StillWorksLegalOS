@@ -107,6 +107,16 @@ function Dashboard() {
   const team = workloadData?.workloads ?? [];
   const allTasks = tasksData?.tasks ?? [];
 
+  // Keep selectedTask in sync with latest queryClient/allTasks data
+  useEffect(() => {
+    if (selectedTask?._id && allTasks.length > 0) {
+      const updated = allTasks.find((t) => t._id === selectedTask._id);
+      if (updated && updated !== selectedTask) {
+        setSelectedTask(updated);
+      }
+    }
+  }, [allTasks, selectedTask?._id]);
+
   // Filter urgent / priority tasks for attention
   const attentionTasks = allTasks.filter((t) => {
     if (t.status === "completed") return false;
