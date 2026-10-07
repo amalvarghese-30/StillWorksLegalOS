@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Gavel, FileText, CheckSquare, StickyNote, History, Users,
   LayoutDashboard, Plus, Loader2, ChevronDown, Clock,

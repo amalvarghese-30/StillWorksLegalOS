@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "./api";
 import { reportKeys } from "./reports";
 
@@ -160,7 +160,7 @@ export function useTask(id?: string | null, initialData?: TaskRecord) {
     queryKey: taskKeys.detail(id || ""),
     queryFn: () => api.get(`/tasks/${id}`),
     enabled: Boolean(id),
-    initialData: initialData ? { task: initialData } : undefined,
+    ...(initialData ? { initialData: { task: initialData } } : {}),
     staleTime: 5 * 1000,
   });
 }
@@ -168,11 +168,11 @@ export function useTask(id?: string | null, initialData?: TaskRecord) {
 export function updateTaskInQueryCache(qc: QueryClient, updatedTask: TaskRecord) {
   if (!updatedTask?._id) return;
   qc.setQueryData(taskKeys.detail(updatedTask._id), { task: updatedTask });
-  qc.setQueriesData<TasksResponse>({ queryKey: taskKeys.all }, (old) => {
+  qc.setQueriesData<TasksResponse>({ queryKey: taskKeys.all }, (old?: TasksResponse) => {
     if (!old || !Array.isArray(old.tasks)) return old;
     return {
       ...old,
-      tasks: old.tasks.map((t) => (t._id === updatedTask._id ? { ...t, ...updatedTask } : t)),
+      tasks: old.tasks.map((t: TaskRecord) => (t._id === updatedTask._id ? { ...t, ...updatedTask } : t)),
     };
   });
 }
