@@ -41,16 +41,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -632,13 +622,19 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
 
   const handleDeleteTask = async (e?: React.MouseEvent) => {
     e?.preventDefault();
-    const targetId = activeTask._id || (activeTask as any).id || task._id || (task as any).id;
-    if (!targetId) {
+    const rawId = activeTask?._id || (activeTask as any)?.id || task?._id || (task as any)?.id;
+    const targetId = typeof rawId === "object" && rawId !== null
+      ? ((rawId as any)._id || (rawId as any).id || String(rawId))
+      : String(rawId || "");
+
+    console.log("[TaskDetailDialog] handleDeleteTask triggered for target ID:", targetId);
+    if (!targetId || targetId === "undefined" || targetId === "null") {
       toast.error("Unable to find task identifier to delete");
       return;
     }
     try {
       const res = await deleteTask.mutateAsync(targetId);
+      console.log("[TaskDetailDialog] Delete task response:", res);
       if (res?.alreadyDeleted) {
         toast.info("Task was already deleted or is no longer available.");
       } else {
@@ -647,7 +643,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
       setShowDeleteConfirm(false);
       onClose();
     } catch (err: any) {
-      console.error("Failed to delete task:", err);
+      console.error("[TaskDetailDialog] Failed to delete task:", err);
       if (err?.status === 404 || err?.message?.includes("not found")) {
         toast.info("Task was already deleted or is no longer available.");
         setShowDeleteConfirm(false);
@@ -920,7 +916,11 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
                           className="text-xs text-destructive focus:text-destructive"
-                          onClick={() => setShowDeleteConfirm(true)}
+                          onClick={() => {
+                            if (window.confirm(`Are you sure you want to permanently delete task "${activeTask.title || task.title}"? This action cannot be undone.`)) {
+                              handleDeleteTask();
+                            }
+                          }}
                         >
                           <Trash2 size={14} className="mr-2" />
                           Delete Task
@@ -2018,16 +2018,50 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
           <DialogFooter className="mt-6 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 border-t border-border/60 pt-4">
             <div>
               {isCreatorOrAdmin ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowDeleteConfirm(true)}
-                  className="text-destructive hover:bg-destructive/10 hover:text-destructive rounded-md"
-                >
-                  <Trash2 size={15} className="mr-1.5" />
-                  Delete Task
-                </Button>
+                showDeleteConfirm ? (
+                  <div className="flex flex-wrap items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-2 text-xs animate-in fade-in">
+                    <span className="font-semibold text-destructive flex items-center gap-1">
+                      <AlertTriangle size={13} className="shrink-0" />
+                      Delete permanently?
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      className="h-7 px-3 text-xs font-semibold rounded-md shadow-sm"
+                      disabled={deleteTask.isPending}
+                      onClick={handleDeleteTask}
+                    >
+                      {deleteTask.isPending ? (
+                        <Loader2 size={12} className="animate-spin mr-1" />
+                      ) : (
+                        <Trash2 size={12} className="mr-1" />
+                      )}
+                      {deleteTask.isPending ? "Deleting…" : "Confirm Delete"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-xs rounded-md"
+                      disabled={deleteTask.isPending}
+                      onClick={() => setShowDeleteConfirm(false)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive rounded-md"
+                  >
+                    <Trash2 size={15} className="mr-1.5" />
+                    Delete Task
+                  </Button>
+                )
               ) : null}
             </div>
 
@@ -2137,34 +2171,6 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
-        <AlertDialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-title font-semibold text-destructive flex items-center gap-2">
-              <Trash2 size={18} />
-              Delete Task
-            </AlertDialogTitle>
-            <AlertDialogDescription className="text-helper text-muted-foreground mt-2">
-              Are you sure you want to delete task <span className="font-semibold text-foreground">"{task.title}"</span>?
-              This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="mt-5 flex justify-end gap-2">
-            <AlertDialogCancel className="rounded-md" disabled={deleteTask.isPending}>Cancel</AlertDialogCancel>
-            <Button
-              type="button"
-              variant="destructive"
-              className="rounded-md"
-              onClick={handleDeleteTask}
-              disabled={deleteTask.isPending}
-            >
-              {deleteTask.isPending ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Trash2 size={14} className="mr-1.5" />}
-              {deleteTask.isPending ? "Deleting…" : "Delete Task"}
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {/* Forward Task Dialog */}
       <Dialog open={showForwardModal} onOpenChange={setShowForwardModal}>
