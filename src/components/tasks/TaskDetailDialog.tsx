@@ -632,12 +632,17 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
 
   const handleDeleteTask = async (e?: React.MouseEvent) => {
     e?.preventDefault();
+    const targetId = activeTask._id || (activeTask as any).id || task._id || (task as any).id;
+    if (!targetId) {
+      toast.error("Unable to find task identifier to delete");
+      return;
+    }
     try {
-      const res = await deleteTask.mutateAsync(activeTask._id);
+      const res = await deleteTask.mutateAsync(targetId);
       if (res?.alreadyDeleted) {
         toast.info("Task was already deleted or is no longer available.");
       } else {
-        toast.success(`Task "${activeTask.title}" deleted`);
+        toast.success(`Task "${activeTask.title || task.title}" deleted`);
       }
       setShowDeleteConfirm(false);
       onClose();
@@ -708,11 +713,17 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
     }
   };
 
-  const isCreatorOrAdmin =
+  const canDeleteTask =
     isAdmin ||
+    user?.permissions?.tasks !== false ||
     (activeTask.createdBy &&
       (typeof activeTask.createdBy === "object" ? (activeTask.createdBy as any)._id : activeTask.createdBy)?.toString() ===
+        user?._id?.toString()) ||
+    (activeTask.assignedTo &&
+      (typeof activeTask.assignedTo === "object" ? (activeTask.assignedTo as any)._id : activeTask.assignedTo)?.toString() ===
         user?._id?.toString());
+
+  const isCreatorOrAdmin = canDeleteTask;
 
   const isDirty = useMemo(() => {
     if (!isEditing) return false;
@@ -2141,13 +2152,16 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
           </AlertDialogHeader>
           <AlertDialogFooter className="mt-5 flex justify-end gap-2">
             <AlertDialogCancel className="rounded-md" disabled={deleteTask.isPending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            <Button
+              type="button"
+              variant="destructive"
+              className="rounded-md"
               onClick={handleDeleteTask}
               disabled={deleteTask.isPending}
             >
+              {deleteTask.isPending ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Trash2 size={14} className="mr-1.5" />}
               {deleteTask.isPending ? "Deleting…" : "Delete Task"}
-            </AlertDialogAction>
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

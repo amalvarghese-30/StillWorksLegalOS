@@ -217,6 +217,20 @@ export interface DeleteTaskResult {
   alreadyDeleted?: boolean;
 }
 
+export function removeTaskFromQueryCache(qc: QueryClient, taskId: string) {
+  if (!taskId) return;
+  qc.removeQueries({ queryKey: taskKeys.detail(taskId) });
+  qc.removeQueries({ queryKey: ["task", taskId] });
+  qc.setQueriesData<TasksResponse>({ queryKey: taskKeys.all }, (old?: TasksResponse) => {
+    if (!old || !Array.isArray(old.tasks)) return old;
+    return {
+      ...old,
+      tasks: old.tasks.filter((t: TaskRecord) => t._id !== taskId && (t as any).id !== taskId),
+      total: Math.max(0, (old.total ?? old.tasks.length) - 1),
+    };
+  });
+}
+
 export function useDeleteTask() {
   const qc = useQueryClient();
   return useMutation<DeleteTaskResult, Error, string>({
@@ -233,9 +247,11 @@ export function useDeleteTask() {
         throw err;
       }
     },
+    onMutate: (taskId: string) => {
+      removeTaskFromQueryCache(qc, taskId);
+    },
     onSuccess: (_data, taskId) => {
-      qc.removeQueries({ queryKey: taskKeys.detail(taskId) });
-      qc.removeQueries({ queryKey: ["task", taskId] });
+      removeTaskFromQueryCache(qc, taskId);
       qc.invalidateQueries({ queryKey: taskKeys.all });
       qc.invalidateQueries({ queryKey: ["calendar"] });
       qc.invalidateQueries({ queryKey: reportKeys.all });

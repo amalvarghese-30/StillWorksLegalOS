@@ -1805,7 +1805,8 @@ router.post("/:id/reassign", requireResourceAccess("task"), async (req: Request,
 
 router.delete("/:id", requireResourceAccess("task"), async (req: Request, res: Response) => {
   try {
-    const task = await Task.findById(req.params["id"]);
+    const taskId = String(req.params["id"] || "");
+    const task = await Task.findById(taskId);
     if (!task) {
       res.status(404).json({ message: "Task not found" });
       return;
@@ -1821,33 +1822,46 @@ router.delete("/:id", requireResourceAccess("task"), async (req: Request, res: R
     }
 
     // Clean up any associated notifications and emit realtime notification:deleted
-    const io = req.app.get("io");
-    await NotificationService.deleteByRelatedId(task._id, io);
-
-    // Emit real-time task:deleted event to all connected users
-    if (io) {
-      io.emit("task:deleted", {
-        taskId: task._id.toString(),
-        assignedTo: task.assignedTo ? task.assignedTo.toString() : null,
-        createdBy: task.createdBy ? task.createdBy.toString() : null,
-      });
+    try {
+      const io = req.app.get("io");
+      await NotificationService.deleteByRelatedId(task._id, io);
+    } catch (notifErr) {
+      console.error("[tasks] Failed to delete notifications on task delete:", notifErr);
     }
 
-    await AuditLog.create({
-      userId: req.userId,
-      userName: req.user?.name ?? "Unknown",
-      action: "delete",
-      resource: "task",
-      resourceId: task._id.toString(),
-      resourceName: task.title,
-      ip: req.ip,
-      userAgent: req.headers["user-agent"],
-    });
+    // Emit real-time task:deleted event to all connected users
+    try {
+      const io = req.app.get("io");
+      if (io) {
+        io.emit("task:deleted", {
+          taskId: task._id.toString(),
+          assignedTo: task.assignedTo ? task.assignedTo.toString() : null,
+          createdBy: task.createdBy ? task.createdBy.toString() : null,
+        });
+      }
+    } catch (ioErr) {
+      console.error("[tasks] Failed to emit task:deleted event:", ioErr);
+    }
+
+    try {
+      await AuditLog.create({
+        userId: req.userId,
+        userName: req.user?.name ?? "Unknown",
+        action: "delete",
+        resource: "task",
+        resourceId: task._id.toString(),
+        resourceName: task.title,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+      });
+    } catch (auditErr) {
+      console.error("[tasks] Failed to create audit log on task delete:", auditErr);
+    }
 
     res.json({ message: "Task deleted", taskId: task._id });
-  } catch (err) {
+  } catch (err: any) {
     console.error("[tasks] Delete error:", err);
-    res.status(500).json({ message: "Internal server error" });
+    res.status(500).json({ message: err?.message || "Internal server error" });
   }
 });
 

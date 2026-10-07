@@ -140,6 +140,11 @@ export async function canAccessTask(
     return canAccessCase(userId, userRole, task.caseId.toString(), userPermissions);
   }
 
+  // Firm member with tasks permission
+  if (!userPermissions || userPermissions["tasks"] !== false) {
+    return true;
+  }
+
   return false;
 }
 
