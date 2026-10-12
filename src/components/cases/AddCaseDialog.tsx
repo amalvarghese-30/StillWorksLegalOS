@@ -58,6 +58,7 @@ interface FormState {
   category: string;
   mainCategory: string;
   subCategory: string;
+  selectedSubCategories: string[];
   customCategory: string;
   localPath: string;
   status: "Active" | "On Hold" | "Closed" | "Urgent";
@@ -74,6 +75,7 @@ const EMPTY_FORM: FormState = {
   category: "Other Work",
   mainCategory: "",
   subCategory: "",
+  selectedSubCategories: [],
   customCategory: "",
   localPath: "",
   status: "Active",
@@ -151,6 +153,7 @@ export function AddCaseDialog({
       Boolean(form.courtCaseId.trim()) ||
       Boolean(form.mainCategory) ||
       Boolean(form.subCategory) ||
+      form.selectedSubCategories.length > 0 ||
       Boolean(form.description.trim()) ||
       form.category !== "Other Work" ||
       Boolean(form.localPath.trim()) ||
@@ -423,10 +426,14 @@ export function AddCaseDialog({
             })),
         }));
 
+      const subCatJoined = form.selectedSubCategories.length > 0
+        ? form.selectedSubCategories.join(", ")
+        : form.subCategory;
+
       const chosenCategory =
-        (form.subCategory === "__other__" || form.mainCategory === "__other__"
+        (subCatJoined === "__other__" || form.mainCategory === "__other__"
           ? form.customCategory.trim()
-          : form.subCategory) ||
+          : subCatJoined) ||
         (form.mainCategory === "__other__" ? form.customCategory.trim() : form.mainCategory) ||
         form.category ||
         "Other Work";
@@ -436,7 +443,8 @@ export function AddCaseDialog({
         description: form.description.trim() || undefined,
         category: chosenCategory,
         mainCategory: form.mainCategory === "__other__" ? (form.customCategory.trim() || "Other Work") : (form.mainCategory || undefined),
-        subCategory: form.subCategory === "__other__" ? (form.customCategory.trim() || undefined) : (form.subCategory || undefined),
+        subCategory: subCatJoined === "__other__" ? (form.customCategory.trim() || undefined) : (subCatJoined || undefined),
+        categoryPath: form.selectedSubCategories.length > 0 ? form.selectedSubCategories : undefined,
         courtCaseId: form.courtCaseId.trim() || undefined,
         countCaseNumber: form.countCaseNumber.trim() || form.courtCaseId.trim() || undefined,
         nextHearing: form.nextHearing ? new Date(form.nextHearing).toISOString() : undefined,
@@ -486,31 +494,81 @@ export function AddCaseDialog({
                   </DialogDescription>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={handleAttemptClose}
-                className="grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                aria-label="Close dialog"
-              >
-                <X size={18} />
-              </button>
             </div>
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="space-y-5 pt-2">
-            {/* ── Title ── */}
+            {/* ── Client Name / Title ── */}
             <div className="space-y-1.5">
-              <Label htmlFor="case-title" className="text-helper">
-                Case title <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="case-title"
-                value={form.title}
-                onChange={(e) => update("title", e.target.value)}
-                placeholder="e.g. Apex Enterprises vs City Corp"
-                required
-                className="h-11 rounded-md"
-              />
+              <div className="flex items-center justify-between">
+                <Label htmlFor="case-title" className="text-helper">
+                  Client Name / Case Title <span className="text-destructive">*</span>
+                </Label>
+                {clientsData?.clients && clientsData.clients.length > 0 && (
+                  <span className="text-[11px] text-muted-foreground">
+                    Select existing or type client name
+                  </span>
+                )}
+              </div>
+              <div className="relative">
+                <Input
+                  id="case-title"
+                  value={form.title}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    update("title", val);
+                  }}
+                  placeholder="e.g. Ramesh Sharma / Apex Enterprises"
+                  required
+                  className="h-11 rounded-md"
+                />
+              </div>
+              {/* Optional Quick Pick from existing clients */}
+              {clientsData?.clients && clientsData.clients.length > 0 && (
+                <div className="flex items-center gap-2 pt-0.5">
+                  <span className="text-[11px] text-muted-foreground whitespace-nowrap">Quick fill client:</span>
+                  <select
+                    className="h-7 text-xs rounded border border-border bg-card px-2 text-muted-foreground outline-none focus:border-primary max-w-xs truncate"
+                    onChange={(e) => {
+                      const selId = e.target.value;
+                      if (!selId) return;
+                      const selectedClient = clientsData.clients.find((c) => c._id === selId);
+                      if (selectedClient) {
+                        update("title", selectedClient.name);
+                        // Also automatically add / update the Primary Client party
+                        setParties((prev) => {
+                          const existingIndex = prev.findIndex((p) => p.role === "Primary Client");
+                          if (existingIndex >= 0) {
+                            return prev.map((p, i) =>
+                              i === existingIndex
+                                ? { ...p, name: selectedClient.name, clientId: selectedClient._id }
+                                : p
+                            );
+                          }
+                          return [
+                            {
+                              name: selectedClient.name,
+                              role: "Primary Client",
+                              type: "client",
+                              clientId: selectedClient._id,
+                            },
+                            ...prev,
+                          ];
+                        });
+                      }
+                      e.target.value = "";
+                    }}
+                    defaultValue=""
+                  >
+                    <option value="" disabled>Choose existing client…</option>
+                    {clientsData.clients.map((c) => (
+                      <option key={c._id} value={c._id}>
+                        {c.name} {c.phone ? `(${c.phone})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             {/* ── Case Number Identifiers ── */}
@@ -543,7 +601,7 @@ export function AddCaseDialog({
             </div>
 
             {/* ── Category Hierarchy ── */}
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-4">
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="case-main-category" className="text-helper">Main Category</Label>
@@ -566,6 +624,7 @@ export function AddCaseDialog({
                     const val = e.target.value;
                     update("mainCategory", val);
                     update("subCategory", "");
+                    update("selectedSubCategories", []);
                     if (val !== "__other__") update("customCategory", "");
                   }}
                   className="h-11 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary disabled:opacity-50"
@@ -586,25 +645,90 @@ export function AddCaseDialog({
                 </select>
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="case-sub-category" className="text-helper">Subcategory / Work Type</Label>
-                <select
-                  id="case-sub-category"
-                  value={form.subCategory}
-                  onChange={(e) => {
-                    update("subCategory", e.target.value);
-                    if (e.target.value !== "__other__" && form.mainCategory !== "__other__") update("customCategory", "");
-                  }}
-                  disabled={!form.mainCategory || (form.mainCategory !== "__other__" && availableSubCategories.length === 0)}
-                  className="h-11 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary disabled:opacity-50"
-                >
-                  <option value="">Select subcategory…</option>
-                  {availableSubCategories.map((sc) => (
-                    <option key={sc._id || sc.name} value={sc.name}>{sc.name}</option>
-                  ))}
-                  <option value="__other__">+ Other / Custom Subcategory...</option>
-                </select>
-              </div>
+              {/* ── Subcategories Checklist (Select 1 or more) ── */}
+              {form.mainCategory && form.mainCategory !== "__other__" && availableSubCategories.length > 0 && (
+                <div className="space-y-2 rounded-lg border border-border bg-muted/20 p-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-helper font-medium flex items-center gap-1.5">
+                      <CheckSquare size={14} className="text-primary" />
+                      Subcategories / Work Types (Check all that apply)
+                    </Label>
+                    <span className="text-[11px] text-muted-foreground">
+                      {form.selectedSubCategories.length} selected
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+                    {availableSubCategories.map((sc) => {
+                      const isChecked = form.selectedSubCategories.includes(sc.name);
+                      return (
+                        <label
+                          key={sc._id || sc.name}
+                          className={`flex items-start gap-2.5 rounded-md border p-2 text-xs cursor-pointer transition-colors ${
+                            isChecked
+                              ? "border-primary bg-primary/10 text-foreground font-medium"
+                              : "border-border/60 bg-card hover:bg-muted text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              const updated = checked
+                                ? [...form.selectedSubCategories, sc.name]
+                                : form.selectedSubCategories.filter((name) => name !== sc.name);
+                              update("selectedSubCategories", updated);
+                              // Sync primary subCategory to the first selected item or empty
+                              update("subCategory", updated[0] || "");
+                            }}
+                            className="mt-0.5 size-3.5 rounded border-border text-primary focus:ring-primary"
+                          />
+                          <span className="leading-tight select-none">{sc.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const allNames = availableSubCategories.map((s) => s.name);
+                          update("selectedSubCategories", allNames);
+                          update("subCategory", allNames[0] || "");
+                        }}
+                        className="text-[11px] text-primary hover:underline"
+                      >
+                        Select all
+                      </button>
+                      <span className="text-[11px] text-muted-foreground">|</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          update("selectedSubCategories", []);
+                          update("subCategory", "");
+                        }}
+                        className="text-[11px] text-muted-foreground hover:underline"
+                      >
+                        Clear
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const val = form.subCategory === "__other__" ? "" : "__other__";
+                        update("subCategory", val);
+                      }}
+                      className="text-[11px] text-primary hover:underline font-medium"
+                    >
+                      + Add custom subcategory
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {(form.mainCategory === "__other__" || form.subCategory === "__other__") && (
