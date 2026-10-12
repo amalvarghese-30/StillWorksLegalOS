@@ -170,14 +170,6 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
                   </DialogDescription>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={handleAttemptClose}
-                className="grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                aria-label="Close dialog"
-              >
-                <X size={18} />
-              </button>
             </div>
           </DialogHeader>
 

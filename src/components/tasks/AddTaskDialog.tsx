@@ -48,6 +48,7 @@ interface FormState {
   description: string;
   mainCategory: string;
   subCategory: string;
+  selectedSubCategories: string[];
   customCategory: string;
   category: string;
   priority: "High" | "Medium" | "Low";
@@ -67,6 +68,7 @@ const EMPTY_FORM: FormState = {
   description: "",
   mainCategory: "",
   subCategory: "",
+  selectedSubCategories: [],
   customCategory: "",
   category: "Other Work",
   priority: "Medium",
@@ -106,11 +108,11 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
   const { user } = useAuth();
   const { data: options } = useTaskOptions();
   const { data: categories = [] } = useCategories();
-  const { data: treeData } = useCategoryTree();
+  const { data: treeData = [], isLoading: isCategoriesLoading, isError: isCategoriesError } = useCategoryTree();
   const { data: casesData } = useCases({ limit: "100" });
   const { data: clientsData } = useClients({ limit: "100" });
 
-  const categoryTree = treeData?.tree ?? [];
+  const categoryTree = Array.isArray(treeData) ? treeData : ((treeData as any)?.tree ?? []);
 
   const [form, setForm] = useState<FormState>({
     ...EMPTY_FORM,
@@ -157,6 +159,10 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
     return (
       Boolean(form.title.trim()) ||
       Boolean(form.description.trim()) ||
+      Boolean(form.mainCategory) ||
+      Boolean(form.subCategory) ||
+      form.selectedSubCategories.length > 0 ||
+      Boolean(form.customCategory.trim()) ||
       form.category !== "Other Work" ||
       form.priority !== "Medium" ||
       Boolean(form.deadline) ||
@@ -375,18 +381,26 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
     }
     setFieldErrors({});
 
+    const chosenSubCategory =
+      form.selectedSubCategories.length > 0
+        ? form.selectedSubCategories.join(", ")
+        : form.subCategory === "__other__"
+        ? ""
+        : form.subCategory;
+
     const chosenCategory =
       form.customCategory.trim() ||
-      form.subCategory ||
-      form.mainCategory ||
+      chosenSubCategory ||
+      (form.mainCategory === "__other__" ? "Other Work" : form.mainCategory) ||
       form.category ||
       "Other Work";
 
     const payload: CreateTaskPayload = {
       title: cleanTitle,
       ...(form.description && { description: form.description.trim() }),
-      mainCategory: form.mainCategory || undefined,
-      subCategory: form.subCategory || undefined,
+      mainCategory: form.mainCategory === "__other__" ? "Other Work" : (form.mainCategory || undefined),
+      subCategory: chosenSubCategory || undefined,
+      categoryPath: [form.mainCategory, ...form.selectedSubCategories].filter(Boolean),
       customCategory: form.customCategory.trim() || undefined,
       category: chosenCategory,
       priority: form.priority,
@@ -461,14 +475,6 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
                   </DialogDescription>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={handleAttemptClose}
-                className="grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                aria-label="Close dialog"
-              >
-                <X size={18} />
-              </button>
             </div>
           </DialogHeader>
 
@@ -509,74 +515,184 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
               )}
             </div>
 
-            {/* ── Category Hierarchy (Excel Master) & Priority ── */}
-            <div className="space-y-3 rounded-lg border border-border/80 bg-muted/20 p-3.5">
+            {/* ── Category Hierarchy (Excel Master) ── */}
+            <div className="space-y-4 rounded-lg border border-border/80 bg-muted/20 p-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Category &amp; Classification
                 </span>
                 <span className="text-[11px] text-muted-foreground">Derived from Service Master</span>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="task-main-cat" className="text-helper">Main Category</Label>
-                  <Select
-                    value={form.mainCategory || "none"}
-                    onValueChange={(val) => {
-                      const mc = val === "none" ? "" : val;
-                      update("mainCategory", mc);
-                      update("subCategory", "");
-                    }}
-                  >
-                    <SelectTrigger id="task-main-cat" className="h-10 rounded-md bg-background">
-                      <SelectValue placeholder="Select main category" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-60">
-                      <SelectItem value="none">-- General / Unclassified --</SelectItem>
-                      {categoryTree.map((cat) => (
-                        <SelectItem key={cat._id} value={cat.name}>
-                          {cat.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="task-sub-cat" className="text-helper">Subcategory / Work Type</Label>
-                  <Select
-                    value={form.subCategory || "none"}
-                    onValueChange={(val) => update("subCategory", val === "none" ? "" : val)}
-                    disabled={!form.mainCategory || subCategories.length === 0}
-                  >
-                    <SelectTrigger id="task-sub-cat" className="h-10 rounded-md bg-background">
-                      <SelectValue placeholder={form.mainCategory ? (subCategories.length > 0 ? "Select subcategory" : "No subcategories") : "Choose main category first"} />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-60">
-                      <SelectItem value="none">-- None / General Work --</SelectItem>
-                      {subCategories.map((sub) => (
-                        <SelectItem key={sub._id} value={sub.name}>
-                          {sub.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+              {/* Main Category */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="task-main-cat" className="text-helper">Main Category</Label>
+                  {isCategoriesLoading && (
+                    <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                      <Loader2 size={11} className="animate-spin" /> Loading categories...
+                    </span>
+                  )}
+                  {isCategoriesError && (
+                    <span className="text-[11px] text-destructive">Failed to load categories</span>
+                  )}
                 </div>
+                <select
+                  id="task-main-cat"
+                  value={form.mainCategory}
+                  disabled={isCategoriesLoading}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    update("mainCategory", val);
+                    update("subCategory", "");
+                    update("selectedSubCategories", []);
+                    if (val !== "__other__") update("customCategory", "");
+                  }}
+                  className="h-11 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary disabled:opacity-50"
+                >
+                  <option value="">
+                    {isCategoriesLoading
+                      ? "Loading categories…"
+                      : isCategoriesError
+                      ? "Error loading categories (Select manual below)"
+                      : categoryTree.length === 0
+                      ? "No categories configured"
+                      : "Select main category…"}
+                  </option>
+                  {categoryTree.map((cat) => (
+                    <option key={cat._id || cat.name} value={cat.name}>
+                      {cat.name}
+                    </option>
+                  ))}
+                  <option value="__other__">+ Other Work / Custom Category...</option>
+                </select>
               </div>
+
+              {/* Multi-select Subcategories Checklist */}
+              {form.mainCategory && form.mainCategory !== "__other__" && subCategories.length > 0 && (
+                <div className="space-y-2 rounded-lg border border-border bg-card p-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-helper font-medium flex items-center gap-1.5">
+                      <CheckSquare size={14} className="text-primary" />
+                      Subcategories / Work Types (Check all that apply)
+                    </Label>
+                    <span className="text-[11px] text-muted-foreground">
+                      {form.selectedSubCategories.length} selected
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+                    {subCategories.map((sc) => {
+                      const isChecked = form.selectedSubCategories.includes(sc.name);
+                      return (
+                        <label
+                          key={sc._id || sc.name}
+                          className={`flex items-start gap-2.5 rounded-md border p-2 text-xs cursor-pointer transition-colors ${
+                            isChecked
+                              ? "border-primary bg-primary/10 text-foreground font-medium"
+                              : "border-border/60 bg-card hover:bg-muted text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              const updated = checked
+                                ? [...form.selectedSubCategories, sc.name]
+                                : form.selectedSubCategories.filter((name) => name !== sc.name);
+                              update("selectedSubCategories", updated);
+                              update("subCategory", updated[0] || "");
+                            }}
+                            className="mt-0.5 size-3.5 rounded border-border text-primary focus:ring-primary"
+                          />
+                          <span className="leading-tight select-none">{sc.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const allNames = subCategories.map((s) => s.name);
+                          update("selectedSubCategories", allNames);
+                          update("subCategory", allNames[0] || "");
+                        }}
+                        className="text-[11px] text-primary hover:underline font-medium"
+                      >
+                        Select all
+                      </button>
+                      <span className="text-[11px] text-muted-foreground">|</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          update("selectedSubCategories", []);
+                          update("subCategory", "");
+                        }}
+                        className="text-[11px] text-muted-foreground hover:underline font-medium"
+                      >
+                        Clear
+                      </button>
+                      {form.selectedSubCategories.length > 0 && (
+                        <>
+                          <span className="text-[11px] text-muted-foreground">|</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const existingTexts = new Set(checklist.map((c) => c.text.toLowerCase()));
+                              const toAdd = form.selectedSubCategories.filter(
+                                (name) => !existingTexts.has(name.toLowerCase())
+                              );
+                              if (toAdd.length === 0) {
+                                toast.info("Selected subcategories are already in the checklist");
+                                return;
+                              }
+                              const newItems: ChecklistLine[] = toAdd.map((text) => ({ id: nextId(), text, subItems: [] }));
+                              setChecklist((prev) => [...prev, ...newItems]);
+                              toast.success(`Added ${newItems.length} subcategory checklist step(s)`);
+                            }}
+                            className="text-[11px] text-emerald-600 dark:text-emerald-400 hover:underline font-medium flex items-center gap-1"
+                          >
+                            <Plus size={11} /> Add selected to task checklist
+                          </button>
+                        </>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const val = form.subCategory === "__other__" ? "" : "__other__";
+                        update("subCategory", val);
+                      }}
+                      className="text-[11px] text-primary hover:underline font-medium"
+                    >
+                      + Add custom subcategory
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Optional Custom Category */}
-              <div className="space-y-1 pt-1">
-                <Label htmlFor="task-custom-cat" className="text-[11px] text-muted-foreground">
-                  Custom or Specific Description (Optional)
-                </Label>
-                <Input
-                  id="task-custom-cat"
-                  value={form.customCategory}
-                  onChange={(e) => update("customCategory", e.target.value)}
-                  placeholder="e.g. Special Revenue Registry, Court Inspection, or custom deed"
-                  className="h-9 rounded-md bg-background text-xs"
-                />
-              </div>
+              {(form.mainCategory === "__other__" || form.subCategory === "__other__" || form.customCategory) && (
+                <div className="space-y-1.5 pt-1">
+                  <Label htmlFor="task-custom-cat" className="text-helper">
+                    Custom Category / Specific Description {form.mainCategory === "__other__" && <span className="text-destructive">*</span>}
+                  </Label>
+                  <Input
+                    id="task-custom-cat"
+                    value={form.customCategory}
+                    onChange={(e) => update("customCategory", e.target.value)}
+                    placeholder="e.g. Special Revenue Registry, Court Inspection, or custom deed"
+                    className="h-11 rounded-md bg-background text-sm"
+                    maxLength={100}
+                    required={form.mainCategory === "__other__"}
+                  />
+                </div>
+              )}
             </div>
 
             {/* ── Priority & Deadline ── */}
