@@ -54,13 +54,13 @@ router.get("/", async (req: Request, res: Response) => {
       filter["status"] = { $ne: "Archived" };
     }
 
-    // Base accessibility filter for non-admins without cases permission
+    // Base accessibility filter for non-admins (only admins see the entire cases)
     const baseAccessibleFilter: Record<string, unknown> = {
       isDeleted: { $ne: true },
       ...(!includeArchived || includeArchived === "false" ? { status: { $ne: "Archived" } } : {}),
     };
 
-    if (req.user!.role !== "admin" && !req.user?.permissions?.cases) {
+    if (req.user!.role !== "admin") {
       const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
       if (accessibleCaseIds.length === 0) {
         res.json({

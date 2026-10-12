@@ -136,14 +136,17 @@ router.get("/", async (req: Request, res: Response) => {
           ],
         };
 
-        // Non-admins only see tasks they have access to
+        // Non-admins only see tasks assigned to them or created by them
         if (req.user!.role !== "admin") {
-          const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
           taskFilter = {
-            $or: [
-              { assignedTo: req.userId }, // Tasks assigned to them
-              { createdBy: req.userId }, // Tasks they created
-              { caseId: { $in: accessibleCaseIds } }, // Tasks in their accessible cases
+            $and: [
+              { title: queryRegex },
+              {
+                $or: [
+                  { assignedTo: req.userId }, // Tasks assigned to them
+                  { createdBy: req.userId }, // Tasks they created
+                ],
+              },
             ],
           };
         }

@@ -58,6 +58,14 @@ export async function canAccessCase(
     if (hasGrant) return true;
   }
 
+  // Also accessible if user has a task assigned in this case
+  const hasTask = await Task.exists({
+    caseId,
+    assignedTo: userId,
+    isDeleted: { $ne: true },
+  });
+  if (hasTask) return true;
+
   return false;
 }
 
@@ -134,16 +142,6 @@ export async function canAccessTask(
   // Direct assignment or creator
   if (task.assignedTo?.toString() === userId) return true;
   if (task.createdBy?.toString() === userId) return true;
-
-  // Check if task's case is accessible
-  if (task.caseId) {
-    return canAccessCase(userId, userRole, task.caseId.toString(), userPermissions);
-  }
-
-  // Firm member with tasks permission
-  if (!userPermissions || userPermissions["tasks"] !== false) {
-    return true;
-  }
 
   return false;
 }
@@ -322,12 +320,20 @@ export function requireResourceAccess(
 export async function getAccessibleCaseIds(userId: string, userRole: string): Promise<string[]> {
   if (userRole === "admin") return [];
 
+  const taskCaseIds = await Task.find({
+    assignedTo: userId,
+    caseId: { $exists: true, $ne: null },
+    isDeleted: { $ne: true },
+  }).distinct("caseId");
+
   const cases = await Case.find({
     $or: [
       { assignedTo: userId },
       { createdBy: userId },
       { accessRequests: { $elemMatch: { userId, status: "approved" } } },
+      ...(taskCaseIds.length > 0 ? [{ _id: { $in: taskCaseIds } }] : []),
     ],
+    isDeleted: { $ne: true },
   })
     .select("_id")
     .lean();

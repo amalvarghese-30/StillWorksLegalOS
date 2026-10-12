@@ -344,14 +344,12 @@ router.get("/", async (req: Request, res: Response) => {
       });
     }
 
-    // Non-admins only see their tasks
+    // Non-admins only see tasks assigned to them or created by them
     if (req.user!.role !== "admin") {
-      const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
       andConditions.push({
         $or: [
           { assignedTo: req.userId },
           { createdBy: req.userId },
-          ...(accessibleCaseIds.length > 0 ? [{ caseId: { $in: accessibleCaseIds } }] : []),
         ],
       });
     }
@@ -394,11 +392,9 @@ router.get("/", async (req: Request, res: Response) => {
       isDeleted: { $ne: true },
     };
     if (req.user!.role !== "admin") {
-      const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
       baseAccessibleTaskFilter["$or"] = [
         { assignedTo: req.userId },
         { createdBy: req.userId },
-        ...(accessibleCaseIds.length > 0 ? [{ caseId: { $in: accessibleCaseIds } }] : []),
       ];
     }
 

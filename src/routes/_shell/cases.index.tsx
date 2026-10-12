@@ -146,8 +146,11 @@ const PRACTICE_OPTIONS = [
 ];
 
 import { useCategories } from "@/services/categories";
+import { useAuth } from "@/lib/auth";
 
 function CasesPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const routeSearch = Route.useSearch();
   const [search, setSearch] = useState(routeSearch.search ?? "");
   const [statusFilter, setStatusFilter] = useState<string>("All");
@@ -176,9 +179,9 @@ function CasesPage() {
       f["category"] = categoryFilter;
       f["practice"] = categoryFilter;
     }
-    if (selectedStaff.length > 0) f["assignedTo"] = selectedStaff.join(",");
+    if (isAdmin && selectedStaff.length > 0) f["assignedTo"] = selectedStaff.join(",");
     return f;
-  }, [page, limit, search, statusFilter, priorityFilter, categoryFilter, selectedStaff]);
+  }, [page, limit, search, statusFilter, priorityFilter, categoryFilter, selectedStaff, isAdmin]);
 
   // Fetch cases with server-side query parameters
   const queryClient = useQueryClient();
@@ -451,32 +454,34 @@ function CasesPage() {
               </select>
             </div>
 
-            {/* Assigned Staff Multi-Select */}
-            <div>
-              <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">
-                Assigned Staff ({selectedStaff.length} selected)
-              </label>
-              <div className="max-h-28 overflow-y-auto rounded-md border border-border bg-background p-2 space-y-1.5 text-xs">
-                {employees.length === 0 ? (
-                  <span className="text-muted-foreground italic">No staff found</span>
-                ) : (
-                  employees.map((emp) => {
-                    const checked = selectedStaff.includes(emp._id) || selectedStaff.includes(emp.name);
-                    return (
-                      <label key={emp._id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleStaff(emp._id)}
-                          className="rounded border-border"
-                        />
-                        <span className="truncate">{emp.name}</span>
-                      </label>
-                    );
-                  })
-                )}
+            {/* Assigned Staff Multi-Select (Admin Only) */}
+            {isAdmin && (
+              <div>
+                <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">
+                  Assigned Staff ({selectedStaff.length} selected)
+                </label>
+                <div className="max-h-28 overflow-y-auto rounded-md border border-border bg-background p-2 space-y-1.5 text-xs">
+                  {employees.length === 0 ? (
+                    <span className="text-muted-foreground italic">No staff found</span>
+                  ) : (
+                    employees.map((emp) => {
+                      const checked = selectedStaff.includes(emp._id) || selectedStaff.includes(emp.name);
+                      return (
+                        <label key={emp._id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleStaff(emp._id)}
+                            className="rounded border-border"
+                          />
+                          <span className="truncate">{emp.name}</span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       )}

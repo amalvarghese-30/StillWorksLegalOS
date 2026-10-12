@@ -15,6 +15,7 @@ import { QuickCallDialog } from "@/components/tasks/QuickCallDialog";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import { EditCallDialog } from "@/components/tasks/EditCallDialog";
 import { toast } from "sonner";
+import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/_shell/tasks")({
   head: () => ({
@@ -191,6 +192,8 @@ function TaskCard({ task, onSelect }: { task: TaskRecord; onSelect?: (task: Task
 }
 
 function TasksPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const routeSearch = Route.useSearch();
   const [view, setView] = useState("list");
   const [search, setSearch] = useState(routeSearch.search ?? "");
@@ -253,11 +256,11 @@ function TasksPage() {
     }
     if (priorityFilter !== "All") f["priority"] = priorityFilter;
     if (categoryFilter !== "All") f["category"] = categoryFilter;
-    if (selectedStaff.length > 0) f["assignedTo"] = selectedStaff.join(",");
+    if (isAdmin && selectedStaff.length > 0) f["assignedTo"] = selectedStaff.join(",");
     if (dueFrom) f["dueFrom"] = dueFrom;
     if (dueTo) f["dueTo"] = dueTo;
     return f;
-  }, [page, limit, search, statusFilter, priorityFilter, categoryFilter, selectedStaff, dueFrom, dueTo]);
+  }, [page, limit, search, statusFilter, priorityFilter, categoryFilter, selectedStaff, dueFrom, dueTo, isAdmin]);
 
   const { data, isLoading, isError, error } = useTasks(apiFilters);
   const { data: empData } = useEmployees();
@@ -348,7 +351,7 @@ function TasksPage() {
     (categoryFilter !== "All" ? 1 : 0) +
     (dueFrom ? 1 : 0) +
     (dueTo ? 1 : 0) +
-    selectedStaff.length +
+    (isAdmin ? selectedStaff.length : 0) +
     (search.trim() ? 1 : 0);
 
   // Calendar helpers
@@ -389,7 +392,11 @@ function TasksPage() {
       <PageHeader
         breadcrumb={[{ label: "S & S", to: "/" }, { label: "Tasks" }]}
         title="Tasks"
-        subtitle={`${tasks.length} items visible · ${stats.overdue} overdue · ${stats.calls} call reminders.`}
+        subtitle={
+          isAdmin
+            ? `${tasks.length} deliverables visible across practice · ${stats.overdue} overdue · ${stats.calls} call reminders.`
+            : `Your assigned deliverables · ${tasks.length} visible · ${stats.overdue} overdue · ${stats.calls} call reminders.`
+        }
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -656,35 +663,37 @@ function TasksPage() {
               />
             </div>
 
-            {/* Staff Multi-Select Filter */}
-            <div>
-              <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">
-                Assigned Staff ({selectedStaff.length} selected)
-              </label>
-              <div className="max-h-28 overflow-y-auto rounded-md border border-border bg-background p-2 space-y-1.5 text-xs">
-                {employees.length === 0 ? (
-                  <span className="text-muted-foreground italic">No staff members found</span>
-                ) : (
-                  employees.map((emp) => {
-                    const checked = selectedStaff.includes(emp._id) || selectedStaff.includes(emp.name);
-                    return (
-                      <label key={emp._id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => {
-                            toggleStaff(emp._id);
-                            setPage(1);
-                          }}
-                          className="rounded border-border"
-                        />
-                        <span className="truncate">{emp.name}</span>
-                      </label>
-                    );
-                  })
-                )}
+            {/* Staff Multi-Select Filter (Admin Only) */}
+            {isAdmin && (
+              <div>
+                <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">
+                  Assigned Staff ({selectedStaff.length} selected)
+                </label>
+                <div className="max-h-28 overflow-y-auto rounded-md border border-border bg-background p-2 space-y-1.5 text-xs">
+                  {employees.length === 0 ? (
+                    <span className="text-muted-foreground italic">No staff members found</span>
+                  ) : (
+                    employees.map((emp) => {
+                      const checked = selectedStaff.includes(emp._id) || selectedStaff.includes(emp.name);
+                      return (
+                        <label key={emp._id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              toggleStaff(emp._id);
+                              setPage(1);
+                            }}
+                            className="rounded border-border"
+                          />
+                          <span className="truncate">{emp.name}</span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       )}
