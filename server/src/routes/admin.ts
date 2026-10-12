@@ -528,12 +528,15 @@ router.get("/approvals", requireAdminOrPermission("approvals"), async (req: Requ
         .select("title number accessRequests")
         .lean(),
       Task.find({ status: "pending_approval" })
-        .populate("assignedTo", "name email")
+        .populate("assignedTo", "name email role")
+        .populate("caseId", "title number courtCaseId countCaseNumber")
+        .populate("clientId", "name phone email")
         .sort({ updatedAt: -1 })
         .lean(),
       ApprovalRequest.find({ status: "pending" })
-        .populate("requesterId", "name email")
-        .populate("targetUserId", "name email")
+        .populate("requesterId", "name email role")
+        .populate("targetUserId", "name email role")
+        .populate("originalAssigneeId", "name email role")
         .sort({ createdAt: -1 })
         .lean(),
     ]);
@@ -568,7 +571,7 @@ router.get("/approvals", requireAdminOrPermission("approvals"), async (req: Requ
             when: ar.createdAt,
           })),
       ),
-      ...pendingTasks.map((t) => {
+      ...pendingTasks.map((t: any) => {
         const assignedUser = t.assignedTo as any;
         const totalItems = t.checklist?.length ?? 0;
         const doneItems = t.checklist?.filter((c: any) => c.done).length ?? 0;
@@ -578,7 +581,37 @@ router.get("/approvals", requireAdminOrPermission("approvals"), async (req: Requ
           kind: "Task Completion",
           title: t.title,
           context: `Submitted by ${assignedUser?.name ?? "Assignee"}${checklistSummary}`,
-          when: (t as any).updatedAt ?? (t as any).createdAt,
+          when: t.updatedAt ?? t.createdAt,
+          taskDetails: {
+            _id: t._id.toString(),
+            title: t.title,
+            description: t.description,
+            priority: t.priority,
+            status: t.status,
+            category: t.category,
+            mainCategory: t.mainCategory,
+            subCategory: t.subCategory,
+            deadline: t.deadline,
+            completedAt: t.completedAt || t.updatedAt,
+            submittedForApprovalAt: t.submittedForApprovalAt,
+            assignedTo: t.assignedTo,
+            case: t.caseId ? {
+              _id: t.caseId._id,
+              title: t.caseId.title,
+              number: t.caseId.number,
+              courtCaseId: t.caseId.courtCaseId,
+              countCaseNumber: t.caseId.countCaseNumber,
+            } : null,
+            client: t.clientId ? {
+              _id: t.clientId._id,
+              name: t.clientId.name,
+              phone: t.clientId.phone,
+              email: t.clientId.email,
+            } : null,
+            checklist: t.checklist || [],
+            remarks: t.remarks || [],
+            assignmentHistory: t.assignmentHistory || [],
+          },
         };
       }),
       ...pendingRequests.map((r: any) => {
@@ -598,6 +631,18 @@ router.get("/approvals", requireAdminOrPermission("approvals"), async (req: Requ
           title: `${kind}${targetName}`,
           context: `Requested by ${requesterName}: "${r.reason || "No remark"}"`,
           when: r.createdAt,
+          requestDetails: {
+            _id: r._id.toString(),
+            type: r.type,
+            entityType: r.entityType,
+            entityId: r.entityId?.toString(),
+            requester: r.requesterId,
+            targetUser: r.targetUserId,
+            originalAssignee: r.originalAssigneeId,
+            reason: r.reason,
+            createdAt: r.createdAt,
+            metadata: r.metadata,
+          },
         };
       }),
     ];

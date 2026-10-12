@@ -47,6 +47,64 @@ export interface ApprovalItem {
   title: string;
   context: string;
   when: string;
+  taskDetails?: {
+    _id: string;
+    title: string;
+    description?: string;
+    priority?: string;
+    status?: string;
+    category?: string;
+    mainCategory?: string;
+    subCategory?: string;
+    deadline?: string | null;
+    completedAt?: string | null;
+    submittedForApprovalAt?: string | null;
+    assignedTo?: { _id: string; name: string; email: string; role?: string } | null;
+    case?: {
+      _id: string;
+      title: string;
+      number: string;
+      courtCaseId?: string;
+      countCaseNumber?: string;
+    } | null;
+    client?: {
+      _id: string;
+      name: string;
+      phone?: string;
+      email?: string;
+    } | null;
+    checklist?: Array<{
+      _id?: string;
+      id?: string;
+      text: string;
+      done: boolean;
+      remarks?: string;
+      subItems?: Array<{ text: string; done: boolean }>;
+    }>;
+    remarks?: Array<{
+      _id?: string;
+      text: string;
+      author: string;
+      createdAt: string;
+    }>;
+    assignmentHistory?: Array<{
+      action: string;
+      note?: string;
+      timestamp: string;
+    }>;
+  };
+  requestDetails?: {
+    _id: string;
+    type: string;
+    entityType: string;
+    entityId?: string;
+    requester?: { _id: string; name: string; email: string };
+    targetUser?: { _id: string; name: string; email: string };
+    originalAssignee?: { _id: string; name: string; email: string };
+    reason?: string;
+    createdAt?: string;
+    metadata?: Record<string, unknown>;
+  };
 }
 
 export interface ApprovalsResponse {
