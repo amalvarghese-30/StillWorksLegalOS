@@ -122,6 +122,7 @@ router.post("/events", async (req: Request, res: Response) => {
     const {
       title,
       description,
+      remarks,
       type,
       start: startStr,
       end: endStr,
@@ -171,7 +172,7 @@ router.post("/events", async (req: Request, res: Response) => {
 
     const event = await CalendarEvent.create({
       title: title.trim(),
-      description: description ?? "",
+      description: description ?? remarks ?? "",
       type: type ?? "personal",
       start: parsedStart,
       end: parsedEnd,
@@ -250,6 +251,10 @@ router.patch("/events/:id", requireResourceAccess("calendarEvent"), async (req: 
     const allowed = ["title", "description", "type", "allDay", "caseId", "clientId", "assignedTo", "color"];
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
+    }
+    // Accept remarks as alias for description
+    if (req.body["remarks"] !== undefined && updates["description"] === undefined) {
+      updates["description"] = req.body["remarks"];
     }
     if (req.body["start"]) {
       const parsedStart = new Date(req.body["start"]);

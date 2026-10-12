@@ -8,6 +8,7 @@ import { DocumentModel } from "../models/Document.js";
 import { initSequence } from "../models/Counter.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { User } from "../models/User.js";
+import { ApprovalRequest } from "../models/ApprovalRequest.js";
 import { NotificationService } from "../services/notifications.js";
 import { requireAuth } from "../middleware/auth.js";
 import { canAccessCase, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
@@ -44,7 +45,9 @@ router.get("/", async (req: Request, res: Response) => {
       limit = "24",
     } = req.query as Record<string, string>;
 
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = {
+      isDeleted: { $ne: true },
+    };
 
     // Exclude archived cases by default (only show if explicitly requested)
     if (!includeArchived || includeArchived === "false") {
@@ -53,6 +56,7 @@ router.get("/", async (req: Request, res: Response) => {
 
     // Base accessibility filter for non-admins without cases permission
     const baseAccessibleFilter: Record<string, unknown> = {
+      isDeleted: { $ne: true },
       ...(!includeArchived || includeArchived === "false" ? { status: { $ne: "Archived" } } : {}),
     };
 
@@ -92,12 +96,21 @@ router.get("/", async (req: Request, res: Response) => {
       }
     }
 
+    const andConditions: any[] = [];
+
     // Category / Practice area filter
     const categoryFilterVal = (req.query.category as string) || practice || practiceArea;
     if (categoryFilterVal && categoryFilterVal !== "All") {
       const escapedCategory = categoryFilterVal.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const catRegex = new RegExp(`^${escapedCategory}$`, "i");
-      filter["$or"] = [{ category: catRegex }, { practice: catRegex }];
+      andConditions.push({
+        $or: [
+          { category: catRegex },
+          { practice: catRegex },
+          { mainCategory: catRegex },
+          { subCategory: catRegex },
+        ],
+      });
     }
 
     // Assigned staff: single or comma-separated
@@ -155,17 +168,26 @@ router.get("/", async (req: Request, res: Response) => {
     if (search && search.trim()) {
       const escaped = search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const regex = new RegExp(escaped, "i");
-      filter["$or"] = [
-        { number: regex },
-        { title: regex },
-        { category: regex },
-        { practice: regex },
-        { court: regex },
-        { judge: regex },
-        { "parties.name": regex },
-        { courtCaseId: regex },
-        { tags: regex },
-      ];
+      andConditions.push({
+        $or: [
+          { number: regex },
+          { title: regex },
+          { category: regex },
+          { mainCategory: regex },
+          { subCategory: regex },
+          { practice: regex },
+          { court: regex },
+          { judge: regex },
+          { "parties.name": regex },
+          { courtCaseId: regex },
+          { countCaseNumber: regex },
+          { tags: regex },
+        ],
+      });
+    }
+
+    if (andConditions.length > 0) {
+      filter["$and"] = andConditions;
     }
 
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
@@ -459,6 +481,11 @@ router.post("/", async (req: Request, res: Response) => {
       description: typeof description === "string" ? description.trim() : "",
       category: resolvedCategory,
       practice: resolvedCategory,
+      mainCategory: typeof req.body.mainCategory === "string" ? req.body.mainCategory.trim() : undefined,
+      subCategory: typeof req.body.subCategory === "string" ? req.body.subCategory.trim() : undefined,
+      categoryPath: Array.isArray(req.body.categoryPath) ? req.body.categoryPath.map((p: any) => String(p).trim()).filter(Boolean) : [],
+      countCaseNumber: typeof req.body.countCaseNumber === "string" ? req.body.countCaseNumber.trim() : undefined,
+      courtCaseId: typeof req.body.courtCaseId === "string" ? req.body.courtCaseId.trim() : (typeof req.body.countCaseNumber === "string" ? req.body.countCaseNumber.trim() : undefined),
       court: typeof court === "string" ? court.trim() : "",
       judge: typeof judge === "string" ? judge.trim() : "",
       status: status || "Active",
@@ -470,6 +497,7 @@ router.post("/", async (req: Request, res: Response) => {
       assignedAt: finalAssignedTo ? new Date() : null,
       localPath: typeof localPath === "string" ? localPath.trim() : "",
       createdBy: userId,
+      updatedBy: new mongoose.Types.ObjectId(userId),
       tags: Array.isArray(tags) ? tags.map((t) => String(t).trim()).filter(Boolean) : [],
       timeline: [timelineEntry],
       ...(idempotencyKey ? { idempotencyKey } : {}),
@@ -668,11 +696,14 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
     // are server-controlled and must not be modifiable via this endpoint.
     // ---------------------------------------------------------------------------
     const ALLOWED_FIELDS = [
-      "title", "description", "category", "practice", "court", "judge", "courtCaseId",
+      "title", "description", "category", "practice", "mainCategory", "subCategory",
+      "categoryPath", "countCaseNumber", "court", "judge", "courtCaseId",
       "status", "priority", "nextHearing", "parties", "tags", "progress", "localPath",
     ] as const;
 
-    const updates: Record<string, unknown> = {};
+    const updates: Record<string, unknown> = {
+      updatedBy: new mongoose.Types.ObjectId(req.userId!),
+    };
     for (const key of ALLOWED_FIELDS) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     }
@@ -858,23 +889,106 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
 });
 
 // ---------------------------------------------------------------------------
-// DELETE /api/cases/:id — archive case (preserve all related data)
+// POST /api/cases/:id/request-deletion — request deletion approval
+// ---------------------------------------------------------------------------
+
+router.post("/:id/request-deletion", requireResourceAccess("case"), async (req: Request, res: Response) => {
+  try {
+    const { reason } = req.body;
+    const cleanReason = typeof reason === "string" ? reason.trim() : "";
+    if (!cleanReason) {
+      res.status(400).json({ message: "Reason for deletion request is required", field: "reason" });
+      return;
+    }
+
+    const caseRecord = await Case.findById(req.params["id"]);
+    if (!caseRecord) {
+      res.status(404).json({ message: "Case not found" });
+      return;
+    }
+
+    const approvalRequest = await ApprovalRequest.create({
+      type: "case_delete",
+      entityType: "Case",
+      entityId: caseRecord._id,
+      requesterId: new mongoose.Types.ObjectId(req.userId!),
+      reason: cleanReason,
+      status: "pending",
+    });
+
+    caseRecord.pendingDeletion = true;
+    caseRecord.deletionReason = cleanReason;
+    caseRecord.updatedBy = new mongoose.Types.ObjectId(req.userId!);
+    await caseRecord.save();
+
+    // Notify admins
+    const admins = await User.find({ role: "admin" }).select("_id");
+    const io = req.app.get("io");
+    for (const admin of admins) {
+      await NotificationService.createNotification(
+        {
+          userId: admin._id,
+          type: "APPROVAL_REQUESTED",
+          title: "Case Deletion Request",
+          message: `${req.user?.name ?? "An employee"} requested deletion of case "${caseRecord.title}": ${cleanReason}`,
+          relatedId: approvalRequest._id as any,
+          relatedModel: "ApprovalRequest",
+          actorId: new mongoose.Types.ObjectId(req.userId!),
+          metadata: {
+            caseId: caseRecord._id.toString(),
+            approvalRequestId: approvalRequest._id.toString(),
+          },
+        },
+        io
+      );
+    }
+
+    if (io) {
+      io.emit("case:updated", { case: caseRecord });
+    }
+
+    res.status(201).json({
+      message: "Case deletion request submitted for administrator approval",
+      approvalRequest,
+      case: caseRecord,
+    });
+  } catch (err: any) {
+    console.error("[cases] Request deletion error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/cases/:id — soft-delete / archive case (admin only)
 // Legal records must not be destroyed; use archive semantics instead.
 // ---------------------------------------------------------------------------
 
 router.delete("/:id", requireResourceAccess("case"), async (req: Request, res: Response) => {
   try {
+    if (req.user?.role !== "admin") {
+      res.status(403).json({
+        message: "Non-admin users cannot delete cases directly. Please submit a deletion request for administrator approval.",
+        code: "DELETION_APPROVAL_REQUIRED",
+      });
+      return;
+    }
+
     const record = await Case.findByIdAndUpdate(
       req.params["id"],
       {
         $set: {
           status: "Archived",
+          isDeleted: true,
+          deletedAt: new Date(),
+          deletedBy: new mongoose.Types.ObjectId(req.userId!),
           archivedAt: new Date(),
           archivedBy: new mongoose.Types.ObjectId(req.userId!),
+          pendingDeletion: false,
+          updatedBy: new mongoose.Types.ObjectId(req.userId!),
         },
         $push: {
           timeline: {
-            event: "Case archived",
+            event: "Case deleted / archived",
             by: req.user?.name ?? "Unknown",
             when: new Date(),
           },
@@ -896,7 +1010,7 @@ router.delete("/:id", requireResourceAccess("case"), async (req: Request, res: R
         resource: "case",
         resourceId: record._id.toString(),
         resourceName: record.title,
-        details: "Case archived (soft-delete)",
+        details: "Case archived and soft-deleted",
         ip: req.ip,
         userAgent: req.headers["user-agent"],
       },

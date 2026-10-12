@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
-import { User, Building2, Bell, Lock, Palette, HardDrive, Loader2, Laptop, LogOut, ShieldCheck, Camera, Trash2, RefreshCw, Mail } from "lucide-react";
+import { User, Building2, Bell, Lock, Palette, HardDrive, Loader2, Laptop, LogOut, ShieldCheck, Camera, Trash2, RefreshCw, Mail, Volume2, VolumeX } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
 import { MobileSectionNav } from "@/components/layout/MobileSectionNav";
@@ -25,6 +25,14 @@ import { validatePhone, sanitizePhone } from "@/lib/validation";
 import { getAccessToken, getApiBase } from "@/services/api";
 import { APP_VERSION } from "@/version";
 import { isElectron } from "@/platform";
+import {
+  playNotificationSound,
+  isNotificationSoundEnabled,
+  setNotificationSoundEnabled,
+  getNotificationSoundTone,
+  setNotificationSoundTone,
+  type NotificationSoundTone,
+} from "@/lib/sound";
 
 export const Route = createFileRoute("/_shell/settings")({
   validateSearch: (search: Record<string, unknown>): { tab?: string } => ({
@@ -150,8 +158,14 @@ function SettingsPage() {
   // Form state — initialised from auth user
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [secondaryPhone, setSecondaryPhone] = useState("");
   const [title, setTitle] = useState("");
   const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [secondaryPhoneError, setSecondaryPhoneError] = useState<string | null>(null);
+
+  // Sound preferences
+  const [soundEnabled, setSoundEnabled] = useState(isNotificationSoundEnabled());
+  const [soundTone, setSoundTone] = useState<NotificationSoundTone>(getNotificationSoundTone());
 
   // Firm details form state
   const [firmName, setFirmName] = useState("");
@@ -212,6 +226,7 @@ function SettingsPage() {
     if (user) {
       setName(user.name ?? "");
       setPhone(user.phone ?? "");
+      setSecondaryPhone((user as any).secondaryPhone ?? "");
       setTitle(user.title ?? "");
       setFirmName(user.firmName ?? "");
       setFirmBarRegistration(user.firmBarRegistration ?? "");
@@ -237,7 +252,22 @@ function SettingsPage() {
       }
     }
     setPhoneError(null);
-    updateProfile.mutate({ name, phone: phone.trim(), title });
+
+    if (secondaryPhone.trim()) {
+      const spCheck = validatePhone(secondaryPhone);
+      if (!spCheck.valid) {
+        setSecondaryPhoneError(spCheck.error ?? "Invalid secondary phone format");
+        return;
+      }
+    }
+    setSecondaryPhoneError(null);
+
+    updateProfile.mutate({
+      name,
+      phone: phone.trim(),
+      secondaryPhone: secondaryPhone.trim(),
+      title,
+    });
   };
 
   const handleFirmSave = (e: React.FormEvent) => {
@@ -350,6 +380,73 @@ function SettingsPage() {
                   </div>
                 </form>
               </SectionCard>
+
+              {tab === "notifications" && (
+                <SectionCard
+                  title="Audio Chimes & Alerts"
+                  description="Customize audible feedback for reminders, notifications, and incoming mentions."
+                  icon={Volume2}
+                >
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 py-2">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-foreground">Play Sound on Notifications</p>
+                        </div>
+                        <p className="text-helper text-muted-foreground">
+                          Audible alert chime when a reminder, task update, or approval triggers.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={soundEnabled}
+                        onCheckedChange={(val) => {
+                          setSoundEnabled(val);
+                          setNotificationSoundEnabled(val);
+                          if (val) playNotificationSound(soundTone);
+                        }}
+                        aria-label="Play sound on notifications"
+                      />
+                    </div>
+
+                    {soundEnabled && (
+                      <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border/80 bg-muted/20 p-4">
+                        <div className="space-y-0.5">
+                          <Label className="text-xs font-semibold text-foreground">Sound Tone</Label>
+                          <p className="text-[11px] text-muted-foreground">
+                            Synthesized tone generated via browser Web Audio API
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2.5">
+                          <select
+                            value={soundTone}
+                            onChange={(e) => {
+                              const tone = e.target.value as NotificationSoundTone;
+                              setSoundTone(tone);
+                              setNotificationSoundTone(tone);
+                              playNotificationSound(tone);
+                            }}
+                            className="h-9 rounded-md border border-border bg-background px-3 text-xs text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary shadow-2xs"
+                          >
+                            <option value="chime">Harmonic Chime (Default)</option>
+                            <option value="bell">Tubular Bell</option>
+                            <option value="ping">Crisp Ping</option>
+                          </select>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => playNotificationSound(soundTone)}
+                            className="h-9 text-xs gap-1.5 px-3"
+                          >
+                            <Volume2 size={13} className="text-primary" />
+                            Test Chime
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </SectionCard>
+              )}
 
               {tab === "security" && (
                 <SectionCard
@@ -523,7 +620,7 @@ function SettingsPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-helper">Phone (10-digit Mobile)</Label>
+                    <Label className="text-helper">Primary Phone (10-digit Mobile)</Label>
                     <Input
                       value={phone}
                       onChange={(e) => {
@@ -534,6 +631,19 @@ function SettingsPage() {
                       className={`h-12 rounded-md ${phoneError ? "border-destructive focus-visible:ring-destructive" : ""}`}
                     />
                     {phoneError && <p className="text-caption text-destructive font-medium">{phoneError}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-helper">Secondary Phone <span className="text-muted-foreground font-normal">(Optional)</span></Label>
+                    <Input
+                      value={secondaryPhone}
+                      onChange={(e) => {
+                        setSecondaryPhone(sanitizePhone(e.target.value));
+                        if (secondaryPhoneError) setSecondaryPhoneError(null);
+                      }}
+                      placeholder="e.g. 9876543211"
+                      className={`h-12 rounded-md ${secondaryPhoneError ? "border-destructive focus-visible:ring-destructive" : ""}`}
+                    />
+                    {secondaryPhoneError && <p className="text-caption text-destructive font-medium">{secondaryPhoneError}</p>}
                   </div>
                   <div className="space-y-2">
                     <Label className="text-helper">Designation</Label>

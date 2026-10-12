@@ -15,7 +15,7 @@ export { AppSettings } from "./AppSettings.js";
 export type { IAppSettings, StorageConfig, SynologyConfig } from "./AppSettings.js";
 
 export { Task } from "./Task.js";
-export type { ITask, TaskCategory, TaskPriority, TaskStatus, ChecklistItem, CallReminder } from "./Task.js";
+export type { ITask, TaskCategory, TaskPriority, TaskStatus, ChecklistItem, CallReminder, TaskRemark } from "./Task.js";
 
 export { CalendarEvent } from "./CalendarEvent.js";
 export type { ICalendarEvent, CalendarEventType } from "./CalendarEvent.js";
@@ -28,3 +28,21 @@ export type { IChatGroup, IChatMessage, ChatGroupType, ChatGroupMember } from ".
 
 export { AuditLog } from "./AuditLog.js";
 export type { IAuditLog, AuditAction, AuditResource } from "./AuditLog.js";
+
+export { Category, slugify } from "./Category.js";
+export type { ICategory, CategoryType } from "./Category.js";
+
+export { ApprovalRequest } from "./ApprovalRequest.js";
+export type { IApprovalRequest, ApprovalType, ApprovalStatus } from "./ApprovalRequest.js";
+
+export { NotificationOutbox } from "./NotificationOutbox.js";
+export type { INotificationOutbox, OutboxChannel, OutboxStatus } from "./NotificationOutbox.js";
+
+export { Notification } from "./Notification.js";
+export type { INotification, NotificationType } from "./Notification.js";
+
+export { Reminder } from "./Reminder.js";
+export type { IReminder, ReminderStatus, ReminderSourceType } from "./Reminder.js";
+
+export { GmailAccount } from "./GmailAccount.js";
+export type { IGmailAccount } from "./GmailAccount.js";

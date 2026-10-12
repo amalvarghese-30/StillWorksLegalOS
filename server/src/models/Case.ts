@@ -76,6 +76,10 @@ export interface ICase extends Document {
   title: string;
   description: string;
   category: string;
+  mainCategory?: string;
+  subCategory?: string;
+  categoryPath?: string[];
+  countCaseNumber?: string;                 // Configurable count case number / court file count
   practice?: CasePractice;
   court: string;
   judge?: string;
@@ -94,6 +98,12 @@ export interface ICase extends Document {
   localPath?: string;
   assignmentHistory: AssignmentHistoryEntry[];
   createdBy: mongoose.Types.ObjectId;
+  updatedBy?: mongoose.Types.ObjectId | null;
+  isDeleted?: boolean;
+  deletedAt?: Date | null;
+  deletedBy?: mongoose.Types.ObjectId | null;
+  deletionReason?: string;
+  pendingDeletion?: boolean;
   notes: CaseNote[];
   timeline: CaseTimelineEntry[];
   progress: number;                      // 0-100
@@ -181,6 +191,10 @@ const CaseSchema = new Schema<ICase>(
       default: "Other Work",
       index: true,
     },
+    mainCategory: { type: String, default: "", index: true },
+    subCategory: { type: String, default: "", index: true },
+    categoryPath: { type: [String], default: [] },
+    countCaseNumber: { type: String, default: "", trim: true, index: true },
     practice: {
       type: String,
       trim: true,
@@ -235,6 +249,12 @@ const CaseSchema = new Schema<ICase>(
     idempotencyKey: { type: String, sparse: true, index: true },
     archivedAt: { type: Date },
     archivedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    isDeleted: { type: Boolean, default: false, index: true },
+    deletedAt: { type: Date, default: null },
+    deletedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    deletionReason: { type: String, default: "" },
+    pendingDeletion: { type: Boolean, default: false, index: true },
+    updatedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
   },
   {
     timestamps: true,

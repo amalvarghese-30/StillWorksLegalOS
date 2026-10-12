@@ -63,6 +63,9 @@ import {
   useRejectTask,
   useForwardTask,
   useReassignTask,
+  useRequestTaskAssignment,
+  useRequestTaskDeletion,
+  useAddTaskRemark,
   useAddSubItem,
   useToggleSubItem,
   useDeleteSubItem,
@@ -71,6 +74,7 @@ import {
   type ChecklistSubItem,
   type CreateTaskPayload,
 } from "@/services/tasks";
+import { useCategoryTree } from "@/services/categories";
 import { useCases } from "@/services/cases";
 import { useClients } from "@/services/clients";
 import { useEmployees } from "@/services/admin";
@@ -99,6 +103,9 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
   const [title, setTitle] = useState(activeTask.title || "");
   const [description, setDescription] = useState(activeTask.description || "");
   const [category, setCategory] = useState(activeTask.category || "General");
+  const [mainCategory, setMainCategory] = useState(activeTask.mainCategory || "");
+  const [subCategory, setSubCategory] = useState(activeTask.subCategory || "");
+  const [customCategory, setCustomCategory] = useState(activeTask.customCategory || "");
   const [priority, setPriority] = useState(activeTask.priority || "Medium");
   const [deadline, setDeadline] = useState(
     activeTask.deadline ? new Date(activeTask.deadline).toISOString().slice(0, 16) : ""
@@ -114,6 +121,13 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingText, setEditingText] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showRequestDeleteModal, setShowRequestDeleteModal] = useState(false);
+  const [deleteRequestReason, setDeleteRequestReason] = useState("");
+  const [newRemarkText, setNewRemarkText] = useState("");
+
+  const { data: categoryTree = [] } = useCategoryTree();
+  const selectedParent = categoryTree.find((c) => c.name === mainCategory);
+  const availableSubCategories = selectedParent?.children ?? [];
 
   // Broker / Agent state
   const [agentSelect, setAgentSelect] = useState("");
@@ -182,6 +196,9 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
   const rejectTask = useRejectTask();
   const forwardTask = useForwardTask();
   const reassignTask = useReassignTask();
+  const requestTaskAssignment = useRequestTaskAssignment();
+  const requestTaskDeletion = useRequestTaskDeletion();
+  const addTaskRemark = useAddTaskRemark();
   const addSubItem = useAddSubItem();
   const toggleSubItem = useToggleSubItem();
   const deleteSubItem = useDeleteSubItem();
@@ -201,6 +218,9 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
       setTitle(activeTask.title || "");
       setDescription(activeTask.description || "");
       setCategory(activeTask.category || "General");
+      setMainCategory(activeTask.mainCategory || "");
+      setSubCategory(activeTask.subCategory || "");
+      setCustomCategory(activeTask.customCategory || "");
       setPriority(activeTask.priority || "Medium");
       setDeadline(activeTask.deadline ? new Date(activeTask.deadline).toISOString().slice(0, 16) : "");
       setAssignedTo(activeTask.assignedTo?._id || "");
@@ -394,6 +414,82 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
     }
   };
 
+  const handleAddSubCategoryToChecklist = async (subCatName: string) => {
+    const textToAdd = subCatName.trim();
+    if (!textToAdd) return;
+
+    if (isEditing) {
+      if (editableChecklist.some((c) => c.text.toLowerCase() === textToAdd.toLowerCase())) {
+        toast.info(`"${textToAdd}" is already in the checklist`);
+        return;
+      }
+      setEditableChecklist((prev) => [
+        ...prev,
+        { text: textToAdd, done: false, subItems: [] },
+      ]);
+      toast.success(`Added "${textToAdd}" to checklist`);
+      return;
+    }
+
+    if (liveChecklist.some((c) => c.text.toLowerCase() === textToAdd.toLowerCase())) {
+      toast.info(`"${textToAdd}" is already in the checklist`);
+      return;
+    }
+
+    setLiveChecklist((prev) => [...prev, { text: textToAdd, done: false, subItems: [] }]);
+    try {
+      await addChecklistItem.mutateAsync({
+        taskId: activeTask._id,
+        text: textToAdd,
+      });
+      toast.success(`Added "${textToAdd}" to checklist`);
+    } catch (err) {
+      console.error("Failed to add subcategory checklist item:", err);
+      setLiveChecklist(activeTask.checklist ?? []);
+      toast.error("Failed to add checklist item");
+    }
+  };
+
+  const handleAddAllSubCategoriesToChecklist = async () => {
+    if (!availableSubCategories || availableSubCategories.length === 0) return;
+
+    const currentItems = isEditing ? editableChecklist : liveChecklist;
+    const existingTexts = new Set(currentItems.map((c) => c.text.toLowerCase()));
+    const toAdd = availableSubCategories
+      .map((sc) => sc.name.trim())
+      .filter((name) => name && !existingTexts.has(name.toLowerCase()));
+
+    if (toAdd.length === 0) {
+      toast.info("All subcategories are already in the checklist");
+      return;
+    }
+
+    if (isEditing) {
+      setEditableChecklist((prev) => [
+        ...prev,
+        ...toAdd.map((text) => ({ text, done: false, subItems: [] })),
+      ]);
+      toast.success(`Added ${toAdd.length} subcategory checklist step(s)`);
+      return;
+    }
+
+    // Sequentially persist
+    const newItems = toAdd.map((text) => ({ text, done: false, subItems: [] }));
+    setLiveChecklist((prev) => [...prev, ...newItems]);
+    try {
+      for (const text of toAdd) {
+        await addChecklistItem.mutateAsync({
+          taskId: activeTask._id,
+          text,
+        });
+      }
+      toast.success(`Added ${toAdd.length} subcategory checklist step(s)`);
+    } catch (err) {
+      console.error("Failed to add subcategories to checklist:", err);
+      toast.error("Some checklist steps could not be added");
+    }
+  };
+
   const handleRemoveChecklistItem = async (indexToRemove: number) => {
     if (isEditing) {
       setEditableChecklist((prev) => prev.filter((_, idx) => idx !== indexToRemove));
@@ -556,10 +652,20 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
           ? agentCustom.trim()
           : agentSelect.trim();
 
+      const chosenCategory =
+        customCategory.trim() ||
+        subCategory ||
+        mainCategory ||
+        category.trim() ||
+        "Other Work";
+
       const payload: Partial<CreateTaskPayload> & { checklist?: any[] } = {
         title: title.trim(),
         description: description.trim(),
-        category: category.trim(),
+        mainCategory: mainCategory || undefined,
+        subCategory: subCategory || undefined,
+        customCategory: customCategory.trim() || undefined,
+        category: chosenCategory,
         priority,
         caseId: caseId.trim() ? caseId.trim() : null,
         clientId: clientId.trim() ? clientId.trim() : null,
@@ -587,7 +693,9 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
         const iso = toSafeIso(deadline);
         if (iso) payload.deadline = iso;
       }
-      if (assignedTo) payload.assignedTo = assignedTo;
+      if (isAdmin && assignedTo) {
+        payload.assignedTo = assignedTo;
+      }
 
       if (isCallTask || callClientName.trim()) {
         if (callPhone.trim()) {
@@ -727,10 +835,13 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
       title !== (activeTask.title || "") ||
       description !== (activeTask.description || "") ||
       category !== (activeTask.category || "General") ||
+      mainCategory !== (activeTask.mainCategory || "") ||
+      subCategory !== (activeTask.subCategory || "") ||
+      customCategory !== (activeTask.customCategory || "") ||
       priority !== (activeTask.priority || "Medium") ||
-      assignedTo !== (activeTask.assignedTo?._id || "")
+      (isAdmin && assignedTo !== (activeTask.assignedTo?._id || ""))
     );
-  }, [isEditing, title, description, category, priority, assignedTo, activeTask]);
+  }, [isEditing, title, description, category, mainCategory, subCategory, customCategory, priority, assignedTo, activeTask, isAdmin]);
 
   const handleAttemptClose = () => {
     if (isEditing && isDirty) {
@@ -763,9 +874,15 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-pill bg-primary/10 px-2.5 py-0.5 text-caption font-semibold text-primary">
-                    {activeTask.category || "Task"}
-                  </span>
+                  {activeTask.mainCategory ? (
+                    <span className="rounded-pill bg-primary/10 px-2.5 py-0.5 text-caption font-semibold text-primary">
+                      {activeTask.mainCategory}{activeTask.subCategory ? ` › ${activeTask.subCategory}` : ""}
+                    </span>
+                  ) : (
+                    <span className="rounded-pill bg-primary/10 px-2.5 py-0.5 text-caption font-semibold text-primary">
+                      {activeTask.category || "Task"}
+                    </span>
+                  )}
                   <span
                     className={`rounded-pill px-2.5 py-0.5 text-caption font-semibold ${
                       activeTask.priority === "High"
@@ -903,7 +1020,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
 
                     <DropdownMenuItem className="text-xs" onClick={() => setShowReassignModal(true)}>
                       <UserCheck size={14} className="mr-2" />
-                      Reassign Task
+                      {isAdmin ? "Reassign Task" : "Request Reassignment"}
                     </DropdownMenuItem>
 
                     <DropdownMenuItem className="text-xs" onClick={handleDuplicateTask}>
@@ -911,7 +1028,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                       Duplicate Task
                     </DropdownMenuItem>
 
-                    {isCreatorOrAdmin && (
+                    {isAdmin ? (
                       <>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
@@ -924,6 +1041,17 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                         >
                           <Trash2 size={14} className="mr-2" />
                           Delete Task
+                        </DropdownMenuItem>
+                      </>
+                    ) : (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-xs text-destructive focus:text-destructive"
+                          onClick={() => setShowRequestDeleteModal(true)}
+                        >
+                          <Trash2 size={14} className="mr-2" />
+                          Request Task Deletion
                         </DropdownMenuItem>
                       </>
                     )}
@@ -1002,35 +1130,75 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="task-cat" className="text-helper font-medium">Category</Label>
+                  <Label htmlFor="task-main-cat" className="text-helper font-medium">Main Category</Label>
                   <select
-                    id="task-cat"
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
+                    id="task-main-cat"
+                    value={mainCategory}
+                    onChange={(e) => {
+                      setMainCategory(e.target.value);
+                      setSubCategory("");
+                      setCustomCategory("");
+                    }}
                     className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   >
-                    <option value="">Select category…</option>
-                    {availableCategories.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
+                    <option value="">Select main category…</option>
+                    {categoryTree.map((c) => (
+                      <option key={c.name} value={c.name}>
+                        {c.name}
                       </option>
                     ))}
                   </select>
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="task-prio" className="text-helper font-medium">Priority</Label>
+                  <Label htmlFor="task-sub-cat" className="text-helper font-medium">Subcategory / Work Type</Label>
                   <select
-                    id="task-prio"
-                    value={priority}
-                    onChange={(e) => setPriority(e.target.value as "High" | "Medium" | "Low")}
-                    className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    id="task-sub-cat"
+                    value={subCategory}
+                    onChange={(e) => {
+                      setSubCategory(e.target.value);
+                      if (e.target.value !== "__other__") setCustomCategory("");
+                    }}
+                    disabled={!mainCategory || availableSubCategories.length === 0}
+                    className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
                   >
-                    <option value="High">High</option>
-                    <option value="Medium">Medium</option>
-                    <option value="Low">Low</option>
+                    <option value="">Select subcategory…</option>
+                    {availableSubCategories.map((sc) => (
+                      <option key={sc._id || sc.name} value={sc.name}>
+                        {sc.name}
+                      </option>
+                    ))}
+                    <option value="__other__">+ Other / Custom Subcategory...</option>
                   </select>
                 </div>
+              </div>
+
+              {subCategory === "__other__" && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="task-custom-cat" className="text-helper font-medium">Custom Work Type / Subcategory</Label>
+                  <Input
+                    id="task-custom-cat"
+                    value={customCategory}
+                    onChange={(e) => setCustomCategory(e.target.value)}
+                    placeholder="Enter custom work type..."
+                    className="h-10 rounded-md"
+                    maxLength={100}
+                  />
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label htmlFor="task-prio" className="text-helper font-medium">Priority</Label>
+                <select
+                  id="task-prio"
+                  value={priority}
+                  onChange={(e) => setPriority(e.target.value as "High" | "Medium" | "Low")}
+                  className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="High">High</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Low">Low</option>
+                </select>
               </div>
 
               {/* Agent / Broker Selector in Edit Mode */}
@@ -1068,19 +1236,33 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="task-assignee" className="text-helper font-medium">Assignee</Label>
-                  <select
-                    id="task-assignee"
-                    value={assignedTo}
-                    onChange={(e) => setAssignedTo(e.target.value)}
-                    className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    <option value="">Unassigned</option>
-                    {employees.map((emp) => (
-                      <option key={emp._id} value={emp._id}>
-                        {emp.name} ({emp.title || emp.role})
-                      </option>
-                    ))}
-                  </select>
+                  {isAdmin ? (
+                    <select
+                      id="task-assignee"
+                      value={assignedTo}
+                      onChange={(e) => setAssignedTo(e.target.value)}
+                      className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    >
+                      <option value="">Unassigned</option>
+                      {(employees.length > 0 ? employees : (optionsData?.staff ?? [])).map((emp: any) => (
+                        <option key={emp._id} value={emp._id}>
+                          {emp.name} {emp.title ? `(${emp.title})` : emp.role ? `(${emp.role})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div>
+                      <Input
+                        id="task-assignee"
+                        value={activeTask.assignedTo?.name || "Unassigned"}
+                        disabled
+                        className="h-10 rounded-md bg-muted text-muted-foreground cursor-not-allowed"
+                      />
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        Staff cannot reassign tasks directly. Use &ldquo;Request Reassignment&rdquo; to submit an assignment change.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
@@ -1149,47 +1331,20 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                 </div>
 
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="task-edit-client" className="text-helper font-medium">Linked Client</Label>
-                    <button
-                      type="button"
-                      onClick={() => setManualClient((prev) => !prev)}
-                      className="text-xs text-primary hover:underline font-normal"
-                    >
-                      {manualClient ? "Select from list" : "Enter manually"}
-                    </button>
-                  </div>
-                  {manualClient ? (
-                    <Input
-                      id="task-edit-client"
-                      value={clientId}
-                      onChange={(e) => setClientId(e.target.value)}
-                      placeholder="Client name or ID"
-                      className="h-10 rounded-md"
-                    />
-                  ) : (
-                    <select
-                      id="task-edit-client"
-                      value={clientId || ""}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val === "__manual__") {
-                          setManualClient(true);
-                        } else {
-                          setClientId(val);
-                        }
-                      }}
-                      className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                    >
-                      <option value="">None (No client linked)</option>
-                      {clients.map((cl) => (
-                        <option key={cl._id} value={cl._id}>
-                          {cl.name} {cl.phone ? `(${cl.phone})` : ""}
-                        </option>
-                      ))}
-                      <option value="__manual__">+ Enter Client manually...</option>
-                    </select>
-                  )}
+                  <Label htmlFor="task-edit-client" className="text-helper font-medium">Linked Client</Label>
+                  <select
+                    id="task-edit-client"
+                    value={clientId || ""}
+                    onChange={(e) => setClientId(e.target.value)}
+                    className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="">None (No client linked)</option>
+                    {clients.map((cl) => (
+                      <option key={cl._id} value={cl._id}>
+                        {cl.name} {cl.phone ? `(${cl.phone})` : ""}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -1390,6 +1545,17 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                     <span>Approved: <strong className="text-foreground">{formatSafeDateTime(activeTask.approvedAt)}</strong></span>
                   </div>
                 )}
+                {activeTask.updatedBy && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <User size={15} />
+                    <span>
+                      Last Edited By:{" "}
+                      <strong className="text-foreground">
+                        {typeof activeTask.updatedBy === "object" ? activeTask.updatedBy?.name : activeTask.updatedBy}
+                      </strong>
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Local Folder / File Path */}
@@ -1432,6 +1598,59 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                   </div>
                 </div>
               )}
+
+              {/* Task Remarks & Notes Section */}
+              <div className="rounded-lg border border-border/70 bg-card p-3.5 space-y-3">
+                <h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Briefcase size={13} /> Remarks & Updates ({activeTask.remarks?.length || 0})
+                  </span>
+                </h5>
+                {activeTask.remarks && activeTask.remarks.length > 0 ? (
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {activeTask.remarks.map((r, i) => (
+                      <div key={r._id || i} className="rounded border border-border/50 bg-muted/30 p-2.5 text-xs">
+                        <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
+                          <span className="font-semibold text-foreground">{r.authorName || "Staff"}</span>
+                          <span>{formatSafeDateTime(r.createdAt)}</span>
+                        </div>
+                        <p className="text-foreground whitespace-pre-wrap">{r.text}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No remarks logged yet.</p>
+                )}
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!newRemarkText.trim()) return;
+                    try {
+                      await addTaskRemark.mutateAsync({ taskId: activeTask._id, text: newRemarkText.trim() });
+                      setNewRemarkText("");
+                      toast.success("Remark added");
+                    } catch (err: any) {
+                      toast.error(err?.message || "Failed to add remark");
+                    }
+                  }}
+                  className="flex gap-2 pt-1"
+                >
+                  <Input
+                    value={newRemarkText}
+                    onChange={(e) => setNewRemarkText(e.target.value)}
+                    placeholder="Add a remark or update..."
+                    className="h-8 text-xs rounded-md"
+                  />
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={!newRemarkText.trim() || addTaskRemark.isPending}
+                    className="h-8 px-3 text-xs gradient-primary text-primary-foreground font-medium rounded-md shadow-soft shrink-0"
+                  >
+                    {addTaskRemark.isPending ? <Loader2 size={13} className="animate-spin" /> : "Add Remark"}
+                  </Button>
+                </form>
+              </div>
 
               {/* Dedicated Call Reminder Card */}
               {(activeTask.isCall || activeTask.callReminder) && (
@@ -1574,6 +1793,51 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
             </div>
 
             {!isEditing && <Progress value={pct} className="h-1.5 mb-3" />}
+
+            {/* Subcategory checklist chips based on main category */}
+            {mainCategory && availableSubCategories.length > 0 && (
+              <div className="mb-3 rounded-md border border-primary/20 bg-primary/5 p-2.5 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold text-foreground flex items-center gap-1.5">
+                    <Tag size={12} className="text-primary" />
+                    Subcategory Checklist ({mainCategory}):
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleAddAllSubCategoriesToChecklist}
+                    className="h-6 px-2 text-[10px] text-primary hover:bg-primary/10 font-medium rounded"
+                  >
+                    <Plus size={11} className="mr-0.5" /> Add All Subcategories
+                  </Button>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {availableSubCategories.map((sc) => {
+                    const currentList = isEditing ? editableChecklist : liveChecklist;
+                    const isAlreadyAdded = currentList.some(
+                      (c) => c.text.toLowerCase() === sc.name.toLowerCase()
+                    );
+                    return (
+                      <button
+                        key={sc._id || sc.name}
+                        type="button"
+                        onClick={() => handleAddSubCategoryToChecklist(sc.name)}
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
+                          isAlreadyAdded
+                            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-medium"
+                            : "border-border/80 bg-background text-foreground/80 hover:border-primary hover:text-primary hover:bg-primary/5"
+                        }`}
+                        title={isAlreadyAdded ? "Already in checklist" : `Add "${sc.name}" as checklist step`}
+                      >
+                        {isAlreadyAdded ? <Check size={10} className="text-emerald-600" /> : <Plus size={10} />}
+                        {sc.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Scrollable list of items */}
             <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
@@ -1861,6 +2125,12 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                         </>
                       )}
                     </div>
+
+                    {item.remarks && (
+                      <p className="text-[11px] text-muted-foreground italic pl-7 -mt-1 pb-1">
+                        Note: {item.remarks}
+                      </p>
+                    )}
 
                     {/* Nested Sub-Items in View Mode */}
                     {(Boolean(item.subItems?.length) || expandedItems[item._id || item.id || String(idx)]) && (
@@ -2254,10 +2524,12 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
         <DialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
           <DialogHeader>
             <DialogTitle className="text-title font-semibold text-foreground flex items-center gap-2">
-              <UserCheck size={18} /> Reassign Task
+              <UserCheck size={18} /> {isAdmin ? "Reassign Task" : "Request Task Reassignment"}
             </DialogTitle>
             <DialogDescription className="text-helper text-muted-foreground mt-1">
-              Reassign task "{task.title}" to another employee.
+              {isAdmin
+                ? `Reassign task "${task.title}" to another employee.`
+                : `Submit a request to reassign task "${task.title}" for administrator approval.`}
             </DialogDescription>
           </DialogHeader>
           <form
@@ -2268,23 +2540,32 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                 return;
               }
               try {
-                await reassignTask.mutateAsync({
-                  taskId: task._id,
-                  toUserId: targetUserId,
-                  note: actionNote.trim() || undefined,
-                });
-                toast.success("Task reassigned successfully");
+                if (isAdmin) {
+                  await reassignTask.mutateAsync({
+                    taskId: task._id,
+                    toUserId: targetUserId,
+                    note: actionNote.trim() || undefined,
+                  });
+                  toast.success("Task reassigned successfully");
+                } else {
+                  await requestTaskAssignment.mutateAsync({
+                    taskId: task._id,
+                    targetUserId,
+                    reason: actionNote.trim() || "Staff reassignment request",
+                  });
+                  toast.success("Reassignment request submitted for admin approval");
+                }
                 setShowReassignModal(false);
                 setTargetUserId("");
                 setActionNote("");
               } catch (err: any) {
-                toast.error(err?.response?.data?.message || "Failed to reassign task");
+                toast.error(err?.response?.data?.message || err?.message || "Failed to process task reassignment");
               }
             }}
             className="mt-4 space-y-4"
           >
             <div className="space-y-1.5">
-              <Label className="text-helper">New Assignee</Label>
+              <Label className="text-helper">{isAdmin ? "New Assignee" : "Proposed Assignee"}</Label>
               <select
                 value={targetUserId}
                 onChange={(e) => setTargetUserId(e.target.value)}
@@ -2292,20 +2573,21 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                 required
               >
                 <option value="">Select team member...</option>
-                {employees.map((emp) => (
+                {(employees.length > 0 ? employees : (optionsData?.staff ?? [])).map((emp: any) => (
                   <option key={emp._id} value={emp._id}>
-                    {emp.name} ({emp.title || emp.role})
+                    {emp.name} {emp.title ? `(${emp.title})` : emp.role ? `(${emp.role})` : ""}
                   </option>
                 ))}
               </select>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-helper">Reassignment Note (Optional)</Label>
+              <Label className="text-helper">{isAdmin ? "Reassignment Note (Optional)" : "Reason for Reassignment"}</Label>
               <Input
                 value={actionNote}
                 onChange={(e) => setActionNote(e.target.value)}
                 placeholder="Reason or instructions..."
                 className="h-10 rounded-md"
+                required={!isAdmin}
               />
             </div>
             <DialogFooter className="mt-5 flex justify-end gap-2">
@@ -2316,10 +2598,76 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                 type="submit"
                 size="sm"
                 className="gradient-primary text-primary-foreground"
-                disabled={reassignTask.isPending}
+                disabled={reassignTask.isPending || requestTaskAssignment.isPending}
               >
-                {reassignTask.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : <UserCheck size={14} className="mr-1" />}
-                Reassign Task
+                {reassignTask.isPending || requestTaskAssignment.isPending ? (
+                  <Loader2 size={14} className="animate-spin mr-1" />
+                ) : (
+                  <UserCheck size={14} className="mr-1" />
+                )}
+                {isAdmin ? "Reassign Task" : "Submit Request"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Request Task Deletion Dialog (for non-admins) */}
+      <Dialog open={showRequestDeleteModal} onOpenChange={setShowRequestDeleteModal}>
+        <DialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-title font-semibold text-destructive flex items-center gap-2">
+              <Trash2 size={18} /> Request Task Deletion
+            </DialogTitle>
+            <DialogDescription className="text-helper text-muted-foreground mt-1">
+              Submit a deletion request for &ldquo;{task.title}&rdquo; for administrator approval.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!deleteRequestReason.trim()) {
+                toast.error("Please enter a reason for deletion");
+                return;
+              }
+              try {
+                await requestTaskDeletion.mutateAsync({
+                  taskId: task._id,
+                  reason: deleteRequestReason.trim(),
+                });
+                toast.success("Deletion request submitted for admin approval");
+                setShowRequestDeleteModal(false);
+                setDeleteRequestReason("");
+                onClose();
+              } catch (err: any) {
+                toast.error(err?.response?.data?.message || err?.message || "Failed to submit deletion request");
+              }
+            }}
+            className="mt-4 space-y-4"
+          >
+            <div className="space-y-1.5">
+              <Label className="text-helper">Reason for Deletion</Label>
+              <textarea
+                value={deleteRequestReason}
+                onChange={(e) => setDeleteRequestReason(e.target.value)}
+                placeholder="Explain why this task should be deleted..."
+                rows={3}
+                required
+                className="w-full rounded-md border border-border bg-background p-2.5 text-xs text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+            <DialogFooter className="mt-5 flex justify-end gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setShowRequestDeleteModal(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                variant="destructive"
+                disabled={requestTaskDeletion.isPending || !deleteRequestReason.trim()}
+              >
+                {requestTaskDeletion.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : <Trash2 size={14} className="mr-1" />}
+                Submit Request
               </Button>
             </DialogFooter>
           </form>

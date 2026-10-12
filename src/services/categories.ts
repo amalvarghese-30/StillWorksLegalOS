@@ -49,11 +49,42 @@ export async function fetchCategories(): Promise<string[]> {
   return BASELINE_CATEGORIES;
 }
 
+export interface CategoryNode {
+  _id: string;
+  name: string;
+  slug: string;
+  code?: string;
+  level: number;
+  parentId?: string | null;
+  categoryType: "case" | "task" | "both";
+  children?: CategoryNode[];
+}
+
 export function useCategories() {
   return useQuery({
     queryKey: ["categories"],
     queryFn: fetchCategories,
     staleTime: 1000 * 60 * 10, // 10 minutes cache
     initialData: BASELINE_CATEGORIES,
+  });
+}
+
+export async function fetchCategoryTree(): Promise<CategoryNode[]> {
+  try {
+    const res = await api.get<{ tree: CategoryNode[] }>("/categories/tree");
+    if (Array.isArray(res.data?.tree) && res.data.tree.length > 0) {
+      return res.data.tree;
+    }
+  } catch (err) {
+    console.error("Failed to fetch category tree:", err);
+  }
+  return [];
+}
+
+export function useCategoryTree() {
+  return useQuery<CategoryNode[]>({
+    queryKey: ["categories", "tree"],
+    queryFn: fetchCategoryTree,
+    staleTime: 1000 * 60 * 15,
   });
 }

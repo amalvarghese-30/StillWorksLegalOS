@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Gavel, Loader2, CalendarDays, Clock, CheckSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { useCreateEvent, type CreateEventPayload } from "@/services/calendar";
+import { useCreateEvent, useUpdateEvent, type CreateEventPayload, type CalendarEvent } from "@/services/calendar";
 import { useCases } from "@/services/cases";
 import {
   Dialog,
@@ -23,6 +23,7 @@ interface ScheduleHearingDialogProps {
   open: boolean;
   onClose: () => void;
   initialDate?: string | undefined;
+  eventToEdit?: CalendarEvent | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -38,8 +39,9 @@ const EVENT_TYPES: { value: string; label: string }[] = [
   { value: "personal", label: "Personal" },
 ];
 
-export function ScheduleHearingDialog({ open, onClose, initialDate }: ScheduleHearingDialogProps) {
+export function ScheduleHearingDialog({ open, onClose, initialDate, eventToEdit }: ScheduleHearingDialogProps) {
   const createEvent = useCreateEvent();
+  const updateEvent = useUpdateEvent();
 
   const { data: casesData } = useCases({ page: "1", limit: "50" });
   const cases = casesData?.cases ?? [];
@@ -54,13 +56,22 @@ export function ScheduleHearingDialog({ open, onClose, initialDate }: ScheduleHe
   const [allDay, setAllDay] = useState(false);
   const [caseId, setCaseId] = useState("");
 
-  // Update date if initialDate changes
-  useState(() => {
-    if (initialDate) {
+  useEffect(() => {
+    if (eventToEdit) {
+      setTitle(eventToEdit.title || "");
+      setDescription(eventToEdit.description || "");
+      setType(eventToEdit.type || "hearing");
+      setStartDate(eventToEdit.start ? eventToEdit.start.slice(0, 10) : "");
+      setStartTime(eventToEdit.start && eventToEdit.start.length >= 16 ? eventToEdit.start.slice(11, 16) : "10:30");
+      setEndDate(eventToEdit.end ? eventToEdit.end.slice(0, 10) : (eventToEdit.start ? eventToEdit.start.slice(0, 10) : ""));
+      setEndTime(eventToEdit.end && eventToEdit.end.length >= 16 ? eventToEdit.end.slice(11, 16) : "11:30");
+      setAllDay(Boolean(eventToEdit.allDay));
+      setCaseId(eventToEdit.caseId || "");
+    } else if (initialDate) {
       setStartDate(initialDate);
       setEndDate(initialDate);
     }
-  });
+  }, [eventToEdit, initialDate]);
 
   if (!open) return null;
 
@@ -84,31 +95,40 @@ export function ScheduleHearingDialog({ open, onClose, initialDate }: ScheduleHe
 
     if (caseId) payload.caseId = caseId;
 
-    createEvent.mutate(payload, {
-      onSuccess: () => {
-        setTitle("");
-        setDescription("");
-        setType("hearing");
-        setStartDate("");
-        setStartTime("10:30");
-        setEndDate("");
-        setEndTime("11:30");
-        setAllDay(false);
-        setCaseId("");
-        onClose();
-      },
-    });
+    const resetAndClose = () => {
+      setTitle("");
+      setDescription("");
+      setType("hearing");
+      setStartDate("");
+      setStartTime("10:30");
+      setEndDate("");
+      setEndTime("11:30");
+      setAllDay(false);
+      setCaseId("");
+      onClose();
+    };
+
+    if (eventToEdit) {
+      updateEvent.mutate(
+        { id: eventToEdit._id, data: payload },
+        { onSuccess: resetAndClose }
+      );
+    } else {
+      createEvent.mutate(payload, { onSuccess: resetAndClose });
+    }
   };
 
-  const isPending = createEvent.isPending;
+  const isPending = createEvent.isPending || updateEvent.isPending;
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Schedule event</DialogTitle>
+          <DialogTitle>{eventToEdit ? "Edit / Reschedule event" : "Schedule event"}</DialogTitle>
           <DialogDescription>
-            Add a hearing, call reminder, task or firm event to the calendar.
+            {eventToEdit
+              ? "Update event timings, notes/remarks, or linked case."
+              : "Add a hearing, call reminder, task or firm event to the calendar."}
           </DialogDescription>
         </DialogHeader>
 
@@ -264,12 +284,12 @@ export function ScheduleHearingDialog({ open, onClose, initialDate }: ScheduleHe
               className="gradient-primary rounded-md text-primary-foreground shadow-soft"
             >
               {isPending ? <Loader2 size={17} className="animate-spin" /> : <Gavel size={17} strokeWidth={2} />}
-              {isPending ? "Scheduling…" : "Schedule event"}
+              {isPending ? (eventToEdit ? "Updating…" : "Scheduling…") : (eventToEdit ? "Update Event" : "Schedule event")}
             </Button>
           </DialogFooter>
 
-          {createEvent.isError && (
-            <p className="text-caption text-destructive">Failed to schedule event. Please try again.</p>
+          {(createEvent.isError || updateEvent.isError) && (
+            <p className="text-caption text-destructive">Failed to save event. Please try again.</p>
           )}
         </form>
       </DialogContent>

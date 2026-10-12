@@ -32,6 +32,12 @@ const { default: remindersRoutes } = await import("../routes/reminders.js");
 const { default: documentsRoutes } = await import("../routes/documents.js");
 const { default: chatRoutes } = await import("../routes/chat.js");
 const { default: searchRoutes } = await import("../routes/search.js");
+const { default: categoriesRoutes } = await import("../routes/categories.js");
+const { default: gmailRoutes } = await import("../routes/gmail.js");
+const { default: approvalsRoutes } = await import("../routes/approvals.js");
+const { ApprovalRequest } = await import("../models/ApprovalRequest.js");
+const { Category } = await import("../models/Category.js");
+const { seedCategories } = await import("../scripts/seedCategories.js");
 const { ChatGroup, ChatMessage } = await import("../models/Chat.js");
 const { getLocalPath } = await import("../services/storage.js");
 const { DocumentModel } = await import("../models/Document.js");
@@ -59,6 +65,9 @@ function buildApp() {
   app.use("/api/cases", casesRoutes);
   app.use("/api/clients", clientsRoutes);
   app.use("/api/tasks", tasksRoutes);
+  app.use("/api/categories", categoriesRoutes);
+  app.use("/api/gmail", gmailRoutes);
+  app.use("/api/approvals", approvalsRoutes);
   app.use("/api/reminders", remindersRoutes);
   app.use("/api/documents", documentsRoutes);
   app.use("/api/chat", chatRoutes);
@@ -2098,6 +2107,244 @@ async function run() {
     // Verify that session family for this user was revoked upon attempted replay
     const userActiveSessions = await Session.find({ userId: theftTestUser._id, isRevoked: false });
     assert(userActiveSessions.length === 0, "AUTH-CONCURR-TEST-D1: Session family fully revoked after reuse attempt");
+  }
+
+  // --- Suite 23: P0 Bug Fixes, Excel Hierarchy, Task & Deletion Approvals ---
+  console.log("\n--- Suite 23: P0 Bug Fixes, Excel Hierarchy, Task & Deletion Approvals ---");
+  {
+    const adminUser = await createUser({
+      name: "Managing Partner S23",
+      email: `admin-s23-${Date.now()}@test.com`,
+      role: "admin",
+      permissions: {
+        dashboard: true, clients: true, cases: true, tasks: true,
+        documents: true, calendar: true, chat: true, reports: true,
+        employees: true, approvals: true, auditLogs: true, settings: true,
+      },
+    });
+    const adminToken = await createToken(adminUser);
+
+    const empUser = await createUser({
+      name: "Junior Associate S23",
+      email: `emp-s23-${Date.now()}@test.com`,
+      role: "junior_advocate",
+      permissions: {
+        dashboard: true, clients: true, cases: true, tasks: true,
+        documents: true, calendar: true, chat: true, reports: false,
+        employees: false, approvals: false, auditLogs: false, settings: false,
+      },
+    });
+    const empToken = await createToken(empUser);
+
+    // 1. Seed Categories from Excel Master
+    const seedResult = await seedCategories();
+    assert(((seedResult.inserted || 0) + (seedResult.total || 0)) > 0, "SUITE23-CAT-001: Category seeder successfully imported categories from Excel");
+
+    const treeRes = await request(app)
+      .get("/api/categories/tree")
+      .set("Authorization", `Bearer ${adminToken}`);
+    assert(treeRes.status === 200, "SUITE23-CAT-002: GET /api/categories/tree returns 200");
+    assert(Array.isArray(treeRes.body.tree) && treeRes.body.tree.length >= 9, "SUITE23-CAT-003: Category tree contains main categories");
+
+    // 2. Priority Zero: Fix Client Not Found on Compound Name - Phone
+    const jatinder = await Client.create({
+      name: "Jatinder Singh",
+      phone: "9869717581",
+      createdBy: adminUser._id,
+      updatedBy: adminUser._id,
+    });
+
+    // Create task referencing compound client string "JATINDER SINGH - 9869717581"
+    const p0TaskRes = await request(app)
+      .post("/api/tasks")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        title: "Verify Title Deeds for Jatinder",
+        clientId: "JATINDER SINGH - 9869717581",
+        mainCategory: "Registration",
+        subCategory: "Rectification Deed",
+        category: "Registration",
+        priority: "High",
+        checklist: [
+          { text: "Inspect original index II", done: false },
+          {
+            text: "Verify sub-registrar entries",
+            done: false,
+            subItems: [
+              { text: "Confirm receipt stamps", done: false },
+              { text: "Verify thumb impressions", done: false }
+            ]
+          }
+        ]
+      });
+
+    assert(p0TaskRes.status === 201, "SUITE23-P0-001: Task creation with compound 'NAME - PHONE' string succeeds (201)");
+    assert(p0TaskRes.body.task?.clientId === jatinder._id.toString(), "SUITE23-P0-002: Task clientId correctly resolved to real MongoDB Client ID");
+    assert(p0TaskRes.body.task?.subCategory === "Rectification Deed", "SUITE23-P0-003: Task preserved Excel subcategory 'Rectification Deed'");
+    assert(p0TaskRes.body.task?.checklist?.[1]?.subItems?.length === 2, "SUITE23-P0-004: Recursive checklist saved nested subItems");
+
+    // 3. Priority Zero: Reassignment Authorization & Workflow
+    // Non-admin attempting direct reassignment to another user gets 403
+    const directReassignRes = await request(app)
+      .patch(`/api/tasks/${p0TaskRes.body.task._id}`)
+      .set("Authorization", `Bearer ${empToken}`)
+      .send({ assignedTo: adminUser._id.toString() });
+    assert(directReassignRes.status === 403, "SUITE23-P0-005: Non-admin cannot directly assign task to another user (403)");
+    assert(directReassignRes.body.code === "ASSIGNMENT_APPROVAL_REQUIRED", "SUITE23-P0-006: Direct assignment returns ASSIGNMENT_APPROVAL_REQUIRED code");
+
+    // Non-admin requests reassignment via request-assignment endpoint
+    const reqAssignRes = await request(app)
+      .post(`/api/tasks/${p0TaskRes.body.task._id}/request-assignment`)
+      .set("Authorization", `Bearer ${empToken}`)
+      .send({
+        targetUserId: adminUser._id.toString(),
+        reason: "Need senior advocate verification for registration deed"
+      });
+    assert(reqAssignRes.status === 201, "SUITE23-APPR-001: Non-admin submits reassignment request (201)");
+    const approvalReqId = reqAssignRes.body.approvalRequest?._id;
+    assert(Boolean(approvalReqId), "SUITE23-APPR-002: ApprovalRequest ID returned");
+
+    // Admin tries to approve without decision remark (should fail with 400)
+    const emptyRemarkApprove = await request(app)
+      .post(`/api/approvals/${approvalReqId}/approve`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ decisionRemark: "   " });
+    assert(emptyRemarkApprove.status === 400, "SUITE23-APPR-003: Approval rejected without mandatory decision remark (400)");
+
+    // Admin approves with valid trimmed decision remark
+    const validApprove = await request(app)
+      .post(`/api/approvals/${approvalReqId}/approve`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ decisionRemark: "Approved by Senior Partner for review" });
+    assert(validApprove.status === 200, "SUITE23-APPR-004: Reassignment approved with valid remark (200)");
+
+    // Verify task assignment changed in database
+    const updatedTask = await Task.findById(p0TaskRes.body.task._id);
+    assert(updatedTask?.assignedTo?.toString() === adminUser._id.toString(), "SUITE23-APPR-005: Task assignedTo transitioned to target user upon approval");
+    assert(updatedTask?.pendingReassignment === false, "SUITE23-APPR-006: Task pendingReassignment cleared");
+
+    // 4. Non-admin task deletion restriction & deletion request
+    const directDeleteRes = await request(app)
+      .delete(`/api/tasks/${p0TaskRes.body.task._id}`)
+      .set("Authorization", `Bearer ${empToken}`);
+    assert(directDeleteRes.status === 403, "SUITE23-DEL-001: Non-admin cannot directly delete task (403)");
+    assert(directDeleteRes.body.code === "DELETION_APPROVAL_REQUIRED", "SUITE23-DEL-002: Direct delete returns DELETION_APPROVAL_REQUIRED");
+
+    // Non-admin submits deletion request
+    const delReqRes = await request(app)
+      .post(`/api/tasks/${p0TaskRes.body.task._id}/request-deletion`)
+      .set("Authorization", `Bearer ${empToken}`)
+      .send({ reason: "Duplicate client task created in error" });
+    assert(delReqRes.status === 201, "SUITE23-DEL-003: Task deletion request submitted (201)");
+    const delApprId = delReqRes.body.approvalRequest?._id;
+
+    // Admin rejects deletion with mandatory decision remark
+    const delRejectRes = await request(app)
+      .post(`/api/approvals/${delApprId}/reject`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ decisionRemark: "Keep task for audit trail purposes" });
+    assert(delRejectRes.status === 200, "SUITE23-DEL-004: Deletion request rejected with decision remark (200)");
+
+    const keptTask = await Task.findById(p0TaskRes.body.task._id);
+    assert(keptTask?.isDeleted !== true, "SUITE23-DEL-005: Task remained active after deletion rejection");
+    assert(keptTask?.pendingDeletion === false, "SUITE23-DEL-006: Task pendingDeletion cleared after rejection");
+
+    // 5. Remarks endpoint
+    const remarkRes = await request(app)
+      .post(`/api/tasks/${p0TaskRes.body.task._id}/remarks`)
+      .set("Authorization", `Bearer ${empToken}`)
+      .send({ text: "Reviewed original deed at registrar office" });
+    assert(remarkRes.status === 201, "SUITE23-REM-001: Task remark added (201)");
+    assert(remarkRes.body.task?.remarks?.length === 1, "SUITE23-REM-002: Task record contains added remark");
+    assert(remarkRes.body.task?.updatedBy !== null, "SUITE23-REM-003: Task updatedBy tracked");
+
+    // =========================================================================
+    // Suite 24: Remediation Hardening (Gmail Truthfulness, Header Injection & Storage Path)
+    // =========================================================================
+    console.log("\n--- Suite 24: Remediation Hardening (Gmail, OAuth, Storage Path & Calendar Remarks) ---");
+
+    // 1. Storage ancestor path validation: normal vs nested non-existent path
+    const { getLocalPath } = await import("../services/storage.js");
+    let safePathThrown = false;
+    try {
+      getLocalPath("safe/nested/newfile.pdf");
+    } catch {
+      safePathThrown = true;
+    }
+    assert(!safePathThrown, "SUITE24-STOR-001: getLocalPath successfully resolves safe nested new path");
+
+    let traversalThrown = false;
+    try {
+      getLocalPath("../../../etc/passwd");
+    } catch {
+      traversalThrown = true;
+    }
+    assert(traversalThrown, "SUITE24-STOR-002: Directory traversal attempt is rejected");
+
+    let encodedTraversalThrown = false;
+    try {
+      getLocalPath("%2e%2e%2f%2e%2e%2fescaped.txt");
+    } catch {
+      encodedTraversalThrown = true;
+    }
+    assert(encodedTraversalThrown, "SUITE24-STOR-003: Multi-pass encoded traversal attempt is rejected");
+
+    // 2. Gmail header injection rejection
+    const newlineSubjectRes = await request(app)
+      .post("/api/gmail/send")
+      .set("Authorization", `Bearer ${empToken}`)
+      .send({
+        to: "client@example.com",
+        subject: "Notice\r\nBcc: evil@attacker.com",
+        body: "Test body",
+      });
+    assert(newlineSubjectRes.status === 400, "SUITE24-GMAIL-001: CR/LF in subject rejected with 400");
+    assert(newlineSubjectRes.body.message.includes("newline"), "SUITE24-GMAIL-002: Header injection message returned");
+
+    // 3. Gmail invalid recipient format rejection
+    const invalidRecipientRes = await request(app)
+      .post("/api/gmail/send")
+      .set("Authorization", `Bearer ${empToken}`)
+      .send({
+        to: "not-an-email-address",
+        subject: "Valid subject",
+        body: "Test body",
+      });
+    assert(invalidRecipientRes.status === 400, "SUITE24-GMAIL-003: Malformed recipient email rejected with 400");
+
+    // 4. Calendar event remarks alias support
+    const calEventRes = await request(app)
+      .post("/api/calendar/events")
+      .set("Authorization", `Bearer ${empToken}`)
+      .send({
+        title: "Hearing Motion Test",
+        start: new Date().toISOString(),
+        remarks: "Hearing adjourned for commissioner report",
+        type: "hearing",
+      });
+    assert(calEventRes.status === 201, "SUITE24-CAL-001: Calendar event created with remarks alias (201)");
+    assert(calEventRes.body.event.description === "Hearing adjourned for commissioner report", "SUITE24-CAL-002: Remarks correctly persisted into event.description");
+
+    // 5. Category 3-level tree construction verification
+    const initialTreeRes = await request(app)
+      .get("/api/categories/tree")
+      .set("Authorization", `Bearer ${empToken}`);
+    const parentCategory = initialTreeRes.body.tree?.[0]?.children?.[0] || initialTreeRes.body.tree?.[0];
+    const grandChildCat = await Category.create({
+      name: "Special Sub-Deed Detail",
+      slug: "special-sub-deed-detail",
+      parentId: parentCategory?._id,
+      level: 3,
+      categoryType: "legal",
+      isActive: true,
+      displayOrder: 1,
+    });
+    const multiLevelTreeRes = await request(app)
+      .get("/api/categories/tree")
+      .set("Authorization", `Bearer ${empToken}`);
+    assert(multiLevelTreeRes.status === 200, "SUITE24-CAT-001: Multi-level tree returns 200");
+    const parentWithGrandchild = multiLevelTreeRes.body.tree[0]?.children?.[0];
+    assert(Boolean(parentWithGrandchild?.children?.length), "SUITE24-CAT-002: Level 3 grandchildren populated recursively in tree");
   }
 
   try {

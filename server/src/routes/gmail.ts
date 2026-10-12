@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from "express";
+import crypto from "node:crypto";
 import mongoose from "mongoose";
 import { GmailAccount } from "../models/GmailAccount.js";
 import { Case } from "../models/Case.js";
@@ -7,6 +8,22 @@ import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
 router.use(requireAuth);
+
+// Expiring cryptographically random OAuth state registry: state -> { userId, expiresAt }
+interface OAuthStateEntry {
+  userId: string;
+  expiresAt: number;
+}
+const oauthStateStore = new Map<string, OAuthStateEntry>();
+
+function cleanExpiredOAuthStates() {
+  const now = Date.now();
+  for (const [key, entry] of oauthStateStore.entries()) {
+    if (entry.expiresAt <= now) {
+      oauthStateStore.delete(key);
+    }
+  }
+}
 
 const GOOGLE_CLIENT_ID = process.env["GOOGLE_CLIENT_ID"] || "";
 const GOOGLE_CLIENT_SECRET = process.env["GOOGLE_CLIENT_SECRET"] || "";
@@ -63,20 +80,75 @@ async function getValidAccessToken(account: any): Promise<string | null> {
  */
 router.get("/status", async (req: Request, res: Response) => {
   try {
-    const account = await GmailAccount.findOne({ userId: req.userId }).lean();
-    if (!account || account.syncStatus === "disconnected") {
-      res.json({ connected: false });
+    const accounts = await GmailAccount.find({ userId: req.userId })
+      .select("_id email syncStatus lastSyncedAt isDefault")
+      .lean();
+
+    const active = accounts.find((a) => a.isDefault) || accounts[0];
+    if (!active || active.syncStatus === "disconnected") {
+      res.json({ connected: false, configured: Boolean(GOOGLE_CLIENT_ID), accounts });
       return;
     }
 
     res.json({
       connected: true,
-      email: account.email,
-      syncStatus: account.syncStatus,
-      lastSyncedAt: account.lastSyncedAt,
+      configured: Boolean(GOOGLE_CLIENT_ID),
+      email: active.email,
+      syncStatus: active.syncStatus,
+      lastSyncedAt: active.lastSyncedAt,
+      accounts,
     });
   } catch (err) {
     console.error("[gmail] Status error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+/**
+ * GET /api/gmail/accounts
+ * List all connected Gmail accounts for current user
+ */
+router.get("/accounts", async (req: Request, res: Response) => {
+  try {
+    const accounts = await GmailAccount.find({ userId: req.userId })
+      .select("_id email syncStatus lastSyncedAt isDefault createdAt")
+      .lean();
+    res.json({ accounts });
+  } catch (err) {
+    console.error("[gmail] List accounts error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+/**
+ * DELETE /api/gmail/accounts/:id
+ * Disconnect a specific Gmail account
+ */
+router.delete("/accounts/:id", async (req: Request, res: Response) => {
+  try {
+    const account = await GmailAccount.findOneAndDelete({
+      _id: req.params["id"],
+      userId: req.userId,
+    });
+    if (!account) {
+      res.status(404).json({ message: "Account not found" });
+      return;
+    }
+
+    await AuditLog.create({
+      userId: req.userId,
+      userName: req.user?.name ?? "Unknown",
+      action: "delete",
+      resource: "integration",
+      resourceName: "Gmail",
+      details: `Disconnected Gmail account: ${account.email}`,
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    res.json({ message: "Account disconnected successfully" });
+  } catch (err) {
+    console.error("[gmail] Disconnect account error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -87,13 +159,19 @@ router.get("/status", async (req: Request, res: Response) => {
  */
 router.get("/auth-url", (req: Request, res: Response) => {
   if (!GOOGLE_CLIENT_ID) {
-    // Return mock auth url for development/demo when client ID not configured
-    res.json({
-      url: `/settings?mockGoogleAuth=true&userId=${req.userId}`,
+    res.status(503).json({
+      message: "Google OAuth credentials (GOOGLE_CLIENT_ID) are not configured.",
       configured: false,
     });
     return;
   }
+
+  cleanExpiredOAuthStates();
+  const oauthState = crypto.randomBytes(32).toString("hex");
+  oauthStateStore.set(oauthState, {
+    userId: req.userId!,
+    expiresAt: Date.now() + 10 * 60 * 1000, // 10 minutes validity
+  });
 
   const params = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
@@ -102,11 +180,11 @@ router.get("/auth-url", (req: Request, res: Response) => {
     scope: SCOPES,
     access_type: "offline",
     prompt: "consent",
-    state: req.userId || "",
+    state: oauthState,
   });
 
   const url = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
-  res.json({ url, configured: true });
+  res.json({ url, configured: true, state: oauthState });
 });
 
 /**
@@ -115,37 +193,51 @@ router.get("/auth-url", (req: Request, res: Response) => {
  */
 router.post("/oauth2callback", async (req: Request, res: Response) => {
   try {
-    const { code, mockEmail } = req.body;
+    const { code, state, mockEmail } = req.body;
 
-    // Handle mock authorization for environments without Google API credentials
-    if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || mockEmail) {
-      const email = mockEmail || req.user?.email || "advocate.chamber@gmail.com";
+    // Handle mock authorization only in test environments
+    if (process.env.NODE_ENV === "test" && mockEmail) {
+      const email = mockEmail;
       const account = await GmailAccount.findOneAndUpdate(
-        { userId: req.userId },
+        { userId: req.userId, email },
         {
           userId: req.userId,
           email,
-          accessToken: "mock_access_token_" + Date.now(),
-          refreshToken: "mock_refresh_token_" + Date.now(),
+          accessToken: "mock_test_token_" + Date.now(),
+          refreshToken: "mock_test_refresh_" + Date.now(),
           expiryDate: Date.now() + 3600 * 1000,
           syncStatus: "connected",
+          isDefault: true,
           lastSyncedAt: new Date(),
         },
         { upsert: true, new: true }
       );
-
-      await AuditLog.create({
-        userId: req.userId,
-        userName: req.user?.name ?? "Unknown",
-        action: "update",
-        resource: "integration",
-        resourceName: "Gmail",
-        details: `Connected Gmail account: ${email}`,
-        ip: req.ip,
-        userAgent: req.headers["user-agent"],
-      });
-
       res.json({ success: true, email: account.email, connected: true });
+      return;
+    }
+
+    // Validate and consume cryptographically random OAuth state
+    cleanExpiredOAuthStates();
+    if (process.env.NODE_ENV !== "test") {
+      if (!state || typeof state !== "string") {
+        res.status(400).json({ message: "Invalid or missing OAuth state parameter" });
+        return;
+      }
+      const stateEntry = oauthStateStore.get(state);
+      if (!stateEntry || stateEntry.userId !== req.userId || stateEntry.expiresAt <= Date.now()) {
+        oauthStateStore.delete(state);
+        res.status(400).json({ message: "Expired or invalid OAuth state parameter" });
+        return;
+      }
+      // Consume state immediately to prevent replay
+      oauthStateStore.delete(state);
+    }
+
+    if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+      res.status(503).json({
+        message: "Google OAuth credentials (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET) are not configured on this server. Real Gmail integration requires valid Google API credentials.",
+        code: "GMAIL_NOT_CONFIGURED",
+      });
       return;
     }
 
@@ -189,8 +281,11 @@ router.post("/oauth2callback", async (req: Request, res: Response) => {
       console.warn("[gmail] Failed to fetch google userinfo:", e);
     }
 
+    const existingCount = await GmailAccount.countDocuments({ userId: req.userId });
+    const isFirstAccount = existingCount === 0;
+
     const account = await GmailAccount.findOneAndUpdate(
-      { userId: req.userId },
+      { userId: req.userId, email },
       {
         userId: req.userId,
         email,
@@ -198,6 +293,7 @@ router.post("/oauth2callback", async (req: Request, res: Response) => {
         refreshToken: tokenData.refresh_token || "",
         expiryDate: Date.now() + (tokenData.expires_in || 3600) * 1000,
         syncStatus: "connected",
+        isDefault: isFirstAccount,
         lastSyncedAt: new Date(),
       },
       { upsert: true, new: true }
@@ -262,8 +358,8 @@ router.get("/messages", async (req: Request, res: Response) => {
     const { q, maxResults = "20" } = req.query as Record<string, string>;
     const token = await getValidAccessToken(account);
 
-    // If mock token or live API unavailable, return structured mock messages
-    if (!token || token.startsWith("mock_access_token_")) {
+    // In isolated automated test environment only, return test fixtures
+    if (process.env.NODE_ENV === "test" && (!token || token.startsWith("mock_"))) {
       const demoMessages = [
         {
           id: "msg_1",
@@ -276,40 +372,18 @@ router.get("/messages", async (req: Request, res: Response) => {
           unread: true,
           caseId: null,
         },
-        {
-          id: "msg_2",
-          threadId: "th_2",
-          from: "client.sharma@example.com",
-          to: account.email,
-          subject: "Draft Sale Deed - Revisions and Signature",
-          snippet: "Dear Counsel, attached is the executed page of the sale deed. Kindly verify the witness seal...",
-          date: new Date(Date.now() - 3600 * 1000 * 24).toISOString(),
-          unread: false,
-          caseId: null,
-        },
-        {
-          id: "msg_3",
-          threadId: "th_3",
-          from: "opposing.counsel@lawfirm.in",
-          to: account.email,
-          subject: "Written Statement - Caveat Notice No. 89",
-          snippet: "Enclosed please find our formal reply in terms of Order VIII Rule 1 CPC...",
-          date: new Date(Date.now() - 3600 * 1000 * 48).toISOString(),
-          unread: false,
-          caseId: null,
-        },
       ];
-
       res.json({
-        messages: q
-          ? demoMessages.filter(
-              (m) =>
-                m.subject.toLowerCase().includes(q.toLowerCase()) ||
-                m.snippet.toLowerCase().includes(q.toLowerCase()) ||
-                m.from.toLowerCase().includes(q.toLowerCase())
-            )
-          : demoMessages,
+        messages: q ? demoMessages.filter((m) => m.subject.toLowerCase().includes(q.toLowerCase())) : demoMessages,
         connected: true,
+      });
+      return;
+    }
+
+    if (!token) {
+      res.status(503).json({
+        message: "Gmail integration is not configured with a valid OAuth token. Please reconnect your account.",
+        code: "GMAIL_TOKEN_UNAVAILABLE",
       });
       return;
     }
@@ -383,6 +457,14 @@ router.get("/messages/:id", async (req: Request, res: Response) => {
     const token = await getValidAccessToken(account);
 
     if (!token || token.startsWith("mock_access_token_")) {
+      if (process.env.NODE_ENV !== "test") {
+        res.status(503).json({
+          message: "Gmail OAuth token is unavailable. Please reconnect your account.",
+          code: "GMAIL_TOKEN_UNAVAILABLE",
+        });
+        return;
+      }
+
       res.json({
         id: req.params["id"],
         threadId: "th_1",
@@ -451,6 +533,26 @@ router.post("/send", async (req: Request, res: Response) => {
       return;
     }
 
+    // Reject CR/LF characters in subject or reference headers to prevent header injection
+    if (/[\r\n]/.test(subject)) {
+      res.status(400).json({ message: "Invalid email subject: newline characters are not permitted" });
+      return;
+    }
+    if (inReplyTo && /[\r\n]/.test(inReplyTo)) {
+      res.status(400).json({ message: "Invalid inReplyTo header: newline characters are not permitted" });
+      return;
+    }
+
+    // Basic email format check for recipients
+    const recipientList = to.split(",").map((s: string) => s.trim()).filter(Boolean);
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    for (const r of recipientList) {
+      if (!emailRegex.test(r)) {
+        res.status(400).json({ message: `Invalid recipient email address: "${r}"` });
+        return;
+      }
+    }
+
     const account = await GmailAccount.findOne({ userId: req.userId });
     if (!account) {
       res.status(400).json({ message: "Gmail account not connected" });
@@ -460,7 +562,15 @@ router.post("/send", async (req: Request, res: Response) => {
     const token = await getValidAccessToken(account);
 
     if (!token || token.startsWith("mock_access_token_")) {
-      // Mock send success
+      if (process.env.NODE_ENV !== "test") {
+        res.status(503).json({
+          message: "Live Gmail credentials or valid OAuth session unavailable. Cannot send email.",
+          code: "GMAIL_TOKEN_UNAVAILABLE",
+        });
+        return;
+      }
+
+      // Mock send success (test environment only)
       if (caseId && mongoose.Types.ObjectId.isValid(caseId)) {
         await Case.findByIdAndUpdate(caseId, {
           $push: {

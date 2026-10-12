@@ -9,6 +9,7 @@ import {
   CheckSquare,
   FolderOpen,
   CornerDownRight,
+  Calendar,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -17,7 +18,7 @@ import { Label } from "@/components/ui/label";
 import { useCreateCase, type CaseRecord } from "@/services/cases";
 import { useClients } from "@/services/clients";
 import { useTaskOptions, type ChecklistItem } from "@/services/tasks";
-import { useCategories } from "@/services/categories";
+import { useCategoryTree } from "@/services/categories";
 import { DiscardConfirmationDialog } from "@/components/ui/discard-confirmation-dialog";
 import {
   Dialog,
@@ -50,8 +51,14 @@ interface PartyEntry {
 
 interface FormState {
   title: string;
+  courtCaseId: string;
+  countCaseNumber: string;
+  nextHearing: string;
   description: string;
   category: string;
+  mainCategory: string;
+  subCategory: string;
+  customCategory: string;
   localPath: string;
   status: "Active" | "On Hold" | "Closed" | "Urgent";
   priority: "High" | "Medium" | "Low";
@@ -60,8 +67,14 @@ interface FormState {
 
 const EMPTY_FORM: FormState = {
   title: "",
+  courtCaseId: "",
+  countCaseNumber: "",
+  nextHearing: "",
   description: "",
   category: "Other Work",
+  mainCategory: "",
+  subCategory: "",
+  customCategory: "",
   localPath: "",
   status: "Active",
   priority: "Medium",
@@ -100,7 +113,10 @@ export function AddCaseDialog({
 
   const { data: clientsData } = useClients({ limit: "100" });
   const { data: taskOptions } = useTaskOptions();
-  const { data: categories = [] } = useCategories();
+  const { data: categoryTree = [], isLoading: isCategoriesLoading, isError: isCategoriesError } = useCategoryTree();
+
+  const selectedParent = categoryTree.find((c) => c.name === form.mainCategory);
+  const availableSubCategories = selectedParent?.children ?? [];
 
   const staffList = taskOptions?.staff ?? [];
 
@@ -131,6 +147,9 @@ export function AddCaseDialog({
   const isDirty = useMemo(() => {
     return (
       Boolean(form.title.trim()) ||
+      Boolean(form.courtCaseId.trim()) ||
+      Boolean(form.mainCategory) ||
+      Boolean(form.subCategory) ||
       Boolean(form.description.trim()) ||
       form.category !== "Other Work" ||
       Boolean(form.localPath.trim()) ||
@@ -220,6 +239,53 @@ export function AddCaseDialog({
       ),
     );
     setSubtaskInput((prev) => ({ ...prev, [taskIdx]: "" }));
+  };
+
+  const addSubCategoryToTaskChecklist = (taskIdx: number, subCatName: string) => {
+    const textToAdd = subCatName.trim();
+    if (!textToAdd) return;
+    setTasks((prev) =>
+      prev.map((t, i) => {
+        if (i !== taskIdx) return t;
+        if (t.checklist.some((c) => c.text.toLowerCase() === textToAdd.toLowerCase())) {
+          toast.info(`"${textToAdd}" is already in task checklist`);
+          return t;
+        }
+        const newItem: ChecklistItem = {
+          id: Math.random().toString(36).substring(2, 9),
+          text: textToAdd,
+          done: false,
+          subItems: [],
+        };
+        return { ...t, checklist: [...t.checklist, newItem] };
+      })
+    );
+    toast.success(`Added "${textToAdd}" to task checklist`);
+  };
+
+  const addAllSubCategoriesToTaskChecklist = (taskIdx: number) => {
+    if (!availableSubCategories || availableSubCategories.length === 0) return;
+    setTasks((prev) =>
+      prev.map((t, i) => {
+        if (i !== taskIdx) return t;
+        const existingTexts = new Set(t.checklist.map((c) => c.text.toLowerCase()));
+        const toAdd = availableSubCategories
+          .map((sc) => sc.name.trim())
+          .filter((name) => name && !existingTexts.has(name.toLowerCase()));
+        if (toAdd.length === 0) {
+          toast.info("All subcategories are already in the checklist");
+          return t;
+        }
+        const newItems: ChecklistItem[] = toAdd.map((text) => ({
+          id: Math.random().toString(36).substring(2, 9),
+          text,
+          done: false,
+          subItems: [],
+        }));
+        toast.success(`Added ${newItems.length} subcategory step(s) to task`);
+        return { ...t, checklist: [...t.checklist, ...newItems] };
+      })
+    );
   };
 
   const updateChecklistItemText = (taskIdx: number, itemIdx: number, text: string) => {
@@ -356,10 +422,23 @@ export function AddCaseDialog({
             })),
         }));
 
+      const chosenCategory =
+        (form.subCategory === "__other__" || form.mainCategory === "__other__"
+          ? form.customCategory.trim()
+          : form.subCategory) ||
+        (form.mainCategory === "__other__" ? form.customCategory.trim() : form.mainCategory) ||
+        form.category ||
+        "Other Work";
+
       const payload = {
         title: form.title.trim(),
         description: form.description.trim() || undefined,
-        category: form.category || "Other Work",
+        category: chosenCategory,
+        mainCategory: form.mainCategory === "__other__" ? (form.customCategory.trim() || "Other Work") : (form.mainCategory || undefined),
+        subCategory: form.subCategory === "__other__" ? (form.customCategory.trim() || undefined) : (form.subCategory || undefined),
+        courtCaseId: form.courtCaseId.trim() || undefined,
+        countCaseNumber: form.countCaseNumber.trim() || form.courtCaseId.trim() || undefined,
+        nextHearing: form.nextHearing ? new Date(form.nextHearing).toISOString() : undefined,
         localPath: form.localPath.trim() || undefined,
         status: form.status,
         priority: form.priority,
@@ -433,6 +512,135 @@ export function AddCaseDialog({
               />
             </div>
 
+            {/* ── Case Number Identifiers ── */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="case-court-id" className="text-helper">
+                  Court Case / CNR / Filing Number (Optional)
+                </Label>
+                <Input
+                  id="case-court-id"
+                  value={form.courtCaseId}
+                  onChange={(e) => update("courtCaseId", e.target.value)}
+                  placeholder="e.g. CNR: MHCC01-123456-2026 or Special Suit 45/2026"
+                  className="h-11 rounded-md font-mono text-sm"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="case-count-number" className="text-helper">
+                  Count Case Number / Internal Index (Optional)
+                </Label>
+                <Input
+                  id="case-count-number"
+                  value={form.countCaseNumber}
+                  onChange={(e) => update("countCaseNumber", e.target.value)}
+                  placeholder="e.g. Case Count #042 or CR-2026-99"
+                  className="h-11 rounded-md font-mono text-sm"
+                />
+              </div>
+            </div>
+
+            {/* ── Category Hierarchy ── */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="case-main-category" className="text-helper">Main Category</Label>
+                  {isCategoriesLoading && (
+                    <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                      <Loader2 size={11} className="animate-spin" /> Loading categories...
+                    </span>
+                  )}
+                  {isCategoriesError && (
+                    <span className="text-[11px] text-destructive">
+                      Failed to load categories
+                    </span>
+                  )}
+                </div>
+                <select
+                  id="case-main-category"
+                  value={form.mainCategory}
+                  disabled={isCategoriesLoading}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    update("mainCategory", val);
+                    update("subCategory", "");
+                    if (val !== "__other__") update("customCategory", "");
+                  }}
+                  className="h-11 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary disabled:opacity-50"
+                >
+                  <option value="">
+                    {isCategoriesLoading
+                      ? "Loading categories…"
+                      : isCategoriesError
+                      ? "Error loading categories (Select manual below)"
+                      : categoryTree.length === 0
+                      ? "No categories configured"
+                      : "Select main category…"}
+                  </option>
+                  {categoryTree.map((c) => (
+                    <option key={c.name} value={c.name}>{c.name}</option>
+                  ))}
+                  <option value="__other__">+ Other Work / Custom Category...</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="case-sub-category" className="text-helper">Subcategory / Work Type</Label>
+                <select
+                  id="case-sub-category"
+                  value={form.subCategory}
+                  onChange={(e) => {
+                    update("subCategory", e.target.value);
+                    if (e.target.value !== "__other__" && form.mainCategory !== "__other__") update("customCategory", "");
+                  }}
+                  disabled={!form.mainCategory || (form.mainCategory !== "__other__" && availableSubCategories.length === 0)}
+                  className="h-11 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary disabled:opacity-50"
+                >
+                  <option value="">Select subcategory…</option>
+                  {availableSubCategories.map((sc) => (
+                    <option key={sc._id || sc.name} value={sc.name}>{sc.name}</option>
+                  ))}
+                  <option value="__other__">+ Other / Custom Subcategory...</option>
+                </select>
+              </div>
+            </div>
+
+            {(form.mainCategory === "__other__" || form.subCategory === "__other__") && (
+              <div className="space-y-1.5">
+                <Label htmlFor="case-custom-category" className="text-helper">
+                  Custom Category / Work Type <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="case-custom-category"
+                  value={form.customCategory}
+                  onChange={(e) => update("customCategory", e.target.value)}
+                  placeholder="Enter manual category name (e.g. Other Work / Specific Dispute)..."
+                  className="h-11 rounded-md"
+                  maxLength={100}
+                  required
+                />
+              </div>
+            )}
+
+            {/* ── Next Hearing Date ── */}
+            <div className="space-y-1.5">
+              <Label htmlFor="case-next-hearing" className="text-helper flex items-center gap-1.5">
+                <Calendar size={14} className="text-primary" />
+                Initial / Next Hearing Date (Optional)
+              </Label>
+              <Input
+                id="case-next-hearing"
+                type="date"
+                value={form.nextHearing}
+                onChange={(e) => update("nextHearing", e.target.value)}
+                className="h-11 rounded-md"
+              />
+              <p className="text-xs text-muted-foreground">
+                Enter scheduled hearing date to synchronize with firm calendar and automated hearing reminders.
+              </p>
+            </div>
+
             {/* ── Description ── */}
             <div className="space-y-1.5">
               <Label htmlFor="case-desc" className="text-helper">Description</Label>
@@ -444,21 +652,6 @@ export function AddCaseDialog({
                 rows={3}
                 className="w-full rounded-md border border-border bg-card px-3 py-2 text-helper outline-none transition-colors focus:border-primary resize-none"
               />
-            </div>
-
-            {/* ── Category ── */}
-            <div className="space-y-1.5">
-              <Label htmlFor="case-category" className="text-helper">Category</Label>
-              <select
-                id="case-category"
-                value={form.category}
-                onChange={(e) => update("category", e.target.value)}
-                className="h-11 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary"
-              >
-                {categories.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
             </div>
 
             {/* ── Local File / Folder Path ── */}
@@ -761,6 +954,47 @@ export function AddCaseDialog({
                             {t.checklist.length} checklist item(s)
                           </span>
                         </div>
+                        {/* Subcategory checklist chips */}
+                        {form.mainCategory && availableSubCategories.length > 0 && (
+                          <div className="rounded border border-primary/20 bg-primary/5 p-2 space-y-1.5">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="font-semibold text-foreground">
+                                Subcategory Steps ({form.mainCategory}):
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => addAllSubCategoriesToTaskChecklist(idx)}
+                                className="text-primary hover:underline font-medium text-[10px]"
+                              >
+                                + Add all subcategories
+                              </button>
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {availableSubCategories.map((sc) => {
+                                const alreadyAdded = t.checklist.some(
+                                  (item) => item.text.toLowerCase() === sc.name.toLowerCase()
+                                );
+                                return (
+                                  <button
+                                    key={sc._id || sc.name}
+                                    type="button"
+                                    onClick={() => addSubCategoryToTaskChecklist(idx, sc.name)}
+                                    className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
+                                      alreadyAdded
+                                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-medium"
+                                        : "border-border/80 bg-background text-foreground/80 hover:border-primary hover:text-primary"
+                                    }`}
+                                    title={alreadyAdded ? "Already in checklist" : `Add "${sc.name}"`}
+                                  >
+                                    <Plus size={9} />
+                                    {sc.name}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
                         <div className="flex gap-2">
                           <Input
                             value={subtaskInput[idx] || ""}
@@ -771,7 +1005,7 @@ export function AddCaseDialog({
                                 addChecklistItemToTask(idx);
                               }
                             }}
-                            placeholder="Add checklist item and press Enter..."
+                            placeholder="Add custom checklist item and press Enter..."
                             className="h-9 text-xs rounded-md"
                           />
                           <Button

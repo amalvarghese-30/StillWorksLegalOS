@@ -9,12 +9,17 @@ export type TaskCategory = string;
 export type TaskPriority = "High" | "Medium" | "Low";
 export type TaskStatus = "pending" | "in_progress" | "pending_approval" | "completed" | "overdue";
 
-/** A nested sub-checklist item */
+/** A nested sub-checklist item (recursive support) */
 export interface ChecklistSubItem {
   _id?: string;
   id?: string;
   text: string;
   done: boolean;
+  remarks?: string;
+  assignedTo?: mongoose.Types.ObjectId | null;
+  deadline?: Date | null;
+  order?: number;
+  subItems?: ChecklistSubItem[];
 }
 
 /** A checklist item within a task (supports recursive/nested subItems) */
@@ -23,7 +28,21 @@ export interface ChecklistItem {
   id?: string;
   text: string;
   done: boolean;
+  remarks?: string;
+  assignedTo?: mongoose.Types.ObjectId | null;
+  deadline?: Date | null;
+  order?: number;
   subItems?: ChecklistSubItem[];
+}
+
+/** Task remarks / notes */
+export interface TaskRemark {
+  _id?: string;
+  id?: string;
+  text: string;
+  author: string;
+  authorId: mongoose.Types.ObjectId;
+  createdAt: Date;
 }
 
 /** An embedded call reminder */
@@ -39,6 +58,10 @@ export interface ITask extends Document {
   title: string;
   description: string;
   category: TaskCategory;
+  mainCategory?: string;
+  subCategory?: string;
+  categoryPath?: string[];
+  customCategory?: string;
   priority: TaskPriority;
   status: TaskStatus;
   deadline: Date | null;
@@ -55,25 +78,50 @@ export interface ITask extends Document {
   caseId: mongoose.Types.ObjectId | null;
   clientId: mongoose.Types.ObjectId | null;
   checklist: ChecklistItem[];
+  remarks: TaskRemark[];
   callReminder?: CallReminder;
   agent?: string;
   isCall: boolean;
+  parentTaskId?: mongoose.Types.ObjectId | null;
+  isDeleted: boolean;
+  deletedAt?: Date | null;
+  deletedBy?: mongoose.Types.ObjectId | null;
+  deletionReason?: string;
+  pendingDeletion: boolean;
+  pendingReassignment: boolean;
   createdBy: mongoose.Types.ObjectId;
+  updatedBy?: mongoose.Types.ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
 }
 
 // ---------------------------------------------------------------------------
-// Schema
+// Schemas
 // ---------------------------------------------------------------------------
 
-const ChecklistSubItemSchema = new Schema<ChecklistSubItem>(
+const TaskRemarkSchema = new Schema<TaskRemark>(
+  {
+    id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
+    text: { type: String, required: true, trim: true },
+    author: { type: String, required: true },
+    authorId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { _id: true }
+);
+
+const ChecklistSubItemSchema = new Schema(
   {
     id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
     text: { type: String, required: true },
     done: { type: Boolean, default: false },
+    remarks: { type: String, default: "" },
+    assignedTo: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    deadline: { type: Date, default: null },
+    order: { type: Number, default: 0 },
+    subItems: { type: [Schema.Types.Mixed], default: [] },
   },
-  { _id: true },
+  { _id: true }
 );
 
 const ChecklistItemSchema = new Schema<ChecklistItem>(
@@ -81,9 +129,13 @@ const ChecklistItemSchema = new Schema<ChecklistItem>(
     id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
     text: { type: String, required: true },
     done: { type: Boolean, default: false },
-    subItems: { type: [ChecklistSubItemSchema], default: [] },
+    remarks: { type: String, default: "" },
+    assignedTo: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    deadline: { type: Date, default: null },
+    order: { type: Number, default: 0 },
+    subItems: { type: [Schema.Types.Mixed], default: [] },
   },
-  { _id: true },
+  { _id: true }
 );
 
 const AssignmentHistorySchema = new Schema<AssignmentHistoryEntry>(
@@ -99,7 +151,7 @@ const AssignmentHistorySchema = new Schema<AssignmentHistoryEntry>(
     note: { type: String, default: "" },
     timestamp: { type: Date, default: Date.now },
   },
-  { _id: true },
+  { _id: true }
 );
 
 const CallReminderSchema = new Schema<CallReminder>(
@@ -110,7 +162,7 @@ const CallReminderSchema = new Schema<CallReminder>(
     notes: { type: String, default: "" },
     completed: { type: Boolean, default: false },
   },
-  { _id: true },
+  { _id: true }
 );
 
 const TaskSchema = new Schema<ITask>(
@@ -122,6 +174,10 @@ const TaskSchema = new Schema<ITask>(
       default: "Other Work",
       index: true,
     },
+    mainCategory: { type: String, default: "", index: true },
+    subCategory: { type: String, default: "", index: true },
+    categoryPath: { type: [String], default: [] },
+    customCategory: { type: String, default: "" },
     priority: {
       type: String,
       enum: ["High", "Medium", "Low"],
@@ -148,10 +204,19 @@ const TaskSchema = new Schema<ITask>(
     caseId: { type: Schema.Types.ObjectId, ref: "Case", index: true },
     clientId: { type: Schema.Types.ObjectId, ref: "Client", index: true },
     checklist: { type: [ChecklistItemSchema], default: [] },
+    remarks: { type: [TaskRemarkSchema], default: [] },
     callReminder: { type: CallReminderSchema, default: undefined },
     agent: { type: String, default: "" },
     isCall: { type: Boolean, default: false },
+    parentTaskId: { type: Schema.Types.ObjectId, ref: "Task", default: null, index: true },
+    isDeleted: { type: Boolean, default: false, index: true },
+    deletedAt: { type: Date, default: null },
+    deletedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    deletionReason: { type: String, default: "" },
+    pendingDeletion: { type: Boolean, default: false, index: true },
+    pendingReassignment: { type: Boolean, default: false, index: true },
     createdBy: { type: Schema.Types.ObjectId, ref: "User" },
+    updatedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
   },
   {
     timestamps: true,
@@ -161,7 +226,7 @@ const TaskSchema = new Schema<ITask>(
         return ret;
       },
     },
-  },
+  }
 );
 
 // ---------------------------------------------------------------------------
@@ -173,6 +238,9 @@ TaskSchema.index({ deadline: 1, status: 1 });
 TaskSchema.index({ assignedTo: 1, status: 1 });
 TaskSchema.index({ category: 1, priority: 1 });
 TaskSchema.index({ isCall: 1, "callReminder.scheduledAt": 1 });
+TaskSchema.index({ isDeleted: 1, status: 1 });
+TaskSchema.index({ parentTaskId: 1, isDeleted: 1 });
+TaskSchema.index({ mainCategory: 1, subCategory: 1 });
 
 // ---------------------------------------------------------------------------
 // Pre-save: auto-set overdue status & initial assignment

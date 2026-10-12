@@ -76,7 +76,7 @@ export function getLocalPath(logicalPath: string, allowRoot = false): string {
     throw new Error("Access denied: Target cannot be the storage root directory");
   }
 
-  // 6. Check symlinks if the target already exists
+  // 6. Check symlinks if the target already exists or resolve through nearest existing ancestor
   if (fs.existsSync(resolved)) {
     const realTarget = fs.realpathSync(resolved);
     const realRel = path.relative(canonicalRoot, realTarget);
@@ -85,15 +85,21 @@ export function getLocalPath(logicalPath: string, allowRoot = false): string {
     }
     return realTarget;
   } else {
-    // For new files, verify existing parent directories don't escape via symlinks
+    // For non-existent files/directories, walk upward through missing components
+    // until the nearest existing ancestor is reached, then verify it does not escape via symlink.
     let ancestor = path.dirname(resolved);
-    while (ancestor.length >= canonicalRoot.length && fs.existsSync(ancestor)) {
+    while (ancestor.length >= canonicalRoot.length && !fs.existsSync(ancestor)) {
+      const parent = path.dirname(ancestor);
+      if (parent === ancestor) break;
+      ancestor = parent;
+    }
+
+    if (fs.existsSync(ancestor)) {
       const realAncestor = fs.realpathSync(ancestor);
       const realRel = path.relative(canonicalRoot, realAncestor);
       if (realRel.startsWith("..") || path.isAbsolute(realRel)) {
         throw new Error("Access denied: Symlink parent directory escapes storage root boundary");
       }
-      break;
     }
   }
 
@@ -301,6 +307,7 @@ export class StorageService {
 export const uploadStream = StorageService.save;
 export const downloadStream = StorageService.read;
 export const deletePath = StorageService.delete;
+export const deleteFile = StorageService.delete;
 export const pathExists = StorageService.exists;
 export const listDirectory = StorageService.list;
 export const createDirectory = StorageService.createDirectory;

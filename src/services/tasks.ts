@@ -86,6 +86,15 @@ export interface TaskRecord {
   callReminder?: CallReminder;
   agent?: string;
   isCall?: boolean;
+  mainCategory?: string;
+  subCategory?: string;
+  categoryPath?: string[];
+  customCategory?: string;
+  remarks?: Array<{ _id?: string; text: string; authorId?: any; authorName?: string; createdAt: string }>;
+  pendingReassignment?: boolean;
+  pendingDeletion?: boolean;
+  deletionReason?: string;
+  updatedBy?: { _id: string; name: string; email?: string } | string;
   createdBy: string | { _id: string; name: string; email?: string };
   createdAt: string;
   updatedAt: string;
@@ -128,6 +137,10 @@ export interface CreateTaskPayload {
   } | undefined;
   agent?: string | undefined;
   isCall?: boolean | undefined;
+  mainCategory?: string | undefined;
+  subCategory?: string | undefined;
+  categoryPath?: string[] | undefined;
+  customCategory?: string | undefined;
 }
 
 export type UpdateTaskPayload = Partial<CreateTaskPayload>;
@@ -411,4 +424,48 @@ export function useReassignTask() {
     },
   });
 }
+
+export function useRequestTaskAssignment() {
+  const qc = useQueryClient();
+  return useMutation<{ task: TaskRecord; message: string }, Error, { taskId: string; targetUserId: string; reason: string }>({
+    mutationFn: ({ taskId, targetUserId, reason }) =>
+      api.post(`/tasks/${taskId}/request-assignment`, { targetUserId, reason }),
+    onSuccess: (res, vars) => {
+      if (res?.task) updateTaskInQueryCache(qc, res.task);
+      qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
+      qc.invalidateQueries({ queryKey: taskKeys.all });
+      qc.invalidateQueries({ queryKey: ["admin", "approvals"] });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+export function useRequestTaskDeletion() {
+  const qc = useQueryClient();
+  return useMutation<{ task: TaskRecord; message: string }, Error, { taskId: string; reason: string }>({
+    mutationFn: ({ taskId, reason }) =>
+      api.post(`/tasks/${taskId}/request-deletion`, { reason }),
+    onSuccess: (res, vars) => {
+      if (res?.task) updateTaskInQueryCache(qc, res.task);
+      qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
+      qc.invalidateQueries({ queryKey: taskKeys.all });
+      qc.invalidateQueries({ queryKey: ["admin", "approvals"] });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+export function useAddTaskRemark() {
+  const qc = useQueryClient();
+  return useMutation<{ task: TaskRecord; remark: any }, Error, { taskId: string; text: string }>({
+    mutationFn: ({ taskId, text }) =>
+      api.post(`/tasks/${taskId}/remarks`, { text }),
+    onSuccess: (res, vars) => {
+      if (res?.task) updateTaskInQueryCache(qc, res.task);
+      qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
+      qc.invalidateQueries({ queryKey: taskKeys.all });
+    },
+  });
+}
+
 

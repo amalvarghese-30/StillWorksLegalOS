@@ -94,6 +94,9 @@ export function CallReminderAlerts() {
   const [editPhoneError, setEditPhoneError] = useState<string | null>(null);
   const [editSchedule, setEditSchedule] = useState("");
   const [editNotes, setEditNotes] = useState("");
+  const [showCustomRemind, setShowCustomRemind] = useState(false);
+  const [customRemindValue, setCustomRemindValue] = useState(30);
+  const [customRemindUnit, setCustomRemindUnit] = useState<"minutes" | "hours" | "days">("minutes");
 
   const alertedIdsRef = useRef<Set<string>>(new Set());
   const snoozedUntilRef = useRef<Map<string, number>>(new Map());
@@ -767,6 +770,53 @@ export function CallReminderAlerts() {
           )
         )}
 
+        {showCustomRemind && !isEditing && (
+          <div className="my-2 rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
+            <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <Clock size={13} className="text-primary" /> Remind Me Later
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="number"
+                min={1}
+                max={365}
+                value={customRemindValue}
+                onChange={(e) => setCustomRemindValue(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                className="h-8 w-20 rounded-md border border-input bg-background px-2 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <select
+                value={customRemindUnit}
+                onChange={(e) => setCustomRemindUnit(e.target.value as "minutes" | "hours" | "days")}
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                <option value="minutes">Minutes</option>
+                <option value="hours">Hours</option>
+                <option value="days">Days</option>
+              </select>
+              <Button
+                size="sm"
+                className="h-8 text-xs gradient-primary text-primary-foreground shadow-2xs"
+                onClick={() => {
+                  const multiplier = customRemindUnit === "days" ? 1440 : customRemindUnit === "hours" ? 60 : 1;
+                  const totalMinutes = customRemindValue * multiplier;
+                  handleSnooze(totalMinutes);
+                  setShowCustomRemind(false);
+                }}
+              >
+                Set Reminder
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => setShowCustomRemind(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
         <DialogFooter className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-between">
           {isEditing ? (
             <div className="flex w-full justify-between items-center gap-2">
@@ -801,10 +851,18 @@ export function CallReminderAlerts() {
             <>
               <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                 <Button variant="outline" size="sm" onClick={() => handleSnooze(5)} className="text-xs">
-                  Snooze 5m
+                  5m
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => handleSnooze(15)} className="text-xs">
                   15m
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowCustomRemind((prev) => !prev)}
+                  className={`text-xs gap-1 ${showCustomRemind ? "border-primary bg-primary/10 text-primary" : ""}`}
+                >
+                  <Clock size={12} /> Remind Later
                 </Button>
                 <Button variant="outline" size="sm" onClick={startEdit} className="text-xs">
                   Edit / Reschedule

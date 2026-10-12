@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useMemo } from "react";
-import { Plus, Trash2, CheckSquare, PhoneCall, Loader2, ListChecks, AlertCircle, FolderOpen, CornerDownRight, X } from "lucide-react";
+import { Plus, Trash2, CheckSquare, PhoneCall, Loader2, ListChecks, AlertCircle, FolderOpen, CornerDownRight, X, Search, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +14,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { useCreateTask, useTaskOptions, type CreateTaskPayload } from "@/services/tasks";
-import { useCategories } from "@/services/categories";
+import { useCategories, useCategoryTree } from "@/services/categories";
 import { useCases } from "@/services/cases";
 import { useClients } from "@/services/clients";
 import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
@@ -46,6 +46,9 @@ interface ChecklistLine {
 interface FormState {
   title: string;
   description: string;
+  mainCategory: string;
+  subCategory: string;
+  customCategory: string;
   category: string;
   priority: "High" | "Medium" | "Low";
   deadline: string;
@@ -62,6 +65,9 @@ interface FormState {
 const EMPTY_FORM: FormState = {
   title: "",
   description: "",
+  mainCategory: "",
+  subCategory: "",
+  customCategory: "",
   category: "Other Work",
   priority: "Medium",
   deadline: "",
@@ -100,8 +106,11 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
   const { user } = useAuth();
   const { data: options } = useTaskOptions();
   const { data: categories = [] } = useCategories();
+  const { data: treeData } = useCategoryTree();
   const { data: casesData } = useCases({ limit: "100" });
   const { data: clientsData } = useClients({ limit: "100" });
+
+  const categoryTree = treeData?.tree ?? [];
 
   const [form, setForm] = useState<FormState>({
     ...EMPTY_FORM,
@@ -114,13 +123,17 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
   const [addCallReminder, setAddCallReminder] = useState(false);
   const [agentSelect, setAgentSelect] = useState("");
   const [agentCustom, setAgentCustom] = useState("");
+  const [clientSearchQuery, setClientSearchQuery] = useState("");
   const [fieldErrors, setFieldErrors] = useState<TaskFieldErrors>({});
   const [appliedTemplates, setAppliedTemplates] = useState<string[]>([]);
   const [manualCase, setManualCase] = useState(false);
-  const [manualClient, setManualClient] = useState(false);
   const [showCreateCaseDialog, setShowCreateCaseDialog] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const templateInsertions = useRef<Record<string, string[]>>({});
+
+  const isAdmin = user?.role === "admin" || Boolean(user?.permissions?.approvals);
+  const selectedCategoryNode = categoryTree.find((n) => n.name === form.mainCategory);
+  const subCategories = selectedCategoryNode?.children ?? [];
 
   const createTask = useCreateTask();
   const isPending = createTask.isPending;
@@ -215,6 +228,54 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
     );
   };
 
+  const addSubCategoryToChecklist = (subCatName: string) => {
+    const trimmed = subCatName.trim();
+    if (!trimmed) return;
+    // Prevent duplicate exact step if already in checklist
+    if (checklist.some((c) => c.text.toLowerCase() === trimmed.toLowerCase())) {
+      toast.info(`"${trimmed}" is already in the checklist`);
+      return;
+    }
+    setChecklist((prev) => [...prev, { id: nextId(), text: trimmed, subItems: [] }]);
+    toast.success(`Added "${trimmed}" to checklist`);
+  };
+
+  const addAllSubCategoriesToChecklist = () => {
+    if (!subCategories || subCategories.length === 0) return;
+    const existingTexts = new Set(checklist.map((c) => c.text.toLowerCase()));
+    const toAdd = subCategories
+      .map((sc) => sc.name.trim())
+      .filter((name) => name && !existingTexts.has(name.toLowerCase()));
+    if (toAdd.length === 0) {
+      toast.info("All subcategories are already in the checklist");
+      return;
+    }
+    const newItems: ChecklistLine[] = toAdd.map((text) => ({ id: nextId(), text, subItems: [] }));
+    setChecklist((prev) => [...prev, ...newItems]);
+    toast.success(`Added ${newItems.length} subcategory checklist step(s)`);
+  };
+
+  const addStandardMilestonesToChecklist = (workTypeName?: string) => {
+    const target = (workTypeName || form.subCategory || form.mainCategory || "Standard").trim();
+    const standardMilestones = [
+      `1. Document & KYC Verification (${target})`,
+      `2. Legal Drafting & Client Review (${target})`,
+      `3. Stamp Duty, Fee & Franking Calculation`,
+      `4. Execution & Signatures`,
+      `5. Authority / Sub-Registrar / CIDCO Submission`,
+      `6. Final Receipt, Index II / Order Verification & Delivery`,
+    ];
+    const existingTexts = new Set(checklist.map((c) => c.text.toLowerCase()));
+    const toAdd = standardMilestones.filter((m) => !existingTexts.has(m.toLowerCase()));
+    if (toAdd.length === 0) {
+      toast.info("Standard milestones already present");
+      return;
+    }
+    const newItems: ChecklistLine[] = toAdd.map((text) => ({ id: nextId(), text, subItems: [] }));
+    setChecklist((prev) => [...prev, ...newItems]);
+    toast.success(`Added ${newItems.length} procedural milestone checklist step(s)`);
+  };
+
   const toggleTemplate = (name: string) => {
     const isApplied = appliedTemplates.includes(name);
     if (isApplied) {
@@ -243,10 +304,10 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
     setAddCallReminder(false);
     setAgentSelect("");
     setAgentCustom("");
+    setClientSearchQuery("");
     setFieldErrors({});
     setAppliedTemplates([]);
     setManualCase(false);
-    setManualClient(false);
     setShowDiscardConfirm(false);
     templateInsertions.current = {};
   };
@@ -314,10 +375,20 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
     }
     setFieldErrors({});
 
+    const chosenCategory =
+      form.customCategory.trim() ||
+      form.subCategory ||
+      form.mainCategory ||
+      form.category ||
+      "Other Work";
+
     const payload: CreateTaskPayload = {
       title: cleanTitle,
       ...(form.description && { description: form.description.trim() }),
-      category: form.category || "Other Work",
+      mainCategory: form.mainCategory || undefined,
+      subCategory: form.subCategory || undefined,
+      customCategory: form.customCategory.trim() || undefined,
+      category: chosenCategory,
       priority: form.priority,
       ...(form.deadline && { deadline: form.deadline }),
       ...(form.localPath && { localPath: form.localPath.trim() }),
@@ -438,25 +509,78 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
               )}
             </div>
 
-            {/* ── Category & Priority ── */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="task-cat" className="text-helper">Category</Label>
-                <Select
-                  value={form.category}
-                  onValueChange={(val) => update("category", val)}
-                >
-                  <SelectTrigger id="task-cat" className="h-11 rounded-md">
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-60">
-                    {categories.map((c) => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            {/* ── Category Hierarchy (Excel Master) & Priority ── */}
+            <div className="space-y-3 rounded-lg border border-border/80 bg-muted/20 p-3.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Category &amp; Classification
+                </span>
+                <span className="text-[11px] text-muted-foreground">Derived from Service Master</span>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="task-main-cat" className="text-helper">Main Category</Label>
+                  <Select
+                    value={form.mainCategory || "none"}
+                    onValueChange={(val) => {
+                      const mc = val === "none" ? "" : val;
+                      update("mainCategory", mc);
+                      update("subCategory", "");
+                    }}
+                  >
+                    <SelectTrigger id="task-main-cat" className="h-10 rounded-md bg-background">
+                      <SelectValue placeholder="Select main category" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-60">
+                      <SelectItem value="none">-- General / Unclassified --</SelectItem>
+                      {categoryTree.map((cat) => (
+                        <SelectItem key={cat._id} value={cat.name}>
+                          {cat.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="task-sub-cat" className="text-helper">Subcategory / Work Type</Label>
+                  <Select
+                    value={form.subCategory || "none"}
+                    onValueChange={(val) => update("subCategory", val === "none" ? "" : val)}
+                    disabled={!form.mainCategory || subCategories.length === 0}
+                  >
+                    <SelectTrigger id="task-sub-cat" className="h-10 rounded-md bg-background">
+                      <SelectValue placeholder={form.mainCategory ? (subCategories.length > 0 ? "Select subcategory" : "No subcategories") : "Choose main category first"} />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-60">
+                      <SelectItem value="none">-- None / General Work --</SelectItem>
+                      {subCategories.map((sub) => (
+                        <SelectItem key={sub._id} value={sub.name}>
+                          {sub.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
+              {/* Optional Custom Category */}
+              <div className="space-y-1 pt-1">
+                <Label htmlFor="task-custom-cat" className="text-[11px] text-muted-foreground">
+                  Custom or Specific Description (Optional)
+                </Label>
+                <Input
+                  id="task-custom-cat"
+                  value={form.customCategory}
+                  onChange={(e) => update("customCategory", e.target.value)}
+                  placeholder="e.g. Special Revenue Registry, Court Inspection, or custom deed"
+                  className="h-9 rounded-md bg-background text-xs"
+                />
+              </div>
+            </div>
+
+            {/* ── Priority & Deadline ── */}
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="task-priority" className="text-helper">Priority</Label>
                 <div className="flex h-11 rounded-md border border-border overflow-hidden">
@@ -480,10 +604,7 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
                   ))}
                 </div>
               </div>
-            </div>
 
-            {/* ── Deadline & Assignee ── */}
-            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="task-deadline" className="text-helper">Deadline</Label>
                 <Input
@@ -494,30 +615,44 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
                   className="h-11 rounded-md"
                 />
               </div>
+            </div>
 
-              <div className="space-y-1.5">
+            {/* ── Assignee (Role Policy Aligned) ── */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
                 <Label htmlFor="task-assigned" className="text-helper">Assigned to</Label>
-                <Select
-                  value={form.assignedTo}
-                  onValueChange={(val) => update("assignedTo", val)}
-                >
-                  <SelectTrigger id="task-assigned" className="h-11 rounded-md">
-                    <SelectValue placeholder="Select staff member" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-60">
-                    {user && (
-                      <SelectItem value={user._id}>
-                        Self ({user.name})
-                      </SelectItem>
-                    )}
-                    {staff.map((s) => (
-                      <SelectItem key={s._id} value={s._id}>
-                        {s.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {!isAdmin && (
+                  <span className="text-[11px] font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded">
+                    Self-assignment policy active
+                  </span>
+                )}
               </div>
+              <Select
+                value={form.assignedTo}
+                onValueChange={(val) => update("assignedTo", val)}
+                disabled={!isAdmin}
+              >
+                <SelectTrigger id="task-assigned" className="h-11 rounded-md">
+                  <SelectValue placeholder="Select staff member" />
+                </SelectTrigger>
+                <SelectContent className="max-h-60">
+                  {user && (
+                    <SelectItem value={user._id}>
+                      Self ({user.name})
+                    </SelectItem>
+                  )}
+                  {isAdmin && staff.map((s) => (
+                    <SelectItem key={s._id} value={s._id}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {!isAdmin && (
+                <p className="text-xs text-muted-foreground">
+                  Advocates can assign tasks to themselves upon creation. To assign or reassign this task to a colleague, submit a reassignment request after creating the task.
+                </p>
+              )}
             </div>
 
             {/* ── Local Folder / File Path ── */}
@@ -605,52 +740,183 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
                 )}
               </div>
 
+              {/* ── Client Selection (Combobox strictly saving client._id) ── */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="task-clientid" className="text-helper">Client (optional)</Label>
-                  <button
-                    type="button"
-                    onClick={() => setManualClient((prev) => !prev)}
-                    className="text-xs text-primary hover:underline font-normal"
-                  >
-                    {manualClient ? "Select from list" : "Enter manually"}
-                  </button>
+                  <Label htmlFor="task-client-search" className="text-helper">Client (optional)</Label>
+                  {form.clientId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        update("clientId", "");
+                        setClientSearchQuery("");
+                      }}
+                      className="text-xs text-destructive hover:underline font-medium"
+                    >
+                      Clear Selection
+                    </button>
+                  )}
                 </div>
-                {manualClient ? (
-                  <Input
-                    id="task-clientid"
-                    value={form.clientId}
-                    onChange={(e) => update("clientId", e.target.value)}
-                    placeholder="Client name or ID"
-                    className="h-11 rounded-md"
-                  />
+
+                {form.clientId ? (
+                  (() => {
+                    const matched = clients.find((c) => c._id === form.clientId);
+                    return (
+                      <div className="flex h-11 items-center justify-between rounded-md border border-primary/40 bg-primary/5 px-3">
+                        <div className="flex items-center gap-2 truncate">
+                          <Check size={16} className="text-primary shrink-0" />
+                          <span className="text-helper font-semibold text-foreground truncate">
+                            {matched?.name || "Selected Client"}
+                          </span>
+                          {matched?.phone && (
+                            <span className="text-xs text-muted-foreground font-mono">
+                              ({matched.phone})
+                            </span>
+                          )}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs text-muted-foreground hover:text-foreground"
+                          onClick={() => {
+                            update("clientId", "");
+                            setClientSearchQuery("");
+                          }}
+                        >
+                          Change
+                        </Button>
+                      </div>
+                    );
+                  })()
                 ) : (
-                  <Select
-                    value={form.clientId || "none"}
-                    onValueChange={(val) => {
-                      if (val === "__manual__") {
-                        setManualClient(true);
-                      } else {
-                        update("clientId", val === "none" ? "" : val);
-                      }
-                    }}
-                  >
-                    <SelectTrigger id="task-clientid" className="h-11 rounded-md">
-                      <SelectValue placeholder="Select linked client" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-60">
-                      <SelectItem value="none">None (No client)</SelectItem>
-                      {clients.map((cl) => (
-                        <SelectItem key={cl._id} value={cl._id}>
-                          {cl.name} {cl.phone ? `(${cl.phone})` : ""}
-                        </SelectItem>
-                      ))}
-                      <SelectItem value="__manual__">+ Enter manually...</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <div className="space-y-1.5">
+                    <div className="relative">
+                      <Search size={15} className="absolute left-3 top-3 text-muted-foreground" />
+                      <Input
+                        id="task-client-search"
+                        value={clientSearchQuery}
+                        onChange={(e) => setClientSearchQuery(e.target.value)}
+                        placeholder="Search client by name or phone..."
+                        className="h-11 pl-9 rounded-md"
+                      />
+                    </div>
+                    {/* Live search match list */}
+                    <div className="max-h-36 overflow-y-auto rounded-md border border-border bg-card p-1 shadow-sm text-xs space-y-0.5">
+                      <button
+                        type="button"
+                        onClick={() => update("clientId", "")}
+                        className="w-full text-left px-2.5 py-1.5 rounded hover:bg-muted text-muted-foreground font-medium"
+                      >
+                        None (No client)
+                      </button>
+                      {clients
+                        .filter((c) => {
+                          if (!clientSearchQuery.trim()) return true;
+                          const q = clientSearchQuery.toLowerCase();
+                          return (
+                            c.name.toLowerCase().includes(q) ||
+                            (c.phone && c.phone.includes(q))
+                          );
+                        })
+                        .slice(0, 8)
+                        .map((cl) => (
+                          <button
+                            key={cl._id}
+                            type="button"
+                            onClick={() => {
+                              update("clientId", cl._id);
+                              setClientSearchQuery("");
+                            }}
+                            className="w-full text-left px-2.5 py-1.5 rounded hover:bg-primary/10 flex items-center justify-between text-foreground"
+                          >
+                            <span className="font-medium truncate">{cl.name}</span>
+                            {cl.phone && (
+                              <span className="text-[11px] text-muted-foreground font-mono ml-2">
+                                {cl.phone}
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      {clientSearchQuery.trim() &&
+                        clients.filter((c) => {
+                          const q = clientSearchQuery.toLowerCase();
+                          return (
+                            c.name.toLowerCase().includes(q) ||
+                            (c.phone && c.phone.includes(q))
+                          );
+                        }).length === 0 && (
+                          <p className="p-2 text-muted-foreground text-center">
+                            No clients match "{clientSearchQuery}".
+                          </p>
+                        )}
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
+
+            {/* ── Subcategory Checklist & Action Steps ── */}
+            {form.mainCategory && subCategories.length > 0 && (
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <p className="flex items-center gap-2 text-helper font-semibold text-foreground">
+                      <ListChecks size={16} strokeWidth={2} className="text-primary" />
+                      Subcategory Checklist Steps ({form.mainCategory})
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      Click any subcategory to add it as a checklist step, or load all at once.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={addAllSubCategoriesToChecklist}
+                      className="h-8 text-xs font-medium border-primary/40 text-primary hover:bg-primary/10"
+                    >
+                      <Plus size={13} className="mr-1" /> Add All Subcategories
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => addStandardMilestonesToChecklist(form.subCategory || form.mainCategory)}
+                      className="h-8 text-xs font-medium border-border text-foreground hover:bg-muted"
+                      title="Add drafting, execution, registration & delivery milestones"
+                    >
+                      <CheckSquare size={13} className="mr-1 text-primary" /> + Standard Workflow Steps
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {subCategories.map((sc) => {
+                    const alreadyInChecklist = checklist.some(
+                      (c) => c.text.toLowerCase() === sc.name.toLowerCase()
+                    );
+                    return (
+                      <button
+                        key={sc._id || sc.name}
+                        type="button"
+                        onClick={() => addSubCategoryToChecklist(sc.name)}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-caption font-medium transition-all ${
+                          alreadyInChecklist
+                            ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-semibold shadow-xs"
+                            : "border-border/80 bg-background text-foreground/80 hover:border-primary hover:text-primary hover:bg-primary/5"
+                        }`}
+                        title={alreadyInChecklist ? "Already in checklist" : `Add "${sc.name}" as checklist step`}
+                      >
+                        {alreadyInChecklist ? <Check size={12} className="text-emerald-600" /> : <Plus size={12} />}
+                        {sc.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* ── Quick checklist templates ── */}
             {templates.length > 0 && (

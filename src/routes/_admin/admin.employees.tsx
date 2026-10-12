@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { Plus, Briefcase, CheckSquare, Loader2, AlertTriangle, MessageSquare, Pencil } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { useEmployees, type EmployeeRecord } from "@/services/admin";
 import { useEmployeeWorkload } from "@/services/reports";
 import { useCreateDirectChat } from "@/services/chat";
-import { useNavigate } from "@tanstack/react-router";
 import { AddEmployeeDialog } from "@/components/admin/AddEmployeeDialog";
 import { EditEmployeeDialog } from "@/components/admin/EditEmployeeDialog";
 
@@ -96,33 +95,62 @@ function EmployeesPage() {
           {employees.map((e) => (
             <article key={e._id} className="lift rounded-lg border border-border bg-card p-6 shadow-soft">
               <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
-                <span className="gradient-primary grid size-12 shrink-0 place-items-center rounded-full font-display font-semibold text-primary-foreground">
-                  {(e.name ?? "")
-                    .replace("Adv. ", "")
-                    .split(" ")
-                    .map((n: string) => n[0] ?? "")
-                    .join("")}
-                </span>
+                {e.avatarUrl ? (
+                  <img
+                    src={e.avatarUrl}
+                    alt={e.name}
+                    className="size-12 rounded-full object-cover border border-primary/20 shrink-0"
+                  />
+                ) : (
+                  <span className="gradient-primary grid size-12 shrink-0 place-items-center rounded-full font-display font-semibold text-primary-foreground">
+                    {(e.name ?? "")
+                      .replace("Adv. ", "")
+                      .split(" ")
+                      .map((n: string) => n[0] ?? "")
+                      .join("")}
+                  </span>
+                )}
                 <div className="min-w-0">
                   <h2 className="truncate font-semibold">{e.name}</h2>
-                  <p className="truncate text-caption text-muted-foreground">{e.role}</p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setEditingEmployee(e)}
+                      className="font-mono text-[11px] font-semibold text-primary hover:underline bg-primary/10 px-1.5 py-0.5 rounded cursor-pointer"
+                      title="Click employee code to view full details and work records"
+                    >
+                      EMP-{e._id.slice(-4).toUpperCase()}
+                    </button>
+                    <span className="text-muted-foreground/40 text-xs">•</span>
+                    <p className="truncate text-caption text-muted-foreground">{e.role}</p>
+                  </div>
                 </div>
                 <StatusPill tone={toneForStatus(e.status)}>{e.status}</StatusPill>
               </div>
 
               <dl className="mt-5 grid grid-cols-2 gap-3">
-                <div className="rounded-md bg-muted/60 p-3">
-                  <dt className="flex items-center gap-1.5 text-caption text-muted-foreground">
+                <Link
+                  to="/cases"
+                  search={{ assignedTo: e._id }}
+                  className="rounded-md bg-muted/60 p-3 hover:bg-muted transition-colors cursor-pointer group"
+                  title={`View cases assigned to ${e.name}`}
+                >
+                  <dt className="flex items-center gap-1.5 text-caption text-muted-foreground group-hover:text-primary transition-colors">
                     <Briefcase size={14} strokeWidth={1.75} /> Active cases
                   </dt>
-                  <dd className="num mt-1 text-title font-semibold">{workloadById.get(e._id)?.activeCases ?? 0}</dd>
-                </div>
-                <div className="rounded-md bg-muted/60 p-3">
-                  <dt className="flex items-center gap-1.5 text-caption text-muted-foreground">
+                  <dd className="num mt-1 text-title font-semibold group-hover:text-primary transition-colors">{workloadById.get(e._id)?.activeCases ?? 0}</dd>
+                </Link>
+                <Link
+                  to="/tasks"
+                  search={{ assignedTo: e._id }}
+                  className="rounded-md bg-muted/60 p-3 hover:bg-muted transition-colors cursor-pointer group"
+                  title={`View tasks assigned to ${e.name}`}
+                >
+                  <dt className="flex items-center gap-1.5 text-caption text-muted-foreground group-hover:text-primary transition-colors">
                     <CheckSquare size={14} strokeWidth={1.75} /> Pending tasks
                   </dt>
-                  <dd className="num mt-1 text-title font-semibold">{workloadById.get(e._id)?.pendingTasks ?? 0}</dd>
-                </div>
+                  <dd className="num mt-1 text-title font-semibold group-hover:text-primary transition-colors">{workloadById.get(e._id)?.pendingTasks ?? 0}</dd>
+                </Link>
               </dl>
 
               <p className="mt-4 truncate text-caption text-muted-foreground">{e.email}</p>

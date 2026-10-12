@@ -2,35 +2,25 @@ import { Types } from "mongoose";
 import { NotificationService } from "./notifications.js";
 import { CalendarEvent } from "../models/CalendarEvent.js";
 import { Task } from "../models/Task.js";
+import { AppSettings } from "../models/AppSettings.js";
+import { processOutboxQueue } from "./externalNotifications/index.js";
+import { dispatchDailyAdminReport } from "./dailyAdminReport.js";
+import { processAttachmentRetention } from "./attachmentRetention.js";
 
 // ---------------------------------------------------------------------------
 // Deduplication key helpers
 // ---------------------------------------------------------------------------
-// All keys include a time-window component so the same event/task generates at
-// most one notification per window, even though the scheduler polls frequently.
 
-/**
- * Hearing reminder: one notification per (event × 30-min window).
- * Window = the half-hour slot the scheduler is currently running in.
- */
 function hearingDedupeKey(eventId: string, windowStart: Date): string {
   return `hearing-reminder:${eventId}:${windowStart.toISOString()}`;
 }
 
-/**
- * Task-due-today: one notification per (task × calendar date).
- */
 function taskDueTodayDedupeKey(taskId: string, date: Date): string {
   const d = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
   return `task-due-today:${taskId}:${d}`;
 }
 
-/**
- * Overdue-task: one notification per (task × ISO week).
- * This limits the reminder to once per week so overdue tasks don't spam.
- */
 function overdueDedupeKey(taskId: string, date: Date): string {
-  // ISO week: year + week number
   const startOfYear = new Date(date.getFullYear(), 0, 1);
   const week = Math.ceil(
     ((date.getTime() - startOfYear.getTime()) / 86400000 + startOfYear.getDay() + 1) / 7,
@@ -38,19 +28,11 @@ function overdueDedupeKey(taskId: string, date: Date): string {
   return `overdue-task:${taskId}:${date.getFullYear()}-W${week}`;
 }
 
-// ---------------------------------------------------------------------------
-// Scheduler class
-// ---------------------------------------------------------------------------
+function workingHoursDedupeKey(taskId: string, date: Date, slot: number): string {
+  const d = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+  return `working-hours-task:${taskId}:${d}:slot-${slot}`;
+}
 
-/**
- * Notification scheduler for time-based notifications.
- * Runs periodic checks for upcoming events, overdue tasks, etc.
- *
- * Deduplication strategy: every `createNotification` call includes a
- * `dedupeKey`. The Notification model has a unique sparse index on that field,
- * so duplicate notifications within the same time-window are silently skipped
- * by the service.
- */
 export class NotificationScheduler {
   private static instance: NotificationScheduler;
   private io: unknown;
@@ -60,10 +42,6 @@ export class NotificationScheduler {
     this.io = io;
   }
 
-  /**
-   * Initialize and start the scheduler (singleton).
-   * @param io Socket.IO server instance for real-time delivery
-   */
   static start(io: unknown): void {
     if (!NotificationScheduler.instance) {
       NotificationScheduler.instance = new NotificationScheduler(io);
@@ -71,9 +49,6 @@ export class NotificationScheduler {
     NotificationScheduler.instance.scheduleJobs();
   }
 
-  /**
-   * Stop all scheduled jobs (used during graceful shutdown).
-   */
   static stop(): void {
     if (NotificationScheduler.instance) {
       NotificationScheduler.instance.timers.forEach(clearTimeout);
@@ -86,12 +61,13 @@ export class NotificationScheduler {
   // ---------------------------------------------------------------------------
 
   private scheduleJobs(): void {
-    // Hearing reminders — poll every 5 minutes
     this.scheduleHearingReminders();
-    // Overdue tasks — poll every 5 minutes
     this.scheduleOverdueTaskReminders();
-    // Tasks due today — poll every hour
     this.scheduleTodayTaskReminders();
+    this.scheduleWorkingHoursTaskReminders();
+    this.scheduleOutboxWorker();
+    this.scheduleDailyAdminReportJob();
+    this.scheduleAttachmentRetentionJob();
   }
 
   // ---------------------------------------------------------------------------
@@ -111,16 +87,9 @@ export class NotificationScheduler {
     setTimeout(job, 0);
   }
 
-  /**
-   * Find hearings starting within the next 30 minutes and create a
-   * HEARING_REMINDER notification for every user in assignedTo[].
-   * Also notifies the createdBy user if they aren't already in assignedTo.
-   */
   private async checkForUpcomingHearings(): Promise<void> {
     const now = new Date();
     const soon = new Date(now.getTime() + 30 * 60 * 1000);
-
-    // Round now down to the nearest 5-min boundary for stable dedupe keys
     const windowStart = new Date(Math.floor(now.getTime() / (5 * 60 * 1000)) * (5 * 60 * 1000));
 
     const hearings = await CalendarEvent.find({
@@ -130,13 +99,10 @@ export class NotificationScheduler {
 
     if (hearings.length === 0) return;
 
-    console.info(`[NotificationScheduler] ${hearings.length} upcoming hearing(s) found.`);
-
     for (const hearing of hearings) {
       const eventId = (hearing._id as Types.ObjectId).toString();
       const startStr = hearing.start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-      // Collect unique recipient IDs (assignedTo + createdBy)
       const recipientSet = new Set<string>(
         (hearing.assignedTo as Types.ObjectId[]).map((id) => id.toString()),
       );
@@ -185,10 +151,6 @@ export class NotificationScheduler {
     setTimeout(job, 0);
   }
 
-  /**
-   * Find tasks past their deadline that are not completed and notify the
-   * assignee. Deduped per task per ISO calendar week to avoid daily spam.
-   */
   private async checkForOverdueTasks(): Promise<void> {
     const now = new Date();
 
@@ -196,13 +158,12 @@ export class NotificationScheduler {
       deadline: { $lt: now },
       status: { $nin: ["completed", "pending_approval"] },
       assignedTo: { $ne: null },
+      isDeleted: { $ne: true },
     })
       .select("_id title deadline assignedTo caseId priority")
       .lean();
 
     if (overdueTasks.length === 0) return;
-
-    console.info(`[NotificationScheduler] ${overdueTasks.length} overdue task(s) found.`);
 
     for (const task of overdueTasks) {
       if (!task.assignedTo) continue;
@@ -211,20 +172,12 @@ export class NotificationScheduler {
       const assigneeId = (task.assignedTo as Types.ObjectId).toString();
       const dedupeKey = overdueDedupeKey(`${taskId}:${assigneeId}`, now);
 
-      const deadlineStr = task.deadline
-        ? new Date(task.deadline).toLocaleDateString([], {
-            weekday: "short",
-            month: "short",
-            day: "numeric",
-          })
-        : "unknown date";
-
       await NotificationService.createNotification(
         {
           userId: new Types.ObjectId(assigneeId),
           type: "OVERDUE_TASK",
           title: "Overdue Task",
-          message: `Task "${task.title}" was due on ${deadlineStr} and is still ${task.status}. Please update its status or request an extension.`,
+          message: `Task "${task.title}" is overdue (deadline was ${task.deadline ? new Date(task.deadline).toLocaleDateString() : "unknown"}). Please review or complete it.`,
           relatedId: task._id as Types.ObjectId,
           relatedModel: "Task",
           metadata: {
@@ -257,10 +210,6 @@ export class NotificationScheduler {
     setTimeout(job, 0);
   }
 
-  /**
-   * Find tasks whose deadline falls within today (midnight→midnight) that are
-   * not yet completed. Notifies the assignee once per calendar day.
-   */
   private async checkForTodayTasks(): Promise<void> {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
@@ -268,15 +217,14 @@ export class NotificationScheduler {
 
     const tasksDueToday = await Task.find({
       deadline: { $gte: todayStart, $lte: todayEnd },
-      status: { $nin: ["completed"] },
+      status: { $nin: ["completed", "pending_approval"] },
       assignedTo: { $ne: null },
+      isDeleted: { $ne: true },
     })
       .select("_id title deadline assignedTo caseId priority")
       .lean();
 
     if (tasksDueToday.length === 0) return;
-
-    console.info(`[NotificationScheduler] ${tasksDueToday.length} task(s) due today.`);
 
     for (const task of tasksDueToday) {
       if (!task.assignedTo) continue;
@@ -308,5 +256,132 @@ export class NotificationScheduler {
         this.io,
       );
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Two-hour working-hours pending-task reminders (Section 10.2)
+  // ---------------------------------------------------------------------------
+
+  private scheduleWorkingHoursTaskReminders(): void {
+    const job = async () => {
+      try {
+        await this.checkWorkingHoursPendingTasks();
+      } catch (err) {
+        console.error("[NotificationScheduler] Working hours task reminder error:", err);
+      }
+      const timer = setTimeout(() => this.scheduleWorkingHoursTaskReminders(), 30 * 60 * 1000);
+      this.timers.push(timer);
+    };
+    setTimeout(job, 10000);
+  }
+
+  private async checkWorkingHoursPendingTasks(): Promise<void> {
+    const config = await (AppSettings as any).getWorkingHoursConfig();
+    const now = new Date();
+
+    // Check configured days of week (default: Monday to Saturday, excludes Sunday = 0)
+    const currentDay = now.getDay();
+    if (!config.days.includes(currentDay)) {
+      return;
+    }
+
+    const currentHour = now.getHours();
+    const [startH] = config.start.split(":").map(Number);
+    const [endH] = config.end.split(":").map(Number);
+
+    if (currentHour < startH || currentHour >= endH) {
+      return;
+    }
+
+    // 2-hour slot index (e.g. 10:00 -> slot 0, 12:00 -> slot 1, 14:00 -> slot 2, etc.)
+    const slot = Math.floor((currentHour - startH) / 2);
+
+    const pendingTasks = await Task.find({
+      status: { $in: ["pending", "in_progress"] },
+      assignedTo: { $ne: null },
+      isDeleted: { $ne: true },
+    }).select("_id title priority assignedTo deadline").lean();
+
+    for (const task of pendingTasks) {
+      if (!task.assignedTo) continue;
+      const taskId = (task._id as Types.ObjectId).toString();
+      const assigneeId = (task.assignedTo as Types.ObjectId).toString();
+      const dedupeKey = workingHoursDedupeKey(`${taskId}:${assigneeId}`, now, slot);
+
+      await NotificationService.createNotification(
+        {
+          userId: new Types.ObjectId(assigneeId),
+          type: "TASK_DUE",
+          title: "Pending Task Reminder",
+          message: `Reminder: Task "${task.title}" is pending. Please update your progress.`,
+          relatedId: task._id as Types.ObjectId,
+          relatedModel: "Task",
+          metadata: {
+            taskId,
+            slot,
+            subType: "working_hours_reminder",
+          },
+          dedupeKey,
+        },
+        this.io,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // External notification outbox worker
+  // ---------------------------------------------------------------------------
+
+  private scheduleOutboxWorker(): void {
+    const job = async () => {
+      try {
+        await processOutboxQueue(this.io);
+      } catch (err) {
+        console.error("[NotificationScheduler] Outbox worker error:", err);
+      }
+      const timer = setTimeout(() => this.scheduleOutboxWorker(), 20 * 1000);
+      this.timers.push(timer);
+    };
+    setTimeout(job, 5000);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Daily admin report job
+  // ---------------------------------------------------------------------------
+
+  private scheduleDailyAdminReportJob(): void {
+    const job = async () => {
+      try {
+        const now = new Date();
+        const config = await (AppSettings as any).getDailyReportConfig();
+        const [targetHour] = (config.time || "19:00").split(":").map(Number);
+
+        if (now.getHours() >= targetHour) {
+          await dispatchDailyAdminReport(this.io, now);
+        }
+      } catch (err) {
+        console.error("[NotificationScheduler] Daily admin report error:", err);
+      }
+      const timer = setTimeout(() => this.scheduleDailyAdminReportJob(), 15 * 60 * 1000);
+      this.timers.push(timer);
+    };
+    setTimeout(job, 15000);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Attachment retention cleanup job
+  // ---------------------------------------------------------------------------
+
+  private scheduleAttachmentRetentionJob(): void {
+    const job = async () => {
+      try {
+        await processAttachmentRetention(this.io);
+      } catch (err) {
+        console.error("[NotificationScheduler] Attachment retention error:", err);
+      }
+      const timer = setTimeout(() => this.scheduleAttachmentRetentionJob(), 24 * 60 * 60 * 1000);
+      this.timers.push(timer);
+    };
+    setTimeout(job, 30000);
   }
 }

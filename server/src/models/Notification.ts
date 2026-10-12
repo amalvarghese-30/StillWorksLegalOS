@@ -7,6 +7,7 @@ import mongoose, { Document, Schema } from "mongoose";
 export const NOTIFICATION_TYPES = [
   "HEARING_REMINDER",
   "APPROVAL_REQUEST",
+  "APPROVAL_REQUESTED",
   "DOCUMENT_SHARED",
   "TASK_ASSIGNED",
   "CASE_ASSIGNED",
@@ -58,7 +59,7 @@ const NotificationSchema = new Schema<INotification>(
     message: { type: String, required: true },
     read: { type: Boolean, default: false, index: true },
     relatedId: { type: Schema.Types.ObjectId, refPath: "relatedModel" },
-    relatedModel: { type: String, enum: ["Document", "Case", "Task", "User", "CalendarEvent", "ChatGroup", "Reminder"] },
+    relatedModel: { type: String, enum: ["Document", "Case", "Task", "User", "CalendarEvent", "ChatGroup", "Reminder", "ApprovalRequest"] },
     actorId: { type: Schema.Types.ObjectId, ref: "User" },
     metadata: { type: Schema.Types.Mixed, default: {} },
     dedupeKey: { type: String, sparse: true, index: true, unique: true },

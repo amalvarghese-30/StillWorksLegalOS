@@ -34,6 +34,7 @@ export interface IUser extends Document {
   title: string;
   status: UserStatus;
   phone?: string;
+  secondaryPhone?: string;
   avatarUrl?: string;
   permissions: UserPermissions;
   // Firm details (per-user firm settings)
@@ -47,6 +48,14 @@ export interface IUser extends Document {
   notifyApprovalRequests?: boolean;
   notifyCallReminders?: boolean;
   notifyDailyDigest?: boolean;
+  whatsappNotifications?: boolean;
+  telegramNotifications?: boolean;
+  telegramChatId?: string;
+  soundPreferences?: {
+    taskReminders?: string;
+    importantAlerts?: string;
+    muted?: boolean;
+  };
   // Security preferences
   securityTwoFactor?: boolean;
   securitySessionTimeout?: boolean;
@@ -121,6 +130,7 @@ const UserSchema = new Schema<IUser>(
       default: "offline",
     },
     phone: { type: String, default: "" },
+    secondaryPhone: { type: String, default: "" },
     avatarUrl: { type: String, default: "" },
     permissions: {
       type: Schema.Types.Mixed,
@@ -137,6 +147,20 @@ const UserSchema = new Schema<IUser>(
     notifyApprovalRequests: { type: Boolean, default: true },
     notifyCallReminders: { type: Boolean, default: true },
     notifyDailyDigest: { type: Boolean, default: false },
+    whatsappNotifications: { type: Boolean, default: true },
+    telegramNotifications: { type: Boolean, default: false },
+    telegramChatId: { type: String, default: "" },
+    soundPreferences: {
+      type: new Schema(
+        {
+          taskReminders: { type: String, default: "default" },
+          importantAlerts: { type: String, default: "chime" },
+          muted: { type: Boolean, default: false },
+        },
+        { _id: false }
+      ),
+      default: () => ({ taskReminders: "default", importantAlerts: "chime", muted: false }),
+    },
     // Security preferences
     securityTwoFactor: { type: Boolean, default: true },
     securitySessionTimeout: { type: Boolean, default: true },

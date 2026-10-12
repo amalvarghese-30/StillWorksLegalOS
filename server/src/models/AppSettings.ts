@@ -174,6 +174,50 @@ AppSettingsSchema.statics.setTaskOptions = async function (
   );
 };
 
+AppSettingsSchema.statics.getRetentionPolicy = async function (): Promise<{ retentionDays: number; warningDays: number; enabled: boolean }> {
+  const doc = await this.findOne({ key: "retention_policy" });
+  if (doc?.value) {
+    return doc.value as any;
+  }
+  return { retentionDays: 30, warningDays: 3, enabled: true };
+};
+
+AppSettingsSchema.statics.getWorkingHoursConfig = async function (): Promise<{
+  start: string;
+  end: string;
+  days: number[];
+  timezone: string;
+  reminderIntervalMinutes: number;
+}> {
+  const doc = await this.findOne({ key: "working_hours" });
+  if (doc?.value) {
+    return doc.value as any;
+  }
+  return {
+    start: "10:00",
+    end: "18:00",
+    days: [1, 2, 3, 4, 5, 6], // Monday through Saturday (Sunday excluded)
+    timezone: "Asia/Kolkata",
+    reminderIntervalMinutes: 120, // 2-hour reminders
+  };
+};
+
+AppSettingsSchema.statics.getDailyReportConfig = async function (): Promise<{
+  enabled: boolean;
+  time: string;
+  timezone: string;
+}> {
+  const doc = await this.findOne({ key: "daily_report" });
+  if (doc?.value) {
+    return doc.value as any;
+  }
+  return {
+    enabled: true,
+    time: "19:00",
+    timezone: "Asia/Kolkata",
+  };
+};
+
 // ---------------------------------------------------------------------------
 // Default storage config (application filesystem)
 // ---------------------------------------------------------------------------
@@ -198,6 +242,9 @@ interface AppSettingsModel extends mongoose.Model<IAppSettings> {
   setSynologyConfig(config: SynologyConfigInput, userId: string): Promise<void>;
   getTaskOptions(): Promise<TaskOptions>;
   setTaskOptions(options: TaskOptions, userId: string): Promise<void>;
+  getRetentionPolicy(): Promise<{ retentionDays: number; warningDays: number; enabled: boolean }>;
+  getWorkingHoursConfig(): Promise<{ start: string; end: string; days: number[]; timezone: string; reminderIntervalMinutes: number }>;
+  getDailyReportConfig(): Promise<{ enabled: boolean; time: string; timezone: string }>;
 }
 
 export const AppSettings = mongoose.model<IAppSettings, AppSettingsModel>("AppSettings", AppSettingsSchema);

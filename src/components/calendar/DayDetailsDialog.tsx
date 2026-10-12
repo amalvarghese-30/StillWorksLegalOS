@@ -8,6 +8,7 @@ import {
   CheckSquare,
   Building,
   User,
+  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,6 +27,7 @@ interface DayDetailsDialogProps {
   dateStr: string;
   events: CalendarEvent[];
   onScheduleEvent: (dateStr: string) => void;
+  onEditEvent?: (event: CalendarEvent) => void;
 }
 
 const getEventCls = (type: string) => {
@@ -66,6 +68,7 @@ export function DayDetailsDialog({
   dateStr,
   events,
   onScheduleEvent,
+  onEditEvent,
 }: DayDetailsDialogProps) {
   if (!open || !dateStr) return null;
 
@@ -156,16 +159,30 @@ export function DayDetailsDialog({
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-4 text-caption text-muted-foreground border-t border-border/40 pt-2 mt-1">
-                      <span className="flex items-center gap-1">
-                        <Clock size={12} />
-                        {timeStr}
-                      </span>
-                      {event.caseId && (
-                        <span className="flex items-center gap-1 truncate">
-                          <Briefcase size={12} />
-                          Case linked
+                    <div className="flex items-center justify-between text-caption text-muted-foreground border-t border-border/40 pt-2 mt-1">
+                      <div className="flex items-center gap-4">
+                        <span className="flex items-center gap-1">
+                          <Clock size={12} />
+                          {timeStr}
                         </span>
+                        {event.caseId && (
+                          <span className="flex items-center gap-1 truncate">
+                            <Briefcase size={12} />
+                            Case linked
+                          </span>
+                        )}
+                      </div>
+                      {onEditEvent && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onClose();
+                            onEditEvent(event);
+                          }}
+                          className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline ml-2"
+                        >
+                          <Pencil size={11} /> Edit / Reschedule
+                        </button>
                       )}
                     </div>
                   </li>

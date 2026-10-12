@@ -9,6 +9,7 @@ import { User } from "../models/User.js";
 import { AppSettings } from "../models/AppSettings.js";
 import { NotificationService } from "../services/notifications.js";
 import { Types } from "mongoose";
+import { ApprovalRequest } from "../models/ApprovalRequest.js";
 import { requireAuth } from "../middleware/auth.js";
 import { canAccessCase, canAccessClient, canAccessTask, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
 
@@ -16,7 +17,29 @@ function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-async function resolveCaseId(identifier: unknown): Promise<{ id: string | null; error?: string }> {
+export function parseChecklistRecursive(items: unknown[]): any[] {
+  if (!Array.isArray(items)) return [];
+  return items.map((item: any) => {
+    if (!item || typeof item !== "object") return null;
+    const sanitized: any = {
+      ...(item._id ? { _id: item._id } : {}),
+      id: item.id || (item._id ? String(item._id) : undefined),
+      text: sanitizeInputText(item.text ?? "", 500),
+      done: Boolean(item.done),
+    };
+    if (item.remarks && typeof item.remarks === "string") {
+      sanitized.remarks = sanitizeInputText(item.remarks, 1000);
+    }
+    if (Array.isArray(item.subItems) && item.subItems.length > 0) {
+      sanitized.subItems = parseChecklistRecursive(item.subItems);
+    } else {
+      sanitized.subItems = [];
+    }
+    return sanitized;
+  }).filter(Boolean);
+}
+
+async function resolveCaseId(identifier: unknown): Promise<{ id: string | null; error?: string; code?: string; field?: string }> {
   if (identifier === null || identifier === undefined) return { id: null };
   const clean = String(identifier).trim();
   if (!clean || clean.toLowerCase() === "none") return { id: null };
@@ -31,25 +54,43 @@ async function resolveCaseId(identifier: unknown): Promise<{ id: string | null; 
     $or: [
       { number: clean },
       { courtCaseId: clean },
+      { countCaseNumber: clean },
       { title: { $regex: `^${escaped}$`, $options: "i" } },
     ],
   }).select("_id").lean();
 
   if (byOther) return { id: (byOther as any)._id.toString() };
 
-  return { id: null, error: `Case "${clean}" was not found. Please select a valid case.` };
+  // Compound label support e.g. "SW-2026-0166 — RAJU SHET"
+  const caseNumberMatch = clean.match(/SW-\d{4}-\d{4}/i);
+  if (caseNumberMatch) {
+    const byNum = await Case.findOne({ number: caseNumberMatch[0].toUpperCase() }).select("_id").lean();
+    if (byNum) return { id: (byNum as any)._id.toString() };
+  }
+
+  return {
+    id: null,
+    error: `Case "${clean}" was not found. Please select a valid case.`,
+    code: "CASE_NOT_FOUND",
+    field: "caseId",
+  };
 }
 
-async function resolveClientId(identifier: unknown): Promise<{ id: string | null; error?: string }> {
+async function resolveClientId(
+  identifier: unknown,
+  options?: { creatorUserId?: string; autoCreate?: boolean }
+): Promise<{ id: string | null; error?: string; code?: string; field?: string }> {
   if (identifier === null || identifier === undefined) return { id: null };
   const clean = String(identifier).trim();
   if (!clean || clean.toLowerCase() === "none") return { id: null };
 
+  // 1. Direct MongoDB ObjectId
   if (/^[0-9a-fA-F]{24}$/.test(clean)) {
     const byId = await Client.findById(clean).select("_id").lean();
     if (byId) return { id: (byId as any)._id.toString() };
   }
 
+  // 2. Exact match on phone, email, or exact name
   const escaped = escapeRegex(clean);
   const byOther = await Client.findOne({
     $or: [
@@ -61,7 +102,54 @@ async function resolveClientId(identifier: unknown): Promise<{ id: string | null
 
   if (byOther) return { id: (byOther as any)._id.toString() };
 
-  return { id: null, error: `Client "${clean}" was not found. Please select a valid client.` };
+  // 3. Compound string handling (e.g. "JATINDER SINGH - 9869717581" or "JATINDER SINGH (9869717581)")
+  const compoundMatch = clean.match(/^(.+?)\s*(?:-|–|—|\()\s*([0-9+\s()-]+)\)?$/);
+  if (compoundMatch) {
+    const candidateName = compoundMatch[1]?.trim() || "";
+    const rawPhone = compoundMatch[2]?.replace(/[^\d+]/g, "") || "";
+
+    if (rawPhone && rawPhone.length >= 7) {
+      const byPhone = await Client.findOne({ phone: { $regex: rawPhone } }).select("_id").lean();
+      if (byPhone) return { id: (byPhone as any)._id.toString() };
+    }
+
+    if (candidateName && candidateName.length >= 2) {
+      const escapedCandName = escapeRegex(candidateName);
+      const byCandName = await Client.findOne({
+        name: { $regex: `^${escapedCandName}$`, $options: "i" },
+      }).select("_id").lean();
+      if (byCandName) return { id: (byCandName as any)._id.toString() };
+    }
+  }
+
+  // 4. Check if a 10-digit phone number is embedded in the string
+  const phoneOnlyMatch = clean.match(/\b\d{10}\b/);
+  if (phoneOnlyMatch) {
+    const byEmbeddedPhone = await Client.findOne({ phone: phoneOnlyMatch[0] }).select("_id").lean();
+    if (byEmbeddedPhone) return { id: (byEmbeddedPhone as any)._id.toString() };
+  }
+
+  // 5. Automatic client creation if permitted
+  if (options?.autoCreate && options.creatorUserId) {
+    const candidateName = compoundMatch ? compoundMatch[1]?.trim() : clean;
+    const candidatePhone = compoundMatch ? compoundMatch[2]?.replace(/[^\d+]/g, "") : (phoneOnlyMatch ? phoneOnlyMatch[0] : "");
+    if (candidateName && candidateName.length >= 2) {
+      const newClient = await Client.create({
+        name: candidateName,
+        phone: candidatePhone || "",
+        createdBy: new Types.ObjectId(options.creatorUserId),
+        updatedBy: new Types.ObjectId(options.creatorUserId),
+      });
+      return { id: newClient._id.toString() };
+    }
+  }
+
+  return {
+    id: null,
+    error: `Client "${clean}" was not found. Please select a valid client.`,
+    code: "CLIENT_NOT_FOUND",
+    field: "clientId",
+  };
 }
 
 function sanitizeInputText(str: unknown, maxLen: number): string {
@@ -192,7 +280,9 @@ router.get("/", async (req: Request, res: Response) => {
       limit = "24",
     } = req.query as Record<string, string>;
 
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = {
+      isDeleted: { $ne: true },
+    };
 
     if (status && status !== "all") {
       if (status.includes(",")) {
@@ -267,9 +357,22 @@ router.get("/", async (req: Request, res: Response) => {
     }
 
     if (search && search.trim()) {
-      const regex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      const escaped = escapeRegex(search.trim());
+      const regex = new RegExp(escaped, "i");
       andConditions.push({
-        $or: [{ title: regex }, { description: regex }, { agent: regex }],
+        $or: [
+          { title: regex },
+          { description: regex },
+          { agent: regex },
+          { category: regex },
+          { mainCategory: regex },
+          { subCategory: regex },
+          { customCategory: regex },
+          { "checklist.text": regex },
+          { "checklist.subItems.text": regex },
+          { "checklist.remarks": regex },
+          { "remarks.text": regex },
+        ],
       });
     }
 
@@ -287,7 +390,9 @@ router.get("/", async (req: Request, res: Response) => {
     const endOfToday = new Date();
     endOfToday.setHours(23, 59, 59, 999);
 
-    const baseAccessibleTaskFilter: Record<string, unknown> = {};
+    const baseAccessibleTaskFilter: Record<string, unknown> = {
+      isDeleted: { $ne: true },
+    };
     if (req.user!.role !== "admin") {
       const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
       baseAccessibleTaskFilter["$or"] = [
@@ -499,26 +604,18 @@ router.post("/", async (req: Request, res: Response) => {
       title: title.trim(),
       description: description ?? "",
       category: category ?? "Other Work",
+      mainCategory: typeof req.body.mainCategory === "string" ? req.body.mainCategory.trim() : undefined,
+      subCategory: typeof req.body.subCategory === "string" ? req.body.subCategory.trim() : undefined,
+      categoryPath: Array.isArray(req.body.categoryPath) ? req.body.categoryPath.map((p: any) => String(p).trim()).filter(Boolean) : [],
+      customCategory: typeof req.body.customCategory === "string" ? req.body.customCategory.trim() : undefined,
+      parentTaskId: req.body.parentTaskId && Types.ObjectId.isValid(req.body.parentTaskId) ? new Types.ObjectId(req.body.parentTaskId) : null,
       priority: priority ?? "Medium",
       status: "pending",
       deadline: parsedDeadline,
       assignedTo: finalAssignedTo,
       caseId: cleanCaseId,
       clientId: cleanClientId,
-      checklist: Array.isArray(checklist)
-        ? checklist.map((item) => ({
-            id: item.id || (item._id ? String(item._id) : undefined),
-            text: sanitizeInputText(item.text, 500),
-            done: Boolean(item.done),
-            subItems: Array.isArray(item.subItems)
-              ? item.subItems.map((sub: any) => ({
-                  id: sub.id || (sub._id ? String(sub._id) : undefined),
-                  text: sanitizeInputText(sub.text, 500),
-                  done: Boolean(sub.done),
-                }))
-              : [],
-          }))
-        : [],
+      checklist: parseChecklistRecursive(checklist),
       localPath: typeof req.body.localPath === "string" ? req.body.localPath.trim() : "",
       assignedBy: finalAssignedTo ? req.userId : null,
       assignedAt: finalAssignedTo ? new Date() : null,
@@ -526,6 +623,7 @@ router.post("/", async (req: Request, res: Response) => {
       agent: cleanAgent,
       isCall: Boolean(isCall),
       createdBy: req.userId,
+      updatedBy: req.userId,
     });
 
     // Notify assignee if task is assigned to someone else
@@ -608,7 +706,26 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
 
     const updates: Record<string, unknown> = {};
 
-    const allowed = ["title", "description", "category", "priority", "status", "deadline", "assignedTo", "caseId", "clientId", "agent", "isCall", "checklist", "localPath"];
+    const allowed = [
+      "title",
+      "description",
+      "category",
+      "mainCategory",
+      "subCategory",
+      "categoryPath",
+      "customCategory",
+      "parentTaskId",
+      "priority",
+      "status",
+      "deadline",
+      "assignedTo",
+      "caseId",
+      "clientId",
+      "agent",
+      "isCall",
+      "checklist",
+      "localPath",
+    ];
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     }
@@ -622,22 +739,21 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
     if (updates["localPath"] !== undefined) {
       updates["localPath"] = typeof updates["localPath"] === "string" ? updates["localPath"].trim() : "";
     }
+    if (updates["mainCategory"] !== undefined) {
+      updates["mainCategory"] = typeof updates["mainCategory"] === "string" ? updates["mainCategory"].trim() : "";
+    }
+    if (updates["subCategory"] !== undefined) {
+      updates["subCategory"] = typeof updates["subCategory"] === "string" ? updates["subCategory"].trim() : "";
+    }
+    if (updates["customCategory"] !== undefined) {
+      updates["customCategory"] = typeof updates["customCategory"] === "string" ? updates["customCategory"].trim() : "";
+    }
+    if (updates["parentTaskId"] !== undefined) {
+      updates["parentTaskId"] = updates["parentTaskId"] && Types.ObjectId.isValid(updates["parentTaskId"] as string) ? new Types.ObjectId(updates["parentTaskId"] as string) : null;
+    }
     if (updates["checklist"] !== undefined) {
       if (Array.isArray(updates["checklist"])) {
-        updates["checklist"] = (updates["checklist"] as any[]).map((item) => ({
-          ...(item._id ? { _id: item._id } : {}),
-          id: item.id || (item._id ? String(item._id) : undefined),
-          text: sanitizeInputText(item.text, 500),
-          done: Boolean(item.done),
-          subItems: Array.isArray(item.subItems)
-            ? item.subItems.map((sub: any) => ({
-                ...(sub._id ? { _id: sub._id } : {}),
-                id: sub.id || (sub._id ? String(sub._id) : undefined),
-                text: sanitizeInputText(sub.text, 500),
-                done: Boolean(sub.done),
-              }))
-            : [],
-        }));
+        updates["checklist"] = parseChecklistRecursive(updates["checklist"]);
       }
     }
 
@@ -700,11 +816,16 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       updates["clientId"] = resolved.id;
     }
 
-    // Non-admins cannot reassign to others
+    // Non-admins cannot reassign to others directly
     if (req.user!.role !== "admin" && updates["assignedTo"] && updates["assignedTo"] !== req.userId) {
-      res.status(403).json({ message: "Cannot assign task to another user" });
+      res.status(403).json({
+        message: "Cannot assign task to another user directly. Please use 'Request Reassignment' to request administrator approval.",
+        code: "ASSIGNMENT_APPROVAL_REQUIRED",
+      });
       return;
     }
+
+    updates["updatedBy"] = req.userId;
 
     // Validate case access if caseId changed
     if (updates["caseId"] && req.user!.role !== "admin") {
@@ -1800,6 +1921,212 @@ router.post("/:id/reassign", requireResourceAccess("task"), async (req: Request,
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/tasks/:id/request-assignment — request assignment/reassignment approval
+// ---------------------------------------------------------------------------
+
+router.post("/:id/request-assignment", requireResourceAccess("task"), async (req: Request, res: Response) => {
+  try {
+    const { targetUserId, reason } = req.body;
+    if (!targetUserId || !Types.ObjectId.isValid(targetUserId)) {
+      res.status(400).json({ message: "Valid target user ID (targetUserId) is required", field: "targetUserId" });
+      return;
+    }
+    const cleanReason = typeof reason === "string" ? reason.trim() : "";
+    if (!cleanReason) {
+      res.status(400).json({ message: "Reason for reassignment request is required", field: "reason" });
+      return;
+    }
+
+    const task = await Task.findById(req.params["id"]);
+    if (!task) {
+      res.status(404).json({ message: "Task not found" });
+      return;
+    }
+
+    const targetUser = await User.findById(targetUserId).select("name email isActive").lean();
+    if (!targetUser) {
+      res.status(404).json({ message: "Target employee not found" });
+      return;
+    }
+
+    const approvalRequest = await ApprovalRequest.create({
+      type: "task_reassign",
+      entityType: "Task",
+      entityId: task._id,
+      requesterId: new Types.ObjectId(req.userId!),
+      targetUserId: new Types.ObjectId(targetUserId),
+      reason: cleanReason,
+      status: "pending",
+    });
+
+    task.pendingReassignment = true;
+    task.updatedBy = new Types.ObjectId(req.userId!);
+    await task.save();
+
+    // Notify admins
+    const admins = await User.find({ role: "admin" }).select("_id");
+    const io = req.app.get("io");
+    for (const admin of admins) {
+      await NotificationService.createNotification(
+        {
+          userId: admin._id,
+          type: "APPROVAL_REQUESTED",
+          title: "Task Reassignment Request",
+          message: `${req.user?.name ?? "An employee"} requested reassignment of "${task.title}" to ${targetUser.name}: ${cleanReason}`,
+          relatedId: approvalRequest._id as any,
+          relatedModel: "ApprovalRequest",
+          actorId: new Types.ObjectId(req.userId!),
+          metadata: {
+            taskId: task._id.toString(),
+            targetUserId: targetUserId.toString(),
+            approvalRequestId: approvalRequest._id.toString(),
+          },
+        },
+        io
+      );
+    }
+
+    if (io) {
+      io.emit("task:updated", { task });
+    }
+
+    res.status(201).json({
+      message: "Reassignment request submitted for administrator approval",
+      approvalRequest,
+      task,
+    });
+  } catch (err: any) {
+    console.error("[tasks] Request assignment error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/tasks/:id/request-deletion — request deletion approval
+// ---------------------------------------------------------------------------
+
+router.post("/:id/request-deletion", requireResourceAccess("task"), async (req: Request, res: Response) => {
+  try {
+    const { reason } = req.body;
+    const cleanReason = typeof reason === "string" ? reason.trim() : "";
+    if (!cleanReason) {
+      res.status(400).json({ message: "Reason for deletion request is required", field: "reason" });
+      return;
+    }
+
+    const task = await Task.findById(req.params["id"]);
+    if (!task) {
+      res.status(404).json({ message: "Task not found" });
+      return;
+    }
+
+    const approvalRequest = await ApprovalRequest.create({
+      type: "task_delete",
+      entityType: "Task",
+      entityId: task._id,
+      requesterId: new Types.ObjectId(req.userId!),
+      reason: cleanReason,
+      status: "pending",
+    });
+
+    task.pendingDeletion = true;
+    task.deletionReason = cleanReason;
+    task.updatedBy = new Types.ObjectId(req.userId!);
+    await task.save();
+
+    // Notify admins
+    const admins = await User.find({ role: "admin" }).select("_id");
+    const io = req.app.get("io");
+    for (const admin of admins) {
+      await NotificationService.createNotification(
+        {
+          userId: admin._id,
+          type: "APPROVAL_REQUESTED",
+          title: "Task Deletion Request",
+          message: `${req.user?.name ?? "An employee"} requested deletion of task "${task.title}": ${cleanReason}`,
+          relatedId: approvalRequest._id as any,
+          relatedModel: "ApprovalRequest",
+          actorId: new Types.ObjectId(req.userId!),
+          metadata: {
+            taskId: task._id.toString(),
+            approvalRequestId: approvalRequest._id.toString(),
+          },
+        },
+        io
+      );
+    }
+
+    if (io) {
+      io.emit("task:updated", { task });
+    }
+
+    res.status(201).json({
+      message: "Deletion request submitted for administrator approval",
+      approvalRequest,
+      task,
+    });
+  } catch (err: any) {
+    console.error("[tasks] Request deletion error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/tasks/:id/remarks — add remark to task
+// ---------------------------------------------------------------------------
+
+router.post("/:id/remarks", requireResourceAccess("task"), async (req: Request, res: Response) => {
+  try {
+    const { text } = req.body;
+    const cleanText = typeof text === "string" ? text.trim() : "";
+    if (!cleanText) {
+      res.status(400).json({ message: "Remark text is required", field: "text" });
+      return;
+    }
+
+    const task = await Task.findById(req.params["id"]);
+    if (!task) {
+      res.status(404).json({ message: "Task not found" });
+      return;
+    }
+
+    const remark = {
+      _id: new Types.ObjectId(),
+      text: cleanText,
+      author: req.user?.name || "Team Member",
+      authorName: req.user?.name || "Team Member",
+      authorId: new Types.ObjectId(req.userId!),
+      createdAt: new Date(),
+    };
+
+    if (!Array.isArray(task.remarks)) {
+      task.remarks = [];
+    }
+    task.remarks.push(remark as any);
+    task.updatedBy = new Types.ObjectId(req.userId!);
+    await task.save();
+
+    const populated = await Task.findById(task._id)
+      .populate("assignedTo", "name email title")
+      .populate("assignedBy", "name email title")
+      .populate("createdBy", "name email title")
+      .populate("updatedBy", "name email title")
+      .populate("caseId", "title number")
+      .populate("clientId", "name phone");
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("task:updated", { task: populated });
+    }
+
+    res.status(201).json({ message: "Remark added successfully", remark, task: populated });
+  } catch (err: any) {
+    console.error("[tasks] Add remark error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // DELETE /api/tasks/:id (with authorization)
 // ---------------------------------------------------------------------------
 
@@ -1812,7 +2139,20 @@ router.delete("/:id", requireResourceAccess("task"), async (req: Request, res: R
       return;
     }
 
-    await Task.findByIdAndDelete(task._id);
+    if (req.user?.role !== "admin") {
+      res.status(403).json({
+        message: "Non-admin users cannot delete tasks directly. Please submit a deletion request for administrator approval.",
+        code: "DELETION_APPROVAL_REQUIRED",
+      });
+      return;
+    }
+
+    task.isDeleted = true;
+    task.deletedAt = new Date();
+    task.deletedBy = new Types.ObjectId(req.userId!);
+    task.pendingDeletion = false;
+    task.updatedBy = new Types.ObjectId(req.userId!);
+    await task.save();
 
     // Clean up associated reminders atomically
     try {
@@ -1821,7 +2161,7 @@ router.delete("/:id", requireResourceAccess("task"), async (req: Request, res: R
       console.error("[tasks] Failed to delete synchronized reminders on task delete:", remErr);
     }
 
-    // Clean up any associated notifications and emit realtime notification:deleted
+    // Clean up any associated notifications
     try {
       const io = req.app.get("io");
       await NotificationService.deleteByRelatedId(task._id, io);
@@ -1858,7 +2198,7 @@ router.delete("/:id", requireResourceAccess("task"), async (req: Request, res: R
       console.error("[tasks] Failed to create audit log on task delete:", auditErr);
     }
 
-    res.json({ message: "Task deleted", taskId: task._id });
+    res.json({ message: "Task deleted successfully", taskId: task._id });
   } catch (err: any) {
     console.error("[tasks] Delete error:", err);
     res.status(500).json({ message: err?.message || "Internal server error" });

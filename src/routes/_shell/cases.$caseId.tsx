@@ -35,9 +35,10 @@ import {
 import { MobileSectionNav } from "@/components/layout/MobileSectionNav";
 import {
   useCase, useUpdateCase, useDeleteCase, useAddCaseNote, useAddCaseParty, useRemoveCaseParty,
-  useForwardCase, useReassignCase,
+  useForwardCase, useReassignCase, useRequestCaseDeletion,
   type CaseRecord, type CaseParty,
 } from "@/services/cases";
+import { useAuth } from "@/lib/auth";
 import { useTasks, type TaskRecord } from "@/services/tasks";
 import { useDocuments, downloadDocument } from "@/services/documents";
 import { DocumentPreviewModal } from "@/components/documents/DocumentPreviewModal";
@@ -333,10 +334,15 @@ function CaseWorkspace() {
   const deleteCase = useDeleteCase();
   const forwardCase = useForwardCase();
   const reassignCase = useReassignCase();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const requestCaseDeletion = useRequestCaseDeletion();
   const { data: empData } = useEmployees();
   const employees = empData?.employees ?? [];
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showRequestDeleteDialog, setShowRequestDeleteDialog] = useState(false);
+  const [caseDeleteReason, setCaseDeleteReason] = useState("");
   const [showReopenConfirm, setShowReopenConfirm] = useState(false);
   const [showForwardDialog, setShowForwardDialog] = useState(false);
   const [showReassignDialog, setShowReassignDialog] = useState(false);
@@ -478,7 +484,19 @@ function CaseWorkspace() {
               <span>No client</span>
             )}
             <span>·</span>
-            <span>{record.category || record.practice || "General Legal"}</span>
+            <span>
+              {record.mainCategory
+                ? `${record.mainCategory}${record.subCategory ? ` › ${record.subCategory}` : ""}`
+                : record.category || record.practice || "General Legal"}
+            </span>
+            {(record.courtCaseId || record.countCaseNumber) && (
+              <>
+                <span>·</span>
+                <span className="font-mono text-xs rounded bg-muted px-2 py-0.5 border border-border">
+                  {record.courtCaseId || record.countCaseNumber}
+                </span>
+              </>
+            )}
           </span>
         }
         actions={
@@ -511,14 +529,25 @@ function CaseWorkspace() {
                   Reopen Case
                 </Button>
               )}
-              <Button
-                variant="outline"
-                className="rounded-md text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
-                onClick={() => setShowDeleteConfirm(true)}
-              >
-                <Trash2 size={15} strokeWidth={1.75} />
-                Delete Case
-              </Button>
+              {isAdmin ? (
+                <Button
+                  variant="outline"
+                  className="rounded-md text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
+                  onClick={() => setShowDeleteConfirm(true)}
+                >
+                  <Trash2 size={15} strokeWidth={1.75} />
+                  Delete Case
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  className="rounded-md text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
+                  onClick={() => setShowRequestDeleteDialog(true)}
+                >
+                  <Trash2 size={15} strokeWidth={1.75} />
+                  Request Deletion
+                </Button>
+              )}
             </div>
             {/* Mobile Dropdown for Secondary Actions */}
             <div className="sm:hidden">
@@ -547,10 +576,10 @@ function CaseWorkspace() {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     className="text-destructive focus:bg-destructive/10 focus:text-destructive"
-                    onClick={() => setShowDeleteConfirm(true)}
+                    onClick={() => isAdmin ? setShowDeleteConfirm(true) : setShowRequestDeleteDialog(true)}
                   >
-                    <Trash2 size={15} />
-                    <span>Delete Case</span>
+                    <Trash2 size={15} className="mr-2" />
+                    <span>{isAdmin ? "Delete Case" : "Request Deletion"}</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -1063,6 +1092,67 @@ function CaseWorkspace() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Request Case Deletion Dialog */}
+      <Dialog open={showRequestDeleteDialog} onOpenChange={setShowRequestDeleteDialog}>
+        <DialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-title font-semibold text-destructive flex items-center gap-2">
+              <Trash2 size={18} /> Request Case Deletion
+            </DialogTitle>
+            <DialogDescription className="text-helper text-muted-foreground mt-1">
+              Submit a deletion request for matter "{record.number} — {record.title}" for administrator approval.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!caseDeleteReason.trim()) {
+                toast.error("Please enter a reason for deletion");
+                return;
+              }
+              try {
+                await requestCaseDeletion.mutateAsync({
+                  caseId,
+                  reason: caseDeleteReason.trim(),
+                });
+                toast.success("Case deletion request submitted for administrator approval");
+                setShowRequestDeleteDialog(false);
+                setCaseDeleteReason("");
+              } catch (err: any) {
+                toast.error(err?.response?.data?.message || err?.message || "Failed to submit deletion request");
+              }
+            }}
+            className="mt-4 space-y-4"
+          >
+            <div className="space-y-1.5">
+              <Label className="text-helper">Reason for Deletion</Label>
+              <textarea
+                value={caseDeleteReason}
+                onChange={(e) => setCaseDeleteReason(e.target.value)}
+                placeholder="Explain why this case should be deleted..."
+                rows={3}
+                required
+                className="w-full rounded-md border border-border bg-background p-2.5 text-xs text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+            <DialogFooter className="mt-5 flex justify-end gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setShowRequestDeleteDialog(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                variant="destructive"
+                disabled={requestCaseDeletion.isPending || !caseDeleteReason.trim()}
+              >
+                {requestCaseDeletion.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : <Trash2 size={14} className="mr-1" />}
+                Submit Request
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={showReopenConfirm} onOpenChange={setShowReopenConfirm}>
         <AlertDialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">

@@ -29,6 +29,7 @@ export interface EmployeeRecord {
   title?: string;
   status: string;
   phone?: string;
+  secondaryPhone?: string;
   permissions?: UserPermissions;
   createdAt?: string;
   updatedAt?: string;
@@ -41,6 +42,7 @@ export interface EmployeesResponse {
 
 export interface ApprovalItem {
   _id: string;
+  rawApprovalId?: string;
   kind: string;
   title: string;
   context: string;
@@ -116,6 +118,7 @@ export interface UpdateEmployeePayload {
   title?: string;
   status?: string;
   phone?: string;
+  secondaryPhone?: string;
   password?: string;
   permissions?: UserPermissions;
 }
@@ -126,6 +129,7 @@ export interface CreateEmployeePayload {
   role?: string | undefined;
   title?: string | undefined;
   phone?: string | undefined;
+  secondaryPhone?: string | undefined;
   password?: string | undefined;
 }
 
@@ -249,7 +253,7 @@ export function useResetEmployeePassword() {
 }
 
 export function useUpdateProfile() {
-  return useMutation<{ user: EmployeeRecord }, Error, { name?: string; phone?: string; title?: string }>({
+  return useMutation<{ user: EmployeeRecord }, Error, { name?: string; phone?: string; secondaryPhone?: string; title?: string }>({
     mutationFn: (data) => api.patch("/auth/me", data),
   });
 }
@@ -272,6 +276,34 @@ export function useApprovals(options?: { enabled?: boolean }) {
     queryFn: () => api.get("/admin/approvals"),
     refetchInterval: 30_000, // refresh every 30s for pending approvals
     enabled: options?.enabled ?? true,
+  });
+}
+
+export function useApproveRequest() {
+  const qc = useQueryClient();
+  return useMutation<{ success: boolean; message?: string }, Error, { id: string; decisionRemark: string }>({
+    mutationFn: ({ id, decisionRemark }) =>
+      api.post(`/approvals/${id}/approve`, { decisionRemark }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: adminKeys.approvals });
+      qc.invalidateQueries({ queryKey: ["cases"] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["documents"] });
+    },
+  });
+}
+
+export function useRejectRequest() {
+  const qc = useQueryClient();
+  return useMutation<{ success: boolean; message?: string }, Error, { id: string; decisionRemark: string }>({
+    mutationFn: ({ id, decisionRemark }) =>
+      api.post(`/approvals/${id}/reject`, { decisionRemark }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: adminKeys.approvals });
+      qc.invalidateQueries({ queryKey: ["cases"] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["documents"] });
+    },
   });
 }
 

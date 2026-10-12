@@ -5,10 +5,19 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { StatusPill } from "@/components/common/StatusPill";
 import { Button } from "@/components/ui/button";
 import { useQueryClient } from "@tanstack/react-query";
-import { useApprovals, adminKeys, type ApprovalItem } from "@/services/admin";
+import { useApprovals, useApproveRequest, useRejectRequest, adminKeys, type ApprovalItem } from "@/services/admin";
 import { useUpdateDocument, useReviewAccessRequest } from "@/services/documents";
 import { useReviewCaseAccessRequest } from "@/services/cases";
 import { useUpdateTask } from "@/services/tasks";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_admin/admin/approvals")({
@@ -101,19 +110,30 @@ function ApprovalsPage() {
   const reviewCaseAccessRequest = useReviewCaseAccessRequest();
   const updateTask = useUpdateTask();
 
+  const approveRequest = useApproveRequest();
+  const rejectRequest = useRejectRequest();
+  const [decisionModalItem, setDecisionModalItem] = useState<ApprovalItem | null>(null);
+  const [decisionAction, setDecisionAction] = useState<"approved" | "rejected" | null>(null);
+  const [decisionRemark, setDecisionRemark] = useState("");
+
   const visible = approvals.filter((a) => matchesFilter(a, filter));
 
-  const run = (a: ApprovalItem, action: "approved" | "rejected") => {
-    // Prevent multiple clicks immediately
-    if (processingIds.has(a._id)) return;
+  const handleConfirmDecision = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!decisionModalItem || !decisionAction) return;
+    const remark = decisionRemark.trim();
+    if (!remark) {
+      toast.error("A non-empty decision remark is mandatory.");
+      return;
+    }
 
+    const a = decisionModalItem;
+    const action = decisionAction;
     setProcessingIds((prev) => new Set(prev).add(a._id));
     setErrorMsg(null);
 
     const toastId = `approval-${a._id}`;
     toast.loading(action === "approved" ? "Approving request…" : "Rejecting request…", { id: toastId });
-
-    const target = parseTarget(a);
 
     const onSettled = () => {
       qc.invalidateQueries({ queryKey: adminKeys.approvals });
@@ -122,53 +142,60 @@ function ApprovalsPage() {
         next.delete(a._id);
         return next;
       });
+      setDecisionModalItem(null);
+      setDecisionAction(null);
+      setDecisionRemark("");
     };
 
     const onSuccess = () => {
       toast.success(action === "approved" ? "Request approved successfully!" : "Request rejected.", { id: toastId });
+      onSettled();
     };
 
-    const onError = () => {
-      const msg = `Could not ${action === "approved" ? "approve" : "reject"} this request. Please try again.`;
+    const onError = (err?: any) => {
+      const msg = err?.response?.data?.message || err?.message || `Could not ${action === "approved" ? "approve" : "reject"} this request.`;
       setErrorMsg(msg);
       toast.error(msg, { id: toastId });
+      onSettled();
     };
+
+    const rawId = a.rawApprovalId || (a._id.startsWith("approval_req_") ? a._id.replace(/^approval_req_/, "") : null);
+
+    if (rawId) {
+      try {
+        if (action === "approved") {
+          await approveRequest.mutateAsync({ id: rawId, decisionRemark: remark });
+        } else {
+          await rejectRequest.mutateAsync({ id: rawId, decisionRemark: remark });
+        }
+        onSuccess();
+      } catch (err) {
+        onError(err);
+      }
+      return;
+    }
+
+    const target = parseTarget(a);
 
     if (target.taskId) {
       updateTask.mutate(
         { id: target.taskId, data: { status: action === "approved" ? "completed" : "in_progress" } },
-        {
-          onSuccess,
-          onError,
-          onSettled,
-        },
+        { onSuccess, onError, onSettled },
       );
     } else if (target.caseId && target.requestId) {
       reviewCaseAccessRequest.mutate(
         { caseId: target.caseId, requestId: target.requestId, status: action },
-        {
-          onSuccess,
-          onError,
-          onSettled,
-        },
+        { onSuccess, onError, onSettled },
       );
     } else if (target.requestId) {
       reviewAccessRequest.mutate(
         { docId: target.docId!, requestId: target.requestId, status: action },
-        {
-          onSuccess,
-          onError,
-          onSettled,
-        },
+        { onSuccess, onError, onSettled },
       );
     } else {
       updateDocument.mutate(
         { id: target.docId!, data: { state: action === "approved" ? "Approved" : "Rejected" } },
-        {
-          onSuccess,
-          onError,
-          onSettled,
-        },
+        { onSuccess, onError, onSettled },
       );
     }
   };
@@ -272,7 +299,11 @@ function ApprovalsPage() {
                         variant="outline"
                         size="sm"
                         className="rounded-sm"
-                        onClick={() => run(a, "rejected")}
+                        onClick={() => {
+                          setDecisionModalItem(a);
+                          setDecisionAction("rejected");
+                          setDecisionRemark("");
+                        }}
                         disabled={busy}
                       >
                         <X size={15} strokeWidth={1.75} />
@@ -281,7 +312,11 @@ function ApprovalsPage() {
                       <Button
                         size="sm"
                         className="gradient-primary rounded-sm text-primary-foreground"
-                        onClick={() => run(a, "approved")}
+                        onClick={() => {
+                          setDecisionModalItem(a);
+                          setDecisionAction("approved");
+                          setDecisionRemark("");
+                        }}
                         disabled={busy}
                       >
                         {busy ? <Loader2 size={15} strokeWidth={1.75} className="animate-spin" /> : <Check size={15} strokeWidth={1.75} />}
@@ -295,6 +330,83 @@ function ApprovalsPage() {
           )}
         </div>
       )}
+
+      {/* Mandatory Decision Remark Modal */}
+      <Dialog
+        open={Boolean(decisionModalItem && decisionAction)}
+        onOpenChange={(open) => !open && setDecisionModalItem(null)}
+      >
+        <DialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-title font-semibold text-foreground flex items-center gap-2">
+              {decisionAction === "approved" ? (
+                <>
+                  <Check size={18} className="text-emerald-500" />
+                  Approve Request
+                </>
+              ) : (
+                <>
+                  <X size={18} className="text-destructive" />
+                  Reject Request
+                </>
+              )}
+            </DialogTitle>
+            <DialogDescription className="text-helper text-muted-foreground mt-1">
+              {decisionModalItem ? `${decisionModalItem.kind}: "${decisionModalItem.title}"` : ""}
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleConfirmDecision} className="mt-4 space-y-4">
+            <div className="space-y-1.5">
+              <Label className="text-helper font-medium">
+                Decision Remark <span className="text-destructive">*</span>
+              </Label>
+              <textarea
+                value={decisionRemark}
+                onChange={(e) => setDecisionRemark(e.target.value)}
+                placeholder={
+                  decisionAction === "approved"
+                    ? "Enter required remark confirming this approval..."
+                    : "Enter required remark explaining the rejection..."
+                }
+                rows={3}
+                required
+                className="w-full rounded-md border border-border bg-background p-2.5 text-xs text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                A non-empty remark is mandatory for all approval and rejection decisions.
+              </p>
+            </div>
+
+            <DialogFooter className="mt-5 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setDecisionModalItem(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                variant={decisionAction === "approved" ? "default" : "destructive"}
+                className={decisionAction === "approved" ? "gradient-primary text-primary-foreground font-semibold" : ""}
+                disabled={!decisionRemark.trim() || approveRequest.isPending || rejectRequest.isPending}
+              >
+                {approveRequest.isPending || rejectRequest.isPending ? (
+                  <Loader2 size={14} className="animate-spin mr-1" />
+                ) : decisionAction === "approved" ? (
+                  <Check size={14} className="mr-1" />
+                ) : (
+                  <X size={14} className="mr-1" />
+                )}
+                Confirm {decisionAction === "approved" ? "Approval" : "Rejection"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

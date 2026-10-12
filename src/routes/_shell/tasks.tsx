@@ -62,9 +62,11 @@ function formatDeadline(iso: string | null): string {
   if (!iso) return "No deadline";
   const d = new Date(iso);
   const now = new Date();
-  const diffMs = d.getTime() - now.getTime();
-  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-  if (diffDays < 0) return `${Math.abs(diffDays)} day(s) ago`;
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const targetDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.round((targetDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays < -1) return `${Math.abs(diffDays)} day(s) ago`;
+  if (diffDays === -1) return "Yesterday";
   if (diffDays === 0) return "Today";
   if (diffDays === 1) return "Tomorrow";
   return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });

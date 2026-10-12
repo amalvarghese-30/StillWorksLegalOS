@@ -108,6 +108,8 @@ function EditEmployeeDialogInner({ employee, onClose }: { employee: EmployeeReco
   const [title, setTitle] = useState(employee.title ?? "");
   const [phone, setPhone] = useState(employee.phone ?? "");
   const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [secondaryPhone, setSecondaryPhone] = useState(employee.secondaryPhone ?? "");
+  const [secondaryPhoneError, setSecondaryPhoneError] = useState<string | null>(null);
   const [status, setStatus] = useState(employee.status ?? "offline");
   const [permissions, setPermissions] = useState<UserPermissions>({
     ...DEFAULT_PERMISSIONS,
@@ -140,6 +142,8 @@ function EditEmployeeDialogInner({ employee, onClose }: { employee: EmployeeReco
     setTitle(employee.title ?? "");
     setPhone(employee.phone ?? "");
     setPhoneError(null);
+    setSecondaryPhone(employee.secondaryPhone ?? "");
+    setSecondaryPhoneError(null);
     setStatus(employee.status ?? "offline");
     setPermissions({
       ...DEFAULT_PERMISSIONS,
@@ -194,6 +198,16 @@ function EditEmployeeDialogInner({ employee, onClose }: { employee: EmployeeReco
     }
     setPhoneError(null);
 
+    if (secondaryPhone.trim()) {
+      const spCheck = validatePhone(secondaryPhone);
+      if (!spCheck.valid) {
+        setSecondaryPhoneError(spCheck.error ?? "Invalid secondary phone number");
+        toast.error(spCheck.error ?? "Invalid secondary phone number");
+        return;
+      }
+    }
+    setSecondaryPhoneError(null);
+
     updateEmployee.mutate(
       {
         id: employee._id,
@@ -203,6 +217,7 @@ function EditEmployeeDialogInner({ employee, onClose }: { employee: EmployeeReco
           role,
           title: title.trim(),
           phone: phone.trim(),
+          secondaryPhone: secondaryPhone.trim(),
           status,
           permissions,
           ...(newPassword.trim() ? { password: newPassword.trim() } : {}),
@@ -343,20 +358,20 @@ function EditEmployeeDialogInner({ employee, onClose }: { employee: EmployeeReco
               </div>
             </div>
 
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-title" className="text-helper">Title</Label>
+              <Input
+                id="edit-title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Senior Associate"
+                className="h-10 rounded-md"
+              />
+            </div>
+
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label htmlFor="edit-title" className="text-helper">Title</Label>
-                <Input
-                  id="edit-title"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Senior Associate"
-                  className="h-10 rounded-md"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="edit-phone" className="text-helper">Phone</Label>
+                <Label htmlFor="edit-phone" className="text-helper">Primary Phone</Label>
                 <Input
                   id="edit-phone"
                   value={phone}
@@ -370,6 +385,25 @@ function EditEmployeeDialogInner({ employee, onClose }: { employee: EmployeeReco
                 {phoneError && (
                   <p className="text-caption text-destructive flex items-center gap-1 font-medium">
                     <AlertCircle size={12} /> {phoneError}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-secondary-phone" className="text-helper">Secondary Phone <span className="text-muted-foreground font-normal">(Optional)</span></Label>
+                <Input
+                  id="edit-secondary-phone"
+                  value={secondaryPhone}
+                  onChange={(e) => {
+                    setSecondaryPhone(sanitizePhone(e.target.value));
+                    setSecondaryPhoneError(null);
+                  }}
+                  placeholder="Optional 10-digit phone number"
+                  className={`h-10 rounded-md ${secondaryPhoneError ? "border-destructive focus-visible:ring-destructive" : ""}`}
+                />
+                {secondaryPhoneError && (
+                  <p className="text-caption text-destructive flex items-center gap-1 font-medium">
+                    <AlertCircle size={12} /> {secondaryPhoneError}
                   </p>
                 )}
               </div>

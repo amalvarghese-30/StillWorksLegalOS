@@ -46,6 +46,10 @@ export interface CaseRecord {
   description: string;
   category?: string;
   practice: string;
+  mainCategory?: string;
+  subCategory?: string;
+  categoryPath?: string[];
+  countCaseNumber?: string;
   court: string;
   judge?: string;
   status: "Active" | "On Hold" | "Closed" | "Urgent" | "Archived";
@@ -61,6 +65,9 @@ export interface CaseRecord {
   submittedForApprovalAt?: string | null;
   approvedAt?: string | null;
   rejectedAt?: string | null;
+  pendingDeletion?: boolean;
+  deletionReason?: string;
+  updatedBy?: { _id: string; name: string; email?: string } | string;
   assignmentHistory?: AssignmentHistoryEntry[];
   createdBy?: { _id: string; name: string; email?: string };
   notes: CaseNote[];
@@ -104,6 +111,11 @@ export interface CreateCasePayload {
   title: string;
   description?: string;
   category?: string;
+  mainCategory?: string;
+  subCategory?: string;
+  categoryPath?: string[];
+  courtCaseId?: string;
+  countCaseNumber?: string;
   practice?: string;
   court?: string;
   judge?: string;
@@ -294,5 +306,20 @@ export function useReassignCase() {
     },
   });
 }
+
+export function useRequestCaseDeletion() {
+  const qc = useQueryClient();
+  return useMutation<{ case: CaseRecord; message: string }, Error, { caseId: string; reason: string }>({
+    mutationFn: ({ caseId, reason }) =>
+      api.post(`/cases/${caseId}/request-deletion`, { reason }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: caseKeys.detail(vars.caseId) });
+      qc.invalidateQueries({ queryKey: caseKeys.all });
+      qc.invalidateQueries({ queryKey: ["admin", "approvals"] });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
 
 

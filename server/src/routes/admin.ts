@@ -13,6 +13,7 @@ import { DocumentModel } from "../models/Document.js";
 import { FileIntegrity, computeFileHash, type FileIntegrityStatus } from "../models/FileIntegrity.js";
 import { CalendarEvent } from "../models/CalendarEvent.js";
 import { AppSettings } from "../models/AppSettings.js";
+import { ApprovalRequest } from "../models/ApprovalRequest.js";
 import { testConnection, getLocalPath, STORAGE_ROOT } from "../services/storage.js";
 import { requireAuth, requireAdmin, requireAdminOrPermission } from "../middleware/auth.js";
 
@@ -246,7 +247,10 @@ router.patch("/employees/:id", requireAdminOrPermission("employees"), async (req
     }
 
     // Build safe update — admins get the full allowed set, non-admins get restricted set.
-    const allowedForAll = ["name", "title", "status", "phone"];
+    const allowedForAll = [
+      "name", "title", "status", "phone", "secondaryPhone",
+      "soundPreferences", "whatsappNotifications", "telegramNotifications", "telegramChatId"
+    ];
     const allowedForAdmin = [...allowedForAll, "email", "role", "permissions"];
     const allowedFields = isActualAdmin ? allowedForAdmin : allowedForAll;
 
@@ -515,7 +519,7 @@ router.delete("/employees/:id", requireAdminOrPermission("employees"), async (re
 
 router.get("/approvals", requireAdminOrPermission("approvals"), async (req: Request, res: Response) => {
   try {
-    const [pendingDocs, pendingDocAccess, pendingCaseAccess, pendingTasks] = await Promise.all([
+    const [pendingDocs, pendingDocAccess, pendingCaseAccess, pendingTasks, pendingRequests] = await Promise.all([
       DocumentModel.find({ state: "Pending" }).sort({ createdAt: -1 }).lean(),
       DocumentModel.find({ "accessRequests.status": "pending" })
         .select("name accessRequests")
@@ -526,6 +530,11 @@ router.get("/approvals", requireAdminOrPermission("approvals"), async (req: Requ
       Task.find({ status: "pending_approval" })
         .populate("assignedTo", "name email")
         .sort({ updatedAt: -1 })
+        .lean(),
+      ApprovalRequest.find({ status: "pending" })
+        .populate("requesterId", "name email")
+        .populate("targetUserId", "name email")
+        .sort({ createdAt: -1 })
         .lean(),
     ]);
 
@@ -570,6 +579,25 @@ router.get("/approvals", requireAdminOrPermission("approvals"), async (req: Requ
           title: t.title,
           context: `Submitted by ${assignedUser?.name ?? "Assignee"}${checklistSummary}`,
           when: (t as any).updatedAt ?? (t as any).createdAt,
+        };
+      }),
+      ...pendingRequests.map((r: any) => {
+        let kind = "General Approval";
+        if (r.type === "task_reassign") kind = "Task Reassignment";
+        else if (r.type === "task_delete") kind = "Task Deletion";
+        else if (r.type === "case_delete") kind = "Case Deletion";
+        else if (r.type === "case_reassign") kind = "Case Reassignment";
+        else if (r.type === "attachment_retention_purge") kind = "Attachment Purge";
+
+        const requesterName = r.requesterId?.name || "Employee";
+        const targetName = r.targetUserId?.name ? ` to ${r.targetUserId.name}` : "";
+        return {
+          _id: `approval_req_${r._id.toString()}`,
+          rawApprovalId: r._id.toString(),
+          kind,
+          title: `${kind}${targetName}`,
+          context: `Requested by ${requesterName}: "${r.reason || "No remark"}"`,
+          when: r.createdAt,
         };
       }),
     ];

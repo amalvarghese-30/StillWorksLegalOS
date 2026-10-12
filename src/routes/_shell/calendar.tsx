@@ -64,9 +64,17 @@ function CalendarPage() {
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [initialScheduleDate, setInitialScheduleDate] = useState<string | undefined>(undefined);
+  const [eventToEdit, setEventToEdit] = useState<CalendarEvent | null>(null);
 
   const handleScheduleForDate = (dateStr: string) => {
+    setEventToEdit(null);
     setInitialScheduleDate(dateStr);
+    setShowScheduleDialog(true);
+  };
+
+  const handleEditEvent = (event: CalendarEvent) => {
+    setEventToEdit(event);
+    setInitialScheduleDate(undefined);
     setShowScheduleDialog(true);
   };
 
@@ -264,10 +272,19 @@ function CalendarPage() {
                               {e.end && ` - ${new Date(e.end).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`}
                             </p>
                           </div>
-                          <div className="text-right">
+                          <div className="flex items-center gap-2 text-right">
                             <span className={`rounded-pill px-2 py-0.5 text-caption font-medium ${getEventCls(e.type)}`}>
                               {e.type.replace("_", " ")}
                             </span>
+                            <button
+                              type="button"
+                              onClick={() => handleEditEvent(e)}
+                              className="rounded p-1 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                              title="Edit / Reschedule event"
+                              aria-label="Edit / Reschedule event"
+                            >
+                              <Pencil size={13} />
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -332,8 +349,10 @@ function CalendarPage() {
           onClose={() => {
             setShowScheduleDialog(false);
             setInitialScheduleDate(undefined);
+            setEventToEdit(null);
           }}
           initialDate={initialScheduleDate}
+          eventToEdit={eventToEdit}
         />
       )}
 
@@ -343,6 +362,7 @@ function CalendarPage() {
         dateStr={selectedDate || ""}
         events={selectedDateEvents}
         onScheduleEvent={handleScheduleForDate}
+        onEditEvent={handleEditEvent}
       />
     </div>
   );
