@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from "express";
+import mongoose from "mongoose";
 import { Case } from "../models/Case.js";
 import { Client } from "../models/Client.js";
 import { Task } from "../models/Task.js";
@@ -43,28 +44,31 @@ export async function canAccessCase(
   const c = await Case.findById(caseId).select("assignedTo createdBy accessRequests").lean();
   if (!c) return false;
 
-  if (
-    c.assignedTo?.toString() === userId ||
-    c.createdBy?.toString() === userId
-  ) {
+  const assignedStr = c.assignedTo ? ((c.assignedTo as any)._id || c.assignedTo).toString() : null;
+  const createdStr = c.createdBy ? ((c.createdBy as any)._id || c.createdBy).toString() : null;
+
+  // 1. Directly assigned staff
+  if (assignedStr && assignedStr === userId) {
     return true;
   }
 
-  // Explicit case access grant
+  // 2. Explicit approved case access grant
   if (c.accessRequests && Array.isArray(c.accessRequests)) {
     const hasGrant = (c.accessRequests as any[]).some(
-      (ar) => ar.userId?.toString() === userId && ar.status === "approved"
+      (ar) => ((ar.userId as any)?._id || ar.userId)?.toString() === userId && ar.status === "approved"
     );
     if (hasGrant) return true;
   }
 
-  // Also accessible if user has a task assigned in this case
-  const hasTask = await Task.exists({
-    caseId,
-    assignedTo: userId,
-    isDeleted: { $ne: true },
-  });
-  if (hasTask) return true;
+  // 3. If case is assigned to another advocate, access is denied (even if current user was creator)
+  if (assignedStr && assignedStr !== userId) {
+    return false;
+  }
+
+  // 4. If case is unassigned, original creator can access
+  if (createdStr === userId) {
+    return true;
+  }
 
   return false;
 }
@@ -139,9 +143,17 @@ export async function canAccessTask(
     .lean();
   if (!task) return false;
 
-  // Direct assignment or creator
-  if (task.assignedTo?.toString() === userId) return true;
-  if (task.createdBy?.toString() === userId) return true;
+  const assignedStr = task.assignedTo ? ((task.assignedTo as any)._id || task.assignedTo).toString() : null;
+  const createdStr = task.createdBy ? ((task.createdBy as any)._id || task.createdBy).toString() : null;
+
+  // 1. Direct assignment
+  if (assignedStr && assignedStr === userId) return true;
+
+  // 2. If assigned to someone else, this employee cannot access it
+  if (assignedStr && assignedStr !== userId) return false;
+
+  // 3. If unassigned, creator can access
+  if (createdStr === userId) return true;
 
   return false;
 }
@@ -320,18 +332,36 @@ export function requireResourceAccess(
 export async function getAccessibleCaseIds(userId: string, userRole: string): Promise<string[]> {
   if (userRole === "admin") return [];
 
-  const taskCaseIds = await Task.find({
-    assignedTo: userId,
-    caseId: { $exists: true, $ne: null },
-    isDeleted: { $ne: true },
-  }).distinct("caseId");
+  const uid = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
 
   const cases = await Case.find({
     $or: [
+      // 1. Directly assigned to user
+      { assignedTo: uid },
       { assignedTo: userId },
-      { createdBy: userId },
-      { accessRequests: { $elemMatch: { userId, status: "approved" } } },
-      ...(taskCaseIds.length > 0 ? [{ _id: { $in: taskCaseIds } }] : []),
+      // 2. Created by user AND not assigned to anyone else
+      {
+        $and: [
+          { $or: [{ createdBy: uid }, { createdBy: userId }] },
+          {
+            $or: [
+              { assignedTo: { $exists: false } },
+              { assignedTo: null },
+              { assignedTo: uid },
+              { assignedTo: userId },
+            ],
+          },
+        ],
+      },
+      // 3. Approved explicit access request
+      {
+        accessRequests: {
+          $elemMatch: {
+            $or: [{ userId: uid }, { userId }],
+            status: "approved",
+          },
+        },
+      },
     ],
     isDeleted: { $ne: true },
   })

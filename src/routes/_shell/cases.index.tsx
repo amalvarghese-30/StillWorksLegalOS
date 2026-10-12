@@ -200,18 +200,34 @@ function CasesPage() {
     queryClient.invalidateQueries({ queryKey: caseKeys.all });
   });
 
-  const rawCases = data?.cases ?? [];
+  const rawCases = useMemo(() => {
+    const list = data?.cases ?? [];
+    if (isAdmin) return list;
+    return list.filter((c) => {
+      const assignedId = (c.assignedTo as any)?._id || (c.assignedTo as any);
+      if (assignedId && String(assignedId) !== String(user?._id)) {
+        return false;
+      }
+      return true;
+    });
+  }, [data?.cases, isAdmin, user?._id]);
+
   const totalItems = data?.total ?? rawCases.length;
   const totalPages = data?.totalPages ?? 1;
 
-  // Stat counts across all matters from server aggregation
-  const stats = data?.stats ?? {
-    total: totalItems,
-    active: rawCases.filter((c) => c.status === "Active").length,
-    urgent: rawCases.filter((c) => c.status === "Urgent").length,
-    onHold: rawCases.filter((c) => c.status === "On Hold").length,
-    closed: rawCases.filter((c) => c.status === "Closed").length,
-  };
+  // Stat counts across all matters from server aggregation with fallback
+  const stats = useMemo(() => {
+    if (data?.stats && (data.stats.total > 0 || rawCases.length === 0)) {
+      return data.stats;
+    }
+    return {
+      total: rawCases.length,
+      active: rawCases.filter((c) => c.status === "Active").length,
+      urgent: rawCases.filter((c) => c.status === "Urgent").length,
+      onHold: rawCases.filter((c) => c.status === "On Hold").length,
+      closed: rawCases.filter((c) => c.status === "Closed").length,
+    };
+  }, [data?.stats, rawCases]);
 
   const filteredCases = rawCases;
 

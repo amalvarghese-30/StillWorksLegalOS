@@ -279,7 +279,17 @@ function TasksPage() {
     }
   });
 
-  const allTasks = data?.tasks ?? [];
+  const rawTasks = data?.tasks ?? [];
+  const allTasks = useMemo(() => {
+    if (isAdmin) return rawTasks;
+    return rawTasks.filter((t) => {
+      const assignedId = typeof t.assignedTo === "object" && t.assignedTo ? (t.assignedTo as any)._id : t.assignedTo;
+      if (assignedId && String(assignedId) !== String(user?._id)) {
+        return false;
+      }
+      return true;
+    });
+  }, [rawTasks, isAdmin, user?._id]);
 
   // Deep linking: auto-open task dialog if taskId matches URL param
   useEffect(() => {

@@ -100,7 +100,16 @@ function Dashboard() {
   const { data: tasksData, isLoading: tasksLoading, isError: tasksError, refetch: refetchTasks } = useTasks({ limit: "50" });
 
   const hearings: CalendarEvent[] = (eventsData?.events ?? []).filter((e) => e.type === "hearing");
-  const cases = casesData?.cases ?? [];
+  const rawCases = casesData?.cases ?? [];
+  const cases = isAdmin
+    ? rawCases
+    : rawCases.filter((c) => {
+        const assignedId = (c.assignedTo as any)?._id || (c.assignedTo as any);
+        if (assignedId && String(assignedId) !== String(user?._id)) {
+          return false;
+        }
+        return true;
+      });
   const documents = docsData?.documents ?? [];
   const approvals = approvalsData?.approvals ?? [];
   const activity = auditData?.logs ?? [];
@@ -130,11 +139,14 @@ function Dashboard() {
     if (isAdmin) {
       return isUrgentOrHigh || isOverdue || (isAssignedToMe && isDueToday);
     } else {
-      if (isAssignedToMe || isCreatedByMe) {
+      if (assignedId && !isAssignedToMe) {
+        return false;
+      }
+      if (isAssignedToMe) {
         return isUrgentOrHigh || isOverdue || isDueToday;
       }
-      if (!assignedId && isUrgentOrHigh) {
-        return true;
+      if (!assignedId && (isCreatedByMe || isUrgentOrHigh)) {
+        return isUrgentOrHigh || isOverdue || isDueToday;
       }
       return false;
     }

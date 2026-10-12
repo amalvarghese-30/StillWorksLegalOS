@@ -72,8 +72,11 @@ router.get("/", async (req: Request, res: Response) => {
         });
         return;
       }
-      filter["_id"] = { $in: accessibleCaseIds };
-      baseAccessibleFilter["_id"] = { $in: accessibleCaseIds };
+      const objectIdList = accessibleCaseIds
+        .filter((id) => mongoose.Types.ObjectId.isValid(id))
+        .map((id) => new mongoose.Types.ObjectId(id));
+      filter["_id"] = { $in: objectIdList };
+      baseAccessibleFilter["_id"] = { $in: objectIdList };
     }
 
     // Status filter: single or comma-separated

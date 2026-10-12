@@ -344,12 +344,27 @@ router.get("/", async (req: Request, res: Response) => {
       });
     }
 
-    // Non-admins only see tasks assigned to them or created by them
+    // Non-admins only see tasks assigned to them, or unassigned tasks created by them
     if (req.user!.role !== "admin") {
+      const uid = req.userId;
+      const uObjectId = Types.ObjectId.isValid(uid!) ? new Types.ObjectId(uid) : uid;
       andConditions.push({
         $or: [
-          { assignedTo: req.userId },
-          { createdBy: req.userId },
+          { assignedTo: uid },
+          { assignedTo: uObjectId },
+          {
+            $and: [
+              { $or: [{ createdBy: uid }, { createdBy: uObjectId }] },
+              {
+                $or: [
+                  { assignedTo: { $exists: false } },
+                  { assignedTo: null },
+                  { assignedTo: uid },
+                  { assignedTo: uObjectId },
+                ],
+              },
+            ],
+          },
         ],
       });
     }
