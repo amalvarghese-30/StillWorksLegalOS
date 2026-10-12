@@ -31,6 +31,7 @@ import { User } from "./models/User.js";
 import { getJwtSecret } from "./middleware/auth.js";
 import { NotificationScheduler } from "./services/notificationScheduler.js";
 import { startReminderScheduler } from "./services/reminderScheduler.js";
+import { seedCategories } from "./scripts/seedCategories.js";
 import rateLimit from "express-rate-limit";
 
 // ---------------------------------------------------------------------------
@@ -705,6 +706,19 @@ io.on("connection", (socket) => {
 async function start() {
   try {
     await connectDB(MONGODB_URI);
+    // Ensure categories from the master Excel taxonomy are seeded if database is empty
+    try {
+      const { Category } = await import("./models/Category.js");
+      const catCount = await Category.countDocuments();
+      if (catCount === 0) {
+        console.log("[server] Seeding master category taxonomy into database...");
+        await seedCategories();
+        console.log("[server] Master category taxonomy seeded successfully.");
+      }
+    } catch (seedErr) {
+      console.error("[server] Warning: Category auto-seeding encountered an issue:", seedErr);
+    }
+
     httpServer.listen(PORT, "0.0.0.0", () => {
       console.log(`[server] StillWorks LegalOS API running on http://localhost:${PORT}`);
       console.log(`[server] CORS origins: ${ALLOWED_ORIGINS.join(", ")}`);

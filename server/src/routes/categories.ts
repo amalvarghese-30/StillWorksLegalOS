@@ -43,9 +43,22 @@ router.get("/", async (req: Request, res: Response) => {
  */
 router.get("/tree", async (_req: Request, res: Response) => {
   try {
-    const all = await Category.find({ isActive: true })
+    let all = await Category.find({ isActive: true })
       .sort({ level: 1, displayOrder: 1, name: 1 })
       .lean();
+
+    // Auto-seed from master Excel taxonomy if empty so production database always has categories populated
+    if (all.length === 0) {
+      try {
+        console.log("[categories] Category collection empty, auto-seeding from master taxonomy...");
+        await seedCategories();
+        all = await Category.find({ isActive: true })
+          .sort({ level: 1, displayOrder: 1, name: 1 })
+          .lean();
+      } catch (seedErr) {
+        console.error("[categories] Auto-seed failed:", seedErr);
+      }
+    }
 
     // Build multi-level parent-child hierarchy (level 1 -> level 2 -> level 3)
     const childrenByParent = new Map<string, any[]>();
