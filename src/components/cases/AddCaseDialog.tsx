@@ -18,7 +18,7 @@ import { Label } from "@/components/ui/label";
 import { useCreateCase, type CaseRecord } from "@/services/cases";
 import { useClients } from "@/services/clients";
 import { useTaskOptions, type ChecklistItem } from "@/services/tasks";
-import { useCategoryTree } from "@/services/categories";
+import { useCategoryTree, useCategories } from "@/services/categories";
 import { DiscardConfirmationDialog } from "@/components/ui/discard-confirmation-dialog";
 import {
   Dialog,
@@ -113,6 +113,7 @@ export function AddCaseDialog({
 
   const { data: clientsData } = useClients({ limit: "100" });
   const { data: taskOptions } = useTaskOptions();
+  const { data: categories = [] } = useCategories();
   const { data: categoryTree = [], isLoading: isCategoriesLoading, isError: isCategoriesError } = useCategoryTree();
 
   const selectedParent = categoryTree.find((c) => c.name === form.mainCategory);

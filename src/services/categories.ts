@@ -29,17 +29,19 @@ export const BASELINE_CATEGORIES: string[] = [
 export async function fetchCategories(): Promise<string[]> {
   try {
     const res = await api.get<{ categories: string[] }>("/categories");
-    if (Array.isArray(res.data?.categories) && res.data.categories.length > 0) {
+    const catList = res?.categories;
+    if (Array.isArray(catList) && catList.length > 0) {
       // Merge baseline with fetched categories, deduplicating
-      const set = new Set([...BASELINE_CATEGORIES, ...res.data.categories]);
+      const set = new Set([...BASELINE_CATEGORIES, ...catList]);
       return Array.from(set);
     }
   } catch {
     // If dedicated /categories fails, try /tasks/options
     try {
       const taskOptRes = await api.get<{ categories: string[] }>("/tasks/options");
-      if (Array.isArray(taskOptRes.data?.categories) && taskOptRes.data.categories.length > 0) {
-        const set = new Set([...BASELINE_CATEGORIES, ...taskOptRes.data.categories]);
+      const catList = taskOptRes?.categories;
+      if (Array.isArray(catList) && catList.length > 0) {
+        const set = new Set([...BASELINE_CATEGORIES, ...catList]);
         return Array.from(set);
       }
     } catch {
@@ -219,8 +221,8 @@ export const BASELINE_CATEGORY_TREE: CategoryNode[] = [
 export async function fetchCategoryTree(): Promise<CategoryNode[]> {
   try {
     const res = await api.get<{ tree: CategoryNode[] }>("/categories/tree");
-    if (Array.isArray(res.data?.tree) && res.data.tree.length > 0) {
-      return res.data.tree;
+    if (Array.isArray(res?.tree) && res.tree.length > 0) {
+      return res.tree;
     }
   } catch (err) {
     console.error("Failed to fetch category tree, falling back to master baseline:", err);
