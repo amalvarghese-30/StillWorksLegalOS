@@ -141,8 +141,10 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingText, setEditingText] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showAdminDeleteModal, setShowAdminDeleteModal] = useState(false);
   const [showRequestDeleteModal, setShowRequestDeleteModal] = useState(false);
   const [deleteRequestReason, setDeleteRequestReason] = useState("");
+  const [isDuplicating, setIsDuplicating] = useState(false);
   const [newRemarkText, setNewRemarkText] = useState("");
   const [auditTab, setAuditTab] = useState<"assignment" | "edits">("assignment");
 
@@ -178,9 +180,18 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
   const predefinedAgents = optionsData?.agents ?? [];
 
   const allStaffMembers = useMemo(() => {
-    if (optionsData?.staff && optionsData.staff.length > 0) return optionsData.staff;
-    if (employees && employees.length > 0) return employees;
-    return [];
+    const map = new Map<string, any>();
+    if (Array.isArray(optionsData?.staff)) {
+      for (const s of optionsData.staff) {
+        if (s?._id) map.set(s._id, s);
+      }
+    }
+    if (Array.isArray(employees)) {
+      for (const e of employees) {
+        if (e?._id) map.set(e._id, { ...map.get(e._id), ...e });
+      }
+    }
+    return Array.from(map.values());
   }, [optionsData?.staff, employees]);
 
   const availableCategories = useMemo(() => {
@@ -242,6 +253,42 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const [newSubItemText, setNewSubItemText] = useState<{ [itemId: string]: string }>({});
   const [expandedItems, setExpandedItems] = useState<{ [itemId: string]: boolean }>({});
+
+  const handleOpenForwardModal = () => {
+    setTimeout(() => {
+      setTargetUserId("");
+      setActionNote("");
+      setShowForwardModal(true);
+    }, 80);
+  };
+
+  const handleOpenReassignModal = () => {
+    setTimeout(() => {
+      setTargetUserId("");
+      setActionNote("");
+      setShowReassignModal(true);
+    }, 80);
+  };
+
+  const handleOpenRequestDeleteModal = () => {
+    setTimeout(() => {
+      setDeleteRequestReason("");
+      setShowRequestDeleteModal(true);
+    }, 80);
+  };
+
+  const handleOpenAdminDeleteModal = () => {
+    setTimeout(() => {
+      setShowAdminDeleteModal(true);
+    }, 80);
+  };
+
+  const handleOpenRejectModal = () => {
+    setTimeout(() => {
+      setRejectReason("");
+      setShowRejectModal(true);
+    }, 80);
+  };
 
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
   const [rescheduleDateTime, setRescheduleDateTime] = useState("");
@@ -850,6 +897,8 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
   };
 
   const handleDuplicateTask = async () => {
+    if (isDuplicating) return;
+    setIsDuplicating(true);
     try {
       const duplicatePayload: CreateTaskPayload = {
         title: `${activeTask.title} (Copy)`,
@@ -857,9 +906,17 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
         category: activeTask.category,
         priority: activeTask.priority,
         agent: activeTask.agent,
-        checklist: (activeTask.checklist || []).map((c) => ({ text: c.text, done: false })),
+        checklist: (activeTask.checklist || []).map((c) => ({
+          text: c.text,
+          done: false,
+          subItems: (c.subItems || []).map((s) => ({ text: s.text, done: false })),
+        })),
         caseId: activeTask.caseId && typeof activeTask.caseId === "object" ? (activeTask.caseId as any)._id : activeTask.caseId || null,
         clientId: activeTask.clientId && typeof activeTask.clientId === "object" ? (activeTask.clientId as any)._id : activeTask.clientId || null,
+        mainCategory: activeTask.mainCategory,
+        subCategory: activeTask.subCategory,
+        categoryPath: activeTask.categoryPath,
+        customCategory: activeTask.customCategory,
       };
       if (activeTask.deadline) {
         duplicatePayload.deadline = activeTask.deadline;
@@ -880,6 +937,8 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
     } catch (err) {
       console.error("Failed to duplicate task:", err);
       toast.error(err instanceof Error ? err.message : "Failed to duplicate task");
+    } finally {
+      setIsDuplicating(false);
     }
   };
 
@@ -938,20 +997,51 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
     }
   };
 
+  const isAnySubModalOpen =
+    showForwardModal ||
+    showReassignModal ||
+    showRequestDeleteModal ||
+    showAdminDeleteModal ||
+    showRejectModal ||
+    showDiscardConfirm ||
+    showRescheduleModal ||
+    showDeleteConfirm;
+
   return (
     <>
       <Dialog
         open={open}
         onOpenChange={(val) => {
-          if (!val) handleAttemptClose();
+          if (!val && !isAnySubModalOpen) handleAttemptClose();
         }}
       >
         <DialogContent
           onInteractOutside={(e) => {
+            if (isAnySubModalOpen) {
+              e.preventDefault();
+              return;
+            }
+            const target = e.target as HTMLElement | null;
+            if (
+              target?.closest('[data-radix-popper-content-wrapper]') ||
+              target?.closest('[role="menu"]') ||
+              target?.closest('[role="menuitem"]') ||
+              target?.closest('[role="dialog"]') ||
+              target?.closest('[data-radix-dropdown-menu-content]') ||
+              target?.closest('[data-sonner-toaster]') ||
+              target?.closest('.toaster')
+            ) {
+              e.preventDefault();
+              return;
+            }
             e.preventDefault();
             handleAttemptClose();
           }}
           onEscapeKeyDown={(e) => {
+            if (isAnySubModalOpen) {
+              e.preventDefault();
+              return;
+            }
             e.preventDefault();
             handleAttemptClose();
           }}
@@ -1091,8 +1181,9 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                         )}
                         {isAdmin && activeTask.status === "pending_approval" && (
                           <DropdownMenuItem
-                            className="text-xs text-amber-600 dark:text-amber-400"
-                            onClick={() => handleSetStatus("in_progress")}
+                            className="text-xs text-amber-600 dark:text-amber-400 cursor-pointer"
+                            onSelect={handleOpenRejectModal}
+                            onClick={handleOpenRejectModal}
                           >
                             Request Changes
                           </DropdownMenuItem>
@@ -1100,18 +1191,31 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                       </DropdownMenuSubContent>
                     </DropdownMenuSub>
 
-                    <DropdownMenuItem className="text-xs" onClick={() => setShowForwardModal(true)}>
+                    <DropdownMenuItem
+                      className="text-xs cursor-pointer"
+                      onSelect={handleOpenForwardModal}
+                      onClick={handleOpenForwardModal}
+                    >
                       <Share2 size={14} className="mr-2" />
                       Forward Task
                     </DropdownMenuItem>
 
-                    <DropdownMenuItem className="text-xs" onClick={() => setShowReassignModal(true)}>
+                    <DropdownMenuItem
+                      className="text-xs cursor-pointer"
+                      onSelect={handleOpenReassignModal}
+                      onClick={handleOpenReassignModal}
+                    >
                       <UserCheck size={14} className="mr-2" />
-                      {isAdmin ? "Reassign Task" : "Request Reassignment"}
+                      Reassign Task
                     </DropdownMenuItem>
 
-                    <DropdownMenuItem className="text-xs" onClick={handleDuplicateTask}>
-                      <Copy size={14} className="mr-2" />
+                    <DropdownMenuItem
+                      className="text-xs cursor-pointer"
+                      disabled={isDuplicating}
+                      onSelect={() => setTimeout(() => handleDuplicateTask(), 80)}
+                      onClick={() => setTimeout(() => handleDuplicateTask(), 80)}
+                    >
+                      {isDuplicating ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Copy size={14} className="mr-2" />}
                       Duplicate Task
                     </DropdownMenuItem>
 
@@ -1119,12 +1223,9 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                       <>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
-                          className="text-xs text-destructive focus:text-destructive"
-                          onClick={() => {
-                            if (window.confirm(`Are you sure you want to permanently delete task "${activeTask.title || task.title}"? This action cannot be undone.`)) {
-                              handleDeleteTask();
-                            }
-                          }}
+                          className="text-xs text-destructive focus:text-destructive cursor-pointer"
+                          onSelect={handleOpenAdminDeleteModal}
+                          onClick={handleOpenAdminDeleteModal}
                         >
                           <Trash2 size={14} className="mr-2" />
                           Delete Task
@@ -1134,8 +1235,9 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                       <>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
-                          className="text-xs text-destructive focus:text-destructive"
-                          onClick={() => setShowRequestDeleteModal(true)}
+                          className="text-xs text-destructive focus:text-destructive cursor-pointer"
+                          onSelect={handleOpenRequestDeleteModal}
+                          onClick={handleOpenRequestDeleteModal}
                         >
                           <Trash2 size={14} className="mr-2" />
                           Request Task Deletion
@@ -2815,7 +2917,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                           variant="outline"
                           size="sm"
                           disabled={updateTask.isPending}
-                          onClick={() => handleSetStatus("in_progress")}
+                          onClick={handleOpenRejectModal}
                           className="rounded-md"
                         >
                           Request Changes
@@ -2876,7 +2978,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
 
       {/* Forward Task Dialog */}
       <Dialog open={showForwardModal} onOpenChange={setShowForwardModal}>
-        <DialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
+        <DialogContent className="z-[70] rounded-xl border border-border bg-card p-6 shadow-lift max-w-md" overlayClassName="z-[65]">
           <DialogHeader>
             <DialogTitle className="text-title font-semibold text-foreground flex items-center gap-2">
               <Share2 size={18} /> Forward Task
@@ -2917,9 +3019,9 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                 required
               >
                 <option value="">Select team member...</option>
-                {employees.map((emp) => (
+                {allStaffMembers.map((emp: any) => (
                   <option key={emp._id} value={emp._id}>
-                    {emp.name} ({emp.title || emp.role})
+                    {emp.name} {emp.title ? `(${emp.title})` : emp.role ? `(${emp.role})` : ""}
                   </option>
                 ))}
               </select>
@@ -2953,15 +3055,13 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
 
       {/* Reassign Task Dialog */}
       <Dialog open={showReassignModal} onOpenChange={setShowReassignModal}>
-        <DialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
+        <DialogContent className="z-[70] rounded-xl border border-border bg-card p-6 shadow-lift max-w-md" overlayClassName="z-[65]">
           <DialogHeader>
             <DialogTitle className="text-title font-semibold text-foreground flex items-center gap-2">
-              <UserCheck size={18} /> {isAdmin ? "Reassign Task" : "Request Task Reassignment"}
+              <UserCheck size={18} /> Reassign Task
             </DialogTitle>
             <DialogDescription className="text-helper text-muted-foreground mt-1">
-              {isAdmin
-                ? `Reassign task "${task.title}" to another employee.`
-                : `Submit a request to reassign task "${task.title}" for administrator approval.`}
+              Reassign task &ldquo;{task.title}&rdquo; to another team member.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -2972,32 +3072,39 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                 return;
               }
               try {
-                if (isAdmin) {
-                  await reassignTask.mutateAsync({
-                    taskId: task._id,
-                    toUserId: targetUserId,
-                    note: actionNote.trim() || undefined,
-                  });
-                  toast.success("Task reassigned successfully");
-                } else {
-                  await requestTaskAssignment.mutateAsync({
-                    taskId: task._id,
-                    targetUserId,
-                    reason: actionNote.trim() || "Staff reassignment request",
-                  });
-                  toast.success("Reassignment request submitted for admin approval");
-                }
+                await reassignTask.mutateAsync({
+                  taskId: task._id,
+                  toUserId: targetUserId,
+                  note: actionNote.trim() || undefined,
+                });
+                toast.success("Task reassigned successfully");
                 setShowReassignModal(false);
                 setTargetUserId("");
                 setActionNote("");
               } catch (err: any) {
-                toast.error(err?.response?.data?.message || err?.message || "Failed to process task reassignment");
+                if (err?.status === 403 || err?.response?.status === 403) {
+                  try {
+                    await requestTaskAssignment.mutateAsync({
+                      taskId: task._id,
+                      targetUserId,
+                      reason: actionNote.trim() || "Staff reassignment request",
+                    });
+                    toast.success("Reassignment request submitted for admin approval");
+                    setShowReassignModal(false);
+                    setTargetUserId("");
+                    setActionNote("");
+                  } catch (innerErr: any) {
+                    toast.error(innerErr?.response?.data?.message || "Failed to process task reassignment");
+                  }
+                } else {
+                  toast.error(err?.response?.data?.message || err?.message || "Failed to process task reassignment");
+                }
               }
             }}
             className="mt-4 space-y-4"
           >
             <div className="space-y-1.5">
-              <Label className="text-helper">{isAdmin ? "New Assignee" : "Proposed Assignee"}</Label>
+              <Label className="text-helper">New Assignee</Label>
               <select
                 value={targetUserId}
                 onChange={(e) => setTargetUserId(e.target.value)}
@@ -3005,7 +3112,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                 required
               >
                 <option value="">Select team member...</option>
-                {(employees.length > 0 ? employees : (optionsData?.staff ?? [])).map((emp: any) => (
+                {allStaffMembers.map((emp: any) => (
                   <option key={emp._id} value={emp._id}>
                     {emp.name} {emp.title ? `(${emp.title})` : emp.role ? `(${emp.role})` : ""}
                   </option>
@@ -3013,13 +3120,12 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
               </select>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-helper">{isAdmin ? "Reassignment Note (Optional)" : "Reason for Reassignment"}</Label>
+              <Label className="text-helper">Reassignment Note (Optional)</Label>
               <Input
                 value={actionNote}
                 onChange={(e) => setActionNote(e.target.value)}
                 placeholder="Reason or instructions..."
                 className="h-10 rounded-md"
-                required={!isAdmin}
               />
             </div>
             <DialogFooter className="mt-5 flex justify-end gap-2">
@@ -3037,16 +3143,48 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                 ) : (
                   <UserCheck size={14} className="mr-1" />
                 )}
-                {isAdmin ? "Reassign Task" : "Submit Request"}
+                Reassign Task
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
+      {/* Admin Delete Task Confirmation Dialog */}
+      <Dialog open={showAdminDeleteModal} onOpenChange={setShowAdminDeleteModal}>
+        <DialogContent className="z-[70] rounded-xl border border-destructive/40 bg-card p-6 shadow-lift max-w-md" overlayClassName="z-[65]">
+          <DialogHeader>
+            <DialogTitle className="text-title font-semibold text-destructive flex items-center gap-2">
+              <Trash2 size={18} /> Delete Task Permanently
+            </DialogTitle>
+            <DialogDescription className="text-helper text-muted-foreground mt-1">
+              Are you sure you want to permanently delete task &ldquo;{activeTask.title || task.title}&rdquo;? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-5 flex justify-end gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => setShowAdminDeleteModal(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              disabled={deleteTask.isPending}
+              onClick={async () => {
+                await handleDeleteTask();
+                setShowAdminDeleteModal(false);
+              }}
+            >
+              {deleteTask.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : <Trash2 size={14} className="mr-1" />}
+              Delete Task
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Request Task Deletion Dialog (for non-admins) */}
       <Dialog open={showRequestDeleteModal} onOpenChange={setShowRequestDeleteModal}>
-        <DialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
+        <DialogContent className="z-[70] rounded-xl border border-border bg-card p-6 shadow-lift max-w-md" overlayClassName="z-[65]">
           <DialogHeader>
             <DialogTitle className="text-title font-semibold text-destructive flex items-center gap-2">
               <Trash2 size={18} /> Request Task Deletion
@@ -3108,7 +3246,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
 
       {/* Reject Task / Request Changes Dialog */}
       <Dialog open={showRejectModal} onOpenChange={setShowRejectModal}>
-        <DialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
+        <DialogContent className="z-[70] rounded-xl border border-border bg-card p-6 shadow-lift max-w-md" overlayClassName="z-[65]">
           <DialogHeader>
             <DialogTitle className="text-title font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-2">
               <Clock size={18} /> Request Changes

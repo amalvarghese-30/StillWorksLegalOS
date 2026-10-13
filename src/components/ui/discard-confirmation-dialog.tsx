@@ -27,7 +27,7 @@ export const DiscardConfirmationDialog: React.FC<DiscardConfirmationDialogProps>
 }) => {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="max-w-md">
+      <AlertDialogContent className="z-[70] max-w-md" overlayClassName="z-[65]">
         <AlertDialogHeader>
           <AlertDialogTitle className="text-base font-semibold text-foreground">
             {title}
