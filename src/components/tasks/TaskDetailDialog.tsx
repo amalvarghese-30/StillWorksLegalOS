@@ -29,6 +29,9 @@ import {
   CheckCheck,
   MessageSquare,
   Send,
+  History,
+  Activity,
+  ArrowRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,11 +77,13 @@ import {
   useAddSubItem,
   useToggleSubItem,
   useDeleteSubItem,
+  useTaskAuditLogs,
   taskKeys,
   type TaskRecord,
   type ChecklistItem,
   type ChecklistSubItem,
   type CreateTaskPayload,
+  type TaskAuditLog,
 } from "@/services/tasks";
 import { useCategoryTree } from "@/services/categories";
 import { useCases } from "@/services/cases";
@@ -110,6 +115,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
   useSocketEvent<{ task?: TaskRecord; taskId?: string }>("task:updated", (payload) => {
     if (payload?.taskId === activeTask._id || payload?.task?._id === activeTask._id) {
       queryClient.invalidateQueries({ queryKey: taskKeys.detail(activeTask._id) });
+      queryClient.invalidateQueries({ queryKey: ["task-audit-logs", activeTask._id] });
     }
   });
 
@@ -138,6 +144,10 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
   const [showRequestDeleteModal, setShowRequestDeleteModal] = useState(false);
   const [deleteRequestReason, setDeleteRequestReason] = useState("");
   const [newRemarkText, setNewRemarkText] = useState("");
+  const [auditTab, setAuditTab] = useState<"assignment" | "edits">("assignment");
+
+  const { data: auditLogsData, isLoading: isLoadingAuditLogs } = useTaskAuditLogs(activeTask._id);
+  const auditLogs = auditLogsData?.logs ?? [];
 
   const { data: categoryTree = [] } = useCategoryTree();
   const selectedParent = categoryTree.find((c) => c.name === mainCategory);
@@ -166,6 +176,12 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
 
   const { data: optionsData } = useTaskOptions();
   const predefinedAgents = optionsData?.agents ?? [];
+
+  const allStaffMembers = useMemo(() => {
+    if (optionsData?.staff && optionsData.staff.length > 0) return optionsData.staff;
+    if (employees && employees.length > 0) return employees;
+    return [];
+  }, [optionsData?.staff, employees]);
 
   const availableCategories = useMemo(() => {
     const list = [...(optionsData?.categories ?? [
@@ -1307,33 +1323,19 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="task-assignee" className="text-helper font-medium">Assignee</Label>
-                  {isAdmin ? (
-                    <select
-                      id="task-assignee"
-                      value={assignedTo}
-                      onChange={(e) => setAssignedTo(e.target.value)}
-                      className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                    >
-                      <option value="">Unassigned</option>
-                      {(employees.length > 0 ? employees : (optionsData?.staff ?? [])).map((emp: any) => (
-                        <option key={emp._id} value={emp._id}>
-                          {emp.name} {emp.title ? `(${emp.title})` : emp.role ? `(${emp.role})` : ""}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <div>
-                      <Input
-                        id="task-assignee"
-                        value={activeTask.assignedTo?.name || "Unassigned"}
-                        disabled
-                        className="h-10 rounded-md bg-muted text-muted-foreground cursor-not-allowed"
-                      />
-                      <p className="text-[11px] text-muted-foreground mt-1">
-                        Staff cannot reassign tasks directly. Use &ldquo;Request Reassignment&rdquo; to submit an assignment change.
-                      </p>
-                    </div>
-                  )}
+                  <select
+                    id="task-assignee"
+                    value={assignedTo}
+                    onChange={(e) => setAssignedTo(e.target.value)}
+                    className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="">Unassigned</option>
+                    {allStaffMembers.map((emp: any) => (
+                      <option key={emp._id} value={emp._id}>
+                        {emp.name} {emp.title ? `(${emp.title})` : emp.role ? `(${emp.role})` : ""}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="space-y-1.5">
@@ -1616,17 +1618,16 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                     <span>Approved: <strong className="text-foreground">{formatSafeDateTime(activeTask.approvedAt)}</strong></span>
                   </div>
                 )}
-                {activeTask.updatedBy && (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <User size={15} />
-                    <span>
-                      Last Edited By:{" "}
-                      <strong className="text-foreground">
-                        {typeof activeTask.updatedBy === "object" ? activeTask.updatedBy?.name : activeTask.updatedBy}
-                      </strong>
-                    </span>
-                  </div>
-                )}
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <User size={15} />
+                  <span>
+                    Last Edited By:{" "}
+                    <strong className="text-foreground">
+                      {typeof activeTask.updatedBy === "object" ? activeTask.updatedBy?.name : (activeTask.updatedBy || (typeof activeTask.createdBy === "object" ? activeTask.createdBy?.name : "Staff"))}
+                    </strong>
+                    {" "}({formatSafeDateTime(activeTask.updatedAt || activeTask.createdAt)})
+                  </span>
+                </div>
               </div>
 
               {/* Local Folder / File Path */}
@@ -1648,27 +1649,149 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                 </div>
               )}
 
-              {/* Assignment Audit History */}
-              {activeTask.assignmentHistory && activeTask.assignmentHistory.length > 0 && (
-                <div className="rounded-lg border border-border/70 bg-card p-3.5 space-y-2">
-                  <h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                    <UserCheck size={13} /> Assignment History & Audit Trail
-                  </h5>
-                  <div className="divide-y divide-border/50 max-h-36 overflow-y-auto pr-1">
-                    {activeTask.assignmentHistory.slice().reverse().map((h, i) => (
-                      <div key={i} className="py-2 first:pt-1 text-xs">
-                        <p className="font-medium text-foreground">
-                          {h.action ? h.action.toUpperCase() : "ASSIGNED"}: {typeof h.fromUser === "object" ? h.fromUser?.name : "—"} → {typeof h.toUser === "object" ? h.toUser?.name : "—"}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">
-                          By {typeof h.assignedBy === "object" ? h.assignedBy?.name : "Admin"} • {formatSafeDateTime(h.timestamp)}
-                        </p>
-                        {h.note && <p className="text-[11px] text-muted-foreground italic mt-0.5">"{h.note}"</p>}
-                      </div>
-                    ))}
+              {/* Task History, Reassignment & Audit Log */}
+              <div className="rounded-xl border border-border/80 bg-card p-4 space-y-3.5 shadow-xs">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <span className="grid size-7 place-items-center rounded-md bg-primary/10 text-primary">
+                      <History size={15} />
+                    </span>
+                    <div>
+                      <h4 className="text-sm font-semibold text-foreground">Task History & Audit Trail</h4>
+                      <p className="text-[11px] text-muted-foreground">
+                        Last edited by <span className="font-medium text-foreground">{typeof activeTask.updatedBy === "object" ? activeTask.updatedBy?.name : (activeTask.updatedBy || (typeof activeTask.createdBy === "object" ? activeTask.createdBy?.name : "Staff"))}</span> • {formatSafeDateTime(activeTask.updatedAt || activeTask.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Tabs / Switcher */}
+                  <div className="flex items-center bg-muted/60 p-0.5 rounded-lg border border-border/60 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setAuditTab("assignment")}
+                      className={`px-3 py-1 rounded-md font-medium transition-colors flex items-center gap-1.5 ${
+                        auditTab === "assignment"
+                          ? "bg-background text-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <UserCheck size={13} />
+                      Assignment History
+                      <span className="ml-1 px-1.5 py-0.2 text-[10px] rounded-full bg-muted font-mono">
+                        {activeTask.assignmentHistory?.length || 1}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAuditTab("edits")}
+                      className={`px-3 py-1 rounded-md font-medium transition-colors flex items-center gap-1.5 ${
+                        auditTab === "edits"
+                          ? "bg-background text-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Activity size={13} />
+                      Edit Log
+                      <span className="ml-1 px-1.5 py-0.2 text-[10px] rounded-full bg-muted font-mono">
+                        {auditLogs.length}
+                      </span>
+                    </button>
                   </div>
                 </div>
-              )}
+
+                {auditTab === "assignment" ? (
+                  /* Reassignment & Assignment History View */
+                  <div className="space-y-2">
+                    <div className="divide-y divide-border/50 max-h-52 overflow-y-auto pr-1">
+                      {activeTask.assignmentHistory && activeTask.assignmentHistory.length > 0 ? (
+                        activeTask.assignmentHistory.slice().reverse().map((h, i) => (
+                          <div key={i} className="py-2.5 first:pt-1 text-xs">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider bg-primary/10 text-primary">
+                                {h.action || "ASSIGNED"}
+                              </span>
+                              <span className="text-[11px] text-muted-foreground">
+                                {formatSafeDateTime(h.timestamp)}
+                              </span>
+                            </div>
+                            <div className="mt-1 flex items-center gap-1.5 font-medium text-foreground text-xs">
+                              <span className="text-muted-foreground">{typeof h.fromUser === "object" ? h.fromUser?.name : "Initial"}</span>
+                              <ArrowRight size={12} className="text-muted-foreground shrink-0" />
+                              <span className="text-foreground font-semibold">{typeof h.toUser === "object" ? h.toUser?.name : "Staff"}</span>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground mt-0.5">
+                              Assigned by <strong className="text-foreground/90">{typeof h.assignedBy === "object" ? h.assignedBy?.name : "Staff Member"}</strong>
+                              {h.note && <span className="italic ml-1.5">&mdash; &ldquo;{h.note}&rdquo;</span>}
+                            </p>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="py-2.5 text-xs">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider bg-primary/10 text-primary">
+                              ASSIGNED
+                            </span>
+                            <span className="text-[11px] text-muted-foreground">
+                              {formatSafeDateTime(activeTask.assignedAt || activeTask.createdAt)}
+                            </span>
+                          </div>
+                          <div className="mt-1 flex items-center gap-1.5 font-medium text-foreground text-xs">
+                            <span className="text-muted-foreground">Created</span>
+                            <ArrowRight size={12} className="text-muted-foreground shrink-0" />
+                            <span className="text-foreground font-semibold">{activeTask.assignedTo?.name || "Unassigned"}</span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            Assigned by <strong className="text-foreground/90">{typeof activeTask.assignedBy === "object" ? activeTask.assignedBy?.name : (activeTask.assignedBy || (typeof activeTask.createdBy === "object" ? activeTask.createdBy?.name : "Creator"))}</strong>
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  /* Edit & Change Audit Log View */
+                  <div className="space-y-2">
+                    {isLoadingAuditLogs ? (
+                      <div className="py-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                        <Loader2 size={15} className="animate-spin text-primary" />
+                        Loading edit logs...
+                      </div>
+                    ) : auditLogs.length > 0 ? (
+                      <div className="divide-y divide-border/50 max-h-52 overflow-y-auto pr-1">
+                        {auditLogs.map((log) => (
+                          <div key={log._id} className="py-2.5 first:pt-1 text-xs">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-semibold text-foreground text-xs flex items-center gap-1.5">
+                                <span className="size-1.5 rounded-full bg-primary" />
+                                {log.userName || "Staff Member"}
+                              </span>
+                              <span className="text-[11px] text-muted-foreground">
+                                {formatSafeDateTime(log.createdAt)}
+                              </span>
+                            </div>
+                            <p className="text-xs text-foreground/90 mt-1 whitespace-pre-wrap">
+                              {log.details || "Updated task details"}
+                            </p>
+                            {Array.isArray(log.metadata?.diffs) && log.metadata.diffs.length > 0 && (
+                              <ul className="mt-1 space-y-0.5 pl-2 border-l border-border/80">
+                                {log.metadata.diffs.map((diff, idx) => (
+                                  <li key={idx} className="text-[11px] text-muted-foreground">
+                                    • {diff}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="py-5 text-center text-xs text-muted-foreground">
+                        <p>No recent modification logs found for this task.</p>
+                        <p className="text-[11px] mt-0.5">Any edits made to this task will appear here in real time.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* Task Remarks & Notes Thread Section */}
               <div className="rounded-xl border border-border/80 bg-card p-4 space-y-3.5 shadow-soft">

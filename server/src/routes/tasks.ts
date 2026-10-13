@@ -420,8 +420,14 @@ router.get("/", async (req: Request, res: Response) => {
         .skip(skip)
         .limit(limitNum)
         .populate("assignedTo", "name email")
+        .populate("assignedBy", "name email")
+        .populate("createdBy", "name email")
+        .populate("updatedBy", "name email")
         .populate("caseId", "title number")
         .populate("clientId", "name")
+        .populate("assignmentHistory.fromUser", "name email")
+        .populate("assignmentHistory.toUser", "name email")
+        .populate("assignmentHistory.assignedBy", "name email")
         .lean(),
       Task.countDocuments(filter),
       Task.find(baseAccessibleTaskFilter, { status: 1, deadline: 1, isCall: 1, callReminder: 1 }).lean(),
@@ -563,6 +569,7 @@ router.get("/:id", requireResourceAccess("task"), async (req: Request, res: Resp
       .populate("assignedTo", "name email title")
       .populate("assignedBy", "name email title")
       .populate("createdBy", "name email title")
+      .populate("updatedBy", "name email title")
       .populate("caseId", "title number")
       .populate("clientId", "name phone")
       .populate("assignmentHistory.fromUser", "name email")
@@ -575,6 +582,26 @@ router.get("/:id", requireResourceAccess("task"), async (req: Request, res: Resp
     res.json({ task });
   } catch (err) {
     console.error("[tasks] Get error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/tasks/:id/audit-logs (with authorization)
+// ---------------------------------------------------------------------------
+
+router.get("/:id/audit-logs", requireResourceAccess("task"), async (req: Request, res: Response) => {
+  try {
+    const logs = await AuditLog.find({
+      resource: "task",
+      resourceId: req.params["id"],
+    })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean();
+    res.json({ logs });
+  } catch (err: any) {
+    console.error("[tasks] Get task audit logs error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -667,8 +694,15 @@ router.post("/", async (req: Request, res: Response) => {
       }
     }
 
-    // Non-admins can only assign to themselves
-    const finalAssignedTo = req.user!.role === "admin" ? (assignedTo ?? null) : req.userId;
+    // Any employee or admin can assign to anyone or themselves
+    let finalAssignedTo: Types.ObjectId | null = null;
+    if (assignedTo && Types.ObjectId.isValid(assignedTo)) {
+      finalAssignedTo = new Types.ObjectId(assignedTo);
+    } else if (assignedTo === null) {
+      finalAssignedTo = null;
+    } else {
+      finalAssignedTo = new Types.ObjectId(req.userId!);
+    }
     const cleanAgent = sanitizeInputText(agent, 100);
 
     // Initial note / remark / important message
@@ -698,6 +732,18 @@ router.post("/", async (req: Request, res: Response) => {
       }
     }
 
+    const initialAssignmentHistory: any[] = [];
+    if (finalAssignedTo) {
+      initialAssignmentHistory.push({
+        fromUser: null,
+        toUser: finalAssignedTo,
+        assignedBy: new Types.ObjectId(req.userId!),
+        action: "assigned",
+        note: `Initial task assignment by ${req.user?.name || "Staff"}`,
+        timestamp: new Date(),
+      });
+    }
+
     const task = await Task.create({
       title: title.trim(),
       description: description ?? "",
@@ -718,6 +764,7 @@ router.post("/", async (req: Request, res: Response) => {
       localPath: typeof req.body.localPath === "string" ? req.body.localPath.trim() : "",
       assignedBy: finalAssignedTo ? req.userId : null,
       assignedAt: finalAssignedTo ? new Date() : null,
+      assignmentHistory: initialAssignmentHistory,
       callReminder: parsedCallReminder,
       agent: cleanAgent,
       isCall: Boolean(isCall),
@@ -915,15 +962,6 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       updates["clientId"] = resolved.id;
     }
 
-    // Non-admins cannot reassign to others directly
-    if (req.user!.role !== "admin" && updates["assignedTo"] && updates["assignedTo"] !== req.userId) {
-      res.status(403).json({
-        message: "Cannot assign task to another user directly. Please use 'Request Reassignment' to request administrator approval.",
-        code: "ASSIGNMENT_APPROVAL_REQUIRED",
-      });
-      return;
-    }
-
     updates["updatedBy"] = req.userId;
 
     // Validate case access if caseId changed
@@ -1069,10 +1107,10 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       if (updates["assignedTo"]) {
         const histEntry = {
           fromUser: originalTask.assignedTo || null,
-          toUser: updates["assignedTo"],
-          assignedBy: req.userId,
-          action: "assigned",
-          note: "Task assignment updated",
+          toUser: new Types.ObjectId(String(updates["assignedTo"])),
+          assignedBy: new Types.ObjectId(req.userId!),
+          action: originalTask.assignedTo ? "reassigned" : "assigned",
+          note: `Reassigned by ${req.user?.name || "Staff"}`,
           timestamp: now,
         };
         if (!updates["$push"]) updates["$push"] = {};
@@ -1096,6 +1134,14 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       };
     }
 
+    const pushOps = updates["$push"];
+    delete updates["$push"];
+
+    const updateDoc: any = { $set: updates };
+    if (pushOps && Object.keys(pushOps).length > 0) {
+      updateDoc.$push = pushOps;
+    }
+
     let task;
     if (
       req.user!.role === "admin" &&
@@ -1104,12 +1150,13 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
     ) {
       task = await Task.findOneAndUpdate(
         { _id: req.params["id"], status: "pending_approval" },
-        { $set: updates },
+        updateDoc,
         { new: true, runValidators: true }
       )
         .populate("assignedTo", "name email title")
         .populate("assignedBy", "name email title")
         .populate("createdBy", "name email title")
+        .populate("updatedBy", "name email title")
         .populate("caseId", "title number")
         .populate("clientId", "name phone")
         .populate("assignmentHistory.fromUser", "name email")
@@ -1121,6 +1168,7 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
           .populate("assignedTo", "name email title")
           .populate("assignedBy", "name email title")
           .populate("createdBy", "name email title")
+          .populate("updatedBy", "name email title")
           .populate("caseId", "title number")
           .populate("clientId", "name phone")
           .populate("assignmentHistory.fromUser", "name email")
@@ -1134,13 +1182,14 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
         return;
       }
     } else {
-      task = await Task.findByIdAndUpdate(req.params["id"], updates, {
+      task = await Task.findByIdAndUpdate(req.params["id"], updateDoc, {
         new: true,
         runValidators: true,
       })
         .populate("assignedTo", "name email title")
         .populate("assignedBy", "name email title")
         .populate("createdBy", "name email title")
+        .populate("updatedBy", "name email title")
         .populate("caseId", "title number")
         .populate("clientId", "name phone")
         .populate("assignmentHistory.fromUser", "name email")
@@ -2064,11 +2113,6 @@ router.post("/:id/forward", requireResourceAccess("task"), async (req: Request, 
 
 router.post("/:id/reassign", requireResourceAccess("task"), async (req: Request, res: Response) => {
   try {
-    if (req.user?.role !== "admin" && !req.user?.permissions?.tasks) {
-      res.status(403).json({ message: "Only administrators can reassign tasks" });
-      return;
-    }
-
     const { toUserId, note } = req.body;
     if (!toUserId || !Types.ObjectId.isValid(toUserId)) {
       res.status(400).json({ message: "Valid target user ID (toUserId) is required" });
@@ -2093,6 +2137,7 @@ router.post("/:id/reassign", requireResourceAccess("task"), async (req: Request,
     task.assignedTo = new Types.ObjectId(toUserId);
     task.assignedBy = new Types.ObjectId(req.userId!);
     task.assignedAt = now;
+    task.updatedBy = new Types.ObjectId(req.userId!);
 
     task.assignmentHistory.push({
       fromUser: fromUser ? new Types.ObjectId(fromUser.toString()) : null,
@@ -2109,6 +2154,7 @@ router.post("/:id/reassign", requireResourceAccess("task"), async (req: Request,
       .populate("assignedTo", "name email title")
       .populate("assignedBy", "name email title")
       .populate("createdBy", "name email title")
+      .populate("updatedBy", "name email title")
       .populate("caseId", "title number")
       .populate("clientId", "name phone")
       .populate("assignmentHistory.fromUser", "name email")

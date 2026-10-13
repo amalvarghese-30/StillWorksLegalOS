@@ -478,4 +478,30 @@ export function useAddTaskRemark() {
   });
 }
 
+export interface TaskAuditLog {
+  _id: string;
+  userId: string;
+  userName: string;
+  action: string;
+  resource: string;
+  resourceId?: string;
+  resourceName?: string;
+  details?: string;
+  metadata?: {
+    diffs?: string[];
+    [key: string]: any;
+  };
+  createdAt: string;
+}
+
+export function useTaskAuditLogs(taskId?: string | null) {
+  return useQuery<{ logs: TaskAuditLog[] }>({
+    queryKey: ["task-audit-logs", taskId],
+    queryFn: () => api.get<{ logs: TaskAuditLog[] }>(`/tasks/${taskId}/audit-logs`),
+    enabled: Boolean(taskId),
+    staleTime: 5 * 1000,
+  });
+}
+
+
 

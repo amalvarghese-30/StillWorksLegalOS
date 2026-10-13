@@ -149,11 +149,8 @@ export async function canAccessTask(
   // 1. Direct assignment
   if (assignedStr && assignedStr === userId) return true;
 
-  // 2. If assigned to someone else, this employee cannot access it
-  if (assignedStr && assignedStr !== userId) return false;
-
-  // 3. If unassigned, creator can access
-  if (createdStr === userId) return true;
+  // 2. Creator can always access tasks they created
+  if (createdStr && createdStr === userId) return true;
 
   return false;
 }

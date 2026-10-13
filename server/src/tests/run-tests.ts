@@ -2184,13 +2184,13 @@ async function run() {
     assert(p0TaskRes.body.task?.checklist?.[1]?.subItems?.length === 2, "SUITE23-P0-004: Recursive checklist saved nested subItems");
 
     // 3. Priority Zero: Reassignment Authorization & Workflow
-    // Non-admin attempting direct reassignment to another user gets 403
+    // Non-admin can directly assign or reassign task to another user
     const directReassignRes = await request(app)
       .patch(`/api/tasks/${p0TaskRes.body.task._id}`)
       .set("Authorization", `Bearer ${empToken}`)
       .send({ assignedTo: adminUser._id.toString() });
-    assert(directReassignRes.status === 403, "SUITE23-P0-005: Non-admin cannot directly assign task to another user (403)");
-    assert(directReassignRes.body.code === "ASSIGNMENT_APPROVAL_REQUIRED", "SUITE23-P0-006: Direct assignment returns ASSIGNMENT_APPROVAL_REQUIRED code");
+    assert(directReassignRes.status === 200, "SUITE23-P0-005: Non-admin can directly assign task to another user (200)");
+    assert(Boolean(directReassignRes.body.task?.assignmentHistory?.length), "SUITE23-P0-006: Direct assignment logs entry in assignmentHistory");
 
     // Non-admin requests reassignment via request-assignment endpoint
     const reqAssignRes = await request(app)

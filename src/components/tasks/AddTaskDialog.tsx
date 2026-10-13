@@ -756,20 +756,12 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
               </div>
             </div>
 
-            {/* ── Assignee (Role Policy Aligned) ── */}
+            {/* ── Assignee ── */}
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="task-assigned" className="text-helper">Assigned to</Label>
-                {!isAdmin && (
-                  <span className="text-[11px] font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded">
-                    Self-assignment policy active
-                  </span>
-                )}
-              </div>
+              <Label htmlFor="task-assigned" className="text-helper">Assigned to</Label>
               <Select
                 value={form.assignedTo}
                 onValueChange={(val) => update("assignedTo", val)}
-                disabled={!isAdmin}
               >
                 <SelectTrigger id="task-assigned" className="h-11 rounded-md">
                   <SelectValue placeholder="Select staff member" />
@@ -780,18 +772,13 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
                       Self ({user.name})
                     </SelectItem>
                   )}
-                  {isAdmin && staff.map((s) => (
+                  {staff.map((s) => (
                     <SelectItem key={s._id} value={s._id}>
                       {s.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {!isAdmin && (
-                <p className="text-xs text-muted-foreground">
-                  Advocates can assign tasks to themselves upon creation. To assign or reassign this task to a colleague, submit a reassignment request after creating the task.
-                </p>
-              )}
             </div>
 
             {/* ── Local Folder / File Path ── */}
