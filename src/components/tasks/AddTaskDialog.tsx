@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useMemo } from "react";
-import { Plus, Trash2, CheckSquare, PhoneCall, Loader2, ListChecks, AlertCircle, FolderOpen, CornerDownRight, X, Search, Check } from "lucide-react";
+import { Plus, Trash2, CheckSquare, PhoneCall, Loader2, ListChecks, AlertCircle, FolderOpen, CornerDownRight, X, Search, Check, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -46,6 +46,7 @@ interface ChecklistLine {
 interface FormState {
   title: string;
   description: string;
+  initialNote: string;
   mainCategory: string;
   subCategory: string;
   selectedSubCategories: string[];
@@ -66,6 +67,7 @@ interface FormState {
 const EMPTY_FORM: FormState = {
   title: "",
   description: "",
+  initialNote: "",
   mainCategory: "",
   subCategory: "",
   selectedSubCategories: [],
@@ -429,6 +431,7 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
           notes: form.callNotes.trim(),
         },
       }),
+      ...(form.initialNote?.trim() && { remark: form.initialNote.trim() }),
     };
 
     createTask.mutate(payload, {
@@ -513,6 +516,26 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
               {fieldErrors.description && (
                 <p className="text-caption text-destructive font-medium">{fieldErrors.description}</p>
               )}
+            </div>
+
+            {/* ── Important Message / Note / Remark ── */}
+            <div className="space-y-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3.5">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="task-initial-note" className="text-helper font-semibold flex items-center gap-1.5 text-foreground">
+                  <MessageSquare size={14} className="text-amber-500" />
+                  Important Message / Note / Remark (Optional)
+                </Label>
+                <span className="text-[11px] text-muted-foreground">Logged with staff name &amp; date/time</span>
+              </div>
+              <textarea
+                id="task-initial-note"
+                value={form.initialNote}
+                maxLength={5000}
+                onChange={(e) => update("initialNote", e.target.value)}
+                placeholder="Add special instructions, client remarks, or urgent notes for staff members (visible in comment thread)…"
+                rows={3}
+                className="w-full rounded-md border border-border bg-card px-3 py-2 text-helper outline-none transition-colors focus:border-primary resize-none placeholder:text-muted-foreground/70"
+              />
             </div>
 
             {/* ── Category Hierarchy (Excel Master) ── */}

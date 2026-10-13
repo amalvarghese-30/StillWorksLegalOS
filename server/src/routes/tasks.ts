@@ -611,6 +611,33 @@ router.post("/", async (req: Request, res: Response) => {
     const finalAssignedTo = req.user!.role === "admin" ? (assignedTo ?? null) : req.userId;
     const cleanAgent = sanitizeInputText(agent, 100);
 
+    // Initial note / remark / important message
+    const initialNoteText = typeof req.body.remark === "string" ? req.body.remark.trim() : (typeof req.body.note === "string" ? req.body.note.trim() : "");
+    const initialRemarks: any[] = [];
+    if (initialNoteText) {
+      initialRemarks.push({
+        _id: new Types.ObjectId(),
+        text: sanitizeInputText(initialNoteText, 5000),
+        author: req.user?.name || "Staff Member",
+        authorName: req.user?.name || "Staff Member",
+        authorId: new Types.ObjectId(req.userId!),
+        createdAt: new Date(),
+      });
+    } else if (Array.isArray(req.body.remarks)) {
+      for (const r of req.body.remarks) {
+        if (r && typeof r.text === "string" && r.text.trim()) {
+          initialRemarks.push({
+            _id: new Types.ObjectId(),
+            text: sanitizeInputText(r.text.trim(), 5000),
+            author: r.author || r.authorName || req.user?.name || "Staff Member",
+            authorName: r.authorName || r.author || req.user?.name || "Staff Member",
+            authorId: new Types.ObjectId(req.userId!),
+            createdAt: r.createdAt ? new Date(r.createdAt) : new Date(),
+          });
+        }
+      }
+    }
+
     const task = await Task.create({
       title: title.trim(),
       description: description ?? "",
@@ -627,6 +654,7 @@ router.post("/", async (req: Request, res: Response) => {
       caseId: cleanCaseId,
       clientId: cleanClientId,
       checklist: parseChecklistRecursive(checklist),
+      remarks: initialRemarks,
       localPath: typeof req.body.localPath === "string" ? req.body.localPath.trim() : "",
       assignedBy: finalAssignedTo ? req.userId : null,
       assignedAt: finalAssignedTo ? new Date() : null,
@@ -2128,6 +2156,32 @@ router.post("/:id/remarks", requireResourceAccess("task"), async (req: Request, 
     const io = req.app.get("io");
     if (io) {
       io.emit("task:updated", { task: populated });
+    }
+
+    // Notify assignee if someone else added a remark/note
+    const assigneeId = (task.assignedTo as any)?._id?.toString() || task.assignedTo?.toString();
+    if (assigneeId && assigneeId !== req.userId && io) {
+      try {
+        await NotificationService.createNotification(
+          {
+            userId: new Types.ObjectId(assigneeId),
+            type: "COMMENT_MENTION",
+            title: "New Note on Task",
+            message: `${req.user?.name ?? "Staff"} added a note on "${task.title}": "${cleanText.slice(0, 100)}${cleanText.length > 100 ? "…" : ""}"`,
+            relatedId: task._id as any,
+            relatedModel: "Task",
+            actorId: new Types.ObjectId(req.userId!),
+            metadata: {
+              taskId: task._id.toString(),
+              taskTitle: task.title,
+              action: "note_added",
+            },
+          },
+          io
+        );
+      } catch (notifErr) {
+        console.error("[tasks] Failed to send notification for task remark:", notifErr);
+      }
     }
 
     res.status(201).json({ message: "Remark added successfully", remark, task: populated });

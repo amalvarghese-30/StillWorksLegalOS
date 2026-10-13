@@ -41,6 +41,7 @@ export interface TaskRemark {
   id?: string;
   text: string;
   author: string;
+  authorName?: string;
   authorId: mongoose.Types.ObjectId;
   createdAt: Date;
 }
@@ -104,6 +105,7 @@ const TaskRemarkSchema = new Schema<TaskRemark>(
     id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
     text: { type: String, required: true, trim: true },
     author: { type: String, required: true },
+    authorName: { type: String },
     authorId: { type: Schema.Types.ObjectId, ref: "User", required: true },
     createdAt: { type: Date, default: Date.now },
   },

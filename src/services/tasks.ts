@@ -90,7 +90,15 @@ export interface TaskRecord {
   subCategory?: string;
   categoryPath?: string[];
   customCategory?: string;
-  remarks?: Array<{ _id?: string; text: string; authorId?: any; authorName?: string; createdAt: string }>;
+  remarks?: Array<{
+    _id?: string;
+    id?: string;
+    text: string;
+    author?: string;
+    authorName?: string;
+    authorId?: any;
+    createdAt: string;
+  }>;
   pendingReassignment?: boolean;
   pendingDeletion?: boolean;
   deletionReason?: string;
@@ -141,6 +149,8 @@ export interface CreateTaskPayload {
   subCategory?: string | undefined;
   categoryPath?: string[] | undefined;
   customCategory?: string | undefined;
+  remark?: string | undefined;
+  note?: string | undefined;
 }
 
 export type UpdateTaskPayload = Partial<CreateTaskPayload>;
