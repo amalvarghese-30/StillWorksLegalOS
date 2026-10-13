@@ -232,45 +232,7 @@ export function PendingTaskReminderAlerts() {
     }
   };
 
-  if (!currentAlert) {
-    return (
-      <>
-        {selectedTaskForModal && (
-          <TaskDetailDialog
-            open={Boolean(selectedTaskForModal)}
-            onClose={() => setSelectedTaskForModal(null)}
-            task={selectedTaskForModal}
-          />
-        )}
-      </>
-    );
-  }
-
-  const formatDeadlineText = (d?: string | null) => {
-    if (!d) return "No deadline set";
-    try {
-      const date = new Date(d);
-      if (isNaN(date.getTime())) return "Invalid deadline";
-      const isOverdue = date.getTime() < Date.now();
-      return (
-        <span className={isOverdue ? "text-destructive font-semibold" : "text-foreground"}>
-          {date.toLocaleDateString("en-IN", {
-            weekday: "short",
-            day: "numeric",
-            month: "short",
-            year: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-          {isOverdue && " (Overdue)"}
-        </span>
-      );
-    } catch {
-      return "No deadline";
-    }
-  };
-
-  // Mobile swipe-to-dismiss handlers
+  // Mobile swipe-to-dismiss state and handlers (declared unconditionally at top level)
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
   const [swipeOffsetX, setSwipeOffsetX] = useState(0);
@@ -317,6 +279,44 @@ export function PendingTaskReminderAlerts() {
     }
     isHorizontalSwipe.current = null;
   };
+
+  const formatDeadlineText = (d?: string | null) => {
+    if (!d) return "No deadline set";
+    try {
+      const date = new Date(d);
+      if (isNaN(date.getTime())) return "Invalid deadline";
+      const isOverdue = date.getTime() < Date.now();
+      return (
+        <span className={isOverdue ? "text-destructive font-semibold" : "text-foreground"}>
+          {date.toLocaleDateString("en-IN", {
+            weekday: "short",
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+          {isOverdue && " (Overdue)"}
+        </span>
+      );
+    } catch {
+      return "No deadline";
+    }
+  };
+
+  if (!currentAlert) {
+    return (
+      <>
+        {selectedTaskForModal && (
+          <TaskDetailDialog
+            open={Boolean(selectedTaskForModal)}
+            onClose={() => setSelectedTaskForModal(null)}
+            task={selectedTaskForModal}
+          />
+        )}
+      </>
+    );
+  }
 
   return (
     <>
