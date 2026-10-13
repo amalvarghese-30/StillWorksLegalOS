@@ -14,18 +14,12 @@ import { resolveTaskClientName } from "../utils/taskHelpers.js";
 const router = Router();
 router.use(requireAuth);
 
-/**
- * Helper to validate mandatory remark
- */
 function validateRemark(remark: unknown): { valid: boolean; error?: string; clean?: string } {
-  if (typeof remark !== "string" || !remark.trim()) {
-    return { valid: false, error: "A non-empty, trimmed remark is strictly mandatory for all approval decisions." };
+  if (remark === undefined || remark === null || (typeof remark === "string" && !remark.trim())) {
+    return { valid: true, clean: "" };
   }
-  const clean = remark.trim();
-  if (clean.length < 3) {
-    return { valid: false, error: "Decision remark must be at least 3 characters long." };
-  }
-  if (clean.length > 1000) {
+  const clean = typeof remark === "string" ? remark.trim() : "";
+  if (clean && clean.length > 1000) {
     return { valid: false, error: "Decision remark cannot exceed 1000 characters." };
   }
   return { valid: true, clean };
@@ -121,7 +115,7 @@ router.post("/:id/approve", requireAdminOrPermission("approvals"), async (req: R
         toUser: approval.targetUserId!,
         assignedBy: new Types.ObjectId(req.userId!),
         action: approval.type === "task_reassign" ? "reassigned" : "forwarded",
-        note: `Approved by ${adminUser.name}: ${cleanRemark}`,
+        note: cleanRemark ? `Approved by ${adminUser.name}: ${cleanRemark}` : `Approved by ${adminUser.name}`,
         timestamp: now,
       });
 
@@ -137,13 +131,13 @@ router.post("/:id/approve", requireAdminOrPermission("approvals"), async (req: R
           userId: approval.targetUserId!,
           type: "TASK_REASSIGNED",
           title: isUrgent ? "🚨 Urgent Task Reassigned to You" : "Task Reassigned to You (Approved)",
-          message: `${adminUser.name} approved task reassignment to you: "${task.title}" (Client: ${clientName}, Deadline: ${deadlineStr}). Note: ${cleanRemark}`,
+          message: `${adminUser.name} approved task reassignment to you: "${task.title}" (Client: ${clientName}, Deadline: ${deadlineStr}).${cleanRemark ? ` Note: ${cleanRemark}` : ""}`,
           relatedId: task._id,
           relatedModel: "Task",
           actorId: new Types.ObjectId(req.userId!),
           metadata: {
             taskId: task._id.toString(),
-            decisionRemark: cleanRemark,
+            decisionRemark: cleanRemark || undefined,
             clientName,
             priority: task.priority,
             deadline: task.deadline ? new Date(task.deadline).toISOString() : null,
@@ -310,7 +304,7 @@ router.post("/:id/approve", requireAdminOrPermission("approvals"), async (req: R
       resource: "approval" as any,
       resourceId: approval._id.toString(),
       resourceName: `${approval.type} (${approval.entityType})`,
-      details: `${details}. Mandatory remark: "${cleanRemark}"`,
+      details: cleanRemark ? `${details}. Remark: "${cleanRemark}"` : details,
       ip: req.ip,
       userAgent: req.headers["user-agent"],
     });
@@ -381,14 +375,16 @@ router.post("/:id/reject", requireAdminOrPermission("approvals"), async (req: Re
         task.rejectedByName = adminUser.name || "Administrator";
         task.rejectionReason = cleanRemark;
         task.submittedForApprovalAt = null;
-        task.remarks.push({
-          id: new Types.ObjectId().toString(),
-          text: `⚠️ Approval Rejected / Changes Requested: "${cleanRemark}"`,
-          author: adminUser.name || "Administrator",
-          authorName: adminUser.name || "Administrator",
-          authorId: new Types.ObjectId(req.userId!),
-          createdAt: now,
-        });
+        if (cleanRemark) {
+          task.remarks.push({
+            id: new Types.ObjectId().toString(),
+            text: `⚠️ Approval Rejected / Changes Requested: "${cleanRemark}"`,
+            author: adminUser.name || "Administrator",
+            authorName: adminUser.name || "Administrator",
+            authorId: new Types.ObjectId(req.userId!),
+            createdAt: now,
+          });
+        }
         await task.save();
         if (io) io.emit("task:updated", { task });
       }
@@ -400,11 +396,13 @@ router.post("/:id/reject", requireAdminOrPermission("approvals"), async (req: Re
     approval.decisionRemark = cleanRemark;
     await approval.save();
 
-    // Notify requester of rejection with mandatory remark
+    // Notify requester of rejection
     if (approval.requesterId.toString() !== req.userId) {
+      const feedbackSnippet = cleanRemark ? ` Feedback / Remark: "${cleanRemark}"` : "";
+      const reasonSnippet = cleanRemark ? ` Reason: "${cleanRemark}"` : "";
       const msg = taskTitle
-        ? `${adminUser.name} rejected task completion for "${taskTitle}" (Client: ${clientName}, Deadline: ${deadlineStr}). Feedback / Remark: "${cleanRemark}"`
-        : `Your ${approval.type.replace(/_/g, " ")} request was rejected by ${adminUser.name}. Reason: "${cleanRemark}"`;
+        ? `${adminUser.name} rejected task completion for "${taskTitle}" (Client: ${clientName}, Deadline: ${deadlineStr}).${feedbackSnippet}`
+        : `Your ${approval.type.replace(/_/g, " ")} request was rejected by ${adminUser.name}.${reasonSnippet}`;
 
       await NotificationService.createNotification(
         {
@@ -422,8 +420,8 @@ router.post("/:id/reject", requireAdminOrPermission("approvals"), async (req: Re
             clientName,
             deadline: deadlineStr,
             reviewerName: adminUser.name,
-            reason: cleanRemark,
-            decisionRemark: cleanRemark,
+            reason: cleanRemark || undefined,
+            decisionRemark: cleanRemark || undefined,
           },
         },
         io
@@ -437,7 +435,7 @@ router.post("/:id/reject", requireAdminOrPermission("approvals"), async (req: Re
       resource: "approval" as any,
       resourceId: approval._id.toString(),
       resourceName: `${approval.type} (${approval.entityType})`,
-      details: `Request rejected by ${adminUser.name}. Reason: "${cleanRemark}"`,
+      details: cleanRemark ? `Request rejected by ${adminUser.name}. Reason: "${cleanRemark}"` : `Request rejected by ${adminUser.name}`,
       ip: req.ip,
       userAgent: req.headers["user-agent"],
     });

@@ -517,17 +517,16 @@ router.get("/pending-reminders", async (req: Request, res: Response) => {
       ],
     };
 
-    // If non-admin, restrict to tasks assigned to or created by them
-    if (req.user?.role !== "admin") {
-      filter["$and"] = [
-        {
-          $or: [
-            { assignedTo: new Types.ObjectId(req.userId!) },
-            { createdBy: new Types.ObjectId(req.userId!) },
-          ],
-        },
-      ];
-    }
+    // User-wise isolation: Each user (including Admin) receives pending task reminders
+    // strictly for tasks assigned to them, preventing admins and other users from receiving others' reminders.
+    filter["$and"] = [
+      {
+        $or: [
+          { assignedTo: new Types.ObjectId(req.userId!) },
+          { assignedTo: null, createdBy: new Types.ObjectId(req.userId!) },
+        ],
+      },
+    ];
 
     const tasks = await Task.find(filter)
       .populate("assignedTo", "name email title")
@@ -808,8 +807,10 @@ router.post("/", async (req: Request, res: Response) => {
     });
 
     // Create synchronized Reminder documents if callReminder is present
+    // Reminders are strictly for the assigned user(s). Fallback to creator only if unassigned.
     if (task.callReminder && task.callReminder.clientName) {
-      const taskUserIds = (Array.isArray(assignedTo) ? assignedTo : [finalAssignedTo || task.createdBy || req.userId]).filter(Boolean);
+      const explicitAssignees = Array.isArray(assignedTo) ? assignedTo.filter(Boolean) : (finalAssignedTo ? [finalAssignedTo] : []);
+      const taskUserIds = explicitAssignees.length > 0 ? explicitAssignees : [task.createdBy || req.userId].filter(Boolean);
       try {
         await syncCallReminders({
           sourceType: "task",
@@ -1263,8 +1264,8 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       ) {
         if (task.callReminder?.clientName) {
           const isDone = task.status === "completed" || Boolean(task.callReminder?.completed);
-          const rawAssignee = (task.assignedTo as any)?._id || task.assignedTo || task.createdBy || req.userId;
-          const assignedList = (Array.isArray(rawAssignee) ? rawAssignee : [rawAssignee]).filter(Boolean);
+          const rawAssignee = (task.assignedTo as any)?._id || task.assignedTo;
+          const assignedList = (Array.isArray(rawAssignee) ? rawAssignee : (rawAssignee ? [rawAssignee] : [task.createdBy || req.userId])).filter(Boolean);
           try {
             await syncCallReminders({
               sourceType: "task",

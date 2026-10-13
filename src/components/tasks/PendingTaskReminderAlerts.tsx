@@ -106,8 +106,8 @@ export function PendingTaskReminderAlerts() {
       const active = list.filter((item) => {
         const snoozeTime = snoozedUntilRef.current.get(item.taskId);
         if (snoozeTime && snoozeTime > now) return false;
-        // User access isolation: employees only see their assigned tasks
-        if (!isAdmin && item.assignedToId && item.assignedToId !== currentUserId) {
+        // User access isolation: each user (including Admin) only sees reminders for tasks assigned to them
+        if (item.assignedToId && currentUserId && item.assignedToId !== currentUserId) {
           return false;
         }
         return true;
@@ -146,8 +146,8 @@ export function PendingTaskReminderAlerts() {
     const snoozeTime = snoozedUntilRef.current.get(item.taskId);
     if (snoozeTime && snoozeTime > now) return;
 
-    // Check user access
-    if (!isAdmin && item.assignedToId && item.assignedToId !== currentUserId) {
+    // User access isolation: only alert if the task is assigned to the current user
+    if (item.assignedToId && currentUserId && item.assignedToId !== currentUserId) {
       return;
     }
 

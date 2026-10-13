@@ -104,12 +104,12 @@ export class NotificationScheduler {
       const eventId = (hearing._id as Types.ObjectId).toString();
       const startStr = hearing.start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
+      const assignedList = ((hearing.assignedTo as Types.ObjectId[]) || []).map((id) => id.toString());
       const recipientSet = new Set<string>(
-        (hearing.assignedTo as Types.ObjectId[]).map((id) => id.toString()),
+        assignedList.length > 0
+          ? assignedList
+          : (hearing.createdBy ? [(hearing.createdBy as Types.ObjectId).toString()] : [])
       );
-      if (hearing.createdBy) {
-        recipientSet.add((hearing.createdBy as Types.ObjectId).toString());
-      }
 
       for (const recipientIdStr of recipientSet) {
         const dedupeKey = hearingDedupeKey(`${eventId}:${recipientIdStr}`, windowStart);
@@ -319,9 +319,13 @@ export class NotificationScheduler {
         slot,
       };
 
-      // Real-time socket event for immediate frontend reminder popup
-      if (this.io && (this.io as any).emit) {
-        (this.io as any).emit("task:pending-reminder", reminderPayload);
+      // Real-time socket event targeted strictly to the assigned staff member
+      if (assignedToId && this.io) {
+        if (typeof (this.io as any).to === "function") {
+          (this.io as any).to(`user:${assignedToId}`).emit("task:pending-reminder", reminderPayload);
+        } else if (typeof (this.io as any).emit === "function") {
+          (this.io as any).emit("task:pending-reminder", reminderPayload);
+        }
       }
 
       // Persist deduplicated notification for the assigned staff

@@ -2287,11 +2287,11 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                       </div>
 
                       <div className="space-y-1">
-                        <Label className="text-xs font-medium">Reason / Remark</Label>
+                        <Label className="text-xs font-medium">Reason / Remark <span className="text-[11px] font-normal text-muted-foreground">(Optional)</span></Label>
                         <Input
                           value={rescheduleReason}
                           onChange={(e) => setRescheduleReason(e.target.value)}
-                          placeholder="e.g. Person did not pick up call"
+                          placeholder="e.g. Person did not pick up call (optional)"
                           className="text-xs"
                         />
                       </div>

@@ -2161,6 +2161,7 @@ async function run() {
       .send({
         title: "Verify Title Deeds for Jatinder",
         clientId: "JATINDER SINGH - 9869717581",
+        assignedTo: empUser._id.toString(),
         mainCategory: "Registration",
         subCategory: "Rectification Deed",
         category: "Registration",
@@ -2204,19 +2205,12 @@ async function run() {
     const approvalReqId = reqAssignRes.body.approvalRequest?._id;
     assert(Boolean(approvalReqId), "SUITE23-APPR-002: ApprovalRequest ID returned");
 
-    // Admin tries to approve without decision remark (should fail with 400)
+    // Admin approves without decision remark (now permitted: save/update without remarks)
     const emptyRemarkApprove = await request(app)
       .post(`/api/approvals/${approvalReqId}/approve`)
       .set("Authorization", `Bearer ${adminToken}`)
       .send({ decisionRemark: "   " });
-    assert(emptyRemarkApprove.status === 400, "SUITE23-APPR-003: Approval rejected without mandatory decision remark (400)");
-
-    // Admin approves with valid trimmed decision remark
-    const validApprove = await request(app)
-      .post(`/api/approvals/${approvalReqId}/approve`)
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({ decisionRemark: "Approved by Senior Partner for review" });
-    assert(validApprove.status === 200, "SUITE23-APPR-004: Reassignment approved with valid remark (200)");
+    assert(emptyRemarkApprove.status === 200, "SUITE23-APPR-003: Approval succeeds without mandatory decision remark (200)");
 
     // Verify task assignment changed in database
     const updatedTask = await Task.findById(p0TaskRes.body.task._id);

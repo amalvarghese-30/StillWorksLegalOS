@@ -143,10 +143,6 @@ function ApprovalsPage() {
     e.preventDefault();
     if (!decisionModalItem || !decisionAction) return;
     const remark = decisionRemark.trim();
-    if (!remark) {
-      toast.error("A non-empty decision remark is mandatory.");
-      return;
-    }
 
     const a = decisionModalItem;
     const action = decisionAction;
@@ -408,22 +404,21 @@ function ApprovalsPage() {
           <form onSubmit={handleConfirmDecision} className="mt-4 space-y-4">
             <div className="space-y-1.5">
               <Label className="text-helper font-medium">
-                Decision Remark <span className="text-destructive">*</span>
+                Decision Remark <span className="text-xs font-normal text-muted-foreground">(Optional)</span>
               </Label>
               <textarea
                 value={decisionRemark}
                 onChange={(e) => setDecisionRemark(e.target.value)}
                 placeholder={
                   decisionAction === "approved"
-                    ? "Enter required remark confirming this approval..."
-                    : "Enter required remark explaining the rejection..."
+                    ? "Enter optional remark or note confirming this approval (or leave blank)..."
+                    : "Enter optional remark or feedback explaining the rejection (or leave blank)..."
                 }
                 rows={3}
-                required
                 className="w-full rounded-md border border-border bg-background p-2.5 text-xs text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary"
               />
               <p className="text-[11px] text-muted-foreground">
-                A non-empty remark is mandatory for all approval and rejection decisions.
+                Optional note or remark. You can approve or reject with or without entering remarks.
               </p>
             </div>
 
@@ -441,7 +436,7 @@ function ApprovalsPage() {
                 size="sm"
                 variant={decisionAction === "approved" ? "default" : "destructive"}
                 className={decisionAction === "approved" ? "gradient-primary text-primary-foreground font-semibold" : ""}
-                disabled={!decisionRemark.trim() || approveRequest.isPending || rejectRequest.isPending}
+                disabled={approveRequest.isPending || rejectRequest.isPending}
               >
                 {approveRequest.isPending || rejectRequest.isPending ? (
                   <Loader2 size={14} className="animate-spin mr-1" />

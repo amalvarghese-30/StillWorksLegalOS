@@ -236,10 +236,11 @@ export function CallReminderAlerts() {
       for (const t of tasks) {
         if (!t.isCall || t.status === "completed" || t.callReminder?.completed || !t.callReminder?.scheduledAt) continue;
 
-        // User isolation: only notify if current user is the assigned staff or creator
+        // User isolation: strictly notify only the assigned user. Fallback to creator only if unassigned.
         const assignedId = (t.assignedTo as any)?._id?.toString?.() ?? t.assignedTo?.toString?.();
         const createdId = (t.createdBy as any)?._id?.toString?.() ?? t.createdBy?.toString?.();
-        if (currentUserId && assignedId !== currentUserId && createdId !== currentUserId) {
+        const effectiveTargetId = assignedId || createdId;
+        if (currentUserId && effectiveTargetId !== currentUserId) {
           continue;
         }
 
@@ -259,8 +260,16 @@ export function CallReminderAlerts() {
       for (const ev of events) {
         if (ev.type !== "call_reminder" || !ev.start) continue;
 
+        // User isolation for event call reminders: check assignedTo first, fallback to creator
+        const evAssigned = Array.isArray(ev.assignedTo)
+          ? ev.assignedTo.map((a: any) => (a?._id?.toString?.() ?? a?.toString?.())).filter(Boolean)
+          : [];
         const evCreator = (ev.createdBy as any)?._id?.toString?.() ?? ev.createdBy?.toString?.() ?? (ev as any).userId?.toString?.();
-        if (currentUserId && evCreator && evCreator !== currentUserId) {
+        const isTargetUser = evAssigned.length > 0
+          ? (currentUserId ? evAssigned.includes(currentUserId) : true)
+          : (currentUserId && evCreator ? evCreator === currentUserId : true);
+
+        if (!isTargetUser) {
           continue;
         }
 

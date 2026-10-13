@@ -139,7 +139,7 @@ export async function canAccessTask(
   if (userPermissions && userPermissions["tasks"] === false) return false;
 
   const task = await Task.findById(taskId)
-    .select("assignedTo createdBy caseId")
+    .select("assignedTo createdBy caseId assignmentHistory")
     .lean();
   if (!task) return false;
 
@@ -151,6 +151,17 @@ export async function canAccessTask(
 
   // 2. Creator can always access tasks they created
   if (createdStr && createdStr === userId) return true;
+
+  // 3. User involved in task history (forwarded/reassigned from them or by them)
+  if (Array.isArray(task.assignmentHistory)) {
+    const wasInvolved = task.assignmentHistory.some(
+      (h: any) =>
+        (h.fromUser && String(h.fromUser._id || h.fromUser) === userId) ||
+        (h.toUser && String(h.toUser._id || h.toUser) === userId) ||
+        (h.assignedBy && String(h.assignedBy._id || h.assignedBy) === userId)
+    );
+    if (wasInvolved) return true;
+  }
 
   return false;
 }
