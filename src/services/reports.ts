@@ -80,6 +80,44 @@ export interface PerformanceItem {
   total: number;
 }
 
+export interface DailyEmployeeTaskItem {
+  _id: string;
+  title: string;
+  priority: "High" | "Medium" | "Low";
+  status: string;
+  deadline?: string | null;
+  caseId?: { _id: string; title: string; number: string } | null;
+  clientId?: { _id: string; name: string; phone?: string } | null;
+}
+
+export interface EmployeeDailyReport {
+  employee: {
+    _id: string;
+    name: string;
+    email: string;
+    role: string;
+    title?: string;
+    status: string;
+  };
+  metrics: {
+    assignedTodayCount: number;
+    completedTodayCount: number;
+    pendingCount: number;
+    overdueCount: number;
+  };
+  tasks: {
+    assignedToday: DailyEmployeeTaskItem[];
+    completedToday: DailyEmployeeTaskItem[];
+    pending: DailyEmployeeTaskItem[];
+    overdue: DailyEmployeeTaskItem[];
+  };
+}
+
+export interface DailyEmployeeReportResponse {
+  date: string;
+  reports: EmployeeDailyReport[];
+}
+
 export interface MyPerformanceResponse {
   performance: PerformanceItem[];
 }
@@ -97,6 +135,7 @@ export const reportKeys = {
   topClients: ["reports", "topClients"] as const,
   caseStatusBreakdown: ["reports", "caseStatusBreakdown"] as const,
   myPerformance: ["reports", "myPerformance"] as const,
+  dailyEmployee: (date?: string, employeeId?: string) => ["reports", "dailyEmployee", date ?? "", employeeId ?? ""] as const,
 };
 
 // ---------------------------------------------------------------------------
@@ -145,6 +184,23 @@ export function useMyPerformance(enabled = true) {
     queryKey: reportKeys.myPerformance,
     queryFn: () => api.get("/admin/reports/my-performance"),
     enabled,
+  });
+}
+
+export function useDailyEmployeeReport(params?: { date?: string; employeeId?: string }, enabled = true) {
+  const dateStr = params?.date ?? "";
+  const empId = params?.employeeId ?? "";
+  const query = new URLSearchParams();
+  if (dateStr) query.set("date", dateStr);
+  if (empId) query.set("employeeId", empId);
+  const qStr = query.toString();
+  const endpoint = `/admin/reports/daily-employee${qStr ? `?${qStr}` : ""}`;
+
+  return useQuery<DailyEmployeeReportResponse>({
+    queryKey: reportKeys.dailyEmployee(dateStr, empId),
+    queryFn: () => api.get(endpoint),
+    enabled,
+    refetchInterval: 60_000,
   });
 }
 

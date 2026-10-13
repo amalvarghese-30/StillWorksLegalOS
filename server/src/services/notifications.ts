@@ -46,8 +46,7 @@ export class NotificationService {
       if (data.dedupeKey) {
         const existing = await Notification.findOne({ dedupeKey: data.dedupeKey });
         if (existing) {
-          // Optionally, we could update the existing notification, but for now we just skip
-          return null;
+          return existing;
         }
       }
 

@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { Task } from "../models/Task.js";
+import { TaskReminderState } from "../models/TaskReminderState.js";
 import { Reminder } from "../models/Reminder.js";
 import { syncCallReminders, deleteCallReminders } from "../services/reminders.js";
 import { Case } from "../models/Case.js";
@@ -13,6 +14,8 @@ import { ApprovalRequest } from "../models/ApprovalRequest.js";
 import { requireAuth } from "../middleware/auth.js";
 import { canAccessCase, canAccessClient, canAccessTask, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
 import { resolveTaskClientName, resolveTaskAssigneeName } from "../utils/taskHelpers.js";
+import { validateSnoozePayload } from "../utils/snoozeValidation.js";
+import { dispatchRejectionNotifications } from "../services/rejectionNotifications.js";
 
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -535,23 +538,54 @@ router.get("/pending-reminders", async (req: Request, res: Response) => {
       .sort({ deadline: 1, createdAt: 1 })
       .lean();
 
-    const pendingReminders = (tasks || []).map((t: any) => {
-      const startTime = new Date(t.startedAt || t.createdAt || Date.now()).getTime();
-      const pendingHours = Math.max(2, Math.floor((Date.now() - startTime) / (60 * 60 * 1000)));
-      return {
-        taskId: t._id.toString(),
-        taskTitle: t.title,
-        clientName: resolveTaskClientName(t),
-        assignedStaff: resolveTaskAssigneeName(t),
-        assignedToId: t.assignedTo?._id?.toString() || (t.assignedTo ? t.assignedTo.toString() : null),
-        deadline: t.deadline ? new Date(t.deadline).toISOString() : null,
-        priority: t.priority || "Medium",
-        status: t.status,
-        pendingHours,
-      };
-    });
+    const taskIds = (tasks || []).map((t: any) => t._id);
+    const reminderStates = await TaskReminderState.find({
+      userId: new Types.ObjectId(req.userId!),
+      taskId: { $in: taskIds },
+    }).lean();
 
-    res.json({ pendingReminders });
+    const stateMap = new Map<string, any>();
+    for (const rs of reminderStates) {
+      stateMap.set(rs.taskId.toString(), rs);
+    }
+
+    const now = Date.now();
+    const pendingReminders = (tasks || [])
+      .map((t: any) => {
+        const taskIdStr = t._id.toString();
+        const startTime = new Date(t.startedAt || t.createdAt || Date.now()).getTime();
+        const pendingHours = Math.max(2, Math.floor((now - startTime) / (60 * 60 * 1000)));
+        const slot = Math.floor(pendingHours / 2);
+
+        // Check if snoozed or dismissed for current user
+        const state = stateMap.get(taskIdStr);
+        if (state) {
+          if (state.snoozedUntil && new Date(state.snoozedUntil).getTime() > now) {
+            return null; // Suppressed by active snooze
+          }
+          if (state.dismissed) {
+            if (state.dismissedSlot == null || state.dismissedSlot === slot) {
+              return null; // Suppressed by dismissal
+            }
+          }
+        }
+
+        return {
+          taskId: taskIdStr,
+          taskTitle: t.title,
+          clientName: resolveTaskClientName(t),
+          assignedStaff: resolveTaskAssigneeName(t),
+          assignedToId: t.assignedTo?._id?.toString() || (t.assignedTo ? t.assignedTo.toString() : null),
+          deadline: t.deadline ? new Date(t.deadline).toISOString() : null,
+          priority: t.priority || "Medium",
+          status: t.status,
+          pendingHours,
+          slot,
+        };
+      })
+      .filter(Boolean);
+
+    res.json({ pendingReminders, count: pendingReminders.length });
   } catch (err: any) {
     console.error("[tasks] Get pending reminders error:", err);
     res.status(500).json({ message: "Internal server error" });
@@ -1405,35 +1439,26 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       }
     }
 
-    // Notify assignee if admin requested changes (moved from pending_approval back to in_progress/pending)
+    // Notify assignee and creator if admin requested changes (moved from pending_approval back to in_progress/pending)
     if (isRejectionOrChangesRequested) {
       const assigneeTargetId = (task.assignedTo as any)?._id?.toString?.() ?? task.assignedTo?.toString();
-      if (assigneeTargetId && assigneeTargetId !== req.userId && assigneeTargetId !== "[object Object]") {
-        const clientName = resolveTaskClientName(task);
-        const deadlineStr = task.deadline ? new Date(task.deadline).toLocaleDateString() : "No deadline";
-        const reviewerName = req.user?.name ?? "Administrator";
-        const reasonText = cleanRejectionReason || (task as any).rejectionReason || "Please review and revise";
+      const creatorTargetId = (task.createdBy as any)?._id?.toString?.() ?? task.createdBy?.toString();
+      const clientName = resolveTaskClientName(task);
+      const deadlineStr = task.deadline ? new Date(task.deadline).toLocaleDateString() : "No deadline";
+      const reviewerName = req.user?.name ?? "Administrator";
+      const reasonText = cleanRejectionReason || (task as any).rejectionReason || "Please review and revise";
 
-        await NotificationService.createNotification({
-          userId: new Types.ObjectId(assigneeTargetId),
-          type: "TASK_REJECTED",
-          title: "⚠️ Task Changes Requested / Rejected",
-          message: `${reviewerName} requested revisions on task "${task.title}" (Client: ${clientName}, Deadline: ${deadlineStr}). Feedback: "${reasonText}"`,
-          relatedId: task._id,
-          relatedModel: "Task",
-          actorId: new Types.ObjectId(req.userId),
-          metadata: {
-            taskTitle: task.title,
-            taskId: task._id.toString(),
-            clientName,
-            deadline: deadlineStr,
-            reviewerName,
-            reason: reasonText,
-            decisionRemark: reasonText,
-            action: "changes_requested",
-          },
-        }, req.app.get("io"));
-      }
+      await dispatchRejectionNotifications({
+        taskId: task._id,
+        taskTitle: task.title,
+        clientName,
+        deadlineStr,
+        reviewerName,
+        reviewerId: req.userId,
+        reasonText,
+        recipientIds: [assigneeTargetId, creatorTargetId],
+        io: req.app.get("io"),
+      });
     }
 
     const auditDetails = diffs.length > 0 ? diffs.join("; ") : "Task updated";
@@ -2012,20 +2037,26 @@ router.post("/:id/approve", requireResourceAccess("task"), async (req: Request, 
 
 router.post("/:id/reject", requireResourceAccess("task"), async (req: Request, res: Response) => {
   try {
-    if (req.user?.role !== "admin" && !req.user?.permissions?.tasks) {
+    if (req.user?.role !== "admin") {
       res.status(403).json({ message: "Only administrators can reject tasks" });
       return;
     }
 
-    const { reason } = req.body;
+    const { reason, decisionRemark } = req.body;
     const task = await Task.findById(req.params["id"]);
     if (!task) {
       res.status(404).json({ message: "Task not found" });
       return;
     }
 
+    const rawReason = reason || decisionRemark;
+    const reasonClean = typeof rawReason === "string" ? rawReason.trim() : "";
+    if (!reasonClean) {
+      res.status(400).json({ message: "A reason or remark is required when rejecting a task", field: "reason" });
+      return;
+    }
+
     const now = new Date();
-    const reasonClean = typeof reason === "string" ? reason.trim() : "";
     task.status = "in_progress";
     task.completedAt = null;
     task.submittedForApprovalAt = null;
@@ -2063,35 +2094,23 @@ router.post("/:id/reject", requireResourceAccess("task"), async (req: Request, r
 
     // Notify assignee
     const assigneeId = (task.assignedTo as any)?._id?.toString() ?? task.assignedTo?.toString();
-    if (assigneeId && assigneeId !== req.userId) {
-      const clientName = resolveTaskClientName(task);
-      const deadlineStr = task.deadline ? new Date(task.deadline).toLocaleDateString() : "No deadline";
-      const reviewerName = req.user?.name ?? "Administrator";
-      const reasonText = reasonClean || "Please review and revise";
+    const creatorId = (task.createdBy as any)?._id?.toString() ?? task.createdBy?.toString();
+    const clientName = resolveTaskClientName(task);
+    const deadlineStr = task.deadline ? new Date(task.deadline).toLocaleDateString() : "No deadline";
+    const reviewerName = req.user?.name ?? "Administrator";
+    const reasonText = reasonClean || "Please review and revise";
 
-      await NotificationService.createNotification(
-        {
-          userId: new Types.ObjectId(assigneeId),
-          type: "TASK_REJECTED",
-          title: "⚠️ Task Changes Requested / Rejected",
-          message: `${reviewerName} requested revisions on task "${task.title}" (Client: ${clientName}, Deadline: ${deadlineStr}). Feedback: "${reasonText}"`,
-          relatedId: task._id as any,
-          relatedModel: "Task",
-          actorId: new Types.ObjectId(req.userId!),
-          metadata: {
-            taskId: task._id.toString(),
-            taskTitle: task.title,
-            clientName,
-            deadline: deadlineStr,
-            reviewerName,
-            reason: reasonText,
-            decisionRemark: reasonText,
-            action: "rejected",
-          },
-        },
-        io
-      );
-    }
+    await dispatchRejectionNotifications({
+      taskId: task._id,
+      taskTitle: task.title,
+      clientName,
+      deadlineStr,
+      reviewerName,
+      reviewerId: req.userId,
+      reasonText,
+      recipientIds: [assigneeId, creatorId],
+      io,
+    });
 
     await AuditLog.create({
       userId: req.userId,
@@ -2691,5 +2710,109 @@ router.delete("/:id", requireResourceAccess("task"), async (req: Request, res: R
     res.status(500).json({ message: err?.message || "Internal server error" });
   }
 });
+
+// ---------------------------------------------------------------------------
+// POST /api/tasks/:id/reminders/dismiss and /:id/dismiss-reminder
+// ---------------------------------------------------------------------------
+
+async function handleDismissReminder(req: Request, res: Response) {
+  try {
+    const taskId = String(req.params["id"] || req.params["taskId"] || "");
+    if (!taskId || !Types.ObjectId.isValid(taskId)) {
+      res.status(400).json({ message: "Invalid task ID" });
+      return;
+    }
+
+    const task = await Task.findById(taskId);
+    if (!task) {
+      res.status(404).json({ message: "Task not found" });
+      return;
+    }
+
+    const slot = typeof req.body.slot === "number" ? req.body.slot : null;
+
+    const state = await TaskReminderState.findOneAndUpdate(
+      { taskId: task._id, userId: new Types.ObjectId(req.userId!) },
+      {
+        $set: {
+          dismissed: true,
+          dismissedAt: new Date(),
+          dismissedSlot: slot,
+        },
+      },
+      { upsert: true, new: true }
+    );
+
+    res.json({
+      success: true,
+      message: "Reminder dismissed",
+      dismissedAt: state.dismissedAt,
+      slot: state.dismissedSlot,
+    });
+  } catch (err: any) {
+    console.error("[tasks] Dismiss reminder error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+}
+
+router.post("/:id/reminders/dismiss", requireResourceAccess("task"), handleDismissReminder);
+router.post("/:id/dismiss-reminder", requireResourceAccess("task"), handleDismissReminder);
+
+// ---------------------------------------------------------------------------
+// POST /api/tasks/:id/reminders/snooze and /:id/snooze-reminder
+// ---------------------------------------------------------------------------
+
+async function handleSnoozeReminder(req: Request, res: Response) {
+  try {
+    const taskId = String(req.params["id"] || req.params["taskId"] || "");
+    if (!taskId || !Types.ObjectId.isValid(taskId)) {
+      res.status(400).json({ message: "Invalid task ID" });
+      return;
+    }
+
+    const task = await Task.findById(taskId);
+    if (!task) {
+      res.status(404).json({ message: "Task not found" });
+      return;
+    }
+
+    const validation = validateSnoozePayload(req.body);
+    if (!validation.valid) {
+      res.status(400).json({
+        message: validation.error,
+        field: validation.field,
+      });
+      return;
+    }
+
+    const { targetUntil, durationHours } = validation;
+
+    const state = await TaskReminderState.findOneAndUpdate(
+      { taskId: task._id, userId: new Types.ObjectId(req.userId!) },
+      {
+        $set: {
+          snoozedUntil: targetUntil,
+          snoozeDurationHours: durationHours,
+          dismissed: false,
+          dismissedSlot: null,
+        },
+      },
+      { upsert: true, new: true }
+    );
+
+    res.json({
+      success: true,
+      message: `Reminder snoozed until ${targetUntil!.toISOString()}`,
+      snoozedUntil: targetUntil!.toISOString(),
+      durationHours,
+    });
+  } catch (err: any) {
+    console.error("[tasks] Snooze reminder error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+}
+
+router.post("/:id/reminders/snooze", requireResourceAccess("task"), handleSnoozeReminder);
+router.post("/:id/snooze-reminder", requireResourceAccess("task"), handleSnoozeReminder);
 
 export default router;

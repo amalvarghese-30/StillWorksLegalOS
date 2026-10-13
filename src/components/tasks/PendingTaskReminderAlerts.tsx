@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Clock, CheckCircle2, ExternalLink, BellRing, User, UserCheck, Calendar, AlertTriangle, ChevronRight, ChevronLeft, X } from "lucide-react";
+import { Clock, CheckCircle2, ExternalLink, BellRing, User, UserCheck, Calendar, AlertTriangle, ChevronRight, ChevronLeft, X, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -61,51 +61,21 @@ export function PendingTaskReminderAlerts() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedTaskForModal, setSelectedTaskForModal] = useState<TaskRecord | null>(null);
   const [isOpeningTask, setIsOpeningTask] = useState(false);
+  const [actionPending, setActionPending] = useState<"dismiss" | "snooze" | "done" | null>(null);
 
   const updateTask = useUpdateTask();
-  const snoozedUntilRef = useRef<Map<string, number>>(new Map());
-
-  // Load snoozed map from sessionStorage
-  useEffect(() => {
-    try {
-      const stored = sessionStorage.getItem("legalos_pending_snoozed");
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        const map = new Map<string, number>();
-        const now = Date.now();
-        for (const [k, v] of Object.entries(parsed)) {
-          if (typeof v === "number" && v > now) {
-            map.set(k, v);
-          }
-        }
-        snoozedUntilRef.current = map;
-      }
-    } catch {}
-  }, []);
-
-  const saveSnoozed = useCallback(() => {
-    try {
-      const obj: Record<string, number> = {};
-      const now = Date.now();
-      for (const [k, v] of snoozedUntilRef.current.entries()) {
-        if (v > now) obj[k] = v;
-      }
-      sessionStorage.setItem("legalos_pending_snoozed", JSON.stringify(obj));
-    } catch {}
-  }, []);
+  const transientSuppressedRef = useRef<Set<string>>(new Set());
 
   // Fetch pending reminders from server
   const fetchPendingReminders = useCallback(async () => {
     if (!user) return;
     try {
-      const res = await api.get<{ pendingReminders: PendingReminderItem[] }>("/api/tasks/pending-reminders");
-      const list = res.data?.pendingReminders || [];
-      const now = Date.now();
+      const res = await api.get<{ pendingReminders: PendingReminderItem[] }>("/tasks/pending-reminders");
+      const list = res?.pendingReminders || (res as any)?.data?.pendingReminders || [];
 
-      // Filter out snoozed tasks
-      const active = list.filter((item) => {
-        const snoozeTime = snoozedUntilRef.current.get(item.taskId);
-        if (snoozeTime && snoozeTime > now) return false;
+      // Filter out locally suppressed items and enforce user access isolation
+      const active = list.filter((item: PendingReminderItem) => {
+        if (transientSuppressedRef.current.has(item.taskId)) return false;
         // User access isolation: each user (including Admin) only sees reminders for tasks assigned to them
         if (item.assignedToId && currentUserId && item.assignedToId !== currentUserId) {
           return false;
@@ -117,7 +87,7 @@ export function PendingTaskReminderAlerts() {
         setAlerts((prev) => {
           // Merge unique items by taskId
           const existingIds = new Set(prev.map((a) => a.taskId));
-          const newItems = active.filter((a) => !existingIds.has(a.taskId));
+          const newItems = active.filter((a: PendingReminderItem) => !existingIds.has(a.taskId));
           if (newItems.length > 0 && prev.length === 0) {
             playPendingAlertChime();
           }
@@ -141,10 +111,7 @@ export function PendingTaskReminderAlerts() {
     const item = data as PendingReminderItem;
     if (!item?.taskId) return;
 
-    // Check snooze
-    const now = Date.now();
-    const snoozeTime = snoozedUntilRef.current.get(item.taskId);
-    if (snoozeTime && snoozeTime > now) return;
+    if (transientSuppressedRef.current.has(item.taskId)) return;
 
     // User access isolation: only alert if the task is assigned to the current user
     if (item.assignedToId && currentUserId && item.assignedToId !== currentUserId) {
@@ -166,19 +133,39 @@ export function PendingTaskReminderAlerts() {
 
   const currentAlert = alerts[currentIndex] || null;
 
-  const handleSnooze = (hours = 2) => {
-    if (!currentAlert) return;
-    const snoozeUntil = Date.now() + hours * 60 * 60 * 1000;
-    snoozedUntilRef.current.set(currentAlert.taskId, snoozeUntil);
-    saveSnoozed();
+  const handleSnooze = async (hours = 2) => {
+    if (!currentAlert || actionPending) return;
+    const targetAlert = currentAlert;
+    setActionPending("snooze");
 
-    toast.info(`Reminder for "${currentAlert.taskTitle}" snoozed for ${hours} hours.`);
-    removeCurrentAlert();
+    try {
+      await api.post(`/tasks/${targetAlert.taskId}/reminders/snooze`, { hours });
+      transientSuppressedRef.current.add(targetAlert.taskId);
+      removeCurrentAlert();
+      toast.info(`Reminder for "${targetAlert.taskTitle}" snoozed for ${hours} hours.`);
+    } catch (err: any) {
+      console.error("[PendingTaskReminderAlerts] Snooze error:", err);
+      toast.error(err?.message || "Failed to snooze reminder on server. Please try again.");
+    } finally {
+      setActionPending(null);
+    }
   };
 
-  const handleDismiss = () => {
-    if (!currentAlert) return;
-    removeCurrentAlert();
+  const handleDismiss = async () => {
+    if (!currentAlert || actionPending) return;
+    const targetAlert = currentAlert;
+    setActionPending("dismiss");
+
+    try {
+      await api.post(`/tasks/${targetAlert.taskId}/reminders/dismiss`, { slot: targetAlert.slot });
+      transientSuppressedRef.current.add(targetAlert.taskId);
+      removeCurrentAlert();
+    } catch (err: any) {
+      console.error("[PendingTaskReminderAlerts] Dismiss error:", err);
+      toast.error(err?.message || "Failed to dismiss reminder on server. Please try again.");
+    } finally {
+      setActionPending(null);
+    }
   };
 
   const removeCurrentAlert = () => {
@@ -192,31 +179,54 @@ export function PendingTaskReminderAlerts() {
   };
 
   const handleMarkDone = async () => {
-    if (!currentAlert) return;
+    if (!currentAlert || actionPending) return;
+    const targetAlert = currentAlert;
+    setActionPending("done");
+
     try {
-      await updateTask.mutateAsync({
-        id: currentAlert.taskId,
+      const res = await updateTask.mutateAsync({
+        id: targetAlert.taskId,
         data: {
           status: "completed",
         },
       });
-      toast.success(`Task "${currentAlert.taskTitle}" marked as completed!`);
-      removeCurrentAlert();
+      const resolvedStatus = (res as any)?.task?.status;
+      if (resolvedStatus === "pending_approval") {
+        toast.info(`Task "${targetAlert.taskTitle}" submitted for admin approval.`);
+        transientSuppressedRef.current.add(targetAlert.taskId);
+        removeCurrentAlert();
+      } else if (resolvedStatus === "completed") {
+        toast.success(`Task "${targetAlert.taskTitle}" marked as completed!`);
+        transientSuppressedRef.current.add(targetAlert.taskId);
+        removeCurrentAlert();
+      } else {
+        toast.error("Unexpected task status received from server. Completion unverified.");
+      }
     } catch (err: any) {
       toast.error(err?.message || "Failed to mark task as completed.");
+    } finally {
+      setActionPending(null);
     }
   };
 
   const handleOpenTask = async () => {
-    if (!currentAlert) return;
+    if (!currentAlert || isOpeningTask || actionPending) return;
     setIsOpeningTask(true);
     try {
-      const res = await api.get<{ task: TaskRecord }>(`/api/tasks/${currentAlert.taskId}`);
-      if (res.data?.task) {
-        setSelectedTaskForModal(res.data.task);
+      const res = await api.get<{ task: TaskRecord }>(`/tasks/${currentAlert.taskId}`);
+      const loadedTask = res?.task || (res as any)?.data?.task;
+      if (loadedTask) {
+        setSelectedTaskForModal(loadedTask);
+        // Silently dismiss on server if opening task
+        api.post(`/tasks/${currentAlert.taskId}/reminders/dismiss`, { slot: currentAlert.slot }).catch(() => {});
+        transientSuppressedRef.current.add(currentAlert.taskId);
+        removeCurrentAlert();
+      } else {
+        toast.error("Could not find task details.");
       }
-    } catch {
-      toast.error("Could not load task details");
+    } catch (err: any) {
+      console.error("[PendingTaskReminderAlerts] Open task error:", err);
+      toast.error(err?.message || "Could not load task details");
     } finally {
       setIsOpeningTask(false);
     }
@@ -260,10 +270,68 @@ export function PendingTaskReminderAlerts() {
     }
   };
 
+  // Mobile swipe-to-dismiss handlers
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const [swipeOffsetX, setSwipeOffsetX] = useState(0);
+  const [isSwiping, setIsSwiping] = useState(false);
+  const isHorizontalSwipe = useRef<boolean | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+    isHorizontalSwipe.current = null;
+    setIsSwiping(false);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    const deltaX = e.touches[0].clientX - touchStartX.current;
+    const deltaY = e.touches[0].clientY - touchStartY.current;
+
+    if (isHorizontalSwipe.current === null) {
+      if (Math.abs(deltaX) > 10 && Math.abs(deltaX) > Math.abs(deltaY)) {
+        isHorizontalSwipe.current = true;
+      } else if (Math.abs(deltaY) > 10) {
+        isHorizontalSwipe.current = false;
+      }
+    }
+
+    if (isHorizontalSwipe.current) {
+      setIsSwiping(true);
+      setSwipeOffsetX(deltaX);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (isHorizontalSwipe.current && Math.abs(swipeOffsetX) >= 75) {
+      // Swiped past threshold (left or right)
+      setSwipeOffsetX(swipeOffsetX > 0 ? 500 : -500);
+      setTimeout(() => {
+        handleDismiss();
+        setSwipeOffsetX(0);
+        setIsSwiping(false);
+      }, 150);
+    } else {
+      setSwipeOffsetX(0);
+      setIsSwiping(false);
+    }
+    isHorizontalSwipe.current = null;
+  };
+
   return (
     <>
       <Dialog open={Boolean(currentAlert)} onOpenChange={(open) => !open && handleDismiss()}>
-        <DialogContent className="max-w-md border-amber-500/50 bg-card p-6 shadow-2xl animate-in zoom-in-95">
+        <DialogContent
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          style={{
+            transform: isSwiping || swipeOffsetX !== 0 ? `translateX(${swipeOffsetX}px)` : undefined,
+            transition: isSwiping ? "none" : "transform 0.2s ease",
+            opacity: isSwiping ? Math.max(0.3, 1 - Math.abs(swipeOffsetX) / 300) : 1,
+          }}
+          className="max-w-md border-amber-500/50 bg-card p-6 shadow-2xl animate-in zoom-in-95 touch-pan-y"
+        >
           <DialogHeader>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -359,33 +427,58 @@ export function PendingTaskReminderAlerts() {
                 variant="outline"
                 size="sm"
                 onClick={() => handleSnooze(2)}
+                disabled={Boolean(actionPending) || isOpeningTask}
                 className="text-xs"
                 title="Snooze reminder for 2 hours"
               >
-                <Clock size={12} className="mr-1" /> Snooze 2h
+                {actionPending === "snooze" ? (
+                  <Loader2 size={12} className="mr-1 animate-spin" />
+                ) : (
+                  <Clock size={12} className="mr-1" />
+                )}
+                Snooze 2h
               </Button>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleOpenTask}
-                disabled={isOpeningTask}
+                disabled={isOpeningTask || Boolean(actionPending)}
                 className="text-xs"
               >
-                <ExternalLink size={12} className="mr-1" /> Open Task
+                {isOpeningTask ? (
+                  <Loader2 size={12} className="mr-1 animate-spin" />
+                ) : (
+                  <ExternalLink size={12} className="mr-1" />
+                )}
+                Open Task
               </Button>
             </div>
 
             <div className="flex gap-2 w-full sm:w-auto">
-              <Button variant="ghost" size="sm" onClick={handleDismiss} className="text-xs flex-1 sm:flex-none">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleDismiss}
+                disabled={Boolean(actionPending) || isOpeningTask}
+                className="text-xs flex-1 sm:flex-none"
+              >
+                {actionPending === "dismiss" ? (
+                  <Loader2 size={12} className="mr-1 animate-spin" />
+                ) : null}
                 Dismiss
               </Button>
               <Button
                 size="sm"
                 onClick={handleMarkDone}
-                disabled={updateTask.isPending}
+                disabled={Boolean(actionPending) || updateTask.isPending || isOpeningTask}
                 className="gradient-primary text-primary-foreground text-xs shadow-soft flex-1 sm:flex-none font-semibold"
               >
-                <CheckCircle2 size={13} className="mr-1 text-emerald-400" /> Mark Done
+                {actionPending === "done" || updateTask.isPending ? (
+                  <Loader2 size={13} className="mr-1 animate-spin" />
+                ) : (
+                  <CheckCircle2 size={13} className="mr-1 text-emerald-400" />
+                )}
+                Mark Done
               </Button>
             </div>
           </DialogFooter>

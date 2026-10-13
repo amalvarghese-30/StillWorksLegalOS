@@ -591,100 +591,11 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
                 </select>
               </div>
 
-              {/* Multi-select Subcategories Checklist */}
+              {/* Clean Single Subcategory Selector */}
               {form.mainCategory && form.mainCategory !== "__other__" && subCategories.length > 0 && (
-                <div className="space-y-2 rounded-lg border border-border bg-card p-3">
+                <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <Label className="text-helper font-medium flex items-center gap-1.5">
-                      <CheckSquare size={14} className="text-primary" />
-                      Subcategories / Work Types (Check all that apply)
-                    </Label>
-                    <span className="text-[11px] text-muted-foreground">
-                      {form.selectedSubCategories.length} selected
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
-                    {subCategories.map((sc) => {
-                      const isChecked = form.selectedSubCategories.includes(sc.name);
-                      return (
-                        <label
-                          key={sc._id || sc.name}
-                          className={`flex items-start gap-2.5 rounded-md border p-2 text-xs cursor-pointer transition-colors ${
-                            isChecked
-                              ? "border-primary bg-primary/10 text-foreground font-medium"
-                              : "border-border/60 bg-card hover:bg-muted text-muted-foreground hover:text-foreground"
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
-                              const updated = checked
-                                ? [...form.selectedSubCategories, sc.name]
-                                : form.selectedSubCategories.filter((name) => name !== sc.name);
-                              update("selectedSubCategories", updated);
-                              update("subCategory", updated[0] || "");
-                            }}
-                            className="mt-0.5 size-3.5 rounded border-border text-primary focus:ring-primary"
-                          />
-                          <span className="leading-tight select-none">{sc.name}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-
-                  <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const allNames = subCategories.map((s) => s.name);
-                          update("selectedSubCategories", allNames);
-                          update("subCategory", allNames[0] || "");
-                        }}
-                        className="text-[11px] text-primary hover:underline font-medium"
-                      >
-                        Select all
-                      </button>
-                      <span className="text-[11px] text-muted-foreground">|</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          update("selectedSubCategories", []);
-                          update("subCategory", "");
-                        }}
-                        className="text-[11px] text-muted-foreground hover:underline font-medium"
-                      >
-                        Clear
-                      </button>
-                      {form.selectedSubCategories.length > 0 && (
-                        <>
-                          <span className="text-[11px] text-muted-foreground">|</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const existingTexts = new Set(checklist.map((c) => c.text.toLowerCase()));
-                              const toAdd = form.selectedSubCategories.filter(
-                                (name) => !existingTexts.has(name.toLowerCase())
-                              );
-                              if (toAdd.length === 0) {
-                                toast.info("Selected subcategories are already in the checklist");
-                                return;
-                              }
-                              const newItems: ChecklistLine[] = toAdd.map((text) => ({ id: nextId(), text, subItems: [] }));
-                              setChecklist((prev) => [...prev, ...newItems]);
-                              toast.success(`Added ${newItems.length} subcategory checklist step(s)`);
-                            }}
-                            className="text-[11px] text-emerald-600 dark:text-emerald-400 hover:underline font-medium flex items-center gap-1"
-                          >
-                            <Plus size={11} /> Add selected to task checklist
-                          </button>
-                        </>
-                      )}
-                    </div>
-
+                    <Label htmlFor="task-sub-cat" className="text-helper">Subcategory / Work Type</Label>
                     <button
                       type="button"
                       onClick={() => {
@@ -693,9 +604,27 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
                       }}
                       className="text-[11px] text-primary hover:underline font-medium"
                     >
-                      + Add custom subcategory
+                      {form.subCategory === "__other__" ? "← Select from list" : "+ Custom subcategory"}
                     </button>
                   </div>
+                  {form.subCategory !== "__other__" && (
+                    <select
+                      id="task-sub-cat"
+                      value={form.subCategory}
+                      onChange={(e) => {
+                        update("subCategory", e.target.value);
+                        update("selectedSubCategories", e.target.value ? [e.target.value] : []);
+                      }}
+                      className="h-11 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary"
+                    >
+                      <option value="">Select subcategory / work type (optional)…</option>
+                      {subCategories.map((sc) => (
+                        <option key={sc._id || sc.name} value={sc.name}>
+                          {sc.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               )}
 

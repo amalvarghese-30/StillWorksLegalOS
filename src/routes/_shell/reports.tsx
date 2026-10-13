@@ -3,12 +3,13 @@ import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
-import { BarChart3, TrendingUp, PieChart as PieIcon, Users, CheckSquare, Gavel, FileText, Star, Trophy, Loader2, AlertTriangle } from "lucide-react";
+import { BarChart3, TrendingUp, PieChart as PieIcon, Users, CheckSquare, Gavel, FileText, Star, Trophy, Loader2, AlertTriangle, Calendar, ChevronDown, ChevronRight, CheckCircle2, Clock } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
 import { ErrorState } from "@/components/common/ErrorState";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/lib/auth";
+import { useState } from "react";
 import {
   useReportsSummary,
   useCaseGrowth,
@@ -17,6 +18,8 @@ import {
   useTopClients,
   useCaseStatusBreakdown,
   useMyPerformance,
+  useDailyEmployeeReport,
+  EmployeeDailyReport,
 } from "@/services/reports";
 
 export const Route = createFileRoute("/_shell/reports")({
@@ -53,6 +56,20 @@ function ReportsPage() {
   const topClients = topClientsData?.topClients ?? [];
   const caseStatusBreakdown = statusBreakdownData?.breakdown ?? { Active: 0, "On Hold": 0, Closed: 0, Urgent: 0 };
   const performance = myPerformanceData?.performance ?? [];
+
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
+
+  const {
+    data: dailyReportData,
+    isLoading: dailyReportLoading,
+    isError: dailyReportError,
+    refetch: refetchDailyReport,
+  } = useDailyEmployeeReport(
+    { date: selectedDate, employeeId: selectedEmployeeId || undefined },
+    isAdmin
+  );
+  const dailyReports = dailyReportData?.reports ?? [];
 
   return (
     <div>
@@ -235,6 +252,57 @@ function ReportsPage() {
           </div>
         </SectionCard>
       </div>
+
+      {/* ── Admin: Daily Employee Progress & Task Drilldown ── */}
+      {isAdmin && (
+        <div className="mt-6">
+          <SectionCard
+            title="Daily Employee Progress Report"
+            description="Operational monitoring of employee daily workload, completed tasks, active pending tasks, and overdue items."
+            icon={Calendar}
+            actions={
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="rounded-md border border-border bg-background px-2.5 py-1 text-caption text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <select
+                  value={selectedEmployeeId}
+                  onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                  className="rounded-md border border-border bg-background px-2.5 py-1 text-caption text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="">All Employees</option>
+                  {workloads.map((w) => (
+                    <option key={w._id} value={w._id}>
+                      {w.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            }
+          >
+            {dailyReportLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="animate-spin text-muted-foreground" size={24} />
+              </div>
+            ) : dailyReportError ? (
+              <ErrorState title="Couldn't load daily employee reports" onRetry={refetchDailyReport} />
+            ) : dailyReports.length === 0 ? (
+              <div className="py-8 text-center text-helper text-muted-foreground">
+                No employee records found for the selected date.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {dailyReports.map((report) => (
+                  <EmployeeDailyReportCard key={report.employee._id} report={report} />
+                ))}
+              </div>
+            )}
+          </SectionCard>
+        </div>
+      )}
     </div>
   );
 }
@@ -348,5 +416,127 @@ function CaseStatusChart({ caseStatusBreakdown }: { caseStatusBreakdown: any }) 
         />
       </PieChart>
     </ResponsiveContainer>
+  );
+}
+
+function EmployeeDailyReportCard({ report }: { report: EmployeeDailyReport }) {
+  const [expanded, setExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState<"assignedToday" | "completedToday" | "pending" | "overdue">("assignedToday");
+
+  const { employee, metrics, tasks } = report;
+  const currentTasks = tasks[activeTab] || [];
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-4 transition-all hover:border-border/80">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h4 className="truncate font-semibold text-foreground">{employee.name}</h4>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground uppercase">
+              {employee.role}
+            </span>
+          </div>
+          <p className="truncate text-caption text-muted-foreground">{employee.email}</p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 rounded-md bg-muted/50 px-2.5 py-1 text-caption">
+            <span className="text-muted-foreground">Assigned:</span>
+            <span className="font-semibold text-foreground">{metrics.assignedTodayCount}</span>
+          </div>
+          <div className="flex items-center gap-1.5 rounded-md bg-emerald-50 dark:bg-emerald-950/30 px-2.5 py-1 text-caption text-emerald-700 dark:text-emerald-400">
+            <CheckCircle2 size={13} />
+            <span>Completed:</span>
+            <span className="font-semibold">{metrics.completedTodayCount}</span>
+          </div>
+          <div className="flex items-center gap-1.5 rounded-md bg-blue-50 dark:bg-blue-950/30 px-2.5 py-1 text-caption text-blue-700 dark:text-blue-400">
+            <Clock size={13} />
+            <span>Pending:</span>
+            <span className="font-semibold">{metrics.pendingCount}</span>
+          </div>
+          {metrics.overdueCount > 0 && (
+            <div className="flex items-center gap-1.5 rounded-md bg-rose-50 dark:bg-rose-950/30 px-2.5 py-1 text-caption text-rose-700 dark:text-rose-400">
+              <AlertTriangle size={13} />
+              <span>Overdue:</span>
+              <span className="font-semibold">{metrics.overdueCount}</span>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setExpanded(!expanded)}
+            className="inline-flex items-center gap-1 rounded-md border border-border/80 px-2.5 py-1 text-caption font-medium text-foreground hover:bg-muted"
+          >
+            <span>{expanded ? "Hide Details" : "Drill Down"}</span>
+            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="mt-4 border-t border-border/50 pt-3">
+          <div className="flex flex-wrap gap-1 border-b border-border/40 pb-2">
+            {[
+              { id: "assignedToday", label: `Assigned Today (${metrics.assignedTodayCount})` },
+              { id: "completedToday", label: `Completed Today (${metrics.completedTodayCount})` },
+              { id: "pending", label: `Pending Active (${metrics.pendingCount})` },
+              { id: "overdue", label: `Overdue Items (${metrics.overdueCount})` },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`rounded-md px-2.5 py-1 text-caption font-medium transition-colors ${
+                  activeTab === tab.id
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-3">
+            {currentTasks.length === 0 ? (
+              <p className="py-4 text-center text-caption text-muted-foreground">
+                No tasks in this category for the selected period.
+              </p>
+            ) : (
+              <div className="divide-y divide-border/40">
+                {currentTasks.map((t) => (
+                  <div key={t._id} className="flex flex-col py-2.5 sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-caption font-medium text-foreground">{t.title}</p>
+                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground mt-0.5">
+                        {t.caseId && <span>Case: {t.caseId.title}</span>}
+                        {t.clientId && <span>Client: {t.clientId.name}</span>}
+                        {t.deadline && <span>Due: {new Date(t.deadline).toLocaleDateString()}</span>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                          t.priority === "High"
+                            ? "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400"
+                            : t.priority === "Medium"
+                            ? "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
+                            : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        }`}
+                      >
+                        {t.priority}
+                      </span>
+                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        {t.status}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

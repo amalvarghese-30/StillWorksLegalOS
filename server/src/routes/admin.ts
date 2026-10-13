@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import { Router, type Request, type Response } from "express";
+import { Types } from "mongoose";
 import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { AuditLog } from "../models/AuditLog.js";
@@ -896,6 +897,176 @@ router.get("/reports/employee-workload", requireAdminOrPermission("reports"), as
     res.json({ workloads });
   } catch (err) {
     console.error("[reports] Workload error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/admin/reports/daily-employee — employee daily progress report with task drilldown
+// ---------------------------------------------------------------------------
+
+router.get("/reports/daily-employee", requireAdminOrPermission("reports"), async (req: Request, res: Response) => {
+  try {
+    const { date, employeeId } = req.query as { date?: string; employeeId?: string };
+
+    // Validate employeeId if provided (strict 24-character hexadecimal ObjectId)
+    const userFilter: Record<string, unknown> = {};
+    if (employeeId !== undefined && employeeId !== "") {
+      if (!/^[0-9a-fA-F]{24}$/.test(employeeId)) {
+        res.status(400).json({ message: "Invalid employee ID format", field: "employeeId" });
+        return;
+      }
+      userFilter["_id"] = new Types.ObjectId(employeeId);
+    }
+
+    // Determine reporting timezone from AppSettings
+    let timezone = "Asia/Kolkata";
+    try {
+      const workingHours = await (AppSettings as any).getWorkingHoursConfig();
+      if (workingHours?.timezone) {
+        timezone = workingHours.timezone;
+      }
+    } catch {}
+
+    // Parse and validate date parameter (expected valid calendar date in YYYY-MM-DD format)
+    let dateStr: string;
+    if (date) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        res.status(400).json({ message: "Invalid date format. Expected YYYY-MM-DD", field: "date" });
+        return;
+      }
+      const [yStr, mStr, dStr] = date.split("-");
+      const y = parseInt(yStr, 10);
+      const m = parseInt(mStr, 10);
+      const d = parseInt(dStr, 10);
+      if (m < 1 || m > 12 || d < 1 || d > 31) {
+        res.status(400).json({ message: "Invalid calendar date", field: "date" });
+        return;
+      }
+      const utcDate = new Date(Date.UTC(y, m - 1, d));
+      if (utcDate.getUTCFullYear() !== y || utcDate.getUTCMonth() !== m - 1 || utcDate.getUTCDate() !== d) {
+        res.status(400).json({ message: "Invalid calendar date (e.g. impossible day for month/year)", field: "date" });
+        return;
+      }
+      dateStr = date;
+    } else {
+      // Current date in configured timezone
+      const parts = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+      dateStr = parts; // YYYY-MM-DD
+    }
+
+    // Construct startOfDay and endOfDay in configured timezone
+    // e.g., "2026-10-14T00:00:00+05:30"
+    let tzOffsetString = "+05:30";
+    try {
+      const testDate = new Date(`${dateStr}T12:00:00Z`);
+      const tzFormatter = new Intl.DateTimeFormat("en-US", { timeZone: timezone, timeZoneName: "longOffset" });
+      const tzPart = tzFormatter.formatToParts(testDate).find((p) => p.type === "timeZoneName")?.value;
+      if (tzPart && tzPart.startsWith("GMT")) {
+        const offsetRaw = tzPart.replace("GMT", "");
+        tzOffsetString = offsetRaw || "+00:00";
+      }
+    } catch {}
+
+    const startOfDay = new Date(`${dateStr}T00:00:00.000${tzOffsetString}`);
+    const endOfDay = new Date(`${dateStr}T23:59:59.999${tzOffsetString}`);
+
+    if (isNaN(startOfDay.getTime()) || isNaN(endOfDay.getTime())) {
+      res.status(400).json({ message: "Invalid date value", field: "date" });
+      return;
+    }
+
+    // Overdue cutoff:
+    // If reporting for today, anything whose deadline < now is overdue.
+    // If reporting for a historical date, anything not completed whose deadline was before endOfDay.
+    const now = new Date();
+    const isToday = now >= startOfDay && now <= endOfDay;
+    const overdueCutoff = isToday ? now : endOfDay;
+
+    const employees = await User.find(userFilter).select("name email role title status").lean();
+
+    const employeeReports = await Promise.all(
+      employees.map(async (emp) => {
+        const empId = emp._id;
+
+        const [assignedTasks, completedTasks, pendingTasks, overdueTasks] = await Promise.all([
+          // Tasks assigned to this employee today or created today
+          Task.find({
+            assignedTo: empId,
+            $or: [
+              { createdAt: { $gte: startOfDay, $lte: endOfDay } },
+              { assignedAt: { $gte: startOfDay, $lte: endOfDay } },
+            ],
+            isDeleted: { $ne: true },
+          })
+            .populate("caseId", "title number")
+            .populate("clientId", "name phone")
+            .lean(),
+
+          // Tasks completed today
+          Task.find({
+            assignedTo: empId,
+            status: "completed",
+            completedAt: { $gte: startOfDay, $lte: endOfDay },
+            isDeleted: { $ne: true },
+          })
+            .populate("caseId", "title number")
+            .populate("clientId", "name phone")
+            .lean(),
+
+          // Active pending tasks
+          Task.find({
+            assignedTo: empId,
+            status: { $in: ["pending", "in_progress", "pending_approval"] },
+            isDeleted: { $ne: true },
+          })
+            .populate("caseId", "title number")
+            .populate("clientId", "name phone")
+            .lean(),
+
+          // Overdue tasks
+          Task.find({
+            assignedTo: empId,
+            status: { $ne: "completed" },
+            deadline: { $lt: overdueCutoff },
+            isDeleted: { $ne: true },
+          })
+            .populate("caseId", "title number")
+            .populate("clientId", "name phone")
+            .lean(),
+        ]);
+
+        return {
+          employee: {
+            _id: emp._id.toString(),
+            name: emp.name,
+            email: emp.email,
+            role: emp.role,
+            title: emp.title,
+            status: emp.status,
+          },
+          metrics: {
+            assignedTodayCount: assignedTasks.length,
+            completedTodayCount: completedTasks.length,
+            pendingCount: pendingTasks.length,
+            overdueCount: overdueTasks.length,
+          },
+          tasks: {
+            assignedToday: assignedTasks,
+            completedToday: completedTasks,
+            pending: pendingTasks,
+            overdue: overdueTasks,
+          },
+        };
+      })
+    );
+
+    res.json({
+      date: dateStr,
+      reports: employeeReports,
+    });
+  } catch (err) {
+    console.error("[reports] Daily employee report error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 });

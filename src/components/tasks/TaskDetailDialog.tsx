@@ -258,39 +258,29 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
   const [expandedItems, setExpandedItems] = useState<{ [itemId: string]: boolean }>({});
 
   const handleOpenForwardModal = () => {
-    setTimeout(() => {
-      setTargetUserId("");
-      setActionNote("");
-      setShowForwardModal(true);
-    }, 80);
+    setTargetUserId("");
+    setActionNote("");
+    setShowForwardModal(true);
   };
 
   const handleOpenReassignModal = () => {
-    setTimeout(() => {
-      setTargetUserId("");
-      setActionNote("");
-      setShowReassignModal(true);
-    }, 80);
+    setTargetUserId("");
+    setActionNote("");
+    setShowReassignModal(true);
   };
 
   const handleOpenRequestDeleteModal = () => {
-    setTimeout(() => {
-      setDeleteRequestReason("");
-      setShowRequestDeleteModal(true);
-    }, 80);
+    setDeleteRequestReason("");
+    setShowRequestDeleteModal(true);
   };
 
   const handleOpenAdminDeleteModal = () => {
-    setTimeout(() => {
-      setShowAdminDeleteModal(true);
-    }, 80);
+    setShowAdminDeleteModal(true);
   };
 
   const handleOpenRejectModal = () => {
-    setTimeout(() => {
-      setRejectReason("");
-      setShowRejectModal(true);
-    }, 80);
+    setRejectReason("");
+    setShowRejectModal(true);
   };
 
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
@@ -954,18 +944,21 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
 
   const handleSetStatus = async (status: "pending" | "in_progress" | "pending_approval" | "completed") => {
     try {
-      await updateTask.mutateAsync({
+      const res = await updateTask.mutateAsync({
         id: activeTask._id,
         data: { status },
       });
-      if (status === "pending_approval") {
-        toast.success("Task submitted for admin approval");
-      } else if (status === "completed") {
+      const resolvedStatus = (res as any)?.task?.status;
+      if (resolvedStatus === "pending_approval") {
+        toast.info("Task submitted for admin approval");
+      } else if (resolvedStatus === "completed") {
         toast.success("Task marked as completed");
-      } else if (status === "in_progress") {
+      } else if (resolvedStatus === "in_progress") {
         toast.info("Task marked as in progress");
-      } else if (status === "pending") {
+      } else if (resolvedStatus === "pending") {
         toast.info("Task marked as pending");
+      } else {
+        toast.error("Unexpected task status received from server. Status change unverified.");
       }
     } catch (err) {
       console.error("Failed to update task status:", err);
@@ -1208,7 +1201,6 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                           <DropdownMenuItem
                             className="text-xs text-amber-600 dark:text-amber-400 cursor-pointer"
                             onSelect={handleOpenRejectModal}
-                            onClick={handleOpenRejectModal}
                           >
                             Request Changes
                           </DropdownMenuItem>
@@ -1219,7 +1211,6 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                     <DropdownMenuItem
                       className="text-xs cursor-pointer"
                       onSelect={handleOpenForwardModal}
-                      onClick={handleOpenForwardModal}
                     >
                       <Share2 size={14} className="mr-2" />
                       Forward Task
@@ -1228,7 +1219,6 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                     <DropdownMenuItem
                       className="text-xs cursor-pointer"
                       onSelect={handleOpenReassignModal}
-                      onClick={handleOpenReassignModal}
                     >
                       <UserCheck size={14} className="mr-2" />
                       Reassign Task
@@ -1237,8 +1227,10 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                     <DropdownMenuItem
                       className="text-xs cursor-pointer"
                       disabled={isDuplicating}
-                      onSelect={() => setTimeout(() => handleDuplicateTask(), 80)}
-                      onClick={() => setTimeout(() => handleDuplicateTask(), 80)}
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        handleDuplicateTask();
+                      }}
                     >
                       {isDuplicating ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Copy size={14} className="mr-2" />}
                       Duplicate Task
@@ -1250,7 +1242,6 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                         <DropdownMenuItem
                           className="text-xs text-destructive focus:text-destructive cursor-pointer"
                           onSelect={handleOpenAdminDeleteModal}
-                          onClick={handleOpenAdminDeleteModal}
                         >
                           <Trash2 size={14} className="mr-2" />
                           Delete Task
@@ -1262,7 +1253,6 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                         <DropdownMenuItem
                           className="text-xs text-destructive focus:text-destructive cursor-pointer"
                           onSelect={handleOpenRequestDeleteModal}
-                          onClick={handleOpenRequestDeleteModal}
                         >
                           <Trash2 size={14} className="mr-2" />
                           Request Task Deletion

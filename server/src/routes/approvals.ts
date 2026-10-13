@@ -10,6 +10,7 @@ import { NotificationService } from "../services/notifications.js";
 import { requireAuth, requireAdminOrPermission } from "../middleware/auth.js";
 import { deleteFile } from "../services/storage.js";
 import { resolveTaskClientName } from "../utils/taskHelpers.js";
+import { dispatchRejectionNotifications } from "../services/rejectionNotifications.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -361,10 +362,12 @@ router.post("/:id/reject", requireAdminOrPermission("approvals"), async (req: Re
     let taskTitle = "";
     let clientName = "General Client";
     let deadlineStr = "No deadline";
+    let taskRecord: any = null;
 
     if (approval.type === "task_completion") {
       const task = await Task.findById(approval.entityId).populate("clientId caseId");
       if (task) {
+        taskRecord = task;
         taskTitle = task.title;
         clientName = resolveTaskClientName(task);
         deadlineStr = task.deadline ? new Date(task.deadline).toLocaleDateString() : "No deadline";
@@ -396,36 +399,47 @@ router.post("/:id/reject", requireAdminOrPermission("approvals"), async (req: Re
     approval.decisionRemark = cleanRemark;
     await approval.save();
 
-    // Notify requester of rejection
-    if (approval.requesterId.toString() !== req.userId) {
-      const feedbackSnippet = cleanRemark ? ` Feedback / Remark: "${cleanRemark}"` : "";
-      const reasonSnippet = cleanRemark ? ` Reason: "${cleanRemark}"` : "";
-      const msg = taskTitle
-        ? `${adminUser.name} rejected task completion for "${taskTitle}" (Client: ${clientName}, Deadline: ${deadlineStr}).${feedbackSnippet}`
-        : `Your ${approval.type.replace(/_/g, " ")} request was rejected by ${adminUser.name}.${reasonSnippet}`;
+    // Notify requester, assignee, and creator of rejection (excluding the acting admin)
+    if (approval.type === "task_completion") {
+      const recipientList: (Types.ObjectId | string)[] = [];
+      if (approval.requesterId) recipientList.push(approval.requesterId);
+      if (taskRecord?.assignedTo) recipientList.push(taskRecord.assignedTo);
+      if (taskRecord?.createdBy) recipientList.push(taskRecord.createdBy);
 
-      await NotificationService.createNotification(
-        {
-          userId: approval.requesterId,
-          type: "TASK_REJECTED",
-          title: "⚠️ Task Completion Rejected (Changes Requested)",
-          message: msg,
-          relatedId: approval.entityId,
-          relatedModel: approval.entityType,
-          actorId: new Types.ObjectId(req.userId!),
-          metadata: {
-            approvalId: approval._id.toString(),
-            taskId: approval.entityId.toString(),
-            taskTitle,
-            clientName,
-            deadline: deadlineStr,
-            reviewerName: adminUser.name,
-            reason: cleanRemark || undefined,
-            decisionRemark: cleanRemark || undefined,
+      await dispatchRejectionNotifications({
+        taskId: approval.entityId,
+        taskTitle,
+        clientName,
+        deadlineStr,
+        reviewerName: adminUser.name || "Administrator",
+        reviewerId: req.userId,
+        reasonText: cleanRemark || "Changes requested by administrator",
+        recipientIds: recipientList,
+        approvalId: approval._id,
+        io,
+      });
+    } else {
+      // General non-task approval rejection (e.g. deletion, access request)
+      if (approval.requesterId && approval.requesterId.toString() !== req.userId) {
+        const reasonSnippet = cleanRemark ? ` Reason: "${cleanRemark}"` : "";
+        await NotificationService.createNotification(
+          {
+            userId: approval.requesterId,
+            type: "TASK_REJECTED",
+            title: "⚠️ Request Rejected",
+            message: `Your ${approval.type.replace(/_/g, " ")} request was rejected by ${adminUser.name}.${reasonSnippet}`,
+            relatedId: approval.entityId,
+            relatedModel: approval.entityType,
+            actorId: new Types.ObjectId(req.userId!),
+            metadata: {
+              approvalId: approval._id.toString(),
+              reviewerName: adminUser.name,
+              reason: cleanRemark || undefined,
+            },
           },
-        },
-        io
-      );
+          io
+        );
+      }
     }
 
     await AuditLog.create({

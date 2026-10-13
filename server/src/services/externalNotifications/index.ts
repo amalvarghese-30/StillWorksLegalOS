@@ -3,6 +3,7 @@ import { WhatsAppProvider } from "./whatsapp.js";
 import { TelegramProvider } from "./telegram.js";
 import { EmailProvider } from "./email.js";
 import { User } from "../../models/User.js";
+import { NotificationService } from "../notifications.js";
 import { Types } from "mongoose";
 
 export { WhatsAppProvider } from "./whatsapp.js";
@@ -88,6 +89,25 @@ export async function processOutboxQueue(io?: any): Promise<{ processed: number;
         item.title,
         `<p>${item.message.replace(/\n/g, "<br/>")}</p>`
       );
+    } else if (item.channel === "in_app") {
+      const created = await NotificationService.createNotification(
+        {
+          userId: item.recipientId,
+          type: (item.eventType as any) || "CUSTOM",
+          title: item.title,
+          message: item.message,
+          relatedId: item.relatedId,
+          relatedModel: item.relatedModel,
+          metadata: item.metadata,
+          dedupeKey: (item.metadata as any)?.dedupeKey,
+        },
+        io
+      );
+      result = {
+        success: Boolean(created),
+        messageId: created ? created._id.toString() : "",
+        errorMessage: created ? "" : "Failed to create in-app notification",
+      };
     }
 
     if (result.success) {

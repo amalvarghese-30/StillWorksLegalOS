@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import { NotificationService } from "./notifications.js";
 import { CalendarEvent } from "../models/CalendarEvent.js";
 import { Task } from "../models/Task.js";
+import { TaskReminderState } from "../models/TaskReminderState.js";
 import { AppSettings } from "../models/AppSettings.js";
 import { processOutboxQueue } from "./externalNotifications/index.js";
 import { dispatchDailyAdminReport } from "./dailyAdminReport.js";
@@ -278,6 +279,65 @@ export class NotificationScheduler {
 
   private async checkWorkingHoursPendingTasks(): Promise<void> {
     const now = new Date();
+
+    // Enforce configurable working hours & working days (fail-closed if lookup fails or invalid)
+    try {
+      const workingHours = await (AppSettings as any).getWorkingHoursConfig();
+      if (!workingHours || typeof workingHours !== "object") {
+        console.warn("[NotificationScheduler] Missing working hours config; skipping reminders job safely to prevent off-hours disclosure");
+        return;
+      }
+
+      const { start = "10:00", end = "18:00", days = [1, 2, 3, 4, 5, 6], timezone = "Asia/Kolkata" } = workingHours;
+
+      // Validate timezone
+      try {
+        new Intl.DateTimeFormat("en-US", { timeZone: timezone });
+      } catch {
+        console.error(`[NotificationScheduler] Invalid timezone configured: "${timezone}"; skipping reminders job safely`);
+        return;
+      }
+
+      // Check current day of week in configured timezone
+      const dayOfWeek = new Intl.DateTimeFormat("en-US", { timeZone: timezone, weekday: "short" }).format(now);
+      const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+      const currentDayNum = dayMap[dayOfWeek] ?? now.getDay();
+
+      if (!Array.isArray(days) || !days.includes(currentDayNum)) {
+        // Outside working days (e.g. Sunday or non-working day)
+        return;
+      }
+
+      // Check hour & minute in configured timezone
+      const timeParts = new Intl.DateTimeFormat("en-US", {
+        timeZone: timezone,
+        hour: "numeric",
+        minute: "numeric",
+        hour12: false,
+      }).formatToParts(now);
+
+      const currentHour = parseInt(timeParts.find((p) => p.type === "hour")?.value || "0", 10);
+      const currentMinute = parseInt(timeParts.find((p) => p.type === "minute")?.value || "0", 10);
+      const currentTotalMinutes = currentHour * 60 + currentMinute;
+
+      const [startH, startM] = (start || "10:00").split(":").map(Number);
+      const [endH, endM] = (end || "18:00").split(":").map(Number);
+      if (isNaN(startH) || isNaN(endH)) {
+        console.error("[NotificationScheduler] Invalid start/end times in working hours config; skipping reminders job");
+        return;
+      }
+      const startTotalMinutes = (startH || 0) * 60 + (startM || 0);
+      const endTotalMinutes = (endH || 0) * 60 + (endM || 0);
+
+      if (currentTotalMinutes < startTotalMinutes || currentTotalMinutes > endTotalMinutes) {
+        // Outside working hours
+        return;
+      }
+    } catch (confErr) {
+      console.error("[NotificationScheduler] Error reading working hours config; skipping reminders job safely:", confErr);
+      return;
+    }
+
     const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
 
     const pendingTasks = await Task.find({
@@ -307,6 +367,25 @@ export class NotificationScheduler {
       const deadlineStr = task.deadline ? new Date(task.deadline).toISOString() : null;
       const assignedToId = (task.assignedTo as any)?._id?.toString() || (task.assignedTo ? (task.assignedTo as Types.ObjectId).toString() : null);
 
+      if (!assignedToId) continue;
+
+      // Check if task reminder is snoozed or dismissed for the assigned staff
+      const reminderState = await TaskReminderState.findOne({
+        taskId: task._id,
+        userId: new Types.ObjectId(assignedToId),
+      }).lean();
+
+      if (reminderState) {
+        if (reminderState.snoozedUntil && new Date(reminderState.snoozedUntil).getTime() > now.getTime()) {
+          continue; // Suppressed by active snooze
+        }
+        if (reminderState.dismissed) {
+          if (reminderState.dismissedSlot == null || reminderState.dismissedSlot === slot) {
+            continue; // Suppressed by dismissal
+          }
+        }
+      }
+
       const reminderPayload = {
         taskId,
         taskTitle: task.title,
@@ -319,35 +398,34 @@ export class NotificationScheduler {
         slot,
       };
 
-      // Real-time socket event targeted strictly to the assigned staff member
-      if (assignedToId && this.io) {
+      // Persistent deduplicated notification for the assigned staff
+      const dedupeKey = `pending-2hr:${taskId}:${assignedToId}:${slot}`;
+
+      const createdNotif = await NotificationService.createNotification(
+        {
+          userId: new Types.ObjectId(assignedToId),
+          type: "TASK_DUE",
+          title: "Pending Work Reminder (2h+)",
+          message: `Reminder: Task "${task.title}" for client "${clientName}" has been pending for ${pendingHours} hours. Deadline: ${task.deadline ? new Date(task.deadline).toLocaleDateString() : "None"}`,
+          relatedId: task._id as Types.ObjectId,
+          relatedModel: "Task",
+          metadata: {
+            ...reminderPayload,
+            subType: "2hr_pending_reminder",
+          },
+          dedupeKey,
+        },
+        this.io,
+      );
+
+      // Only emit real-time socket popup if this reminder interval hasn't already been delivered
+      // Strictly target authenticated recipient's room — never broadcast globally
+      if (createdNotif && this.io) {
         if (typeof (this.io as any).to === "function") {
           (this.io as any).to(`user:${assignedToId}`).emit("task:pending-reminder", reminderPayload);
-        } else if (typeof (this.io as any).emit === "function") {
-          (this.io as any).emit("task:pending-reminder", reminderPayload);
+        } else {
+          console.warn(`[NotificationScheduler] Socket instance lacks .to() method; skipped real-time broadcast to prevent global disclosure for user ${assignedToId}`);
         }
-      }
-
-      // Persist deduplicated notification for the assigned staff
-      if (assignedToId) {
-        const dedupeKey = `pending-2hr:${taskId}:${assignedToId}:${slot}`;
-
-        await NotificationService.createNotification(
-          {
-            userId: new Types.ObjectId(assignedToId),
-            type: "TASK_DUE",
-            title: "Pending Work Reminder (2h+)",
-            message: `Reminder: Task "${task.title}" for client "${clientName}" has been pending for ${pendingHours} hours. Deadline: ${task.deadline ? new Date(task.deadline).toLocaleDateString() : "None"}`,
-            relatedId: task._id as Types.ObjectId,
-            relatedModel: "Task",
-            metadata: {
-              ...reminderPayload,
-              subType: "2hr_pending_reminder",
-            },
-            dedupeKey,
-          },
-          this.io,
-        );
       }
     }
   }

@@ -19,6 +19,7 @@ const { Case } = await import("../models/Case.js");
 const { Client } = await import("../models/Client.js");
 const { Counter } = await import("../models/Counter.js");
 const { Task } = await import("../models/Task.js");
+const { Notification } = await import("../models/Notification.js");
 const { Reminder } = await import("../models/Reminder.js");
 const { CalendarEvent } = await import("../models/CalendarEvent.js");
 const { default: adminRoutes } = await import("../routes/admin.js");
@@ -37,6 +38,7 @@ const { default: gmailRoutes } = await import("../routes/gmail.js");
 const { default: approvalsRoutes } = await import("../routes/approvals.js");
 const { ApprovalRequest } = await import("../models/ApprovalRequest.js");
 const { Category } = await import("../models/Category.js");
+const { TaskReminderState } = await import("../models/TaskReminderState.js");
 const { seedCategories } = await import("../scripts/seedCategories.js");
 const { ChatGroup, ChatMessage } = await import("../models/Chat.js");
 const { getLocalPath } = await import("../services/storage.js");
@@ -2339,6 +2341,427 @@ async function run() {
     assert(multiLevelTreeRes.status === 200, "SUITE24-CAT-001: Multi-level tree returns 200");
     const parentWithGrandchild = multiLevelTreeRes.body.tree[0]?.children?.[0];
     assert(Boolean(parentWithGrandchild?.children?.length), "SUITE24-CAT-002: Level 3 grandchildren populated recursively in tree");
+  }
+
+  // ---------------------------------------------------------------------------
+  // SUITE 25: Pending Reminders, Rejection Auth & Remarks, Daily Reports
+  // ---------------------------------------------------------------------------
+  {
+    console.log("\n=== SUITE 25: Pending Reminders, Rejection Auth & Remarks, Daily Reports ===");
+
+    const s25Admin = await createUser({
+      name: "Managing Partner S25",
+      email: `admin-s25-${Date.now()}@test.com`,
+      role: "admin",
+      permissions: {
+        dashboard: true, clients: true, cases: true, tasks: true,
+        documents: true, calendar: true, chat: true, reports: true,
+        employees: true, approvals: true, auditLogs: true, settings: true,
+      },
+    });
+    const s25AdminToken = await createToken(s25Admin);
+
+    const s25Emp = await createUser({
+      name: "Junior Associate S25",
+      email: `emp-s25-${Date.now()}@test.com`,
+      role: "junior_advocate",
+      permissions: {
+        dashboard: true, clients: true, cases: true, tasks: true,
+        documents: true, calendar: true, chat: true, reports: false,
+        employees: false, approvals: false, auditLogs: false, settings: false,
+      },
+    });
+    const s25EmpToken = await createToken(s25Emp);
+
+    // 1. Pending reminders endpoint contract & user isolation
+    const pendingRemindersRes = await request(app)
+      .get("/api/tasks/pending-reminders")
+      .set("Authorization", `Bearer ${s25EmpToken}`);
+    assert(pendingRemindersRes.status === 200, "SUITE25-REMIND-001: GET /api/tasks/pending-reminders returns 200");
+    assert(Array.isArray(pendingRemindersRes.body.pendingReminders), "SUITE25-REMIND-002: pendingReminders array is present in root response");
+    assert(typeof pendingRemindersRes.body.count === "number", "SUITE25-REMIND-003: count property is returned in response");
+
+    // Create a task assigned to employee for pending reminders test (pending for 3 hours)
+    const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    const empTask = await Task.create({
+      title: "Active Contract Analysis",
+      status: "pending",
+      assignedTo: s25Emp._id,
+      assignedBy: s25Admin._id,
+      createdAt: threeHoursAgo,
+      startedAt: threeHoursAgo,
+      deadline: new Date(Date.now() + 86400000),
+    });
+
+    const empRemindersRes = await request(app)
+      .get("/api/tasks/pending-reminders")
+      .set("Authorization", `Bearer ${s25EmpToken}`);
+    assert(empRemindersRes.body.pendingReminders.some((r: any) => r.taskId === empTask._id.toString()), "SUITE25-REMIND-004: Assigned task appears in employee's pending reminders");
+
+    // Other user must NOT see employee's pending reminder
+    const otherUser = await createUser({
+      name: "Other Advocate",
+      email: `advocate-other-${Date.now()}@test.com`,
+      role: "employee",
+      permissions: {
+        dashboard: true, clients: true, cases: true, tasks: true,
+        documents: true, calendar: true, chat: true, reports: false,
+        employees: false, approvals: false, auditLogs: false, settings: false,
+      },
+    });
+    const otherToken = await createToken(otherUser);
+    const otherRemindersRes = await request(app)
+      .get("/api/tasks/pending-reminders")
+      .set("Authorization", `Bearer ${otherToken}`);
+    assert(otherRemindersRes.status === 200, "SUITE25-REMIND-005: Other user reminders endpoint succeeds (200)");
+    assert(Array.isArray(otherRemindersRes.body?.pendingReminders), "SUITE25-REMIND-006: otherReminders has pendingReminders array");
+    assert(!otherRemindersRes.body.pendingReminders.some((r: any) => r.taskId === empTask._id.toString()), "SUITE25-REMIND-007: Assigned task is isolated and not visible in another user's pending reminders");
+
+    // 2. Task rejection authorization & mandatory remarks
+    // Create a task pending approval
+    const pendingApprovalTask = await Task.create({
+      title: "Draft Writ Petition Approval",
+      status: "pending_approval",
+      assignedTo: s25Emp._id,
+      assignedBy: s25Admin._id,
+      submittedForApprovalAt: new Date(),
+    });
+
+    // Non-admin attempting to reject must receive 403 Forbidden
+    const nonAdminRejectRes = await request(app)
+      .post(`/api/tasks/${pendingApprovalTask._id}/reject`)
+      .set("Authorization", `Bearer ${s25EmpToken}`)
+      .send({ reason: "Needs revisions to paragraph 4" });
+    assert(nonAdminRejectRes.status === 403, "SUITE25-REJECT-001: Non-admin cannot reject task (403 Forbidden)");
+
+    // Admin attempting to reject without reason must receive 400 Bad Request
+    const emptyRemarkRejectRes = await request(app)
+      .post(`/api/tasks/${pendingApprovalTask._id}/reject`)
+      .set("Authorization", `Bearer ${s25AdminToken}`)
+      .send({ reason: "   " });
+    assert(emptyRemarkRejectRes.status === 400, "SUITE25-REJECT-002: Rejection without remark rejected with 400 Bad Request");
+
+    // Admin rejecting with valid reason succeeds and transitions status
+    const validRejectRes = await request(app)
+      .post(`/api/tasks/${pendingApprovalTask._id}/reject`)
+      .set("Authorization", `Bearer ${s25AdminToken}`)
+      .send({ reason: "Please revise clause 12 regarding jurisdiction" });
+    assert(validRejectRes.status === 200, "SUITE25-REJECT-003: Admin rejection with remark succeeds (200 OK)");
+    assert(validRejectRes.body.task.status === "in_progress", "SUITE25-REJECT-004: Rejected task returned to in_progress");
+    assert(validRejectRes.body.task.rejectionReason === "Please revise clause 12 regarding jurisdiction", "SUITE25-REJECT-005: Rejection reason persisted");
+
+    // Verify rejection notification was created for assignee
+    const assigneeNotif = await Notification.findOne({
+      userId: s25Emp._id,
+      type: "TASK_REJECTED",
+      relatedId: pendingApprovalTask._id,
+    });
+    assert(Boolean(assigneeNotif), "SUITE25-REJECT-006: Rejection notification dispatched to assignee");
+
+    // Create a task where creator is distinct from assignee, then reject and verify creator also receives notification
+    const distinctCreator = await createUser({
+      name: "Partner Creator",
+      email: `creator-s25-${Date.now()}@test.com`,
+      role: "junior_advocate",
+    });
+    const distinctTask = await Task.create({
+      title: "Title Search Report Approval",
+      status: "pending_approval",
+      assignedTo: s25Emp._id,
+      createdBy: distinctCreator._id,
+      submittedForApprovalAt: new Date(),
+    });
+    await request(app)
+      .post(`/api/tasks/${distinctTask._id}/reject`)
+      .set("Authorization", `Bearer ${s25AdminToken}`)
+      .send({ reason: "Missing encumbrance certificate appendix" });
+
+    const creatorNotif = await Notification.findOne({
+      userId: distinctCreator._id,
+      type: "TASK_REJECTED",
+      relatedId: distinctTask._id,
+    });
+    assert(Boolean(creatorNotif), "SUITE25-REJECT-007: Rejection notification dispatched to distinct task creator");
+
+    // 3. Daily Employee Progress Reporting Endpoint
+    const dailyReportRes = await request(app)
+      .get("/api/admin/reports/daily-employee")
+      .set("Authorization", `Bearer ${s25AdminToken}`);
+    assert(dailyReportRes.status === 200, "SUITE25-REPORT-001: GET /api/admin/reports/daily-employee returns 200");
+    assert(Array.isArray(dailyReportRes.body.reports), "SUITE25-REPORT-002: reports array returned");
+    const empReport = dailyReportRes.body.reports.find((r: any) => r.employee._id === s25Emp._id.toString());
+    assert(Boolean(empReport), "SUITE25-REPORT-003: Target employee found in daily report");
+    assert(typeof empReport.metrics.pendingCount === "number", "SUITE25-REPORT-004: Employee pending count is a valid number");
+    assert(Array.isArray(empReport.tasks.pending), "SUITE25-REPORT-005: Drill-down pending tasks array is populated");
+
+    // Daily report with employeeId filter
+    const filteredReportRes = await request(app)
+      .get(`/api/admin/reports/daily-employee?employeeId=${s25Emp._id.toString()}`)
+      .set("Authorization", `Bearer ${s25AdminToken}`);
+    assert(filteredReportRes.status === 200, "SUITE25-REPORT-006: Filtered daily report returns 200");
+    assert(filteredReportRes.body.reports.length === 1, "SUITE25-REPORT-007: Only requested employee returned when filtered");
+    assert(filteredReportRes.body.reports[0].employee._id === s25Emp._id.toString(), "SUITE25-REPORT-008: Correct employee ID matched in filtered report");
+
+    // Invalid employeeId format returns 400
+    const invalidEmpRes = await request(app)
+      .get("/api/admin/reports/daily-employee?employeeId=not-a-valid-id")
+      .set("Authorization", `Bearer ${s25AdminToken}`);
+    assert(invalidEmpRes.status === 400, "SUITE25-REPORT-009: Invalid employeeId format rejected with 400");
+
+    // Invalid date format returns 400
+    const invalidDateRes = await request(app)
+      .get("/api/admin/reports/daily-employee?date=14-10-2026")
+      .set("Authorization", `Bearer ${s25AdminToken}`);
+    assert(invalidDateRes.status === 400, "SUITE25-REPORT-010: Invalid date format rejected with 400");
+
+    // Valid ISO date parameter succeeds
+    const validDateRes = await request(app)
+      .get("/api/admin/reports/daily-employee?date=2026-10-14")
+      .set("Authorization", `Bearer ${s25AdminToken}`);
+    assert(validDateRes.status === 200, "SUITE25-REPORT-011: Valid YYYY-MM-DD date parameter returns 200");
+    assert(validDateRes.body.date === "2026-10-14", "SUITE25-REPORT-012: Returned date matches requested date");
+
+    // Non-admin without permission receives 403
+    const nonAdminReportRes = await request(app)
+      .get("/api/admin/reports/daily-employee")
+      .set("Authorization", `Bearer ${otherToken}`);
+    assert(nonAdminReportRes.status === 403, "SUITE25-REPORT-013: Non-admin unauthorized access to daily employee report rejected with 403");
+
+    // =========================================================================
+    // SUITE 26: Persistent Reminder State, Task Rejection Notifications, Approval-Aware Completion, & Strict Validation
+    // =========================================================================
+    console.log("\n--- Suite 26: Persistent Reminders, Rejections, Approval Completion & Strict Reports ---");
+
+    const s26Admin = await createUser({
+      name: "Managing Admin S26",
+      email: `admin-s26-${Date.now()}@test.com`,
+      role: "admin",
+    });
+    const s26AdminToken = await createToken(s26Admin);
+
+    const s26Employee = await createUser({
+      name: "Staff Associate S26",
+      email: `emp-s26-${Date.now()}@test.com`,
+      role: "junior_advocate",
+    });
+    const s26EmpToken = await createToken(s26Employee);
+
+    const s26Creator = await createUser({
+      name: "Partner Author S26",
+      email: `creator-s26-${Date.now()}@test.com`,
+      role: "junior_advocate",
+    });
+    const s26CreatorToken = await createToken(s26Creator);
+
+    // 1. Persistent Reminder Dismissal
+    const s26ThreeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    const dismissTask = await Task.create({
+      title: "Title Deed Verification Due",
+      status: "pending",
+      assignedTo: s26Employee._id,
+      createdBy: s26Creator._id,
+      createdAt: s26ThreeHoursAgo,
+      startedAt: s26ThreeHoursAgo,
+    });
+
+    // Verify task appears in pending reminders initially
+    const initialRemindersRes = await request(app)
+      .get("/api/tasks/pending-reminders")
+      .set("Authorization", `Bearer ${s26EmpToken}`);
+    assert(initialRemindersRes.status === 200, "SUITE26-DISMISS-001: GET /api/tasks/pending-reminders returns 200");
+    const foundInitial = initialRemindersRes.body.pendingReminders?.some((r: any) => r.taskId === dismissTask._id.toString());
+    assert(foundInitial === true, "SUITE26-DISMISS-002: Pending task appears in pending reminders");
+
+    // Dismiss reminder via POST /api/tasks/:id/reminders/dismiss
+    const dismissRes = await request(app)
+      .post(`/api/tasks/${dismissTask._id}/reminders/dismiss`)
+      .set("Authorization", `Bearer ${s26EmpToken}`)
+      .send({ slot: 1 });
+    assert(dismissRes.status === 200, "SUITE26-DISMISS-003: POST /api/tasks/:id/reminders/dismiss returns 200");
+    assert(dismissRes.body.success === true, "SUITE26-DISMISS-004: Dismiss response indicates success");
+
+    // Verify persistence in TaskReminderState
+    const persistedDismissState = await TaskReminderState.findOne({
+      taskId: dismissTask._id,
+      userId: s26Employee._id,
+    });
+    assert(Boolean(persistedDismissState), "SUITE26-DISMISS-005: TaskReminderState record exists in database");
+    assert(persistedDismissState?.dismissed === true, "SUITE26-DISMISS-006: TaskReminderState has dismissed=true");
+    assert(persistedDismissState?.dismissedSlot === 1, "SUITE26-DISMISS-007: Dismissed slot recorded accurately");
+
+    // Verify task is now suppressed on subsequent fetch
+    const afterDismissRemindersRes = await request(app)
+      .get("/api/tasks/pending-reminders")
+      .set("Authorization", `Bearer ${s26EmpToken}`);
+    const foundAfterDismiss = afterDismissRemindersRes.body.pendingReminders?.some((r: any) => r.taskId === dismissTask._id.toString());
+    assert(foundAfterDismiss === false, "SUITE26-DISMISS-008: Dismissed task suppressed from pending reminders");
+
+    // 2. Persistent Reminder Snooze
+    const snoozeTask = await Task.create({
+      title: "Drafting Lease Agreement Review",
+      status: "pending",
+      assignedTo: s26Employee._id,
+      createdBy: s26Creator._id,
+      createdAt: s26ThreeHoursAgo,
+      startedAt: s26ThreeHoursAgo,
+    });
+
+    // Test snooze validation
+    const invalidSnoozeRes1 = await request(app)
+      .post(`/api/tasks/${snoozeTask._id}/reminders/snooze`)
+      .set("Authorization", `Bearer ${s26EmpToken}`)
+      .send({ hours: -2 });
+    assert(invalidSnoozeRes1.status === 400, "SUITE26-SNOOZE-001: Negative hours rejected with 400");
+
+    const invalidSnoozeRes2 = await request(app)
+      .post(`/api/tasks/${snoozeTask._id}/reminders/snooze`)
+      .set("Authorization", `Bearer ${s26EmpToken}`)
+      .send({ hours: 500 });
+    assert(invalidSnoozeRes2.status === 400, "SUITE26-SNOOZE-002: Excessive hours (>168) rejected with 400");
+
+    const invalidSnoozeRes3 = await request(app)
+      .post(`/api/tasks/${snoozeTask._id}/reminders/snooze`)
+      .set("Authorization", `Bearer ${s26EmpToken}`)
+      .send({ snoozeUntil: "2020-01-01T00:00:00Z" });
+    assert(invalidSnoozeRes3.status === 400, "SUITE26-SNOOZE-003: Past snoozeUntil timestamp rejected with 400");
+
+    // snoozeUntil without timezone must be rejected
+    const invalidSnoozeResNoTz = await request(app)
+      .post(`/api/tasks/${snoozeTask._id}/reminders/snooze`)
+      .set("Authorization", `Bearer ${s26EmpToken}`)
+      .send({ snoozeUntil: "2026-10-15T12:00:00" });
+    assert(invalidSnoozeResNoTz.status === 400, "SUITE26-SNOOZE-003B: snoozeUntil without timezone offset rejected with 400");
+
+    // snoozeUntil beyond 168 hours must be rejected
+    const beyond168hIso = new Date(Date.now() + 170 * 60 * 60 * 1000).toISOString();
+    const invalidSnoozeResBeyond168 = await request(app)
+      .post(`/api/tasks/${snoozeTask._id}/reminders/snooze`)
+      .set("Authorization", `Bearer ${s26EmpToken}`)
+      .send({ snoozeUntil: beyond168hIso });
+    assert(invalidSnoozeResBeyond168.status === 400, "SUITE26-SNOOZE-003C: snoozeUntil > 168 hours into future rejected with 400");
+
+    // snoozeUntil with valid ISO format within 168 hours is accepted
+    const within168hIso = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const validSnoozeIsoRes = await request(app)
+      .post(`/api/tasks/${snoozeTask._id}/reminders/snooze`)
+      .set("Authorization", `Bearer ${s26EmpToken}`)
+      .send({ snoozeUntil: within168hIso });
+    assert(validSnoozeIsoRes.status === 200, "SUITE26-SNOOZE-003D: Valid snoozeUntil ISO timestamp accepted with 200");
+
+    // Valid snooze duration (4 hours)
+    const validSnoozeRes = await request(app)
+      .post(`/api/tasks/${snoozeTask._id}/reminders/snooze`)
+      .set("Authorization", `Bearer ${s26EmpToken}`)
+      .send({ hours: 4 });
+    assert(validSnoozeRes.status === 200, "SUITE26-SNOOZE-004: Valid snooze duration returns 200");
+    assert(validSnoozeRes.body.success === true, "SUITE26-SNOOZE-005: Snooze response indicates success");
+    assert(Boolean(validSnoozeRes.body.snoozedUntil), "SUITE26-SNOOZE-006: snoozedUntil timestamp returned");
+
+    // Verify database persistence of snooze
+    const persistedSnoozeState = await TaskReminderState.findOne({
+      taskId: snoozeTask._id,
+      userId: s26Employee._id,
+    });
+    assert(Boolean(persistedSnoozeState), "SUITE26-SNOOZE-007: TaskReminderState persisted in DB");
+    assert(Boolean(persistedSnoozeState?.snoozedUntil && persistedSnoozeState.snoozedUntil.getTime() > Date.now()), "SUITE26-SNOOZE-008: snoozedUntil is a future date in DB");
+
+    // Verify snoozed task is excluded from pending reminders
+    const afterSnoozeRemindersRes = await request(app)
+      .get("/api/tasks/pending-reminders")
+      .set("Authorization", `Bearer ${s26EmpToken}`);
+    const foundAfterSnooze = afterSnoozeRemindersRes.body.pendingReminders?.some((r: any) => r.taskId === snoozeTask._id.toString());
+    assert(foundAfterSnooze === false, "SUITE26-SNOOZE-009: Snoozed task suppressed from pending reminders");
+
+    // 3. Approval-Aware Task Completion & Rejection Notifications
+    const workflowTask = await Task.create({
+      title: "Comprehensive Audit Compliance Review",
+      status: "in_progress",
+      assignedTo: s26Employee._id,
+      createdBy: s26Creator._id,
+    });
+
+    // Non-admin marks task as completed -> must transition to pending_approval (not completed)
+    const nonAdminCompleteRes = await request(app)
+      .patch(`/api/tasks/${workflowTask._id}`)
+      .set("Authorization", `Bearer ${s26EmpToken}`)
+      .send({ status: "completed" });
+    assert(nonAdminCompleteRes.status === 200, "SUITE26-WORKFLOW-001: Employee update returns 200");
+    assert(nonAdminCompleteRes.body.task.status === "pending_approval", "SUITE26-WORKFLOW-002: Task transitions to pending_approval rather than completed");
+
+    // Admin rejects task via PATCH /api/tasks/:id (reverting status to in_progress with rejectionReason)
+    await request(app)
+      .patch(`/api/tasks/${workflowTask._id}`)
+      .set("Authorization", `Bearer ${s26AdminToken}`)
+      .send({ status: "in_progress", rejectionReason: "Paragraph 4 needs statutory citation" });
+
+    // Verify notification reached BOTH employee (assignee) AND creator (omitting admin)
+    const empRejectionNotif = await Notification.findOne({
+      userId: s26Employee._id,
+      type: "TASK_REJECTED",
+      relatedId: workflowTask._id,
+    });
+    assert(Boolean(empRejectionNotif), "SUITE26-WORKFLOW-003: Rejection notification delivered to assigned employee");
+
+    const creatorRejectionNotif = await Notification.findOne({
+      userId: s26Creator._id,
+      type: "TASK_REJECTED",
+      relatedId: workflowTask._id,
+    });
+    assert(Boolean(creatorRejectionNotif), "SUITE26-WORKFLOW-004: Rejection notification delivered to task creator");
+
+    const adminRejectionNotif = await Notification.findOne({
+      userId: s26Admin._id,
+      type: "TASK_REJECTED",
+      relatedId: workflowTask._id,
+    });
+    assert(!adminRejectionNotif, "SUITE26-WORKFLOW-005: Admin did not self-notify on rejection");
+
+    // Verify rejection notification deduplication / idempotency
+    const empRejectionCountBefore = await Notification.countDocuments({
+      userId: s26Employee._id,
+      type: "TASK_REJECTED",
+      relatedId: workflowTask._id,
+    });
+    assert(empRejectionCountBefore === 1, "SUITE26-WORKFLOW-006: Exactly 1 rejection notification created for assignee");
+
+    // 4. Strict Daily Employee Report Date & EmployeeId Validation
+    // Rejects impossible calendar dates: Feb 30, Month 13, non-leap Feb 29
+    const feb30Res = await request(app)
+      .get("/api/admin/reports/daily-employee?date=2026-02-30")
+      .set("Authorization", `Bearer ${s26AdminToken}`);
+    assert(feb30Res.status === 400, "SUITE26-VALIDATE-001: 2026-02-30 rejected with 400");
+
+    const month13Res = await request(app)
+      .get("/api/admin/reports/daily-employee?date=2026-13-01")
+      .set("Authorization", `Bearer ${s26AdminToken}`);
+    assert(month13Res.status === 400, "SUITE26-VALIDATE-002: 2026-13-01 rejected with 400");
+
+    const nonLeapFeb29Res = await request(app)
+      .get("/api/admin/reports/daily-employee?date=2026-02-29")
+      .set("Authorization", `Bearer ${s26AdminToken}`);
+    assert(nonLeapFeb29Res.status === 400, "SUITE26-VALIDATE-003: 2026-02-29 rejected with 400 on non-leap year");
+
+    // Accepts valid leap day: Feb 29, 2024
+    const leapFeb29Res = await request(app)
+      .get("/api/admin/reports/daily-employee?date=2024-02-29")
+      .set("Authorization", `Bearer ${s26AdminToken}`);
+    assert(leapFeb29Res.status === 200, "SUITE26-VALIDATE-004: 2024-02-29 leap day accepted with 200");
+
+    // Rejects non-24 hex employeeId (e.g. 12-byte string like '123456789012')
+    const twelveByteEmpRes = await request(app)
+      .get("/api/admin/reports/daily-employee?employeeId=123456789012")
+      .set("Authorization", `Bearer ${s26AdminToken}`);
+    assert(twelveByteEmpRes.status === 400, "SUITE26-VALIDATE-005: 12-byte employeeId rejected with 400");
+
+    const nonHexEmpRes = await request(app)
+      .get("/api/admin/reports/daily-employee?employeeId=zzzzzzzzzzzzzzzzzzzzzzzz")
+      .set("Authorization", `Bearer ${s26AdminToken}`);
+    assert(nonHexEmpRes.status === 400, "SUITE26-VALIDATE-006: Non-hex 24-character string rejected with 400");
+
+    const validHexEmpRes = await request(app)
+      .get(`/api/admin/reports/daily-employee?employeeId=${s26Employee._id.toString()}`)
+      .set("Authorization", `Bearer ${s26AdminToken}`);
+    assert(validHexEmpRes.status === 200, "SUITE26-VALIDATE-007: Valid 24-char hex employeeId accepted with 200");
   }
 
   try {

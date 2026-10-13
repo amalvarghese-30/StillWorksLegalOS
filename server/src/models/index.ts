@@ -46,3 +46,7 @@ export type { IReminder, ReminderStatus, ReminderSourceType } from "./Reminder.j
 
 export { GmailAccount } from "./GmailAccount.js";
 export type { IGmailAccount } from "./GmailAccount.js";
+
+export { TaskReminderState } from "./TaskReminderState.js";
+export type { ITaskReminderState } from "./TaskReminderState.js";
+
