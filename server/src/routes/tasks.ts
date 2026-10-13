@@ -1248,21 +1248,48 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       newAssignedTo !== req.userId
     ) {
       const isUrgent = task.priority === "High";
+      const isReassignment = Boolean(oldAssignedTo);
+      const clientName = resolveTaskClientName(task);
+      const deadlineStr = task.deadline ? new Date(task.deadline).toLocaleDateString() : "No deadline";
+      const assignerName = req.user?.name ?? "A colleague";
+
       await NotificationService.createNotification({
         userId: new Types.ObjectId(newAssignedTo),
-        type: "TASK_ASSIGNED",
-        title: isUrgent ? "🚨 Urgent Task Assigned" : "Task Assigned",
-        message: `${req.user?.name ?? "Admin"} assigned you task: "${task.title}"`,
+        type: isReassignment ? "TASK_REASSIGNED" : "TASK_ASSIGNED",
+        title: isUrgent
+          ? (isReassignment ? "🚨 Urgent Task Reassigned to You" : "🚨 Urgent Task Assigned")
+          : (isReassignment ? "Task Reassigned to You" : "Task Assigned"),
+        message: `${assignerName} ${isReassignment ? "reassigned" : "assigned"} you task: "${task.title}" (Client: ${clientName}, Deadline: ${deadlineStr})`,
         relatedId: task._id,
         relatedModel: "Task",
         actorId: new Types.ObjectId(req.userId),
         metadata: {
           taskTitle: task.title,
           taskId: task._id.toString(),
+          clientName,
+          deadline: deadlineStr,
           priority: task.priority,
-          action: "assigned",
+          action: isReassignment ? "reassigned" : "assigned",
+          assignedBy: assignerName,
         },
       }, req.app.get("io"));
+
+      if (oldAssignedTo && oldAssignedTo !== req.userId && oldAssignedTo !== newAssignedTo) {
+        await NotificationService.createNotification({
+          userId: new Types.ObjectId(oldAssignedTo),
+          type: "TASK_REASSIGNED",
+          title: "Task Reassigned to Colleague",
+          message: `${assignerName} reassigned task "${task.title}" to ${(task.assignedTo as any)?.name || "a colleague"}.`,
+          relatedId: task._id,
+          relatedModel: "Task",
+          actorId: new Types.ObjectId(req.userId),
+          metadata: {
+            taskTitle: task.title,
+            taskId: task._id.toString(),
+            action: "reassigned_away",
+          },
+        }, req.app.get("io"));
+      }
     }
 
     // When task is marked completed or submitted for completion approval (pending_approval)
@@ -2063,25 +2090,38 @@ router.post("/:id/forward", requireResourceAccess("task"), async (req: Request, 
       .populate("assignmentHistory.toUser", "name email")
       .populate("assignmentHistory.assignedBy", "name email");
 
+    const effectiveTask = populated || task;
+
     const io = req.app.get("io");
     if (io) {
-      io.emit("task:updated", { task: populated });
+      io.emit("task:updated", { task: effectiveTask });
     }
 
     if (String(toUserId) !== String(req.userId)) {
+      const isUrgent = effectiveTask.priority === "High";
+      const clientName = resolveTaskClientName(effectiveTask);
+      const deadlineStr = effectiveTask.deadline ? new Date(effectiveTask.deadline).toLocaleDateString() : "No deadline";
+      const senderName = req.user?.name ?? "A colleague";
+      const detailsMsg = `${senderName} forwarded task "${effectiveTask.title}" to you (Client: ${clientName}, Deadline: ${deadlineStr})${note ? `. Note: "${note}"` : ""}`;
+
       await NotificationService.createNotification(
         {
           userId: new Types.ObjectId(toUserId),
           type: "TASK_FORWARDED",
-          title: "Task Forwarded to You",
-          message: `${req.user?.name ?? "A colleague"} forwarded task "${task.title}" to you${note ? `: ${note}` : ""}`,
-          relatedId: task._id as any,
+          title: isUrgent ? "🚨 Urgent Task Forwarded to You" : "Task Forwarded to You",
+          message: detailsMsg,
+          relatedId: effectiveTask._id as any,
           relatedModel: "Task",
           actorId: new Types.ObjectId(req.userId!),
           metadata: {
-            taskId: task._id.toString(),
-            taskTitle: task.title,
+            taskId: effectiveTask._id.toString(),
+            taskTitle: effectiveTask.title,
+            clientName,
+            deadline: deadlineStr,
+            priority: effectiveTask.priority,
             note: note || "",
+            action: "forwarded",
+            senderName,
           },
         },
         io
@@ -2161,25 +2201,60 @@ router.post("/:id/reassign", requireResourceAccess("task"), async (req: Request,
       .populate("assignmentHistory.toUser", "name email")
       .populate("assignmentHistory.assignedBy", "name email");
 
+    const effectiveTask = populated || task;
+
     const io = req.app.get("io");
     if (io) {
-      io.emit("task:updated", { task: populated });
+      io.emit("task:updated", { task: effectiveTask });
     }
 
     if (String(toUserId) !== String(req.userId)) {
+      const isUrgent = effectiveTask.priority === "High";
+      const clientName = resolveTaskClientName(effectiveTask);
+      const deadlineStr = effectiveTask.deadline ? new Date(effectiveTask.deadline).toLocaleDateString() : "No deadline";
+      const assignerName = req.user?.name ?? "A colleague";
+      const detailsMsg = `${assignerName} reassigned task "${effectiveTask.title}" to you (Client: ${clientName}, Deadline: ${deadlineStr})${note ? `. Note: "${note}"` : ""}`;
+
       await NotificationService.createNotification(
         {
           userId: new Types.ObjectId(toUserId),
           type: "TASK_REASSIGNED",
-          title: "Task Reassigned to You",
-          message: `${req.user?.name ?? "Administrator"} reassigned task "${task.title}" to you${note ? `: ${note}` : ""}`,
-          relatedId: task._id as any,
+          title: isUrgent ? "🚨 Urgent Task Reassigned to You" : "Task Reassigned to You",
+          message: detailsMsg,
+          relatedId: effectiveTask._id as any,
           relatedModel: "Task",
           actorId: new Types.ObjectId(req.userId!),
           metadata: {
-            taskId: task._id.toString(),
-            taskTitle: task.title,
+            taskId: effectiveTask._id.toString(),
+            taskTitle: effectiveTask.title,
+            clientName,
+            deadline: deadlineStr,
+            priority: effectiveTask.priority,
             note: note || "",
+            action: "reassigned",
+            assignedBy: assignerName,
+          },
+        },
+        io
+      );
+    }
+
+    if (fromUser && String(fromUser) !== String(req.userId) && String(fromUser) !== String(toUserId)) {
+      const assignerName = req.user?.name ?? "A colleague";
+      await NotificationService.createNotification(
+        {
+          userId: new Types.ObjectId(fromUser.toString()),
+          type: "TASK_REASSIGNED",
+          title: "Task Reassigned to Colleague",
+          message: `${assignerName} reassigned task "${effectiveTask.title}" to ${targetUser.name}.`,
+          relatedId: effectiveTask._id as any,
+          relatedModel: "Task",
+          actorId: new Types.ObjectId(req.userId!),
+          metadata: {
+            taskId: effectiveTask._id.toString(),
+            taskTitle: effectiveTask.title,
+            action: "reassigned_away",
+            newAssignee: targetUser.name,
           },
         },
         io

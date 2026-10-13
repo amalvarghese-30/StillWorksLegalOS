@@ -9,6 +9,7 @@ import { AuditLog } from "../models/AuditLog.js";
 import { NotificationService } from "../services/notifications.js";
 import { requireAuth, requireAdminOrPermission } from "../middleware/auth.js";
 import { deleteFile } from "../services/storage.js";
+import { resolveTaskClientName } from "../utils/taskHelpers.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -126,20 +127,55 @@ router.post("/:id/approve", requireAdminOrPermission("approvals"), async (req: R
 
       await task.save();
 
+      const isUrgent = task.priority === "High";
+      const clientName = resolveTaskClientName(task);
+      const deadlineStr = task.deadline ? new Date(task.deadline).toLocaleDateString() : "No deadline";
+
       // Notify target user
       await NotificationService.createNotification(
         {
           userId: approval.targetUserId!,
-          type: "TASK_ASSIGNED",
-          title: "Task Assigned (Approved)",
-          message: `${adminUser.name} approved task reassignment: "${task.title}". Remark: ${cleanRemark}`,
+          type: "TASK_REASSIGNED",
+          title: isUrgent ? "🚨 Urgent Task Reassigned to You" : "Task Reassigned to You (Approved)",
+          message: `${adminUser.name} approved task reassignment to you: "${task.title}" (Client: ${clientName}, Deadline: ${deadlineStr}). Note: ${cleanRemark}`,
           relatedId: task._id,
           relatedModel: "Task",
           actorId: new Types.ObjectId(req.userId!),
-          metadata: { taskId: task._id.toString(), decisionRemark: cleanRemark },
+          metadata: {
+            taskId: task._id.toString(),
+            decisionRemark: cleanRemark,
+            clientName,
+            priority: task.priority,
+            deadline: task.deadline ? new Date(task.deadline).toISOString() : null,
+          },
         },
         io
       );
+
+      // Notify previous assignee if task was reassigned away from them
+      if (
+        prevAssignee &&
+        prevAssignee.toString() !== approval.targetUserId?.toString() &&
+        prevAssignee.toString() !== req.userId
+      ) {
+        await NotificationService.createNotification(
+          {
+            userId: prevAssignee,
+            type: "TASK_REASSIGNED",
+            title: "Task Reassigned to Colleague",
+            message: `Task "${task.title}" (Client: ${clientName}) has been reassigned to ${targetUser.name} by ${adminUser.name}.`,
+            relatedId: task._id,
+            relatedModel: "Task",
+            actorId: new Types.ObjectId(req.userId!),
+            metadata: {
+              taskId: task._id.toString(),
+              newAssigneeId: approval.targetUserId?.toString(),
+              action: "reassigned_away",
+            },
+          },
+          io
+        );
+      }
 
       // Notify requester
       if (approval.requesterId.toString() !== req.userId) {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Bell,
   CheckCheck,
@@ -49,14 +49,38 @@ function formatTimeAgo(isoString: string): string {
 function getNotificationMeta(type: string, metadata?: Record<string, unknown>) {
   switch (type) {
     case "TASK_ASSIGNED":
+    case "TASK_REASSIGNED":
+    case "TASK_FORWARDED":
+    case "TASK_COMPLETED":
     case "TASK_DUE":
     case "OVERDUE_TASK":
       return {
         icon: CheckSquare,
-        bgColor: "bg-amber-500/10 dark:bg-amber-500/20",
-        textColor: "text-amber-600 dark:text-amber-400",
+        bgColor:
+          type === "TASK_REASSIGNED"
+            ? "bg-purple-500/10 dark:bg-purple-500/20"
+            : type === "TASK_FORWARDED"
+            ? "bg-blue-500/10 dark:bg-blue-500/20"
+            : type === "TASK_COMPLETED"
+            ? "bg-emerald-500/10 dark:bg-emerald-500/20"
+            : "bg-amber-500/10 dark:bg-amber-500/20",
+        textColor:
+          type === "TASK_REASSIGNED"
+            ? "text-purple-600 dark:text-purple-400"
+            : type === "TASK_FORWARDED"
+            ? "text-blue-600 dark:text-blue-400"
+            : type === "TASK_COMPLETED"
+            ? "text-emerald-600 dark:text-emerald-400"
+            : "text-amber-600 dark:text-amber-400",
         category: "tasks",
-        label: "Task",
+        label:
+          type === "TASK_REASSIGNED"
+            ? "Reassigned"
+            : type === "TASK_FORWARDED"
+            ? "Forwarded"
+            : type === "TASK_COMPLETED"
+            ? "Completed"
+            : "Task",
       };
     case "COMMENT_MENTION":
       return {
@@ -128,6 +152,184 @@ function getNotificationMeta(type: string, metadata?: Record<string, unknown>) {
 
 type TabFilter = "all" | "unread" | "tasks" | "chat" | "approvals";
 
+interface SwipeableNotificationItemProps {
+  notification: Notification;
+  onSelect: (n: Notification) => void;
+  onMarkAsRead: (id: string) => void;
+  onDelete: (id: string) => void;
+}
+
+function SwipeableNotificationItem({
+  notification: n,
+  onSelect,
+  onMarkAsRead,
+  onDelete,
+}: SwipeableNotificationItemProps) {
+  const meta = getNotificationMeta(n.type, n.metadata);
+  const Icon = meta.icon;
+
+  const [offsetX, setOffsetX] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isDismissed, setIsDismissed] = useState(false);
+
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const isHorizontalSwipe = useRef<boolean | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+    isHorizontalSwipe.current = null;
+    setIsDragging(false);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    const deltaX = e.touches[0].clientX - touchStartX.current;
+    const deltaY = e.touches[0].clientY - touchStartY.current;
+
+    // Detect gesture orientation on initial movements
+    if (isHorizontalSwipe.current === null) {
+      if (Math.abs(deltaX) > 8 && Math.abs(deltaX) > Math.abs(deltaY)) {
+        isHorizontalSwipe.current = true;
+      } else if (Math.abs(deltaY) > 8) {
+        isHorizontalSwipe.current = false;
+      }
+    }
+
+    if (isHorizontalSwipe.current) {
+      setIsDragging(true);
+      setOffsetX(deltaX);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (isHorizontalSwipe.current && Math.abs(offsetX) >= 65) {
+      // Swiped enough left or right to dismiss!
+      setIsDismissed(true);
+      setOffsetX(offsetX > 0 ? 400 : -400);
+      setTimeout(() => {
+        onDelete(n._id);
+      }, 180);
+    } else {
+      setOffsetX(0);
+      setIsDragging(false);
+    }
+    isHorizontalSwipe.current = null;
+  };
+
+  const handleClick = () => {
+    if (isDragging || Math.abs(offsetX) > 10 || isDismissed) return;
+    onSelect(n);
+  };
+
+  return (
+    <div className="relative overflow-hidden rounded-xl">
+      {/* Background reveal on swipe (left or right) */}
+      <div
+        className={`absolute inset-0 flex items-center justify-between px-4 select-none transition-colors ${
+          Math.abs(offsetX) > 10 ? "bg-destructive/15 text-destructive" : "bg-transparent"
+        }`}
+      >
+        <div
+          className={`flex items-center gap-1.5 text-xs font-semibold transition-opacity duration-150 ${
+            offsetX > 25 ? "opacity-100" : "opacity-0"
+          }`}
+        >
+          <Trash2 size={16} />
+          <span>Dismiss</span>
+        </div>
+        <div
+          className={`flex items-center gap-1.5 text-xs font-semibold transition-opacity duration-150 ${
+            offsetX < -25 ? "opacity-100" : "opacity-0"
+          }`}
+        >
+          <span>Dismiss</span>
+          <Trash2 size={16} />
+        </div>
+      </div>
+
+      {/* Main card */}
+      <div
+        onClick={handleClick}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        style={{
+          transform: `translateX(${offsetX}px)`,
+          opacity: isDismissed ? 0 : Math.max(0.15, 1 - Math.abs(offsetX) / 280),
+          transition: isDragging ? "none" : "transform 0.2s ease-out, opacity 0.2s ease-out",
+          touchAction: "pan-y",
+        }}
+        className={`group relative flex items-start gap-3.5 rounded-xl p-3.5 cursor-pointer bg-background hover:bg-muted/60 transition-colors select-none ${
+          !n.read
+            ? "bg-primary/[0.04] dark:bg-primary/[0.07] font-medium"
+            : "opacity-85 hover:opacity-100"
+        }`}
+      >
+        {/* Unread indicator pip */}
+        {!n.read && (
+          <span className="absolute left-1.5 top-5 size-1.5 rounded-full bg-primary ring-2 ring-background" />
+        )}
+
+        {/* Icon badge */}
+        <div
+          className={`mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg ${meta.bgColor} ${meta.textColor}`}
+        >
+          <Icon size={17} strokeWidth={1.75} />
+        </div>
+
+        {/* Content */}
+        <div className="min-w-0 flex-1 pl-0.5">
+          <div className="flex items-center justify-between gap-2">
+            <p className="truncate text-sm font-semibold text-foreground">
+              {n.title}
+            </p>
+            <span className="shrink-0 text-[11px] text-muted-foreground">
+              {formatTimeAgo(n.createdAt)}
+            </span>
+          </div>
+
+          <p className="mt-1 text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+            {n.message}
+          </p>
+
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <span className="inline-flex items-center rounded-pill bg-muted/80 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+              {meta.label}
+            </span>
+
+            {/* Quick action buttons on hover */}
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              {!n.read && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMarkAsRead(n._id);
+                  }}
+                  className="rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground text-[11px]"
+                  title="Mark as read"
+                >
+                  <CheckCheck size={13} strokeWidth={1.75} />
+                </button>
+              )}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(n._id);
+                }}
+                className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive text-[11px]"
+                title="Delete notification"
+              >
+                <Trash2 size={13} strokeWidth={1.75} />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function NotificationCenter() {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<TabFilter>("all");
@@ -152,8 +354,12 @@ export function NotificationCenter() {
       navigate({ to: "/cases/$caseId", params: { caseId: n.relatedId } });
     } else if (n.relatedModel === "Document") {
       navigate({ to: "/documents" });
-    } else if (n.relatedModel === "Task" && n.relatedId) {
-      navigate({ to: "/tasks", search: { taskId: n.relatedId } as any });
+    } else if (
+      (n.relatedModel === "Task" && n.relatedId) ||
+      (n.type.startsWith("TASK_") && (n.relatedId || n.metadata?.["taskId"]))
+    ) {
+      const taskId = (n.relatedId || n.metadata?.["taskId"]) as string;
+      navigate({ to: "/tasks", search: { taskId } as any });
     } else if (n.relatedModel === "Task") {
       navigate({ to: "/tasks" });
     } else if (n.relatedModel === "CalendarEvent") {
@@ -194,6 +400,9 @@ export function NotificationCenter() {
     if (tab === "tasks") {
       return (
         n.type === "TASK_ASSIGNED" ||
+        n.type === "TASK_REASSIGNED" ||
+        n.type === "TASK_FORWARDED" ||
+        n.type === "TASK_COMPLETED" ||
         n.type === "TASK_DUE" ||
         n.type === "OVERDUE_TASK" ||
         n.relatedModel === "Task"
@@ -354,90 +563,29 @@ export function NotificationCenter() {
               </p>
             </div>
           ) : (
-            filteredNotifications.map((n) => {
-              const meta = getNotificationMeta(n.type, n.metadata);
-              const Icon = meta.icon;
-
-              return (
-                <div
-                  key={n._id}
-                  onClick={() => handleNotificationClick(n)}
-                  className={`group relative flex items-start gap-3.5 rounded-xl p-3.5 transition-all cursor-pointer hover:bg-muted/60 ${
-                    !n.read
-                      ? "bg-primary/[0.04] dark:bg-primary/[0.07] font-medium"
-                      : "opacity-85 hover:opacity-100"
-                  }`}
-                >
-                  {/* Unread indicator pip */}
-                  {!n.read && (
-                    <span className="absolute left-1.5 top-5 size-1.5 rounded-full bg-primary ring-2 ring-background" />
-                  )}
-
-                  {/* Icon badge */}
-                  <div
-                    className={`mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg ${meta.bgColor} ${meta.textColor}`}
-                  >
-                    <Icon size={17} strokeWidth={1.75} />
-                  </div>
-
-                  {/* Content */}
-                  <div className="min-w-0 flex-1 pl-0.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="truncate text-sm font-semibold text-foreground">
-                        {n.title}
-                      </p>
-                      <span className="shrink-0 text-[11px] text-muted-foreground">
-                        {formatTimeAgo(n.createdAt)}
-                      </span>
-                    </div>
-
-                    <p className="mt-1 text-xs text-muted-foreground line-clamp-2 leading-relaxed">
-                      {n.message}
-                    </p>
-
-                    <div className="mt-2 flex items-center justify-between gap-2">
-                      <span className="inline-flex items-center rounded-pill bg-muted/80 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                        {meta.label}
-                      </span>
-
-                      {/* Quick action buttons on hover */}
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {!n.read && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              markAsRead(n._id);
-                            }}
-                            className="rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground text-[11px]"
-                            title="Mark as read"
-                          >
-                            <CheckCheck size={13} strokeWidth={1.75} />
-                          </button>
-                        )}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteNotification(n._id);
-                          }}
-                          className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive text-[11px]"
-                          title="Delete notification"
-                        >
-                          <Trash2 size={13} strokeWidth={1.75} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })
+            filteredNotifications.map((n) => (
+              <SwipeableNotificationItem
+                key={n._id}
+                notification={n}
+                onSelect={handleNotificationClick}
+                onMarkAsRead={markAsRead}
+                onDelete={deleteNotification}
+              />
+            ))
           )}
         </div>
 
         {/* Footer */}
         {filteredNotifications.length > 0 && (
           <div className="border-t border-border/80 bg-muted/20 p-3 flex items-center justify-between text-xs text-muted-foreground px-5">
-            <span>
-              {notifications.length} total alert{notifications.length > 1 ? "s" : ""}
+            <span className="flex items-center gap-1.5">
+              <span>
+                {notifications.length} total alert{notifications.length > 1 ? "s" : ""}
+              </span>
+              <span className="hidden sm:inline opacity-40">•</span>
+              <span className="hidden sm:inline text-[11px] opacity-75">
+                Swipe left/right to dismiss
+              </span>
             </span>
             {unreadCount > 0 && (
               <button

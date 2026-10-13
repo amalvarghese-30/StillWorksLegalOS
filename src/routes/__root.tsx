@@ -91,7 +91,12 @@ function RootComponent() {
         <AuthProvider>
           <SocketProvider>
             <Outlet />
-            <Toaster position="top-right" richColors closeButton />
+            <Toaster
+              position="top-right"
+              richColors
+              closeButton
+              swipeDirections={["left", "right", "top", "bottom"]}
+            />
           </SocketProvider>
         </AuthProvider>
       </ThemeProvider>
