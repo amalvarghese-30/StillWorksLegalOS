@@ -786,7 +786,11 @@ router.post("/", async (req: Request, res: Response) => {
         metadata: {
           taskTitle: task.title,
           taskId: task._id.toString(),
+          caseId: cleanCaseId ? cleanCaseId.toString() : undefined,
           priority: task.priority,
+          clientName: resolveTaskClientName(task),
+          deadline: task.deadline ? new Date(task.deadline).toLocaleDateString() : "No deadline",
+          assignedBy: req.user?.name ?? "Staff",
         },
       }, req.app.get("io")); // Pass the Socket.IO instance for real-time emission
     }
@@ -1307,6 +1311,7 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
         metadata: {
           taskTitle: task.title,
           taskId: task._id.toString(),
+          caseId: task.caseId ? String((task.caseId as any)?._id || task.caseId) : undefined,
           clientName,
           deadline: deadlineStr,
           priority: task.priority,
@@ -2184,6 +2189,7 @@ router.post("/:id/forward", requireResourceAccess("task"), async (req: Request, 
           metadata: {
             taskId: effectiveTask._id.toString(),
             taskTitle: effectiveTask.title,
+            caseId: effectiveTask.caseId ? String((effectiveTask.caseId as any)?._id || effectiveTask.caseId) : undefined,
             clientName,
             deadline: deadlineStr,
             priority: effectiveTask.priority,
@@ -2295,6 +2301,7 @@ router.post("/:id/reassign", requireResourceAccess("task"), async (req: Request,
           metadata: {
             taskId: effectiveTask._id.toString(),
             taskTitle: effectiveTask.title,
+            caseId: effectiveTask.caseId ? String((effectiveTask.caseId as any)?._id || effectiveTask.caseId) : undefined,
             clientName,
             deadline: deadlineStr,
             priority: effectiveTask.priority,
@@ -2321,6 +2328,7 @@ router.post("/:id/reassign", requireResourceAccess("task"), async (req: Request,
           metadata: {
             taskId: effectiveTask._id.toString(),
             taskTitle: effectiveTask.title,
+            caseId: effectiveTask.caseId ? String((effectiveTask.caseId as any)?._id || effectiveTask.caseId) : undefined,
             action: "reassigned_away",
             newAssignee: targetUser.name,
           },

@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useMemo, useEffect } from "react";
 import { Plus, PhoneCall, ListTodo, CalendarDays, CheckCircle2, Circle, Clock, Loader2, ChevronLeft, ChevronRight, Search, Briefcase, Filter, X, SlidersHorizontal, UserCheck, AlertCircle, Check, Edit2, PhoneForwarded, PhoneMissed } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSocketEvent } from "@/lib/socket";
-import { useTasks, useUpdateTask, useToggleChecklistItem, taskKeys, type TaskRecord } from "@/services/tasks";
+import { useTasks, useTask, useUpdateTask, useToggleChecklistItem, taskKeys, type TaskRecord } from "@/services/tasks";
 import { useEmployees } from "@/services/admin";
 import { AddTaskDialog } from "@/components/tasks/AddTaskDialog";
 import { QuickCallDialog } from "@/components/tasks/QuickCallDialog";
@@ -204,7 +204,9 @@ function TaskCard({ task, onSelect }: { task: TaskRecord; onSelect?: (task: Task
 function TasksPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const navigate = useNavigate();
   const routeSearch = Route.useSearch();
+  const { data: deepTaskData } = useTask(routeSearch.taskId);
   const [view, setView] = useState("list");
   const [search, setSearch] = useState(routeSearch.search ?? "");
   const [statusFilter, setStatusFilter] = useState<string>("All");
@@ -303,23 +305,31 @@ function TasksPage() {
 
   // Deep linking: auto-open task dialog if taskId matches URL param
   useEffect(() => {
-    if (routeSearch.taskId && allTasks.length > 0) {
-      const matched = allTasks.find((t) => t._id === routeSearch.taskId);
+    if (routeSearch.taskId) {
+      // 1. Try finding in current allTasks (instant)
+      const matched = allTasks.find(
+        (t) => String(t._id) === String(routeSearch.taskId) || String((t as any).id) === String(routeSearch.taskId)
+      );
       if (matched) {
         setSelectedTask(matched);
+      } else if (deepTaskData?.task) {
+        // 2. Fallback to direct query by ID (works regardless of filter, pagination or cache)
+        setSelectedTask(deepTaskData.task);
       }
     }
-  }, [routeSearch.taskId, allTasks]);
+  }, [routeSearch.taskId, allTasks, deepTaskData?.task]);
 
-  // Keep selectedTask in sync with latest queryClient/allTasks data
+  // Keep selectedTask in sync with latest queryClient/allTasks or deepTaskData
   useEffect(() => {
-    if (selectedTask?._id && allTasks.length > 0) {
-      const updated = allTasks.find((t) => t._id === selectedTask._id);
+    if (selectedTask?._id) {
+      const updated = allTasks.find((t) => String(t._id) === String(selectedTask._id));
       if (updated && updated !== selectedTask) {
         setSelectedTask(updated);
+      } else if (deepTaskData?.task && String(deepTaskData.task._id) === String(selectedTask._id) && deepTaskData.task !== selectedTask) {
+        setSelectedTask(deepTaskData.task);
       }
     }
-  }, [allTasks, selectedTask?._id]);
+  }, [allTasks, selectedTask?._id, deepTaskData?.task]);
 
   // Unique categories
   const categories = useMemo(() => {
@@ -1060,8 +1070,20 @@ function TasksPage() {
       <AddTaskDialog open={showAddDialog} onClose={() => setShowAddDialog(false)} />
       <QuickCallDialog open={showQuickCall} onClose={() => setShowQuickCall(false)} />
       <TaskDetailDialog
-        open={!!selectedTask}
-        onClose={() => setSelectedTask(null)}
+        open={Boolean(selectedTask)}
+        onClose={() => {
+          setSelectedTask(null);
+          if (routeSearch.taskId) {
+            navigate({
+              to: "/tasks",
+              search: (prev: any) => {
+                const { taskId, ...rest } = prev;
+                return rest;
+              },
+              replace: true,
+            });
+          }
+        }}
         task={selectedTask}
       />
       <EditCallDialog

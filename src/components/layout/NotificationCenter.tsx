@@ -364,32 +364,37 @@ export function NotificationCenter() {
     markAsRead(n._id);
     setOpen(false);
 
-    if (n.relatedModel === "Case" && n.relatedId) {
-      navigate({ to: "/cases/$caseId", params: { caseId: n.relatedId } });
-    } else if (n.relatedModel === "Document") {
+    const relatedModel = String(n.relatedModel || "").toLowerCase();
+    const type = String(n.type || "").toUpperCase();
+    const relatedId = n.relatedId ? String(n.relatedId) : "";
+    const metaTaskId = n.metadata?.["taskId"] ? String(n.metadata["taskId"]) : "";
+    const metaCaseId = n.metadata?.["caseId"] ? String(n.metadata["caseId"]) : "";
+
+    const effectiveTaskId = (relatedModel === "task" ? relatedId : "") || metaTaskId || (type.startsWith("TASK_") ? relatedId : "");
+    const effectiveCaseId = (relatedModel === "case" ? relatedId : "") || metaCaseId || (type.startsWith("CASE_") ? relatedId : "");
+
+    if (effectiveTaskId) {
+      navigate({ to: "/tasks", search: { taskId: effectiveTaskId } as any });
+    } else if (effectiveCaseId) {
+      navigate({ to: "/cases/$caseId", params: { caseId: effectiveCaseId } });
+    } else if (relatedModel === "document" || type.startsWith("DOCUMENT_")) {
       navigate({ to: "/documents" });
-    } else if (
-      (n.relatedModel === "Task" && n.relatedId) ||
-      (n.type.startsWith("TASK_") && (n.relatedId || n.metadata?.["taskId"]))
-    ) {
-      const taskId = (n.relatedId || n.metadata?.["taskId"]) as string;
-      navigate({ to: "/tasks", search: { taskId } as any });
-    } else if (n.relatedModel === "Task") {
-      navigate({ to: "/tasks" });
-    } else if (n.relatedModel === "CalendarEvent") {
+    } else if (relatedModel === "calendarevent" || type.startsWith("CALENDAR_") || type.startsWith("EVENT_")) {
       navigate({ to: "/calendar" });
-    } else if (n.type.startsWith("CHAT") || n.type === "COMMENT_MENTION" || n.relatedModel === "ChatGroup") {
-      const gid = n.metadata?.["groupId"] || (n.relatedModel === "ChatGroup" ? n.relatedId : undefined);
+    } else if (type.startsWith("CHAT") || type === "COMMENT_MENTION" || relatedModel === "chatgroup") {
+      const gid = n.metadata?.["groupId"] || (relatedModel === "chatgroup" ? relatedId : undefined);
       navigate({
         to: "/chat",
         search: { groupId: typeof gid === "string" ? gid : undefined },
       });
-    } else if (n.type === "APPROVAL_REQUEST" || n.type === "TASK_APPROVAL_REQUIRED") {
-      if (n.relatedModel === "Task" && n.relatedId) {
-        navigate({ to: "/tasks", search: { taskId: n.relatedId } as any });
+    } else if (type === "APPROVAL_REQUEST" || type === "APPROVAL_REQUESTED" || type === "TASK_APPROVAL_REQUIRED") {
+      if (effectiveTaskId) {
+        navigate({ to: "/tasks", search: { taskId: effectiveTaskId } as any });
       } else {
         navigate({ to: "/admin/approvals" });
       }
+    } else if (relatedModel === "task" || type.startsWith("TASK")) {
+      navigate({ to: "/tasks" });
     }
   };
 

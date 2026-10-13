@@ -32,7 +32,10 @@ import {
   History,
   Activity,
   ArrowRight,
+  ArrowUpRight,
+  ExternalLink,
 } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -429,6 +432,13 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
       setLiveChecklist(activeTask.checklist);
     }
   }, [activeTask?.checklist]);
+
+  const linkedCaseId =
+    activeTask.caseId && typeof activeTask.caseId === "object"
+      ? (activeTask.caseId as any)._id
+      : typeof activeTask.caseId === "string"
+      ? activeTask.caseId
+      : null;
 
   const caseDisplay =
     activeTask.caseId && typeof activeTask.caseId === "object"
@@ -1095,10 +1105,25 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                   {activeTask.title}
                 </DialogTitle>
                 {caseDisplay && (
-                  <DialogDescription className="text-helper text-muted-foreground flex items-center gap-1.5">
-                    <Briefcase size={13} />
-                    {caseDisplay}
-                  </DialogDescription>
+                  <div className="pt-0.5">
+                    {linkedCaseId ? (
+                      <Link
+                        to="/cases/$caseId"
+                        params={{ caseId: linkedCaseId }}
+                        className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline hover:text-primary/80 font-medium transition-colors"
+                        onClick={() => onClose()}
+                      >
+                        <Briefcase size={13} className="shrink-0" />
+                        <span>Case: {caseDisplay}</span>
+                        <ArrowUpRight size={12} className="shrink-0 opacity-70" />
+                      </Link>
+                    ) : (
+                      <DialogDescription className="text-helper text-muted-foreground flex items-center gap-1.5">
+                        <Briefcase size={13} />
+                        {caseDisplay}
+                      </DialogDescription>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -1682,9 +1707,21 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                   <Briefcase size={15} />
                   <span>
                     Linked Case:{" "}
-                    <strong className="text-foreground">
-                      {caseDisplay || "None (General Task)"}
-                    </strong>
+                    {linkedCaseId ? (
+                      <Link
+                        to="/cases/$caseId"
+                        params={{ caseId: linkedCaseId }}
+                        className="text-primary hover:underline font-semibold inline-flex items-center gap-1"
+                        onClick={() => onClose()}
+                      >
+                        <span>{caseDisplay}</span>
+                        <ArrowUpRight size={13} />
+                      </Link>
+                    ) : (
+                      <strong className="text-foreground">
+                        {caseDisplay || "None (General Task)"}
+                      </strong>
+                    )}
                   </span>
                 </div>
                 {clientDisplay && (
