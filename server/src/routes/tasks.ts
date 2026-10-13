@@ -1134,6 +1134,47 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       };
     }
 
+    // Handle changes requested / rejection when transitioning from pending_approval
+    const isRejectionOrChangesRequested =
+      originalTask?.status === "pending_approval" &&
+      updates["status"] !== undefined &&
+      updates["status"] !== "completed" &&
+      updates["status"] !== "pending_approval";
+
+    const rejectionReasonRaw =
+      updates["rejectionReason"] ||
+      updates["reason"] ||
+      updates["decisionRemark"] ||
+      updates["adminRemark"] ||
+      updates["feedback"] ||
+      req.body["rejectionReason"] ||
+      req.body["reason"] ||
+      req.body["decisionRemark"] ||
+      req.body["adminRemark"] ||
+      req.body["remark"] ||
+      "";
+    const cleanRejectionReason = typeof rejectionReasonRaw === "string" ? rejectionReasonRaw.trim() : "";
+
+    if (isRejectionOrChangesRequested) {
+      updates["rejectedAt"] = now;
+      updates["rejectedBy"] = new Types.ObjectId(req.userId!);
+      updates["rejectedByName"] = req.user?.name || "Administrator";
+      updates["rejectionReason"] = cleanRejectionReason;
+      updates["submittedForApprovalAt"] = null;
+
+      if (cleanRejectionReason) {
+        if (!updates["$push"]) updates["$push"] = {};
+        (updates["$push"] as any)["remarks"] = {
+          id: new Types.ObjectId().toString(),
+          text: `⚠️ Changes Requested: "${cleanRejectionReason}"`,
+          author: req.user?.name || "Administrator",
+          authorName: req.user?.name || "Administrator",
+          authorId: new Types.ObjectId(req.userId!),
+          createdAt: now,
+        };
+      }
+    }
+
     const pushOps = updates["$push"];
     delete updates["$push"];
 
@@ -1359,26 +1400,30 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
     }
 
     // Notify assignee if admin requested changes (moved from pending_approval back to in_progress/pending)
-    if (
-      originalTask &&
-      originalTask.status === "pending_approval" &&
-      updates["status"] !== undefined &&
-      updates["status"] !== "completed" &&
-      updates["status"] !== "pending_approval"
-    ) {
+    if (isRejectionOrChangesRequested) {
       const assigneeTargetId = (task.assignedTo as any)?._id?.toString?.() ?? task.assignedTo?.toString();
       if (assigneeTargetId && assigneeTargetId !== req.userId && assigneeTargetId !== "[object Object]") {
+        const clientName = resolveTaskClientName(task);
+        const deadlineStr = task.deadline ? new Date(task.deadline).toLocaleDateString() : "No deadline";
+        const reviewerName = req.user?.name ?? "Administrator";
+        const reasonText = cleanRejectionReason || (task as any).rejectionReason || "Please review and revise";
+
         await NotificationService.createNotification({
           userId: new Types.ObjectId(assigneeTargetId),
-          type: "TASK_ASSIGNED",
-          title: "Task Changes Requested",
-          message: `${req.user?.name ?? "Admin"} reviewed task "${task.title}" and requested changes.`,
+          type: "TASK_REJECTED",
+          title: "⚠️ Task Changes Requested / Rejected",
+          message: `${reviewerName} requested revisions on task "${task.title}" (Client: ${clientName}, Deadline: ${deadlineStr}). Feedback: "${reasonText}"`,
           relatedId: task._id,
           relatedModel: "Task",
           actorId: new Types.ObjectId(req.userId),
           metadata: {
             taskTitle: task.title,
             taskId: task._id.toString(),
+            clientName,
+            deadline: deadlineStr,
+            reviewerName,
+            reason: reasonText,
+            decisionRemark: reasonText,
             action: "changes_requested",
           },
         }, req.app.get("io"));
@@ -1974,11 +2019,25 @@ router.post("/:id/reject", requireResourceAccess("task"), async (req: Request, r
     }
 
     const now = new Date();
+    const reasonClean = typeof reason === "string" ? reason.trim() : "";
     task.status = "in_progress";
     task.completedAt = null;
     task.submittedForApprovalAt = null;
     task.approvedAt = null;
     task.rejectedAt = now;
+    task.rejectedBy = new Types.ObjectId(req.userId!);
+    task.rejectedByName = req.user?.name || "Administrator";
+    task.rejectionReason = reasonClean;
+    if (reasonClean) {
+      task.remarks.push({
+        id: new Types.ObjectId().toString(),
+        text: `⚠️ Changes Requested: "${reasonClean}"`,
+        author: req.user?.name || "Administrator",
+        authorName: req.user?.name || "Administrator",
+        authorId: new Types.ObjectId(req.userId!),
+        createdAt: now,
+      });
+    }
     await task.save();
 
     const populated = await Task.findById(task._id)
@@ -1999,19 +2058,28 @@ router.post("/:id/reject", requireResourceAccess("task"), async (req: Request, r
     // Notify assignee
     const assigneeId = (task.assignedTo as any)?._id?.toString() ?? task.assignedTo?.toString();
     if (assigneeId && assigneeId !== req.userId) {
+      const clientName = resolveTaskClientName(task);
+      const deadlineStr = task.deadline ? new Date(task.deadline).toLocaleDateString() : "No deadline";
+      const reviewerName = req.user?.name ?? "Administrator";
+      const reasonText = reasonClean || "Please review and revise";
+
       await NotificationService.createNotification(
         {
           userId: new Types.ObjectId(assigneeId),
           type: "TASK_REJECTED",
-          title: "Task Changes Requested / Rejected",
-          message: `${req.user?.name ?? "Administrator"} requested revisions on task "${task.title}"${reason ? `: ${reason}` : ""}.`,
+          title: "⚠️ Task Changes Requested / Rejected",
+          message: `${reviewerName} requested revisions on task "${task.title}" (Client: ${clientName}, Deadline: ${deadlineStr}). Feedback: "${reasonText}"`,
           relatedId: task._id as any,
           relatedModel: "Task",
           actorId: new Types.ObjectId(req.userId!),
           metadata: {
             taskId: task._id.toString(),
             taskTitle: task.title,
-            reason: reason || "",
+            clientName,
+            deadline: deadlineStr,
+            reviewerName,
+            reason: reasonText,
+            decisionRemark: reasonText,
             action: "rejected",
           },
         },

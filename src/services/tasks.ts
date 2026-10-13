@@ -76,6 +76,9 @@ export interface TaskRecord {
   submittedForApprovalAt?: string | null;
   approvedAt?: string | null;
   rejectedAt?: string | null;
+  rejectionReason?: string;
+  rejectedBy?: { _id: string; name: string; email?: string } | string | null;
+  rejectedByName?: string;
   localPath?: string;
   assignmentHistory?: AssignmentHistoryEntry[];
   caseId?: string | { _id: string; title: string; number?: string } | null;

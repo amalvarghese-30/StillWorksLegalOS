@@ -14,10 +14,33 @@ function getAudioContext(): AudioContext | null {
       audioCtx = new AudioContextClass();
     }
   }
-  if (audioCtx && audioCtx.state === "suspended") {
-    audioCtx.resume().catch(() => {});
-  }
   return audioCtx;
+}
+
+// Automatically unlock AudioContext on first user interaction on mobile/desktop
+if (typeof window !== "undefined") {
+  const unlockAudio = () => {
+    try {
+      const ctx = getAudioContext();
+      if (ctx && ctx.state === "suspended") {
+        ctx.resume().catch(() => {});
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const interactionEvents = ["touchstart", "touchend", "pointerdown", "click", "keydown"];
+  const removeListeners = () => {
+    interactionEvents.forEach((evt) => window.removeEventListener(evt, handleFirstInteraction));
+  };
+  const handleFirstInteraction = () => {
+    unlockAudio();
+    removeListeners();
+  };
+  interactionEvents.forEach((evt) =>
+    window.addEventListener(evt, handleFirstInteraction, { passive: true })
+  );
 }
 
 export type NotificationSoundTone = "chime" | "bell" | "ping";
@@ -52,7 +75,7 @@ export function setNotificationSoundTone(tone: NotificationSoundTone): void {
 
 /**
  * Play a crisp synthesized tone based on active or provided sound tone.
- * Safe against browser autoplay policy restrictions.
+ * Safe against mobile browser autoplay policy restrictions.
  */
 export function playNotificationSound(overrideTone?: NotificationSoundTone): void {
   if (!isNotificationSoundEnabled()) return;
@@ -61,71 +84,83 @@ export function playNotificationSound(overrideTone?: NotificationSoundTone): voi
     const ctx = getAudioContext();
     if (!ctx) return;
 
-    const tone = overrideTone || getNotificationSoundTone();
-    const now = ctx.currentTime;
+    const playToneNow = () => {
+      const tone = overrideTone || getNotificationSoundTone();
+      const now = ctx.currentTime;
 
-    if (tone === "bell") {
-      // Warm tubular bell tone
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(880, now); // A5
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.25, now + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now);
-      osc.stop(now + 0.65);
-    } else if (tone === "ping") {
-      // Short high crisp ping
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(1046.5, now); // C6
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.2, now + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now);
-      osc.stop(now + 0.22);
+      if (tone === "bell") {
+        // Warm tubular bell tone
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(880, now); // A5
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.35, now + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.65);
+      } else if (tone === "ping") {
+        // Short high crisp ping
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(1046.5, now); // C6
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.3, now + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.24);
+      } else {
+        // Primary executive chime (harmonic two-tone D5 -> A5)
+        const osc1 = ctx.createOscillator();
+        const gain1 = ctx.createGain();
+
+        osc1.type = "sine";
+        osc1.frequency.setValueAtTime(587.33, now); // D5
+        osc1.frequency.exponentialRampToValueAtTime(880.0, now + 0.08); // A5
+
+        gain1.gain.setValueAtTime(0.0001, now);
+        gain1.gain.exponentialRampToValueAtTime(0.35, now + 0.025);
+        gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.38);
+
+        osc1.connect(gain1);
+        gain1.connect(ctx.destination);
+
+        // Harmonic overtone for brilliance on phone speakers
+        const osc2 = ctx.createOscillator();
+        const gain2 = ctx.createGain();
+
+        osc2.type = "sine";
+        osc2.frequency.setValueAtTime(1174.66, now + 0.03); // D6
+        osc2.frequency.exponentialRampToValueAtTime(1760.0, now + 0.11); // A6
+
+        gain2.gain.setValueAtTime(0.0001, now + 0.03);
+        gain2.gain.exponentialRampToValueAtTime(0.18, now + 0.06);
+        gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
+
+        osc2.connect(gain2);
+        gain2.connect(ctx.destination);
+
+        osc1.start(now);
+        osc1.stop(now + 0.38);
+
+        osc2.start(now + 0.03);
+        osc2.stop(now + 0.42);
+      }
+    };
+
+    if (ctx.state === "suspended") {
+      ctx.resume().then(() => {
+        playToneNow();
+      }).catch(() => {
+        playToneNow();
+      });
     } else {
-      // Primary executive chime (harmonic two-tone D5 -> A5)
-      const osc1 = ctx.createOscillator();
-      const gain1 = ctx.createGain();
-
-      osc1.type = "sine";
-      osc1.frequency.setValueAtTime(587.33, now); // D5
-      osc1.frequency.exponentialRampToValueAtTime(880.0, now + 0.08); // A5
-
-      gain1.gain.setValueAtTime(0.0001, now);
-      gain1.gain.exponentialRampToValueAtTime(0.28, now + 0.025);
-      gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
-
-      osc1.connect(gain1);
-      gain1.connect(ctx.destination);
-
-      // Harmonic overtone for brilliance
-      const osc2 = ctx.createOscillator();
-      const gain2 = ctx.createGain();
-
-      osc2.type = "sine";
-      osc2.frequency.setValueAtTime(1174.66, now + 0.03); // D6
-      osc2.frequency.exponentialRampToValueAtTime(1760.0, now + 0.11); // A6
-
-      gain2.gain.setValueAtTime(0.0001, now + 0.03);
-      gain2.gain.exponentialRampToValueAtTime(0.12, now + 0.06);
-      gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.38);
-
-      osc2.connect(gain2);
-      gain2.connect(ctx.destination);
-
-      osc1.start(now);
-      osc1.stop(now + 0.36);
-
-      osc2.start(now + 0.03);
-      osc2.stop(now + 0.39);
+      playToneNow();
     }
   } catch (err) {
     console.debug("[sound] Notification chime suppressed:", err);

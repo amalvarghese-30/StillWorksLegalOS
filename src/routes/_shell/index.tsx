@@ -136,17 +136,19 @@ function Dashboard() {
     const isOverdue = t.status !== "pending_approval" && (t.status === "overdue" || (t.deadline ? new Date(t.deadline).getTime() < today.getTime() : false));
     const isDueToday = t.deadline ? new Date(t.deadline).toDateString() === today.toDateString() : false;
 
+    const isChangesRequested = t.status !== "completed" && Boolean(t.rejectedAt || (t as any).rejectionReason);
+
     if (isAdmin) {
-      return isUrgentOrHigh || isOverdue || (isAssignedToMe && isDueToday);
+      return isUrgentOrHigh || isOverdue || isChangesRequested || (isAssignedToMe && isDueToday);
     } else {
       if (assignedId && !isAssignedToMe) {
         return false;
       }
       if (isAssignedToMe) {
-        return isUrgentOrHigh || isOverdue || isDueToday;
+        return isUrgentOrHigh || isOverdue || isDueToday || isChangesRequested;
       }
       if (!assignedId && (isCreatedByMe || isUrgentOrHigh)) {
-        return isUrgentOrHigh || isOverdue || isDueToday;
+        return isUrgentOrHigh || isOverdue || isDueToday || isChangesRequested;
       }
       return false;
     }
@@ -284,7 +286,7 @@ function Dashboard() {
                       <AlertTriangle size={17} strokeWidth={2} />
                     </span>
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <p className="truncate font-medium text-foreground">{t.title}</p>
                         <span className="shrink-0 rounded-pill bg-destructive/15 px-2 py-0.5 text-[11px] font-semibold text-destructive">
                           {t.priority === "High" ? "High Priority" : t.priority}
@@ -292,6 +294,10 @@ function Dashboard() {
                         {t.status === "pending_approval" ? (
                           <span className="shrink-0 rounded-pill bg-amber-500/15 text-amber-600 dark:text-amber-400 px-2 py-0.5 text-[10px] font-bold">
                             IN REVIEW
+                          </span>
+                        ) : (t.status !== "completed" && (t.rejectedAt || (t as any).rejectionReason)) ? (
+                          <span className="shrink-0 rounded-pill bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30 px-2 py-0.5 text-[10px] font-bold">
+                            CHANGES REQUESTED
                           </span>
                         ) : (t.status === "overdue" || (t.deadline && new Date(t.deadline).getTime() < today.getTime())) ? (
                           <span className="shrink-0 rounded-pill bg-destructive text-destructive-foreground px-2 py-0.5 text-[10px] font-bold">
@@ -303,6 +309,11 @@ function Dashboard() {
                         {t.caseName ? `Case: ${t.caseName}` : t.clientName ? `Client: ${t.clientName}` : t.category || "Task"}
                         {t.description ? ` · ${t.description}` : ""}
                       </p>
+                      {Boolean(t.status !== "completed" && ((t as any).rejectionReason || t.rejectedAt)) && (
+                        <div className="mt-1.5 rounded-md bg-rose-500/10 dark:bg-rose-500/20 border border-rose-500/25 px-2.5 py-1 text-xs text-rose-700 dark:text-rose-300 font-medium">
+                          ⚠️ <span className="font-bold">Admin Feedback:</span> "{(t as any).rejectionReason || "Revisions requested by administrator. Please update and re-submit."}"
+                        </div>
+                      )}
                       <p className="mt-1 text-caption text-muted-foreground">
                         {t.deadline ? `Due: ${new Date(t.deadline).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` : "Urgent action required"}
                       </p>

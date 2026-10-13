@@ -200,7 +200,14 @@ function ApprovalsPage() {
 
     if (target.taskId) {
       updateTask.mutate(
-        { id: target.taskId, data: { status: action === "approved" ? "completed" : "in_progress" } },
+        {
+          id: target.taskId,
+          data: {
+            status: action === "approved" ? "completed" : "in_progress",
+            rejectionReason: action === "rejected" ? remark : undefined,
+            reason: action === "rejected" ? remark : undefined,
+          },
+        },
         { onSuccess, onError, onSettled },
       );
     } else if (target.caseId && target.requestId) {

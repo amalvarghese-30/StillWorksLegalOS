@@ -82,6 +82,14 @@ function getNotificationMeta(type: string, metadata?: Record<string, unknown>) {
             ? "Completed"
             : "Task",
       };
+    case "TASK_REJECTED":
+      return {
+        icon: AlertTriangle,
+        bgColor: "bg-rose-500/10 dark:bg-rose-500/20",
+        textColor: "text-rose-600 dark:text-rose-400",
+        category: "tasks",
+        label: "Changes Requested",
+      };
     case "COMMENT_MENTION":
       return {
         icon: AtSign,
@@ -293,6 +301,12 @@ function SwipeableNotificationItem({
             {n.message}
           </p>
 
+          {Boolean(n.metadata?.reason || n.metadata?.decisionRemark) && (
+            <div className="mt-2 rounded-md bg-rose-500/10 dark:bg-rose-500/20 border border-rose-500/25 px-2.5 py-1.5 text-xs text-rose-700 dark:text-rose-300">
+              <span className="font-bold">Admin Feedback:</span> "{String(n.metadata?.reason || n.metadata?.decisionRemark)}"
+            </div>
+          )}
+
           <div className="mt-2 flex items-center justify-between gap-2">
             <span className="inline-flex items-center rounded-pill bg-muted/80 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
               {meta.label}
@@ -402,6 +416,7 @@ export function NotificationCenter() {
         n.type === "TASK_ASSIGNED" ||
         n.type === "TASK_REASSIGNED" ||
         n.type === "TASK_FORWARDED" ||
+        n.type === "TASK_REJECTED" ||
         n.type === "TASK_COMPLETED" ||
         n.type === "TASK_DUE" ||
         n.type === "OVERDUE_TASK" ||
@@ -464,7 +479,7 @@ export function NotificationCenter() {
             </div>
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 mr-8">
             {/* Sound Mute/Unmute Toggle */}
             <Button
               variant="ghost"

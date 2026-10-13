@@ -98,11 +98,16 @@ function TaskCard({ task, onSelect }: { task: TaskRecord; onSelect?: (task: Task
     >
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <p className="truncate font-medium">{task.title}</p>
             {task.status === "pending_approval" && (
               <span className="shrink-0 rounded-pill bg-amber-500/15 text-amber-600 dark:text-amber-400 px-2 py-0.5 text-[10px] font-bold">
                 IN REVIEW
+              </span>
+            )}
+            {task.status !== "completed" && task.status !== "pending_approval" && Boolean(task.rejectedAt || (task as any).rejectionReason) && (
+              <span className="shrink-0 rounded-pill bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30 px-2 py-0.5 text-[10px] font-bold">
+                CHANGES REQUESTED
               </span>
             )}
             {task.status === "completed" && (
@@ -121,6 +126,11 @@ function TaskCard({ task, onSelect }: { task: TaskRecord; onSelect?: (task: Task
               <span className="truncate">{task.description || "No case linked"}</span>
             )}
           </div>
+          {Boolean(task.status !== "completed" && ((task as any).rejectionReason || task.rejectedAt)) && (
+            <div className="mt-1.5 rounded-md bg-rose-500/10 dark:bg-rose-500/20 border border-rose-500/25 px-2 py-0.5 text-[11px] text-rose-700 dark:text-rose-300 font-medium truncate">
+              ⚠️ <span className="font-bold">Feedback:</span> "{(task as any).rejectionReason || "Revisions requested"}"
+            </div>
+          )}
         </div>
         <StatusPill tone={toneForStatus(task.priority)}>{task.priority}</StatusPill>
       </div>

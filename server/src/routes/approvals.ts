@@ -362,12 +362,36 @@ router.post("/:id/reject", requireAdminOrPermission("approvals"), async (req: Re
       await Task.findByIdAndUpdate(approval.entityId, { pendingDeletion: false });
     } else if (approval.type === "case_delete") {
       await Case.findByIdAndUpdate(approval.entityId, { pendingDeletion: false });
-    } else if (approval.type === "task_completion") {
-      await Task.findByIdAndUpdate(approval.entityId, {
-        status: "in_progress",
-        rejectedAt: now,
-        submittedForApprovalAt: null,
-      });
+    }
+
+    let taskTitle = "";
+    let clientName = "General Client";
+    let deadlineStr = "No deadline";
+
+    if (approval.type === "task_completion") {
+      const task = await Task.findById(approval.entityId).populate("clientId caseId");
+      if (task) {
+        taskTitle = task.title;
+        clientName = resolveTaskClientName(task);
+        deadlineStr = task.deadline ? new Date(task.deadline).toLocaleDateString() : "No deadline";
+
+        task.status = "in_progress";
+        task.rejectedAt = now;
+        task.rejectedBy = new Types.ObjectId(req.userId!);
+        task.rejectedByName = adminUser.name || "Administrator";
+        task.rejectionReason = cleanRemark;
+        task.submittedForApprovalAt = null;
+        task.remarks.push({
+          id: new Types.ObjectId().toString(),
+          text: `⚠️ Approval Rejected / Changes Requested: "${cleanRemark}"`,
+          author: adminUser.name || "Administrator",
+          authorName: adminUser.name || "Administrator",
+          authorId: new Types.ObjectId(req.userId!),
+          createdAt: now,
+        });
+        await task.save();
+        if (io) io.emit("task:updated", { task });
+      }
     }
 
     approval.status = "rejected";
@@ -378,16 +402,29 @@ router.post("/:id/reject", requireAdminOrPermission("approvals"), async (req: Re
 
     // Notify requester of rejection with mandatory remark
     if (approval.requesterId.toString() !== req.userId) {
+      const msg = taskTitle
+        ? `${adminUser.name} rejected task completion for "${taskTitle}" (Client: ${clientName}, Deadline: ${deadlineStr}). Feedback / Remark: "${cleanRemark}"`
+        : `Your ${approval.type.replace(/_/g, " ")} request was rejected by ${adminUser.name}. Reason: "${cleanRemark}"`;
+
       await NotificationService.createNotification(
         {
           userId: approval.requesterId,
           type: "TASK_REJECTED",
-          title: "Request Rejected",
-          message: `Your ${approval.type.replace(/_/g, " ")} request was rejected by ${adminUser.name}. Reason: ${cleanRemark}`,
+          title: "⚠️ Task Completion Rejected (Changes Requested)",
+          message: msg,
           relatedId: approval.entityId,
           relatedModel: approval.entityType,
           actorId: new Types.ObjectId(req.userId!),
-          metadata: { approvalId: approval._id.toString(), reason: cleanRemark },
+          metadata: {
+            approvalId: approval._id.toString(),
+            taskId: approval.entityId.toString(),
+            taskTitle,
+            clientName,
+            deadline: deadlineStr,
+            reviewerName: adminUser.name,
+            reason: cleanRemark,
+            decisionRemark: cleanRemark,
+          },
         },
         io
       );
