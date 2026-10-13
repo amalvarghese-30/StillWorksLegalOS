@@ -12,6 +12,7 @@ import { Types } from "mongoose";
 import { ApprovalRequest } from "../models/ApprovalRequest.js";
 import { requireAuth } from "../middleware/auth.js";
 import { canAccessCase, canAccessClient, canAccessTask, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
+import { resolveTaskClientName, resolveTaskAssigneeName } from "../utils/taskHelpers.js";
 
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -494,6 +495,65 @@ router.get("/options", async (_req: Request, res: Response) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/tasks/pending-reminders — list tasks pending for 2+ hours
+// Registered before /:id so "pending-reminders" isn't treated as a task id.
+// ---------------------------------------------------------------------------
+
+router.get("/pending-reminders", async (req: Request, res: Response) => {
+  try {
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    const filter: Record<string, unknown> = {
+      status: { $in: ["pending", "in_progress"] },
+      isDeleted: { $ne: true },
+      $or: [
+        { createdAt: { $lte: twoHoursAgo } },
+        { startedAt: { $lte: twoHoursAgo } },
+      ],
+    };
+
+    // If non-admin, restrict to tasks assigned to or created by them
+    if (req.user?.role !== "admin") {
+      filter["$and"] = [
+        {
+          $or: [
+            { assignedTo: new Types.ObjectId(req.userId!) },
+            { createdBy: new Types.ObjectId(req.userId!) },
+          ],
+        },
+      ];
+    }
+
+    const tasks = await Task.find(filter)
+      .populate("assignedTo", "name email title")
+      .populate("clientId", "name phone")
+      .populate("caseId", "title number parties")
+      .sort({ deadline: 1, createdAt: 1 })
+      .lean();
+
+    const pendingReminders = (tasks || []).map((t: any) => {
+      const startTime = new Date(t.startedAt || t.createdAt || Date.now()).getTime();
+      const pendingHours = Math.max(2, Math.floor((Date.now() - startTime) / (60 * 60 * 1000)));
+      return {
+        taskId: t._id.toString(),
+        taskTitle: t.title,
+        clientName: resolveTaskClientName(t),
+        assignedStaff: resolveTaskAssigneeName(t),
+        assignedToId: t.assignedTo?._id?.toString() || (t.assignedTo ? t.assignedTo.toString() : null),
+        deadline: t.deadline ? new Date(t.deadline).toISOString() : null,
+        priority: t.priority || "Medium",
+        status: t.status,
+        pendingHours,
+      };
+    });
+
+    res.json({ pendingReminders });
+  } catch (err: any) {
+    console.error("[tasks] Get pending reminders error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/tasks/:id (with authorization)
 // ---------------------------------------------------------------------------
 
@@ -891,6 +951,77 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       return;
     }
 
+    // Build human-readable audit diffs of modified fields
+    const diffs: string[] = [];
+    if (updates["title"] !== undefined && String(updates["title"]).trim() !== originalTask.title) {
+      diffs.push(`Title changed from "${originalTask.title}" to "${updates["title"]}"`);
+    }
+    if (updates["description"] !== undefined && String(updates["description"]).trim() !== String(originalTask.description ?? "")) {
+      diffs.push(`Description updated`);
+    }
+    if (updates["priority"] !== undefined && updates["priority"] !== originalTask.priority) {
+      diffs.push(`Priority changed from "${originalTask.priority}" to "${updates["priority"]}"`);
+    }
+    if (updates["status"] !== undefined && updates["status"] !== originalTask.status) {
+      diffs.push(`Status changed from "${originalTask.status}" to "${updates["status"]}"`);
+    }
+    if (updates["deadline"] !== undefined) {
+      const oldD = originalTask.deadline ? new Date(originalTask.deadline).toLocaleDateString() : "None";
+      const newD = updates["deadline"] ? new Date(updates["deadline"] as any).toLocaleDateString() : "None";
+      if (oldD !== newD) {
+        diffs.push(`Deadline changed from ${oldD} to ${newD}`);
+      }
+    }
+    if (updates["assignedTo"] !== undefined && String(updates["assignedTo"] ?? "") !== String(originalTask.assignedTo ?? "")) {
+      diffs.push(`Task reassigned`);
+    }
+    if (updates["callReminder"] !== undefined) {
+      const cr = updates["callReminder"] as any;
+      if (cr && cr.scheduledAt) {
+        const newTimeStr = new Date(cr.scheduledAt).toLocaleString();
+        const oldTimeStr = originalTask.callReminder?.scheduledAt ? new Date(originalTask.callReminder.scheduledAt).toLocaleString() : "None";
+        if (newTimeStr !== oldTimeStr) {
+          diffs.push(`Call reminder rescheduled to ${newTimeStr}`);
+        }
+        if (cr.completed !== Boolean(originalTask.callReminder?.completed)) {
+          diffs.push(`Call marked as ${cr.completed ? "completed" : "pending"}`);
+        }
+      }
+    }
+    if (updates["checklist"] !== undefined) {
+      diffs.push(`Checklist modified (${Array.isArray(updates["checklist"]) ? updates["checklist"].length : 0} items)`);
+    }
+    if (updates["mainCategory"] !== undefined || updates["category"] !== undefined) {
+      diffs.push(`Category updated`);
+    }
+    if (updates["caseId"] !== undefined && String(updates["caseId"] ?? "") !== String(originalTask.caseId ?? "")) {
+      diffs.push(`Linked case updated`);
+    }
+    if (updates["clientId"] !== undefined && String(updates["clientId"] ?? "") !== String(originalTask.clientId ?? "")) {
+      diffs.push(`Linked client updated`);
+    }
+
+    // Auto-record remark if call was rescheduled due to no pickup
+    if (req.body.didNotPickUp || req.body.isCallReschedule) {
+      const rescheduleReason = req.body.rescheduleReason || "Client did not pick up call.";
+      const newTimeStr = updates["callReminder"] && (updates["callReminder"] as any).scheduledAt
+        ? new Date((updates["callReminder"] as any).scheduledAt).toLocaleString()
+        : "a later time";
+      const remarkText = `[Call Rescheduled] ${rescheduleReason} Rescheduled to ${newTimeStr}.`;
+      
+      const newRemark = {
+        _id: new Types.ObjectId(),
+        text: sanitizeInputText(remarkText, 2000),
+        author: req.user?.name || "Staff Member",
+        authorName: req.user?.name || "Staff Member",
+        authorId: new Types.ObjectId(req.userId!),
+        createdAt: new Date(),
+      };
+      if (!updates["$push"]) updates["$push"] = {};
+      (updates["$push"] as any)["remarks"] = newRemark;
+      diffs.push(`Call rescheduled: ${rescheduleReason}`);
+    }
+
     // Check if checklist auto-completion should trigger
     if (updates["checklist"] !== undefined && updates["status"] === undefined) {
       const chk = updates["checklist"] as any[];
@@ -1085,68 +1216,69 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       }, req.app.get("io"));
     }
 
-    // Notify admins if task status changed to pending_approval
-    if (
-      updates["status"] === "pending_approval" &&
-      originalTask &&
-      originalTask.status !== "pending_approval"
-    ) {
-      const admins = await User.find({ role: "admin" }).select("_id");
-      for (const admin of admins) {
-        if (admin._id.toString() !== req.userId) {
-          await NotificationService.createNotification({
-            userId: admin._id as Types.ObjectId,
-            type: "APPROVAL_REQUEST",
-            title: "Task Completion Approval",
-            message: `${req.user?.name ?? "Employee"} submitted task "${task.title}" for verification.`,
-            relatedId: task._id,
-            relatedModel: "Task",
-            actorId: new Types.ObjectId(req.userId),
-            metadata: {
-              taskTitle: task.title,
-              taskId: task._id.toString(),
-              action: "pending_approval",
-            },
-          }, req.app.get("io"));
-        }
-      }
-    }
-
-    // Notify assignee if task status changed to completed
+    // When task is marked completed or submitted for completion approval (pending_approval)
     if (
       updates["status"] !== undefined &&
       originalTask &&
       originalTask.status !== updates["status"] &&
-      updates["status"] === "completed"
+      (updates["status"] === "completed" || updates["status"] === "pending_approval")
     ) {
-      const isApproval = originalTask.status === "pending_approval";
-      // Notify the assignee (if any) and the creator
-      const notifyUserIds = new Set<string>();
-      const assignedId = (task.assignedTo as any)?._id?.toString?.() ?? task.assignedTo?.toString();
-      if (assignedId && assignedId !== "[object Object]") notifyUserIds.add(assignedId);
+      const clientName = resolveTaskClientName(task);
+      const assigneeName = resolveTaskAssigneeName(task);
+      const deadlineStr = task.deadline ? new Date(task.deadline).toLocaleDateString() : "No deadline";
+      const completedBy = req.user?.name || "Staff Member";
+      const isPendingApproval = updates["status"] === "pending_approval";
 
-      const createdId = (task.createdBy as any)?._id?.toString?.() ?? task.createdBy?.toString();
-      if (createdId && createdId !== "[object Object]") notifyUserIds.add(createdId);
+      // 1. Notify all Admins with full task details
+      const admins = await User.find({ role: "admin" }).select("_id");
+      for (const admin of admins) {
+        await NotificationService.createNotification({
+          userId: admin._id as Types.ObjectId,
+          type: isPendingApproval ? "APPROVAL_REQUEST" : "TASK_ASSIGNED",
+          title: isPendingApproval ? "Task Completion Approval" : "Task Completed",
+          message: isPendingApproval
+            ? `Staff ${completedBy} submitted task "${task.title}" for client "${clientName}" for verification. (Assigned to: ${assigneeName}, Deadline: ${deadlineStr})`
+            : `Task "${task.title}" for client "${clientName}" has been completed by ${completedBy}. (Assigned to: ${assigneeName}, Deadline: ${deadlineStr})`,
+          relatedId: task._id,
+          relatedModel: "Task",
+          actorId: new Types.ObjectId(req.userId),
+          metadata: {
+            taskTitle: task.title,
+            taskId: task._id.toString(),
+            clientName,
+            assignedStaff: assigneeName,
+            completedBy,
+            deadline: deadlineStr,
+            completedAt: new Date().toISOString(),
+            action: isPendingApproval ? "pending_approval" : "completed",
+          },
+        }, req.app.get("io"));
+      }
 
-      for (const userId of notifyUserIds) {
-        if (userId && userId !== req.userId) { // Don't notify the user who made the change
-          await NotificationService.createNotification({
-            userId: new Types.ObjectId(userId),
-            type: "TASK_ASSIGNED",
-            title: isApproval ? "Task Completion Approved" : "Task Completed",
-            message: isApproval
-              ? `${req.user?.name ?? "Admin"} approved and verified completion of task: "${task.title}".`
-              : `The task "${task.title}" has been marked as completed.`,
-            relatedId: task._id,
-            relatedModel: "Task",
-            actorId: new Types.ObjectId(req.userId),
-            metadata: {
-              taskTitle: task.title,
-              taskId: task._id.toString(),
-              action: "completed",
-            },
-          }, req.app.get("io"));
-        }
+      // 2. Notify Assigned Person confirming completion with full task details
+      const assignedTargetId = (task.assignedTo as any)?._id?.toString?.() ?? task.assignedTo?.toString();
+      if (assignedTargetId && assignedTargetId !== "[object Object]") {
+        await NotificationService.createNotification({
+          userId: new Types.ObjectId(assignedTargetId),
+          type: "TASK_ASSIGNED",
+          title: isPendingApproval ? "Task Submitted for Completion Approval" : "Task Completed Confirmation",
+          message: isPendingApproval
+            ? `Task "${task.title}" for client "${clientName}" was marked done by ${completedBy} and submitted for admin verification. (Deadline: ${deadlineStr})`
+            : `Task "${task.title}" for client "${clientName}" has been confirmed as completed by ${completedBy}. (Deadline: ${deadlineStr})`,
+          relatedId: task._id,
+          relatedModel: "Task",
+          actorId: new Types.ObjectId(req.userId),
+          metadata: {
+            taskTitle: task.title,
+            taskId: task._id.toString(),
+            clientName,
+            assignedStaff: assigneeName,
+            completedBy,
+            deadline: deadlineStr,
+            completedAt: new Date().toISOString(),
+            action: isPendingApproval ? "pending_approval" : "completed",
+          },
+        }, req.app.get("io"));
       }
     }
 
@@ -1177,13 +1309,16 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       }
     }
 
+    const auditDetails = diffs.length > 0 ? diffs.join("; ") : "Task updated";
     await AuditLog.create({
       userId: req.userId,
       userName: req.user?.name ?? "Unknown",
-      action: "update",
+      action: updates["status"] === "completed" ? "approve" : "update",
       resource: "task",
       resourceId: task._id.toString(),
       resourceName: task.title,
+      details: auditDetails,
+      metadata: { diffs },
       ip: req.ip,
       userAgent: req.headers["user-agent"],
     });
@@ -1237,6 +1372,18 @@ router.post("/:taskId/checklist", requireResourceAccess("task", "taskId"), async
 
     await task.save();
 
+    await AuditLog.create({
+      userId: req.userId,
+      userName: req.user?.name ?? "Unknown",
+      action: "update",
+      resource: "task",
+      resourceId: task._id.toString(),
+      resourceName: task.title,
+      details: `Added checklist item: "${text.trim().slice(0, 100)}"`,
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
     const populated = await Task.findById(task._id)
       .populate("assignedTo", "name email title")
       .populate("assignedBy", "name email title")
@@ -1276,6 +1423,18 @@ router.delete("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskI
     );
 
     await task.save();
+
+    await AuditLog.create({
+      userId: req.userId,
+      userName: req.user?.name ?? "Unknown",
+      action: "update",
+      resource: "task",
+      resourceId: task._id.toString(),
+      resourceName: task.title,
+      details: "Deleted checklist item",
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
 
     const populated = await Task.findById(task._id)
       .populate("assignedTo", "name email title")
@@ -1402,29 +1561,70 @@ router.patch("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskId
         task.status = "pending_approval";
         task.completedAt = now;
         task.submittedForApprovalAt = now;
+      }
 
-        const admins = await User.find({ role: "admin" }).select("_id");
-        for (const admin of admins) {
-          if (admin._id.toString() !== req.userId) {
-            await NotificationService.createNotification(
-              {
-                userId: admin._id as Types.ObjectId,
-                type: "TASK_APPROVAL_REQUIRED",
-                title: "Task Completion Approval Required",
-                message: `${req.user?.name ?? "Employee"} completed all checklist items for "${task.title}". Approval required.`,
-                relatedId: task._id as any,
-                relatedModel: "Task",
-                actorId: new Types.ObjectId(req.userId),
-                metadata: {
-                  taskTitle: task.title,
-                  taskId: task._id.toString(),
-                  action: "pending_approval",
-                },
-              },
-              req.app.get("io")
-            );
-          }
-        }
+      const clientName = resolveTaskClientName(task);
+      const assigneeName = resolveTaskAssigneeName(task);
+      const deadlineStr = task.deadline ? new Date(task.deadline).toLocaleDateString() : "No deadline";
+      const completedBy = req.user?.name ?? "Staff Member";
+      const isPendingApproval = task.status === "pending_approval";
+
+      // 1. Notify all Admins with full task details
+      const admins = await User.find({ role: "admin" }).select("_id");
+      for (const admin of admins) {
+        await NotificationService.createNotification(
+          {
+            userId: admin._id as Types.ObjectId,
+            type: isPendingApproval ? "TASK_APPROVAL_REQUIRED" : "TASK_ASSIGNED",
+            title: isPendingApproval ? "Task Checklist Completed (Approval Required)" : "Task Completed",
+            message: isPendingApproval
+              ? `Staff ${completedBy} completed all checklist items for "${task.title}" (Client: "${clientName}"). Verification required. (Assigned to: ${assigneeName}, Deadline: ${deadlineStr})`
+              : `Task "${task.title}" (Client: "${clientName}") has been completed by ${completedBy}. (Assigned to: ${assigneeName}, Deadline: ${deadlineStr})`,
+            relatedId: task._id as any,
+            relatedModel: "Task",
+            actorId: new Types.ObjectId(req.userId),
+            metadata: {
+              taskTitle: task.title,
+              taskId: task._id.toString(),
+              clientName,
+              assignedStaff: assigneeName,
+              completedBy,
+              deadline: deadlineStr,
+              completedAt: now.toISOString(),
+              action: isPendingApproval ? "pending_approval" : "completed",
+            },
+          },
+          req.app.get("io")
+        );
+      }
+
+      // 2. Notify Assigned Person confirming completion
+      const assignedTargetId = (task.assignedTo as any)?._id?.toString?.() ?? task.assignedTo?.toString();
+      if (assignedTargetId && assignedTargetId !== "[object Object]") {
+        await NotificationService.createNotification(
+          {
+            userId: new Types.ObjectId(assignedTargetId),
+            type: "TASK_ASSIGNED",
+            title: isPendingApproval ? "Checklist Completed (Submitted for Approval)" : "Task Completed Confirmation",
+            message: isPendingApproval
+              ? `All checklist items for "${task.title}" (Client: "${clientName}") were completed by ${completedBy} and submitted for admin approval.`
+              : `Task "${task.title}" (Client: "${clientName}") has been confirmed as completed by ${completedBy}.`,
+            relatedId: task._id as any,
+            relatedModel: "Task",
+            actorId: new Types.ObjectId(req.userId),
+            metadata: {
+              taskTitle: task.title,
+              taskId: task._id.toString(),
+              clientName,
+              assignedStaff: assigneeName,
+              completedBy,
+              deadline: deadlineStr,
+              completedAt: now.toISOString(),
+              action: isPendingApproval ? "pending_approval" : "completed",
+            },
+          },
+          req.app.get("io")
+        );
       }
     } else if (!isAllDone && (task.status === "completed" || task.status === "pending_approval")) {
       task.status = "in_progress";
@@ -2099,6 +2299,18 @@ router.post("/:id/request-deletion", requireResourceAccess("task"), async (req: 
       io.emit("task:updated", { task });
     }
 
+    await AuditLog.create({
+      userId: req.userId,
+      userName: req.user?.name ?? "Unknown",
+      action: "update",
+      resource: "task",
+      resourceId: task._id.toString(),
+      resourceName: task.title,
+      details: `Requested deletion approval: "${cleanReason.slice(0, 100)}"`,
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
     res.status(201).json({
       message: "Deletion request submitted for administrator approval",
       approvalRequest,
@@ -2144,6 +2356,18 @@ router.post("/:id/remarks", requireResourceAccess("task"), async (req: Request, 
     task.remarks.push(remark as any);
     task.updatedBy = new Types.ObjectId(req.userId!);
     await task.save();
+
+    await AuditLog.create({
+      userId: req.userId,
+      userName: req.user?.name ?? "Unknown",
+      action: "update",
+      resource: "task",
+      resourceId: task._id.toString(),
+      resourceName: task.title,
+      details: `Added note: "${cleanText.slice(0, 100)}${cleanText.length > 100 ? "…" : ""}"`,
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
 
     const populated = await Task.findById(task._id)
       .populate("assignedTo", "name email title")

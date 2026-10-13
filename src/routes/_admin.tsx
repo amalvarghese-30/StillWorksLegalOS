@@ -7,6 +7,7 @@ import { SkipLink } from "@/components/common/SkipLink";
 import { ShieldAlert, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CallReminderAlerts } from "@/components/calendar/CallReminderAlerts";
+import { PendingTaskReminderAlerts } from "@/components/tasks/PendingTaskReminderAlerts";
 
 export const Route = createFileRoute("/_admin")({
   component: AdminLayout,
@@ -66,6 +67,7 @@ function AdminLayout() {
     <div className="app-canvas min-h-screen">
       <SkipLink />
       <CallReminderAlerts />
+      <PendingTaskReminderAlerts />
       <div className="mx-auto flex w-full max-w-[1600px] gap-6 px-3 sm:px-4 lg:px-6 pb-10">
         <aside className="sticky top-4 hidden h-[calc(100vh-2rem)] shrink-0 py-4 lg:block">
           <AdminSidebar />

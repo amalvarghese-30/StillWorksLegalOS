@@ -6,6 +6,7 @@ import { AppSettings } from "../models/AppSettings.js";
 import { processOutboxQueue } from "./externalNotifications/index.js";
 import { dispatchDailyAdminReport } from "./dailyAdminReport.js";
 import { processAttachmentRetention } from "./attachmentRetention.js";
+import { resolveTaskClientName, resolveTaskAssigneeName } from "../utils/taskHelpers.js";
 
 // ---------------------------------------------------------------------------
 // Deduplication key helpers
@@ -259,7 +260,7 @@ export class NotificationScheduler {
   }
 
   // ---------------------------------------------------------------------------
-  // Two-hour working-hours pending-task reminders (Section 10.2)
+  // Two-hour pending-task reminders (Remind every 2 hours for all pending tasks)
   // ---------------------------------------------------------------------------
 
   private scheduleWorkingHoursTaskReminders(): void {
@@ -267,64 +268,83 @@ export class NotificationScheduler {
       try {
         await this.checkWorkingHoursPendingTasks();
       } catch (err) {
-        console.error("[NotificationScheduler] Working hours task reminder error:", err);
+        console.error("[NotificationScheduler] Pending task 2-hour reminder error:", err);
       }
-      const timer = setTimeout(() => this.scheduleWorkingHoursTaskReminders(), 30 * 60 * 1000);
+      const timer = setTimeout(() => this.scheduleWorkingHoursTaskReminders(), 15 * 60 * 1000);
       this.timers.push(timer);
     };
-    setTimeout(job, 10000);
+    setTimeout(job, 5000);
   }
 
   private async checkWorkingHoursPendingTasks(): Promise<void> {
-    const config = await (AppSettings as any).getWorkingHoursConfig();
     const now = new Date();
-
-    // Check configured days of week (default: Monday to Saturday, excludes Sunday = 0)
-    const currentDay = now.getDay();
-    if (!config.days.includes(currentDay)) {
-      return;
-    }
-
-    const currentHour = now.getHours();
-    const [startH] = config.start.split(":").map(Number);
-    const [endH] = config.end.split(":").map(Number);
-
-    if (currentHour < startH || currentHour >= endH) {
-      return;
-    }
-
-    // 2-hour slot index (e.g. 10:00 -> slot 0, 12:00 -> slot 1, 14:00 -> slot 2, etc.)
-    const slot = Math.floor((currentHour - startH) / 2);
+    const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
 
     const pendingTasks = await Task.find({
       status: { $in: ["pending", "in_progress"] },
-      assignedTo: { $ne: null },
       isDeleted: { $ne: true },
-    }).select("_id title priority assignedTo deadline").lean();
+      $or: [
+        { createdAt: { $lte: twoHoursAgo } },
+        { startedAt: { $lte: twoHoursAgo } },
+      ],
+    })
+      .populate("assignedTo", "name email title")
+      .populate("clientId", "name phone")
+      .populate("caseId", "title number parties")
+      .lean();
+
+    if (!pendingTasks || pendingTasks.length === 0) return;
 
     for (const task of pendingTasks) {
-      if (!task.assignedTo) continue;
       const taskId = (task._id as Types.ObjectId).toString();
-      const assigneeId = (task.assignedTo as Types.ObjectId).toString();
-      const dedupeKey = workingHoursDedupeKey(`${taskId}:${assigneeId}`, now, slot);
+      const startTime = new Date(task.startedAt || task.createdAt || now).getTime();
+      const pendingHours = Math.max(2, Math.floor((now.getTime() - startTime) / (60 * 60 * 1000)));
+      // 2-hour slot index (e.g. 1 = 2h, 2 = 4h, 3 = 6h, etc.)
+      const slot = Math.floor(pendingHours / 2);
 
-      await NotificationService.createNotification(
-        {
-          userId: new Types.ObjectId(assigneeId),
-          type: "TASK_DUE",
-          title: "Pending Task Reminder",
-          message: `Reminder: Task "${task.title}" is pending. Please update your progress.`,
-          relatedId: task._id as Types.ObjectId,
-          relatedModel: "Task",
-          metadata: {
-            taskId,
-            slot,
-            subType: "working_hours_reminder",
+      const clientName = resolveTaskClientName(task);
+      const assignedStaff = resolveTaskAssigneeName(task);
+      const deadlineStr = task.deadline ? new Date(task.deadline).toISOString() : null;
+      const assignedToId = (task.assignedTo as any)?._id?.toString() || (task.assignedTo ? (task.assignedTo as Types.ObjectId).toString() : null);
+
+      const reminderPayload = {
+        taskId,
+        taskTitle: task.title,
+        clientName,
+        assignedStaff,
+        assignedToId,
+        deadline: deadlineStr,
+        priority: task.priority || "Medium",
+        pendingHours,
+        slot,
+      };
+
+      // Real-time socket event for immediate frontend reminder popup
+      if (this.io && (this.io as any).emit) {
+        (this.io as any).emit("task:pending-reminder", reminderPayload);
+      }
+
+      // Persist deduplicated notification for the assigned staff
+      if (assignedToId) {
+        const dedupeKey = `pending-2hr:${taskId}:${assignedToId}:${slot}`;
+
+        await NotificationService.createNotification(
+          {
+            userId: new Types.ObjectId(assignedToId),
+            type: "TASK_DUE",
+            title: "Pending Work Reminder (2h+)",
+            message: `Reminder: Task "${task.title}" for client "${clientName}" has been pending for ${pendingHours} hours. Deadline: ${task.deadline ? new Date(task.deadline).toLocaleDateString() : "None"}`,
+            relatedId: task._id as Types.ObjectId,
+            relatedModel: "Task",
+            metadata: {
+              ...reminderPayload,
+              subType: "2hr_pending_reminder",
+            },
+            dedupeKey,
           },
-          dedupeKey,
-        },
-        this.io,
-      );
+          this.io,
+        );
+      }
     }
   }
 

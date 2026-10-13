@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo, useEffect } from "react";
-import { Plus, PhoneCall, ListTodo, CalendarDays, CheckCircle2, Circle, Clock, Loader2, ChevronLeft, ChevronRight, Search, Briefcase, Filter, X, SlidersHorizontal, UserCheck, AlertCircle, Check, Edit2, PhoneForwarded } from "lucide-react";
+import { Plus, PhoneCall, ListTodo, CalendarDays, CheckCircle2, Circle, Clock, Loader2, ChevronLeft, ChevronRight, Search, Briefcase, Filter, X, SlidersHorizontal, UserCheck, AlertCircle, Check, Edit2, PhoneForwarded, PhoneMissed } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
 import { StatusPill, toneForStatus } from "@/components/common/StatusPill";
@@ -922,6 +922,15 @@ function TasksPage() {
                             <StatusPill tone={isDone ? "success" : "warning"}>
                               {isDone ? "Done" : "Pending"}
                             </StatusPill>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="size-7 p-0 rounded-full text-amber-600 hover:text-amber-700 hover:bg-amber-500/15"
+                              onClick={() => setEditingCallTask(t)}
+                              title="Didn't Pick Up / Reschedule"
+                            >
+                              <PhoneMissed size={12} />
+                            </Button>
                             <Button
                               variant="ghost"
                               size="sm"

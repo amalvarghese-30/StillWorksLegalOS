@@ -122,6 +122,18 @@ function EditCallDialogInner({ open, onClose, task }: { open: boolean; onClose: 
     toast.info("Rescheduled time set");
   };
 
+  const applyDidNotPickUp = (mins = 30) => {
+    const now = new Date();
+    const target = new Date(now.getTime() + mins * 60 * 1000);
+    const localIso = new Date(target.getTime() - target.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
+    setScheduledAt(localIso);
+    const noteLine = `[Did not pick up call on ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}]`;
+    setNotes((prev) => (prev ? `${prev}\n${noteLine}` : noteLine));
+    toast.info(`Rescheduled for +${mins}m (Did not pick up note added)`);
+  };
+
   const handleCopyPhone = () => {
     if (phone) {
       navigator.clipboard.writeText(phone);
@@ -352,6 +364,13 @@ function EditCallDialogInner({ open, onClose, task }: { open: boolean; onClose: 
               {/* Quick reschedule pills */}
               <div className="flex flex-wrap items-center gap-1.5 pt-1">
                 <span className="text-[11px] text-muted-foreground mr-1">Quick reschedule:</span>
+                <button
+                  type="button"
+                  onClick={() => applyDidNotPickUp(30)}
+                  className="rounded-md border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition-colors"
+                >
+                  📞 Didn&apos;t Pick Up (+30m)
+                </button>
                 <button
                   type="button"
                   onClick={() => applyQuickTime("15m")}

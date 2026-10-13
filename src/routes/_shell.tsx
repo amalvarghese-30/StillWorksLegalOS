@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 import { SkipLink } from "@/components/common/SkipLink";
 import { CallReminderAlerts } from "@/components/calendar/CallReminderAlerts";
+import { PendingTaskReminderAlerts } from "@/components/tasks/PendingTaskReminderAlerts";
 import { notifications, getNotificationPermissionStatus, isElectron } from "@/platform";
 import { useSocketEvent } from "@/lib/socket";
 import { useQueryClient } from "@tanstack/react-query";
@@ -104,6 +105,7 @@ function ShellLayout() {
     <div className="app-canvas min-h-screen overflow-x-hidden">
       <SkipLink />
       <CallReminderAlerts />
+      <PendingTaskReminderAlerts />
       <div
         className={
           isChatActiveOnMobile

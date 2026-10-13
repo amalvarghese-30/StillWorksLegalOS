@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { PhoneCall, Clock, Check, Copy, PhoneForwarded, AlertCircle } from "lucide-react";
+import { PhoneCall, Clock, Check, Copy, PhoneForwarded, AlertCircle, PhoneMissed } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useTasks, useUpdateTask, taskKeys } from "@/services/tasks";
@@ -401,6 +401,25 @@ export function CallReminderAlerts() {
     setIsEditing(true);
   };
 
+  const startDidNotPickUp = () => {
+    if (!activeAlert) return;
+    const now = new Date();
+    // Default reschedule +30 minutes
+    const future = new Date(now.getTime() + 30 * 60 * 1000);
+    const localIso = new Date(future.getTime() - future.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
+
+    setEditName(activeAlert.clientName || activeAlert.title || "");
+    setEditPhone(activeAlert.phone || "");
+    setEditPhoneError(null);
+    setEditSchedule(localIso);
+    const existingNotes = activeAlert.notes || "";
+    const didNotPickUpNote = `[Did not pick up call on ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}]`;
+    setEditNotes(existingNotes ? `${existingNotes}\n${didNotPickUpNote}` : didNotPickUpNote);
+    setIsEditing(true);
+  };
+
   const applyQuickReschedule = (mins: number) => {
     const target = new Date(Date.now() + mins * 60 * 1000);
     const localIso = new Date(target.getTime() - target.getTimezoneOffset() * 60000)
@@ -448,6 +467,9 @@ export function CallReminderAlerts() {
           data: {
             title: `📞 CALL: ${trimmedName}`,
             deadline: newScheduledIso,
+            status: "pending",
+            didNotPickUp: true,
+            rescheduleReason: "Client did not pick up call",
             callReminder: {
               clientName: trimmedName,
               phone: editPhone.trim(),
@@ -864,8 +886,16 @@ export function CallReminderAlerts() {
                 >
                   <Clock size={12} /> Remind Later
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={startDidNotPickUp}
+                  className="text-xs border-amber-500/50 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10 font-semibold gap-1"
+                >
+                  <PhoneMissed size={12} /> Didn't Pick Up / Reschedule
+                </Button>
                 <Button variant="outline" size="sm" onClick={startEdit} className="text-xs">
-                  Edit / Reschedule
+                  Edit
                 </Button>
               </div>
               <div className="flex gap-2 w-full sm:w-auto">

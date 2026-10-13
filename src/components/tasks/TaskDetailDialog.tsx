@@ -14,6 +14,7 @@ import {
   Edit2,
   Check,
   PhoneCall,
+  PhoneMissed,
   Phone,
   Copy,
   MoreVertical,
@@ -225,6 +226,63 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const [newSubItemText, setNewSubItemText] = useState<{ [itemId: string]: string }>({});
   const [expandedItems, setExpandedItems] = useState<{ [itemId: string]: boolean }>({});
+
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false);
+  const [rescheduleDateTime, setRescheduleDateTime] = useState("");
+  const [rescheduleReason, setRescheduleReason] = useState("Person did not pick up call");
+  const [isRescheduling, setIsRescheduling] = useState(false);
+
+  const handleQuickReschedulePreset = (minsOrHours: number, isDay = false) => {
+    const target = new Date();
+    if (isDay) {
+      target.setDate(target.getDate() + minsOrHours);
+      target.setHours(10, 0, 0, 0);
+    } else {
+      target.setTime(Date.now() + minsOrHours * 60 * 1000);
+    }
+    const localIso = new Date(target.getTime() - target.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    setRescheduleDateTime(localIso);
+  };
+
+  const handleConfirmReschedule = async () => {
+    if (!rescheduleDateTime) {
+      toast.error("Please choose a date and time to reschedule the call.");
+      return;
+    }
+    const parsed = new Date(rescheduleDateTime);
+    if (isNaN(parsed.getTime())) {
+      toast.error("Invalid date and time.");
+      return;
+    }
+    setIsRescheduling(true);
+    try {
+      const scheduledIso = parsed.toISOString();
+      await updateTask.mutateAsync({
+        id: activeTask._id,
+        data: {
+          deadline: scheduledIso,
+          status: "pending",
+          didNotPickUp: true,
+          rescheduleReason: rescheduleReason || "Person did not pick up call",
+          callReminder: {
+            clientName: activeTask.callReminder?.clientName || activeTask.title,
+            phone: activeTask.callReminder?.phone || "",
+            scheduledAt: scheduledIso,
+            notes: activeTask.callReminder?.notes || "",
+            completed: false,
+          },
+        },
+      });
+      setCallCompleted(false);
+      setCallScheduledAt(rescheduleDateTime);
+      toast.success("Call rescheduled successfully!");
+      setShowRescheduleModal(false);
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to reschedule call");
+    } finally {
+      setIsRescheduling(false);
+    }
+  };
 
   useEffect(() => {
     if (activeTask) {
@@ -1781,28 +1839,46 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                       </div>
                     </div>
 
-                    <Button
-                      type="button"
-                      variant={callCompleted ? "outline" : "default"}
-                      size="sm"
-                      onClick={handleToggleCallDone}
-                      disabled={updateTask.isPending}
-                      className={`h-8 rounded-pill text-xs font-semibold ${
-                        callCompleted
-                          ? "border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10"
-                          : "gradient-primary text-primary-foreground font-bold shadow-soft"
-                      }`}
-                    >
-                      {callCompleted ? (
-                        <>
-                          <CheckCircle2 size={13} className="mr-1 text-emerald-600" /> Completed
-                        </>
-                      ) : (
-                        <>
-                          <Check size={13} className="mr-1" /> Mark Call Done
-                        </>
-                      )}
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const sched = activeTask.callReminder?.scheduledAt ? new Date(activeTask.callReminder.scheduledAt) : new Date();
+                          const future = new Date(Date.now() + 30 * 60 * 1000);
+                          const localIso = new Date(future.getTime() - future.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+                          setRescheduleDateTime(localIso);
+                          setRescheduleReason("Person did not pick up call");
+                          setShowRescheduleModal(true);
+                        }}
+                        className="h-8 rounded-pill text-xs font-semibold border-amber-500/50 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10"
+                      >
+                        <PhoneMissed size={12} className="mr-1" /> Reschedule Call
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={callCompleted ? "outline" : "default"}
+                        size="sm"
+                        onClick={handleToggleCallDone}
+                        disabled={updateTask.isPending}
+                        className={`h-8 rounded-pill text-xs font-semibold ${
+                          callCompleted
+                            ? "border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10"
+                            : "gradient-primary text-primary-foreground font-bold shadow-soft"
+                        }`}
+                      >
+                        {callCompleted ? (
+                          <>
+                            <CheckCircle2 size={13} className="mr-1 text-emerald-600" /> Completed
+                          </>
+                        ) : (
+                          <>
+                            <Check size={13} className="mr-1" /> Mark Call Done
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </div>
 
                   <div className="mt-3 grid gap-2 sm:grid-cols-2 text-xs">
@@ -1842,6 +1918,109 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                     </p>
                   )}
                 </div>
+              )}
+
+              {/* Reschedule Call Modal */}
+              {showRescheduleModal && (
+                <Dialog open={showRescheduleModal} onOpenChange={(open) => !open && setShowRescheduleModal(false)}>
+                  <DialogContent className="max-w-md rounded-xl p-6">
+                    <DialogHeader>
+                      <div className="flex items-center gap-2.5">
+                        <span className="grid size-10 place-items-center rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                          <PhoneMissed size={20} />
+                        </span>
+                        <div>
+                          <DialogTitle className="text-lg font-semibold">Reschedule Call</DialogTitle>
+                          <DialogDescription className="text-xs text-muted-foreground">
+                            Person did not pick up? Postpone and update this call reminder.
+                          </DialogDescription>
+                        </div>
+                      </div>
+                    </DialogHeader>
+
+                    <div className="my-3 space-y-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs font-medium">Contact / Client</Label>
+                        <p className="rounded-md border border-border/60 bg-muted/30 p-2 text-xs font-semibold text-foreground">
+                          {activeTask.callReminder?.clientName || activeTask.title}
+                          {activeTask.callReminder?.phone ? ` (${activeTask.callReminder.phone})` : ""}
+                        </p>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">New Scheduled Time</Label>
+                        <Input
+                          type="datetime-local"
+                          value={rescheduleDateTime}
+                          onChange={(e) => setRescheduleDateTime(e.target.value)}
+                          className="text-xs font-mono"
+                        />
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          <span className="text-[11px] text-muted-foreground self-center mr-1">Quick:</span>
+                          <button
+                            type="button"
+                            onClick={() => handleQuickReschedulePreset(15)}
+                            className="rounded border border-border/80 bg-muted/40 px-2 py-0.5 text-[10px] font-medium hover:border-primary/50"
+                          >
+                            +15m
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleQuickReschedulePreset(30)}
+                            className="rounded border border-border/80 bg-muted/40 px-2 py-0.5 text-[10px] font-medium hover:border-primary/50"
+                          >
+                            +30m
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleQuickReschedulePreset(60)}
+                            className="rounded border border-border/80 bg-muted/40 px-2 py-0.5 text-[10px] font-medium hover:border-primary/50"
+                          >
+                            +1 hour
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleQuickReschedulePreset(120)}
+                            className="rounded border border-border/80 bg-muted/40 px-2 py-0.5 text-[10px] font-medium hover:border-primary/50"
+                          >
+                            +2 hours
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleQuickReschedulePreset(1, true)}
+                            className="rounded border border-border/80 bg-muted/40 px-2 py-0.5 text-[10px] font-medium hover:border-primary/50"
+                          >
+                            Tomorrow 10 AM
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label className="text-xs font-medium">Reason / Remark</Label>
+                        <Input
+                          value={rescheduleReason}
+                          onChange={(e) => setRescheduleReason(e.target.value)}
+                          placeholder="e.g. Person did not pick up call"
+                          className="text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    <DialogFooter className="mt-2 flex justify-end gap-2">
+                      <Button variant="ghost" size="sm" onClick={() => setShowRescheduleModal(false)} className="text-xs">
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleConfirmReschedule}
+                        disabled={isRescheduling}
+                        className="gradient-primary text-primary-foreground text-xs shadow-soft font-semibold"
+                      >
+                        {isRescheduling ? "Rescheduling…" : "Confirm Reschedule"}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
               )}
             </div>
           )}
