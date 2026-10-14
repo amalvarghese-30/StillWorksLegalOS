@@ -60,7 +60,6 @@ export function PendingTaskReminderAlerts() {
   const [alerts, setAlerts] = useState<PendingReminderItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedTaskForModal, setSelectedTaskForModal] = useState<TaskRecord | null>(null);
-  const [isOpeningTask, setIsOpeningTask] = useState(false);
   const [actionPending, setActionPending] = useState<"dismiss" | "snooze" | "done" | null>(null);
 
   const updateTask = useUpdateTask();
@@ -209,27 +208,42 @@ export function PendingTaskReminderAlerts() {
     }
   };
 
-  const handleOpenTask = async () => {
-    if (!currentAlert || isOpeningTask || actionPending) return;
-    setIsOpeningTask(true);
-    try {
-      const res = await api.get<{ task: TaskRecord }>(`/tasks/${currentAlert.taskId}`);
-      const loadedTask = res?.task || (res as any)?.data?.task;
-      if (loadedTask) {
-        setSelectedTaskForModal(loadedTask);
-        // Silently dismiss on server if opening task
-        api.post(`/tasks/${currentAlert.taskId}/reminders/dismiss`, { slot: currentAlert.slot }).catch(() => {});
-        transientSuppressedRef.current.add(currentAlert.taskId);
-        removeCurrentAlert();
-      } else {
-        toast.error("Could not find task details.");
-      }
-    } catch (err: any) {
-      console.error("[PendingTaskReminderAlerts] Open task error:", err);
-      toast.error(err?.message || "Could not load task details");
-    } finally {
-      setIsOpeningTask(false);
-    }
+  const handleOpenTask = () => {
+    if (!currentAlert || actionPending) return;
+
+    // Build a minimal TaskRecord stub from the reminder data we already have.
+    // TaskDetailDialog's internal useTask(task._id, task) hook will fetch the
+    // full record lazily — no blocking pre-fetch needed here.
+    // Use Object.assign to avoid assigning `undefined` to optional keys under
+    // exactOptionalPropertyTypes.
+    const stubBase = {
+      _id: currentAlert.taskId,
+      title: currentAlert.taskTitle,
+      description: "",
+      category: "",
+      priority: (currentAlert.priority as TaskRecord["priority"]) ?? ("Medium" as const),
+      status: "pending" as const,
+      deadline: currentAlert.deadline ?? null,
+      checklist: [] as TaskRecord["checklist"],
+      clientName: currentAlert.clientName,
+      createdBy: currentAlert.assignedToId ?? "",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const stubTask: TaskRecord = currentAlert.assignedToId
+      ? Object.assign(stubBase, {
+          assignedTo: { _id: currentAlert.assignedToId, name: currentAlert.assignedStaff },
+        })
+      : stubBase;
+
+    setSelectedTaskForModal(stubTask);
+
+    // Silently dismiss the reminder on the server — best-effort, non-blocking.
+    api
+      .post(`/tasks/${currentAlert.taskId}/reminders/dismiss`, { slot: currentAlert.slot })
+      .catch(() => {});
+    transientSuppressedRef.current.add(currentAlert.taskId);
+    removeCurrentAlert();
   };
 
   // Mobile swipe-to-dismiss state and handlers (declared unconditionally at top level)
@@ -240,15 +254,19 @@ export function PendingTaskReminderAlerts() {
   const isHorizontalSwipe = useRef<boolean | null>(null);
 
   const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX;
-    touchStartY.current = e.touches[0].clientY;
+    const touch0 = e.touches[0];
+    if (!touch0) return;
+    touchStartX.current = touch0.clientX;
+    touchStartY.current = touch0.clientY;
     isHorizontalSwipe.current = null;
     setIsSwiping(false);
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    const deltaX = e.touches[0].clientX - touchStartX.current;
-    const deltaY = e.touches[0].clientY - touchStartY.current;
+    const touch0 = e.touches[0];
+    if (!touch0) return;
+    const deltaX = touch0.clientX - touchStartX.current;
+    const deltaY = touch0.clientY - touchStartY.current;
 
     if (isHorizontalSwipe.current === null) {
       if (Math.abs(deltaX) > 10 && Math.abs(deltaX) > Math.abs(deltaY)) {
@@ -427,7 +445,7 @@ export function PendingTaskReminderAlerts() {
                 variant="outline"
                 size="sm"
                 onClick={() => handleSnooze(2)}
-                disabled={Boolean(actionPending) || isOpeningTask}
+                disabled={Boolean(actionPending)}
                 className="text-xs"
                 title="Snooze reminder for 2 hours"
               >
@@ -442,14 +460,10 @@ export function PendingTaskReminderAlerts() {
                 variant="outline"
                 size="sm"
                 onClick={handleOpenTask}
-                disabled={isOpeningTask || Boolean(actionPending)}
+                disabled={Boolean(actionPending)}
                 className="text-xs"
               >
-                {isOpeningTask ? (
-                  <Loader2 size={12} className="mr-1 animate-spin" />
-                ) : (
-                  <ExternalLink size={12} className="mr-1" />
-                )}
+                <ExternalLink size={12} className="mr-1" />
                 Open Task
               </Button>
             </div>
@@ -459,7 +473,7 @@ export function PendingTaskReminderAlerts() {
                 variant="ghost"
                 size="sm"
                 onClick={handleDismiss}
-                disabled={Boolean(actionPending) || isOpeningTask}
+                disabled={Boolean(actionPending)}
                 className="text-xs flex-1 sm:flex-none"
               >
                 {actionPending === "dismiss" ? (
@@ -470,7 +484,7 @@ export function PendingTaskReminderAlerts() {
               <Button
                 size="sm"
                 onClick={handleMarkDone}
-                disabled={Boolean(actionPending) || updateTask.isPending || isOpeningTask}
+                disabled={Boolean(actionPending) || updateTask.isPending}
                 className="gradient-primary text-primary-foreground text-xs shadow-soft flex-1 sm:flex-none font-semibold"
               >
                 {actionPending === "done" || updateTask.isPending ? (
