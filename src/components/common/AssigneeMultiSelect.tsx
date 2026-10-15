@@ -216,14 +216,20 @@ export function AssigneeMultiSelect({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
+        <div
           role="combobox"
           aria-expanded={open}
-          disabled={disabled}
+          tabIndex={disabled ? -1 : 0}
+          onKeyDown={(e) => {
+            if (disabled) return;
+            if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
+              e.preventDefault();
+              setOpen(true);
+            }
+          }}
           className={cn(
-            "w-full justify-between h-11 px-3 font-normal rounded-md border-border bg-background hover:bg-muted/40",
+            "w-full justify-between h-11 px-3 font-normal rounded-md border border-border bg-background hover:bg-muted/40 cursor-pointer flex items-center transition-colors select-none",
+            disabled && "opacity-50 pointer-events-none cursor-not-allowed",
             selectedIds.length > 0 ? "text-foreground" : "text-muted-foreground",
             className
           )}
@@ -262,7 +268,7 @@ export function AssigneeMultiSelect({
                   e.stopPropagation();
                   clearAll();
                 }}
-                className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground"
+                className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground cursor-pointer"
                 title="Clear all"
               >
                 <X size={13} />
@@ -270,7 +276,7 @@ export function AssigneeMultiSelect({
             )}
             <ChevronsUpDown size={15} className="text-muted-foreground shrink-0 opacity-60" />
           </div>
-        </Button>
+        </div>
       </PopoverTrigger>
 
       <PopoverContent className="w-[320px] sm:w-[380px] p-2.5 rounded-xl shadow-lift border-border bg-popover" align="start">

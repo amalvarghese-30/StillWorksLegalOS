@@ -245,6 +245,11 @@ const authLimiter = rateLimit({
   message: { message: "Too many login attempts, please try again later" },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => {
+    // Static avatar image streams must not be throttled by auth rate limiter
+    const target = req.originalUrl || req.url || req.path || "";
+    return req.method === "GET" && (target.includes("/avatar/") || req.path.startsWith("/avatar/"));
+  },
   keyGenerator: (req) => {
     const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
     const bodyIdent = req.body?.email || req.body?.phone || req.body?.identifier || "";
