@@ -72,6 +72,20 @@ export interface CaseStatusBreakdown {
 
 export interface CaseStatusBreakdownResponse {
   breakdown: CaseStatusBreakdown;
+  total?: number;
+}
+
+export interface TaskStatusBreakdown {
+  pending: number;
+  in_progress: number;
+  pending_approval: number;
+  overdue: number;
+  completed: number;
+}
+
+export interface TaskStatusBreakdownResponse {
+  breakdown: TaskStatusBreakdown;
+  total: number;
 }
 
 export interface PerformanceItem {
@@ -134,6 +148,7 @@ export const reportKeys = {
   employeeWorkload: ["reports", "employeeWorkload"] as const,
   topClients: ["reports", "topClients"] as const,
   caseStatusBreakdown: ["reports", "caseStatusBreakdown"] as const,
+  taskStatusBreakdown: ["reports", "taskStatusBreakdown"] as const,
   myPerformance: ["reports", "myPerformance"] as const,
   dailyEmployee: (date?: string, employeeId?: string) => ["reports", "dailyEmployee", date ?? "", employeeId ?? ""] as const,
 };
@@ -205,22 +220,17 @@ export function useDailyEmployeeReport(params?: { date?: string; employeeId?: st
 }
 
 export function useCaseStatusBreakdown() {
-  const { data: casesData } = useCases({ page: "1", limit: "1000" });
-  const cases = casesData?.cases ?? [];
+  return useQuery<CaseStatusBreakdownResponse>({
+    queryKey: reportKeys.caseStatusBreakdown,
+    queryFn: () => api.get("/admin/reports/case-status-breakdown"),
+    refetchInterval: 60_000,
+  });
+}
 
-  const breakdown: CaseStatusBreakdown = {
-    Active: 0,
-    "On Hold": 0,
-    Closed: 0,
-    Urgent: 0,
-  };
-
-  for (const c of cases) {
-    if (c.status === "Active") breakdown.Active++;
-    else if (c.status === "On Hold") breakdown["On Hold"]++;
-    else if (c.status === "Closed") breakdown.Closed++;
-    else if (c.status === "Urgent") breakdown.Urgent++;
-  }
-
-  return { data: { breakdown } };
+export function useTaskStatusBreakdown() {
+  return useQuery<TaskStatusBreakdownResponse>({
+    queryKey: reportKeys.taskStatusBreakdown,
+    queryFn: () => api.get("/admin/reports/task-status-breakdown"),
+    refetchInterval: 60_000,
+  });
 }

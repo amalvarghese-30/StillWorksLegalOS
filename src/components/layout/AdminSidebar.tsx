@@ -78,7 +78,7 @@ export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="glass flex h-full w-[290px] flex-col rounded-2xl p-4">
       <div className="flex items-center gap-3 px-2 py-3">
-        <span className="grid size-11 shrink-0 place-items-center rounded-md bg-foreground text-background shadow-soft">
+        <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-soft">
           <ShieldAlert size={21} strokeWidth={1.75} />
         </span>
         <div className="min-w-0">
@@ -98,7 +98,7 @@ export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
                   onClick={onNavigate}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "group flex min-h-11 items-center gap-3 rounded-md px-3.5 py-2.5 text-helper font-medium transition-all duration-200",
+                    "group flex min-h-11 items-center gap-3 rounded-xl px-3.5 py-2.5 text-helper font-medium transition-all duration-200",
                     active
                       ? "gradient-primary text-primary-foreground shadow-soft"
                       : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -125,7 +125,7 @@ export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
                   onClick={onNavigate}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "group flex min-h-11 items-center gap-3 rounded-md px-3.5 py-2.5 text-helper font-medium transition-all duration-200",
+                    "group flex min-h-11 items-center gap-3 rounded-xl px-3.5 py-2.5 text-helper font-medium transition-all duration-200",
                     active
                       ? "gradient-primary text-primary-foreground shadow-soft"
                       : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -140,7 +140,7 @@ export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
         </ul>
       </nav>
 
-      <div className="mt-4 rounded-md border border-border/70 bg-card/70 p-3">
+      <div className="mt-4 rounded-xl border border-border/70 bg-card/70 p-3">
         <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
           <span className="grid size-10 shrink-0 place-items-center rounded-full bg-primary/12 font-display text-helper font-semibold text-primary">
             {user?.initials ?? "AD"}
@@ -154,7 +154,7 @@ export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
               <button
                 type="button"
                 aria-label="Sign out"
-                className="grid size-9 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground active:scale-95"
+                className="grid size-9 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground active:scale-95"
               >
                 <LogOut size={17} strokeWidth={1.75} />
               </button>
@@ -184,7 +184,7 @@ export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
       </div>
 
       {/* StillWorks attribution & Version Badge */}
-      <div className="mt-3 flex items-center justify-between rounded-md border border-border/40 bg-muted/30 px-3 py-2">
+      <div className="mt-3 flex items-center justify-between rounded-xl border border-border/40 bg-muted/30 px-3 py-2">
         <span className="text-xs font-semibold tracking-wide text-muted-foreground">
           Powered by <span className="text-primary">stillworks.in</span>
         </span>

@@ -1155,6 +1155,64 @@ router.get("/reports/practice-areas", requireAdminOrPermission("reports"), async
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/reports/case-status-breakdown — case count by status
+// ---------------------------------------------------------------------------
+
+router.get("/reports/case-status-breakdown", requireAdminOrPermission("reports"), async (_req: Request, res: Response) => {
+  try {
+    const [activeCount, urgentCount, onHoldCount, closedCount] = await Promise.all([
+      Case.countDocuments({ status: "Active" }),
+      Case.countDocuments({ status: "Urgent" }),
+      Case.countDocuments({ status: "On Hold" }),
+      Case.countDocuments({ status: "Closed" }),
+    ]);
+
+    res.json({
+      breakdown: {
+        Active: activeCount,
+        Urgent: urgentCount,
+        "On Hold": onHoldCount,
+        Closed: closedCount,
+      },
+      total: activeCount + urgentCount + onHoldCount + closedCount,
+    });
+  } catch (err) {
+    console.error("[reports] Case status breakdown error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/reports/task-status-breakdown — task count by operational status
+// ---------------------------------------------------------------------------
+
+router.get("/reports/task-status-breakdown", requireAdminOrPermission("reports"), async (_req: Request, res: Response) => {
+  try {
+    const [pending, in_progress, pending_approval, overdue, completed] = await Promise.all([
+      Task.countDocuments({ status: "pending", isDeleted: { $ne: true } }),
+      Task.countDocuments({ status: "in_progress", isDeleted: { $ne: true } }),
+      Task.countDocuments({ status: "pending_approval", isDeleted: { $ne: true } }),
+      Task.countDocuments({ status: "overdue", isDeleted: { $ne: true } }),
+      Task.countDocuments({ status: "completed", isDeleted: { $ne: true } }),
+    ]);
+
+    res.json({
+      breakdown: {
+        pending,
+        in_progress,
+        pending_approval,
+        overdue,
+        completed,
+      },
+      total: pending + in_progress + pending_approval + overdue + completed,
+    });
+  } catch (err) {
+    console.error("[reports] Task status breakdown error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/reports/employee-workload — workload stats with current task
 // ---------------------------------------------------------------------------
 

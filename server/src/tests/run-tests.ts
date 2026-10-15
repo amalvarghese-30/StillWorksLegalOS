@@ -3215,6 +3215,163 @@ async function run() {
     assert(caseDetailRes.body.case.number === activeCase1.number, "SUITE29-WORKLOAD-030: Case detail contains correct case number");
   }
 
+  // =========================================================================
+  // SUITE 30: Admin Dashboard Modernization & Chart Aggregation Verification
+  // =========================================================================
+  {
+    console.log(`\n--- Suite 30: Admin Dashboard Modernization & Breakdown Endpoints ---`);
+
+    const s30Admin = await createUser({
+      name: "S30 Admin Adv",
+      email: `s30-admin-${Date.now()}@test.com`,
+      role: "admin",
+      status: "active",
+    });
+    const s30AdminToken = await createToken(s30Admin);
+
+    const s30Staff = await createUser({
+      name: "S30 Staff Member",
+      email: `s30-staff-${Date.now()}@test.com`,
+      role: "office_staff",
+      status: "active",
+      permissions: {
+        dashboard: true, clients: false, cases: false, tasks: false,
+        documents: false, calendar: false, chat: false, reports: false,
+        employees: false, approvals: false, auditLogs: false, settings: false,
+      },
+    });
+    const s30StaffToken = await createToken(s30Staff);
+
+    // 1. Authorization checks for breakdown endpoints
+    const unauthCaseRes = await request(app).get("/api/admin/reports/case-status-breakdown");
+    assert(unauthCaseRes.status === 401, "SUITE30-DASH-001: Unauthenticated case breakdown rejected with 401");
+
+    const forbiddenCaseRes = await request(app)
+      .get("/api/admin/reports/case-status-breakdown")
+      .set("Authorization", `Bearer ${s30StaffToken}`);
+    assert(forbiddenCaseRes.status === 403, "SUITE30-DASH-002: Unauthorized staff case breakdown rejected with 403");
+
+    const unauthTaskRes = await request(app).get("/api/admin/reports/task-status-breakdown");
+    assert(unauthTaskRes.status === 401, "SUITE30-DASH-003: Unauthenticated task breakdown rejected with 401");
+
+    const forbiddenTaskRes = await request(app)
+      .get("/api/admin/reports/task-status-breakdown")
+      .set("Authorization", `Bearer ${s30StaffToken}`);
+    assert(forbiddenTaskRes.status === 403, "SUITE30-DASH-004: Unauthorized staff task breakdown rejected with 403");
+
+    // 2. Seed test cases for case-status-breakdown
+    await Case.create({
+      title: "S30 Active Matter",
+      number: `S30-ACT-${Date.now()}`,
+      status: "Active",
+      createdBy: s30Admin._id,
+      assignedBy: s30Admin._id,
+    });
+    await Case.create({
+      title: "S30 Urgent Matter",
+      number: `S30-URG-${Date.now()}`,
+      status: "Urgent",
+      createdBy: s30Admin._id,
+      assignedBy: s30Admin._id,
+    });
+    await Case.create({
+      title: "S30 On Hold Matter",
+      number: `S30-HLD-${Date.now()}`,
+      status: "On Hold",
+      createdBy: s30Admin._id,
+      assignedBy: s30Admin._id,
+    });
+    await Case.create({
+      title: "S30 Closed Matter",
+      number: `S30-CLS-${Date.now()}`,
+      status: "Closed",
+      createdBy: s30Admin._id,
+      assignedBy: s30Admin._id,
+    });
+
+    // 3. Verify Case Status Breakdown endpoint
+    const caseBreakdownRes = await request(app)
+      .get("/api/admin/reports/case-status-breakdown")
+      .set("Authorization", `Bearer ${s30AdminToken}`);
+    assert(caseBreakdownRes.status === 200, "SUITE30-DASH-005: GET /api/admin/reports/case-status-breakdown returns 200");
+    assert(typeof caseBreakdownRes.body.breakdown === "object", "SUITE30-DASH-006: Response contains breakdown object");
+    assert(caseBreakdownRes.body.breakdown.Active >= 1, "SUITE30-DASH-007: Active cases counted (>= 1)");
+    assert(caseBreakdownRes.body.breakdown.Urgent >= 1, "SUITE30-DASH-008: Urgent cases counted (>= 1)");
+    assert(caseBreakdownRes.body.breakdown["On Hold"] >= 1, "SUITE30-DASH-009: On Hold cases counted (>= 1)");
+    assert(caseBreakdownRes.body.breakdown.Closed >= 1, "SUITE30-DASH-010: Closed cases counted (>= 1)");
+    const expectedCaseTotal =
+      caseBreakdownRes.body.breakdown.Active +
+      caseBreakdownRes.body.breakdown.Urgent +
+      caseBreakdownRes.body.breakdown["On Hold"] +
+      caseBreakdownRes.body.breakdown.Closed;
+    assert(caseBreakdownRes.body.total === expectedCaseTotal, "SUITE30-DASH-011: Total cases matches sum of categories");
+
+    // 4. Seed test tasks for task-status-breakdown
+    await Task.create({
+      title: "S30 Pending Task",
+      status: "pending",
+      assignedTo: s30Staff._id,
+      createdBy: s30Admin._id,
+    });
+    await Task.create({
+      title: "S30 In Progress Task",
+      status: "in_progress",
+      assignedTo: s30Staff._id,
+      createdBy: s30Admin._id,
+    });
+    await Task.create({
+      title: "S30 Approval Task",
+      status: "pending_approval",
+      assignedTo: s30Staff._id,
+      createdBy: s30Admin._id,
+    });
+    await Task.create({
+      title: "S30 Completed Task",
+      status: "completed",
+      assignedTo: s30Staff._id,
+      createdBy: s30Admin._id,
+      completedAt: new Date(),
+    });
+    // Deleted task should be excluded
+    await Task.create({
+      title: "S30 Deleted Task",
+      status: "pending",
+      assignedTo: s30Staff._id,
+      createdBy: s30Admin._id,
+      isDeleted: true,
+    });
+
+    // 5. Verify Task Status Breakdown endpoint
+    const taskBreakdownRes = await request(app)
+      .get("/api/admin/reports/task-status-breakdown")
+      .set("Authorization", `Bearer ${s30AdminToken}`);
+    assert(taskBreakdownRes.status === 200, "SUITE30-DASH-012: GET /api/admin/reports/task-status-breakdown returns 200");
+    assert(typeof taskBreakdownRes.body.breakdown === "object", "SUITE30-DASH-013: Response contains breakdown object");
+    assert(taskBreakdownRes.body.breakdown.pending >= 1, "SUITE30-DASH-014: Pending tasks counted (>= 1)");
+    assert(taskBreakdownRes.body.breakdown.in_progress >= 1, "SUITE30-DASH-015: In progress tasks counted (>= 1)");
+    assert(taskBreakdownRes.body.breakdown.pending_approval >= 1, "SUITE30-DASH-016: Pending approval tasks counted (>= 1)");
+    assert(taskBreakdownRes.body.breakdown.completed >= 1, "SUITE30-DASH-017: Completed tasks counted (>= 1)");
+    const expectedTaskTotal =
+      taskBreakdownRes.body.breakdown.pending +
+      taskBreakdownRes.body.breakdown.in_progress +
+      taskBreakdownRes.body.breakdown.pending_approval +
+      taskBreakdownRes.body.breakdown.overdue +
+      taskBreakdownRes.body.breakdown.completed;
+    assert(taskBreakdownRes.body.total === expectedTaskTotal, "SUITE30-DASH-018: Total tasks matches sum of categories");
+
+    // 6. Verify Approvals Queue Endpoint returns enriched task details
+    const approvalsRes = await request(app)
+      .get("/api/admin/approvals")
+      .set("Authorization", `Bearer ${s30AdminToken}`);
+    assert(approvalsRes.status === 200, "SUITE30-DASH-019: GET /api/admin/approvals returns 200");
+    assert(Array.isArray(approvalsRes.body.approvals), "SUITE30-DASH-020: Approvals list is an array");
+    const foundApproval = approvalsRes.body.approvals.find(
+      (a: any) => a.kind === "Task Completion" && a.title === "S30 Approval Task"
+    );
+    assert(Boolean(foundApproval), "SUITE30-DASH-021: Seeded pending approval task is present in approval queue");
+    assert(Boolean(foundApproval.taskDetails), "SUITE30-DASH-022: Approval item contains enriched taskDetails for TaskDetailDialog");
+  }
+
   try {
     if (mongoose.connection.readyState === 1) {
       await mongoose.connection.dropDatabase();
