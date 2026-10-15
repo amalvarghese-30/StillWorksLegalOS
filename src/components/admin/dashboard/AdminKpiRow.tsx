@@ -8,8 +8,6 @@ import {
   FileText,
   Activity,
   ChevronRight,
-  TrendingUp,
-  ArrowRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -31,7 +29,6 @@ export function AdminKpiRow({
   clientsCount,
   docsApprovedCount,
   auditEventsCount,
-  periodHint = "30 days",
 }: AdminKpiRowProps) {
   const cards = [
     {
@@ -40,10 +37,8 @@ export function AdminKpiRow({
       count: pendingApprovalsCount,
       to: "/admin/approvals",
       icon: ShieldCheck,
-      iconContainer: "bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/50",
-      badgeText: "↑ 12%",
-      badgeClass: "bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400 border border-rose-200/60 dark:border-rose-900/40",
-      subtext: "Needs sign-off",
+      iconContainer:
+        "bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/50",
     },
     {
       id: "team",
@@ -51,10 +46,8 @@ export function AdminKpiRow({
       count: teamMembersCount,
       to: "/admin/employees",
       icon: Users,
-      iconContainer: "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/50",
-      badgeText: "→ 0%",
-      badgeClass: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-900/40",
-      subtext: "Roles & permissions",
+      iconContainer:
+        "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/50",
     },
     {
       id: "cases",
@@ -62,10 +55,8 @@ export function AdminKpiRow({
       count: activeCasesCount,
       to: "/cases",
       icon: Briefcase,
-      iconContainer: "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200/60 dark:border-blue-800/50",
-      badgeText: "↑ 6%",
-      badgeClass: "bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400 border border-blue-200/60 dark:border-blue-900/40",
-      subtext: "Firm-wide",
+      iconContainer:
+        "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200/60 dark:border-blue-800/50",
     },
     {
       id: "clients",
@@ -73,10 +64,8 @@ export function AdminKpiRow({
       count: clientsCount,
       to: "/clients",
       icon: UserCog,
-      iconContainer: "bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-200/60 dark:border-amber-800/50",
-      badgeText: "↑ 2%",
-      badgeClass: "bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40",
-      subtext: "On record",
+      iconContainer:
+        "bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-200/60 dark:border-amber-800/50",
     },
     {
       id: "docs",
@@ -84,10 +73,8 @@ export function AdminKpiRow({
       count: docsApprovedCount,
       to: "/documents",
       icon: FileText,
-      iconContainer: "bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 border border-purple-200/60 dark:border-purple-800/50",
-      badgeText: "↑ 25%",
-      badgeClass: "bg-purple-50 text-purple-600 dark:bg-purple-950/50 dark:text-purple-400 border border-purple-200/60 dark:border-purple-900/40",
-      subtext: periodHint,
+      iconContainer:
+        "bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 border border-purple-200/60 dark:border-purple-800/50",
     },
     {
       id: "audit",
@@ -95,10 +82,8 @@ export function AdminKpiRow({
       count: auditEventsCount,
       to: "/admin/audit-logs",
       icon: Activity,
-      iconContainer: "bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200/60 dark:border-rose-800/50",
-      badgeText: "↑ 18%",
-      badgeClass: "bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400 border border-rose-200/60 dark:border-rose-900/40",
-      subtext: "Recent trail",
+      iconContainer:
+        "bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200/60 dark:border-rose-800/50",
     },
   ];
 
@@ -134,22 +119,10 @@ export function AdminKpiRow({
               />
             </div>
 
-            {/* Middle row: Label */}
-            <div className="mt-3.5 mb-2">
+            {/* Bottom row: Label */}
+            <div className="mt-4">
               <span className="text-xs sm:text-sm font-semibold tracking-tight text-foreground/90 group-hover:text-foreground transition-colors block truncate">
                 {c.title}
-              </span>
-            </div>
-
-            {/* Bottom row: Trend badge */}
-            <div className="flex items-center">
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-bold tracking-wide",
-                  c.badgeClass
-                )}
-              >
-                {c.badgeText}
               </span>
             </div>
           </Link>
