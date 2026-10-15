@@ -2971,6 +2971,250 @@ async function run() {
     assert(foundTask.clientId?.name === "S28 Test Client", "SUITE28-REPORT-010: task.clientId.name is populated for drill-down display");
   }
 
+  // -------------------------------------------------------------------------
+  // Suite 29: Employee Workload Filtering & Interactive Navigation Tests
+  // -------------------------------------------------------------------------
+  console.log("\n--- Suite 29: Employee Workload Filtering & Interactive Navigation Tests ---");
+  {
+    const s29Admin = await createUser({ role: "admin", name: "S29 Admin" });
+    const s29Employee = await createUser({ role: "junior_advocate", name: "S29 Advocate" });
+    const s29OtherEmployee = await createUser({ role: "junior_advocate", name: "S29 Other Advocate" });
+    const s29AdminToken = await createToken(s29Admin);
+    const s29EmpToken = await createToken(s29Employee);
+    const s29OtherEmpToken = await createToken(s29OtherEmployee);
+
+    const empId = s29Employee._id.toString();
+    const otherEmpId = s29OtherEmployee._id.toString();
+
+    // 1. Create Active and Closed cases for employee and other employee
+    const activeCase1 = await Case.create({
+      number: `S29-CASE-01-${Date.now()}`,
+      title: "S29 Employee Active Case 1",
+      description: "Active litigation matter",
+      practice: "Civil",
+      court: "High Court of Delhi",
+      status: "Active",
+      priority: "High",
+      assignedTo: s29Employee._id,
+      assignedBy: s29Admin._id,
+      createdBy: s29Admin._id,
+    });
+    const urgentCase2 = await Case.create({
+      number: `S29-CASE-02-${Date.now()}`,
+      title: "S29 Employee Urgent Case 2",
+      description: "Urgent injunction matter",
+      practice: "Commercial",
+      court: "Commercial Court",
+      status: "Urgent",
+      priority: "High",
+      assignedTo: s29Employee._id,
+      assignedBy: s29Admin._id,
+      createdBy: s29Admin._id,
+    });
+    const closedCase = await Case.create({
+      number: `S29-CASE-03-${Date.now()}`,
+      title: "S29 Employee Closed Case",
+      description: "Closed matter",
+      practice: "Civil",
+      court: "District Court",
+      status: "Closed",
+      priority: "Low",
+      assignedTo: s29Employee._id,
+      assignedBy: s29Admin._id,
+      createdBy: s29Admin._id,
+    });
+    const otherCase = await Case.create({
+      number: `S29-CASE-04-${Date.now()}`,
+      title: "S29 Other Employee Case",
+      description: "Other matter",
+      practice: "Criminal",
+      court: "Sessions Court",
+      status: "Active",
+      priority: "Medium",
+      assignedTo: s29OtherEmployee._id,
+      assignedBy: s29Admin._id,
+      createdBy: s29Admin._id,
+    });
+
+    // 2. Create tasks with various statuses for employee
+    const now = new Date();
+    const pastDeadline = new Date(now.getTime() - 48 * 3600 * 1000); // 2 days ago
+    const futureDeadline = new Date(now.getTime() + 48 * 3600 * 1000); // 2 days ahead
+
+    // Open & In Progress
+    const openTask1 = await Task.create({
+      title: "S29 Open Task In Progress",
+      description: "Draft petition",
+      priority: "High",
+      status: "in_progress",
+      deadline: futureDeadline,
+      assignedTo: s29Employee._id,
+      createdBy: s29Admin._id,
+      caseId: activeCase1._id,
+    });
+    // Open & Pending
+    const openTask2 = await Task.create({
+      title: "S29 Open Task Pending",
+      description: "Review documents",
+      priority: "Medium",
+      status: "pending",
+      deadline: futureDeadline,
+      assignedTo: s29Employee._id,
+      createdBy: s29Admin._id,
+      caseId: activeCase1._id,
+    });
+    // Overdue Task (deadline past, status pending)
+    const overdueTask = await Task.create({
+      title: "S29 Overdue Task 1",
+      description: "Filing reply past deadline",
+      priority: "High",
+      status: "pending",
+      deadline: pastDeadline,
+      assignedTo: s29Employee._id,
+      createdBy: s29Admin._id,
+      caseId: urgentCase2._id,
+    });
+    // Completed Task whose original deadline was past (MUST NOT be counted in overdue)
+    const completedPastDeadlineTask = await Task.create({
+      title: "S29 Completed Task With Past Deadline",
+      description: "Completed on time even though deadline was yesterday",
+      priority: "Medium",
+      status: "completed",
+      deadline: pastDeadline,
+      completedAt: new Date(),
+      assignedTo: s29Employee._id,
+      createdBy: s29Admin._id,
+      caseId: activeCase1._id,
+    });
+    // Task Completed Today
+    const doneTodayTask = await Task.create({
+      title: "S29 Task Done Today",
+      description: "Legal research completed today",
+      priority: "Medium",
+      status: "completed",
+      completedAt: new Date(),
+      assignedTo: s29Employee._id,
+      createdBy: s29Admin._id,
+      caseId: activeCase1._id,
+    });
+    // Task Pending Approval
+    const approvalTask = await Task.create({
+      title: "S29 Task Awaiting Approval",
+      description: "Submitted for completion review",
+      priority: "High",
+      status: "pending_approval",
+      submittedForApprovalAt: new Date(),
+      assignedTo: s29Employee._id,
+      createdBy: s29Admin._id,
+      caseId: urgentCase2._id,
+    });
+    // ApprovalRequest (reassignment)
+    const approvalReq = await ApprovalRequest.create({
+      type: "task_reassign",
+      entityType: "Task",
+      entityId: openTask1._id,
+      requesterId: s29Employee._id,
+      targetUserId: s29OtherEmployee._id,
+      reason: "Conflict of interest on matter",
+      status: "pending",
+    });
+
+    // Other employee task (MUST NOT leak into s29Employee queries)
+    const otherEmployeeTask = await Task.create({
+      title: "S29 Other Employee Overdue Task",
+      description: "Belongs strictly to other advocate",
+      priority: "High",
+      status: "pending",
+      deadline: pastDeadline,
+      assignedTo: s29OtherEmployee._id,
+      createdBy: s29Admin._id,
+      caseId: otherCase._id,
+    });
+
+    // TEST 1: GET /api/admin/employees/:id returns matching metrics
+    const detailRes = await request(app)
+      .get(`/api/admin/employees/${empId}`)
+      .set("Authorization", `Bearer ${s29AdminToken}`);
+    assert(detailRes.status === 200, "SUITE29-WORKLOAD-001: Employee detail succeeds with 200");
+    const m = detailRes.body.metrics;
+    assert(m.activeCases === 2, `SUITE29-WORKLOAD-002: Active cases count matches active/urgent non-closed matters (expected 2, got ${m.activeCases})`);
+    assert(m.openTasks === 3, `SUITE29-WORKLOAD-003: Open tasks count includes in_progress, pending, pending_approval (expected 3, got ${m.openTasks})`);
+    assert(m.overdueTasks === 1, `SUITE29-WORKLOAD-004: Overdue tasks count strictly incomplete past deadline (expected 1, got ${m.overdueTasks})`);
+    assert(m.completedToday === 2, `SUITE29-WORKLOAD-005: Done Today count matches completions today (expected 2, got ${m.completedToday})`);
+    assert(m.pendingApprovals === 2, `SUITE29-WORKLOAD-006: Pending approvals count combines task approval + ApprovalRequest (expected 2, got ${m.pendingApprovals})`);
+
+    // TEST 2: Active Cases query with assignedTo=empId returns only employee's cases
+    const casesRes = await request(app)
+      .get(`/api/cases?assignedTo=${empId}`)
+      .set("Authorization", `Bearer ${s29AdminToken}`);
+    assert(casesRes.status === 200, "SUITE29-WORKLOAD-007: Cases query succeeds with 200");
+    const returnedCases = casesRes.body.cases;
+    assert(returnedCases.length === 3, "SUITE29-WORKLOAD-008: Exactly 3 cases returned for employee (2 active/urgent, 1 closed)");
+    assert(returnedCases.every((c: any) => c.assignedTo?._id?.toString() === empId || c.assignedTo?.toString() === empId), "SUITE29-WORKLOAD-009: No other employee cases leaked");
+
+    // TEST 3: Open tasks query with assignedTo=empId&open=true returns only open tasks
+    const openTasksRes = await request(app)
+      .get(`/api/tasks?assignedTo=${empId}&open=true`)
+      .set("Authorization", `Bearer ${s29AdminToken}`);
+    assert(openTasksRes.status === 200, "SUITE29-WORKLOAD-010: Open tasks query succeeds with 200");
+    assert(openTasksRes.body.tasks.length === 3, `SUITE29-WORKLOAD-011: Open tasks list returns matching records (expected 3, got ${openTasksRes.body.tasks.length})`);
+    assert(openTasksRes.body.tasks.every((t: any) => t.status !== "completed"), "SUITE29-WORKLOAD-012: No completed tasks returned in open list");
+
+    // TEST 4: Overdue tasks query with assignedTo=empId&overdue=true
+    const overdueRes = await request(app)
+      .get(`/api/tasks?assignedTo=${empId}&overdue=true`)
+      .set("Authorization", `Bearer ${s29AdminToken}`);
+    assert(overdueRes.status === 200, "SUITE29-WORKLOAD-013: Overdue tasks query succeeds with 200");
+    assert(overdueRes.body.tasks.length === 1, `SUITE29-WORKLOAD-014: Overdue tasks list contains only incomplete overdue task (expected 1, got ${overdueRes.body.tasks.length})`);
+    assert(overdueRes.body.tasks[0]._id === overdueTask._id.toString(), "SUITE29-WORKLOAD-015: Returned overdue task matches expected task ID");
+    assert(overdueRes.body.tasks[0].title === "S29 Overdue Task 1", "SUITE29-WORKLOAD-016: Overdue task title is correct");
+
+    // TEST 5: Completed past deadline task is excluded from Overdue
+    const completedIncluded = overdueRes.body.tasks.some((t: any) => t._id === completedPastDeadlineTask._id.toString());
+    assert(!completedIncluded, "SUITE29-WORKLOAD-017: Completed task with past deadline is strictly excluded from Overdue");
+
+    // TEST 6: Other employee's overdue task does NOT leak into employee's overdue list
+    const otherLeaked = overdueRes.body.tasks.some((t: any) => t._id === otherEmployeeTask._id.toString());
+    assert(!otherLeaked, "SUITE29-WORKLOAD-018: Other employee's overdue task does NOT leak into selected employee list");
+
+    // TEST 7: Employee approvals endpoint GET /api/admin/employees/:id/approvals
+    const approvalsRes = await request(app)
+      .get(`/api/admin/employees/${empId}/approvals`)
+      .set("Authorization", `Bearer ${s29AdminToken}`);
+    assert(approvalsRes.status === 200, "SUITE29-WORKLOAD-019: Employee approvals endpoint returns 200");
+    assert(approvalsRes.body.approvals.length === 2, `SUITE29-WORKLOAD-020: Approvals count matches records (expected 2, got ${approvalsRes.body.approvals.length})`);
+    const hasTaskApproval = approvalsRes.body.approvals.some((a: any) => a.kind === "Task Completion" && a.taskDetails?._id === approvalTask._id.toString());
+    assert(hasTaskApproval, "SUITE29-WORKLOAD-021: Task completion approval is included with task details");
+    const hasReqApproval = approvalsRes.body.approvals.some((a: any) => a.kind === "Task Reassignment" && a.requestDetails?.reason === "Conflict of interest on matter");
+    assert(hasReqApproval, "SUITE29-WORKLOAD-022: ApprovalRequest is included with request details");
+
+    // TEST 8: Employee can view own approvals, but cannot view other employee's approvals
+    const selfApprovalsRes = await request(app)
+      .get(`/api/admin/employees/${empId}/approvals`)
+      .set("Authorization", `Bearer ${s29EmpToken}`);
+    assert(selfApprovalsRes.status === 200, "SUITE29-WORKLOAD-023: Employee can view own approvals with 200");
+    const forbiddenApprovalsRes = await request(app)
+      .get(`/api/admin/employees/${otherEmpId}/approvals`)
+      .set("Authorization", `Bearer ${s29EmpToken}`);
+    assert(forbiddenApprovalsRes.status === 403, "SUITE29-WORKLOAD-024: Unauthorized access to other employee approvals rejected with 403");
+
+    // TEST 9: Clicked task details open correctly via GET /api/tasks/:id
+    const taskDetailRes = await request(app)
+      .get(`/api/tasks/${overdueTask._id.toString()}`)
+      .set("Authorization", `Bearer ${s29AdminToken}`);
+    assert(taskDetailRes.status === 200, "SUITE29-WORKLOAD-025: Authoritative task detail opens with 200");
+    assert(taskDetailRes.body.task.title === "S29 Overdue Task 1", "SUITE29-WORKLOAD-026: Task detail contains correct record title");
+    assert(taskDetailRes.body.task.caseId._id.toString() === urgentCase2._id.toString(), "SUITE29-WORKLOAD-027: Task detail contains populated case relation");
+
+    // TEST 10: Clicked case details open correctly via GET /api/cases/:id
+    const caseDetailRes = await request(app)
+      .get(`/api/cases/${activeCase1._id.toString()}`)
+      .set("Authorization", `Bearer ${s29AdminToken}`);
+    assert(caseDetailRes.status === 200, "SUITE29-WORKLOAD-028: Authoritative case detail opens with 200");
+    assert(caseDetailRes.body.case.title === "S29 Employee Active Case 1", "SUITE29-WORKLOAD-029: Case detail contains correct case title");
+    assert(caseDetailRes.body.case.number === activeCase1.number, "SUITE29-WORKLOAD-030: Case detail contains correct case number");
+  }
+
   try {
     if (mongoose.connection.readyState === 1) {
       await mongoose.connection.dropDatabase();

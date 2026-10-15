@@ -144,11 +144,12 @@ export const caseKeys = {
 // Hooks
 // ---------------------------------------------------------------------------
 
-export function useCases(filters: Record<string, string> = {}) {
+export function useCases(filters: Record<string, string> = {}, options?: { enabled?: boolean }) {
   const params = new URLSearchParams(filters).toString();
   return useQuery<CasesResponse>({
     queryKey: caseKeys.list(filters),
     queryFn: () => api.get(`/cases${params ? `?${params}` : ""}`),
+    enabled: options?.enabled ?? true,
   });
 }
 

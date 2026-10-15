@@ -115,9 +115,28 @@ router.get("/employees/:id", async (req: Request, res: Response) => {
     }
 
     const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startOfWeek = new Date(startOfToday);
-    startOfWeek.setDate(startOfToday.getDate() - startOfToday.getDay());
+    // Use configured timezone (Asia/Kolkata) for accurate daily and weekly metrics
+    let timezone = "Asia/Kolkata";
+    try {
+      const workingHours = await (AppSettings as any).getWorkingHoursConfig();
+      if (workingHours?.timezone) {
+        timezone = workingHours.timezone;
+      }
+    } catch {}
+
+    const todayDateStr = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(now);
+
+    const startOfToday = new Date(`${todayDateStr}T00:00:00.000+05:30`);
+    const endOfToday = new Date(`${todayDateStr}T23:59:59.999+05:30`);
+
+    // Sunday as start of week in reporting timezone
+    const dayOfWeek = new Date(startOfToday.getTime() + 12 * 3600 * 1000).getDay();
+    const startOfWeek = new Date(startOfToday.getTime() - dayOfWeek * 24 * 60 * 60 * 1000);
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const inSevenDays = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
@@ -161,22 +180,38 @@ router.get("/employees/:id", async (req: Request, res: Response) => {
         status: { $ne: "completed" },
         deadline: { $lt: now },
       }),
+      Promise.all([
+        Task.countDocuments({
+          isDeleted: { $ne: true },
+          assignedTo: targetId,
+          status: "pending_approval",
+        }),
+        ApprovalRequest.countDocuments({
+          status: "pending",
+          $or: [
+            { requesterId: empObjId },
+            { targetUserId: empObjId },
+            { originalAssigneeId: empObjId },
+          ],
+        }),
+      ]).then(([taskApprovals, reqApprovals]) => taskApprovals + reqApprovals),
       Task.countDocuments({
         isDeleted: { $ne: true },
         assignedTo: targetId,
-        status: "pending_approval",
+        status: "completed",
+        $or: [
+          { completedAt: { $gte: startOfToday, $lte: endOfToday } },
+          { completedAt: { $in: [null, undefined] }, updatedAt: { $gte: startOfToday, $lte: endOfToday } },
+        ],
       }),
       Task.countDocuments({
         isDeleted: { $ne: true },
         assignedTo: targetId,
         status: "completed",
-        updatedAt: { $gte: startOfToday },
-      }),
-      Task.countDocuments({
-        isDeleted: { $ne: true },
-        assignedTo: targetId,
-        status: "completed",
-        updatedAt: { $gte: startOfWeek },
+        $or: [
+          { completedAt: { $gte: startOfWeek, $lte: endOfToday } },
+          { completedAt: { $in: [null, undefined] }, updatedAt: { $gte: startOfWeek, $lte: endOfToday } },
+        ],
       }),
       Task.countDocuments({
         isDeleted: { $ne: true },
@@ -214,6 +249,140 @@ router.get("/employees/:id", async (req: Request, res: Response) => {
     });
   } catch (err) {
     console.error("[admin] Employee detail error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/admin/employees/:id/approvals — employee-specific approvals
+// ---------------------------------------------------------------------------
+
+router.get("/employees/:id/approvals", async (req: Request, res: Response) => {
+  try {
+    const targetId = String(req.params["id"] || "");
+    if (!targetId || !Types.ObjectId.isValid(targetId)) {
+      res.status(400).json({ message: "Invalid employee ID format" });
+      return;
+    }
+
+    const isActualAdmin = req.user?.role === "admin";
+    const hasEmployeePerm = Boolean(req.user?.permissions?.employees);
+    const hasApprovalsPerm = Boolean(req.user?.permissions?.approvals);
+    const isSelf = req.userId === targetId;
+
+    if (!isActualAdmin && !hasEmployeePerm && !hasApprovalsPerm && !isSelf) {
+      res.status(403).json({ message: "You do not have permission to view approvals for this employee" });
+      return;
+    }
+
+    const empObjId = new Types.ObjectId(targetId);
+
+    const [pendingTasks, pendingRequests] = await Promise.all([
+      Task.find({
+        isDeleted: { $ne: true },
+        assignedTo: targetId,
+        status: "pending_approval",
+      })
+        .populate("assignedTo", "name email role")
+        .populate("caseId", "title number courtCaseId countCaseNumber")
+        .populate("clientId", "name phone email")
+        .sort({ updatedAt: -1 })
+        .lean(),
+      ApprovalRequest.find({
+        status: "pending",
+        $or: [
+          { requesterId: empObjId },
+          { targetUserId: empObjId },
+          { originalAssigneeId: empObjId },
+        ],
+      })
+        .populate("requesterId", "name email role")
+        .populate("targetUserId", "name email role")
+        .populate("originalAssigneeId", "name email role")
+        .sort({ createdAt: -1 })
+        .lean(),
+    ]);
+
+    const approvals = [
+      ...pendingTasks.map((t: any) => {
+        const assignedUser = t.assignedTo as any;
+        const totalItems = t.checklist?.length ?? 0;
+        const doneItems = t.checklist?.filter((c: any) => c.done).length ?? 0;
+        const checklistSummary = totalItems > 0 ? ` · ${doneItems}/${totalItems} subtasks completed` : "";
+        return {
+          _id: `task_${t._id.toString()}`,
+          kind: "Task Completion",
+          title: t.title,
+          context: `Submitted by ${assignedUser?.name ?? "Assignee"}${checklistSummary}`,
+          when: t.submittedForApprovalAt || t.updatedAt || t.createdAt,
+          taskDetails: {
+            _id: t._id.toString(),
+            title: t.title,
+            description: t.description,
+            priority: t.priority,
+            status: t.status,
+            category: t.category,
+            mainCategory: t.mainCategory,
+            subCategory: t.subCategory,
+            deadline: t.deadline,
+            completedAt: t.completedAt || t.updatedAt,
+            submittedForApprovalAt: t.submittedForApprovalAt,
+            assignedTo: t.assignedTo,
+            case: t.caseId ? {
+              _id: t.caseId._id,
+              title: t.caseId.title,
+              number: t.caseId.number,
+              courtCaseId: t.caseId.courtCaseId,
+              countCaseNumber: t.caseId.countCaseNumber,
+            } : null,
+            client: t.clientId ? {
+              _id: t.clientId._id,
+              name: t.clientId.name,
+              phone: t.clientId.phone,
+              email: t.clientId.email,
+            } : null,
+            checklist: t.checklist || [],
+            remarks: t.remarks || [],
+            assignmentHistory: t.assignmentHistory || [],
+          },
+        };
+      }),
+      ...pendingRequests.map((r: any) => {
+        let kind = "General Approval";
+        if (r.type === "task_reassign") kind = "Task Reassignment";
+        else if (r.type === "task_delete") kind = "Task Deletion";
+        else if (r.type === "case_delete") kind = "Case Deletion";
+        else if (r.type === "case_reassign") kind = "Case Reassignment";
+        else if (r.type === "attachment_retention_purge") kind = "Attachment Purge";
+
+        const requesterName = r.requesterId?.name || "Employee";
+        const targetName = r.targetUserId?.name ? ` to ${r.targetUserId.name}` : "";
+        return {
+          _id: `approval_req_${r._id.toString()}`,
+          rawApprovalId: r._id.toString(),
+          kind,
+          title: `${kind}${targetName}`,
+          context: `Requested by ${requesterName}: "${r.reason || "No remark"}"`,
+          when: r.createdAt,
+          requestDetails: {
+            _id: r._id.toString(),
+            type: r.type,
+            entityType: r.entityType,
+            entityId: r.entityId?.toString(),
+            requester: r.requesterId,
+            targetUser: r.targetUserId,
+            originalAssignee: r.originalAssigneeId,
+            reason: r.reason,
+            createdAt: r.createdAt,
+            metadata: r.metadata,
+          },
+        };
+      }),
+    ];
+
+    res.json({ approvals, total: approvals.length });
+  } catch (err) {
+    console.error("[admin] Employee approvals error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 });

@@ -280,6 +280,9 @@ router.get("/", async (req: Request, res: Response) => {
       dueToday,
       isCall,
       hasCallReminder,
+      completedFrom,
+      completedTo,
+      open,
       page = "1",
       limit = "24",
     } = req.query as Record<string, string>;
@@ -288,7 +291,9 @@ router.get("/", async (req: Request, res: Response) => {
       isDeleted: { $ne: true },
     };
 
-    if (status && status !== "all") {
+    if (open === "true") {
+      filter["status"] = { $in: ["pending", "in_progress", "pending_approval"] };
+    } else if (status && status !== "all") {
       if (status.includes(",")) {
         filter["status"] = { $in: status.split(",").map((s) => s.trim()) };
       } else {
@@ -348,6 +353,19 @@ router.get("/", async (req: Request, res: Response) => {
       });
     }
 
+    // Filter by actual completedAt timestamp (for Done Today / Done This Week)
+    if (completedFrom || completedTo) {
+      const completedCond: Record<string, unknown> = {};
+      if (completedFrom) completedCond["$gte"] = new Date(completedFrom);
+      if (completedTo) completedCond["$lte"] = new Date(completedTo);
+      andConditions.push({
+        $or: [
+          { completedAt: completedCond },
+          { completedAt: { $in: [null, undefined] }, updatedAt: completedCond },
+        ],
+      });
+    }
+
     // Non-admins only see tasks assigned to them, or unassigned tasks created by them
     if (req.user!.role !== "admin") {
       const uid = req.userId;
@@ -398,7 +416,7 @@ router.get("/", async (req: Request, res: Response) => {
     }
 
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 24));
+    const limitNum = Math.min(500, Math.max(1, parseInt(limit, 10) || 24));
     const skip = (pageNum - 1) * limitNum;
 
     const now = new Date();

@@ -173,11 +173,12 @@ export const taskKeys = {
 // Hooks
 // ---------------------------------------------------------------------------
 
-export function useTasks(filters: Record<string, string> = {}) {
+export function useTasks(filters: Record<string, string> = {}, options?: { enabled?: boolean }) {
   const params = new URLSearchParams(filters).toString();
   return useQuery<TasksResponse>({
     queryKey: taskKeys.list(filters),
     queryFn: () => api.get(`/tasks${params ? `?${params}` : ""}`),
+    enabled: options?.enabled ?? true,
   });
 }
 

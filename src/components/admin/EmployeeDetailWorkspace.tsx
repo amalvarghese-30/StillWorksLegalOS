@@ -35,7 +35,7 @@ import { Input } from "@/components/ui/input";
 import { StatusPill, toneForStatus } from "@/components/common/StatusPill";
 import { EmployeeAvatar } from "./EmployeeAvatar";
 import { formatRole } from "./EmployeeCard";
-import { useEmployeeDetail, type EmployeeRecord } from "@/services/admin";
+import { useEmployeeDetail, useEmployeeApprovals, type EmployeeRecord } from "@/services/admin";
 import { useCases, type CaseRecord } from "@/services/cases";
 import { useTasks, type TaskRecord } from "@/services/tasks";
 import { useDailyEmployeeReport } from "@/services/reports";
@@ -43,6 +43,7 @@ import { useCreateDirectChat } from "@/services/chat";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import { usePresence } from "@/lib/presence";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface EmployeeDetailWorkspaceProps {
   employeeId: string;
@@ -52,7 +53,7 @@ interface EmployeeDetailWorkspaceProps {
   canEdit?: boolean;
 }
 
-type TabKey = "overview" | "cases" | "tasks" | "activity" | "workload";
+type TabKey = "overview" | "cases" | "tasks" | "approvals" | "activity" | "workload";
 
 export function EmployeeDetailWorkspace({
   employeeId,
@@ -86,11 +87,18 @@ export function EmployeeDetailWorkspace({
   );
   const cases = casesData?.cases ?? [];
 
-  // Fetch assigned tasks
+  // Fetch assigned tasks (fetching up to 200 for full employee view)
   const { data: tasksData, isLoading: isTasksLoading } = useTasks(
-    { assignedTo: employeeId },
+    { assignedTo: employeeId, limit: "200" },
   );
   const tasks = tasksData?.tasks ?? [];
+
+  // Fetch employee approvals
+  const { data: approvalsData, isLoading: isApprovalsLoading } = useEmployeeApprovals(
+    employeeId,
+    { enabled: activeTab === "approvals" || activeTab === "overview" }
+  );
+  const approvals = approvalsData?.approvals ?? [];
 
   // Fetch daily report for workload insights
   const { data: dailyReportData } = useDailyEmployeeReport(
@@ -98,6 +106,63 @@ export function EmployeeDetailWorkspace({
     activeTab === "workload" || activeTab === "overview"
   );
   const dailyReport = dailyReportData?.reports?.[0];
+
+  // Kolkata date boundaries for authoritative Done Today / Done This Week filtering
+  const { startOfToday, endOfToday, startOfWeek } = useMemo(() => {
+    let todayDateStr = "";
+    try {
+      todayDateStr = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date());
+    } catch {
+      const d = new Date();
+      todayDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    }
+    const startOfToday = new Date(`${todayDateStr}T00:00:00.000+05:30`);
+    const endOfToday = new Date(`${todayDateStr}T23:59:59.999+05:30`);
+    const dayOfWeek = new Date(startOfToday.getTime() + 12 * 3600 * 1000).getDay();
+    const startOfWeek = new Date(startOfToday.getTime() - dayOfWeek * 24 * 60 * 60 * 1000);
+    return { startOfToday, endOfToday, startOfWeek };
+  }, []);
+
+  // Card click navigation handlers
+  const handleOpenActiveCases = () => {
+    setActiveTab("cases");
+    setCaseStatusFilter("Active");
+    setCaseSearch("");
+  };
+
+  const handleOpenTasks = () => {
+    setActiveTab("tasks");
+    setTaskStatusFilter("open");
+    setTaskSearch("");
+  };
+
+  const handleOpenOverdue = () => {
+    setActiveTab("tasks");
+    setTaskStatusFilter("overdue");
+    setTaskSearch("");
+  };
+
+  const handleOpenDoneToday = () => {
+    setActiveTab("tasks");
+    setTaskStatusFilter("done_today");
+    setTaskSearch("");
+  };
+
+  const handleOpenDoneThisWeek = () => {
+    setActiveTab("tasks");
+    setTaskStatusFilter("done_this_week");
+    setTaskSearch("");
+  };
+
+  const handleOpenApprovals = () => {
+    setActiveTab("approvals");
+    setTaskSearch("");
+  };
 
   // Messaging mutation
   const createDirectChat = useCreateDirectChat();
@@ -116,8 +181,15 @@ export function EmployeeDetailWorkspace({
   // Filtered cases
   const filteredCases = useMemo(() => {
     return cases.filter((c) => {
-      if (caseStatusFilter !== "All" && c.status !== caseStatusFilter) {
-        return false;
+      if (caseStatusFilter !== "All") {
+        if (caseStatusFilter === "Active") {
+          // Active cases include Active and Urgent statuses (non-closed/non-archived)
+          if (c.status !== "Active" && c.status !== "Urgent") {
+            return false;
+          }
+        } else if (c.status !== caseStatusFilter) {
+          return false;
+        }
       }
       if (caseSearch.trim()) {
         const q = caseSearch.toLowerCase();
@@ -132,11 +204,21 @@ export function EmployeeDetailWorkspace({
 
   // Filtered tasks
   const filteredTasks = useMemo(() => {
-    return tasks.filter((t) => {
+    let list = tasks.filter((t) => {
       if (taskStatusFilter !== "all") {
-        if (taskStatusFilter === "overdue") {
+        if (taskStatusFilter === "open") {
+          if (t.status !== "pending" && t.status !== "in_progress" && t.status !== "pending_approval") return false;
+        } else if (taskStatusFilter === "overdue") {
           const isOverdue = t.status !== "completed" && t.deadline && new Date(t.deadline) < new Date();
           if (!isOverdue) return false;
+        } else if (taskStatusFilter === "done_today") {
+          if (t.status !== "completed") return false;
+          const compDate = t.completedAt ? new Date(t.completedAt) : (t.updatedAt ? new Date(t.updatedAt) : null);
+          if (!compDate || compDate < startOfToday || compDate > endOfToday) return false;
+        } else if (taskStatusFilter === "done_this_week") {
+          if (t.status !== "completed") return false;
+          const compDate = t.completedAt ? new Date(t.completedAt) : (t.updatedAt ? new Date(t.updatedAt) : null);
+          if (!compDate || compDate < startOfWeek || compDate > endOfToday) return false;
         } else if (t.status !== taskStatusFilter) {
           return false;
         }
@@ -145,11 +227,28 @@ export function EmployeeDetailWorkspace({
         const q = taskSearch.toLowerCase();
         const titleMatch = t.title?.toLowerCase().includes(q);
         const categoryMatch = t.category?.toLowerCase().includes(q);
-        return titleMatch || categoryMatch;
+        const clientMatch = t.clientName?.toLowerCase().includes(q);
+        return titleMatch || categoryMatch || clientMatch;
       }
       return true;
     });
-  }, [tasks, taskStatusFilter, taskSearch]);
+
+    if (taskStatusFilter === "overdue") {
+      list = [...list].sort((a, b) => {
+        const timeA = a.deadline ? new Date(a.deadline).getTime() : 0;
+        const timeB = b.deadline ? new Date(b.deadline).getTime() : 0;
+        return timeA - timeB;
+      });
+    } else if (taskStatusFilter === "done_today" || taskStatusFilter === "done_this_week") {
+      list = [...list].sort((a, b) => {
+        const timeA = a.completedAt ? new Date(a.completedAt).getTime() : new Date(a.updatedAt).getTime();
+        const timeB = b.completedAt ? new Date(b.completedAt).getTime() : new Date(b.updatedAt).getTime();
+        return timeB - timeA;
+      });
+    }
+
+    return list;
+  }, [tasks, taskStatusFilter, taskSearch, startOfToday, endOfToday, startOfWeek]);
 
   // Upcoming deadlines from tasks (next 7 days, non-completed)
   const upcomingDeadlinesList = useMemo(() => {
@@ -305,29 +404,50 @@ export function EmployeeDetailWorkspace({
 
           {/* Quick High-Level Workload Badges */}
           <div className="flex items-center gap-3 border-t md:border-t-0 md:border-l border-border/60 pt-4 md:pt-0 md:pl-6 shrink-0">
-            <div className="text-center px-2">
-              <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Active Cases</div>
+            <button
+              type="button"
+              onClick={handleOpenActiveCases}
+              className="text-center px-2 hover:bg-muted/30 rounded-lg p-1.5 transition-colors cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              title="Click to view Active Cases"
+            >
+              <div className="text-[11px] font-medium text-muted-foreground group-hover:text-primary uppercase tracking-wider flex items-center justify-center gap-1">
+                Active Cases <ChevronRight size={11} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
               <div className="font-display text-2xl font-bold text-foreground mt-0.5">
                 {metrics?.activeCases ?? cases.length}
               </div>
-            </div>
+            </button>
             <div className="h-8 w-px bg-border/60" />
-            <div className="text-center px-2">
-              <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Open Tasks</div>
+            <button
+              type="button"
+              onClick={handleOpenTasks}
+              className="text-center px-2 hover:bg-muted/30 rounded-lg p-1.5 transition-colors cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              title="Click to view Open Tasks"
+            >
+              <div className="text-[11px] font-medium text-muted-foreground group-hover:text-sky-400 uppercase tracking-wider flex items-center justify-center gap-1">
+                Open Tasks <ChevronRight size={11} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
               <div className="font-display text-2xl font-bold text-sky-400 mt-0.5">
                 {metrics?.openTasks ?? tasks.filter((t) => t.status !== "completed").length}
               </div>
-            </div>
+            </button>
             <div className="h-8 w-px bg-border/60" />
-            <div className="text-center px-2">
-              <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Overdue</div>
+            <button
+              type="button"
+              onClick={handleOpenOverdue}
+              className="text-center px-2 hover:bg-muted/30 rounded-lg p-1.5 transition-colors cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              title="Click to view Overdue Tasks"
+            >
+              <div className="text-[11px] font-medium text-muted-foreground group-hover:text-rose-400 uppercase tracking-wider flex items-center justify-center gap-1">
+                Overdue <ChevronRight size={11} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
               <div className={cn(
                 "font-display text-2xl font-bold mt-0.5",
                 (metrics?.overdueTasks ?? 0) > 0 ? "text-rose-400" : "text-muted-foreground"
               )}>
                 {metrics?.overdueTasks ?? 0}
               </div>
-            </div>
+            </button>
           </div>
         </div>
 
@@ -337,6 +457,7 @@ export function EmployeeDetailWorkspace({
             { key: "overview", label: "Overview", icon: Layers },
             { key: "cases", label: `Assigned Cases (${cases.length})`, icon: Briefcase },
             { key: "tasks", label: `Tasks (${tasks.length})`, icon: CheckSquare },
+            { key: "approvals", label: `Approvals (${metrics?.pendingApprovals ?? approvals.length})`, icon: UserCheck },
             { key: "activity", label: "Activity History", icon: Activity },
             { key: "workload", label: "Workload & Operations", icon: TrendingUp },
           ].map((tab) => {
@@ -369,87 +490,155 @@ export function EmployeeDetailWorkspace({
           <div>
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-display text-sm font-semibold text-foreground">Operational Workload Summary</h2>
-              <span className="text-[11px] text-muted-foreground">Authoritative counts from database</span>
+              <span className="text-[11px] text-muted-foreground">Click any card to inspect filtered employee records</span>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               {/* Active Cases */}
-              <div className="rounded-xl border border-border/70 bg-card p-3.5 shadow-soft">
-                <div className="flex items-center gap-1.5 text-caption font-medium text-muted-foreground">
-                  <Briefcase size={13} className="text-indigo-400" />
-                  <span>Active Cases</span>
+              <button
+                type="button"
+                onClick={handleOpenActiveCases}
+                className="rounded-xl border border-border/70 bg-card p-3.5 shadow-soft text-left transition-all hover:border-indigo-400/50 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary cursor-pointer group"
+                title="View active cases assigned to this employee"
+              >
+                <div className="flex items-center justify-between text-caption font-medium text-muted-foreground">
+                  <div className="flex items-center gap-1.5">
+                    <Briefcase size={13} className="text-indigo-400" />
+                    <span className="group-hover:text-foreground transition-colors">Active Cases</span>
+                  </div>
+                  <ChevronRight size={13} className="text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
                 </div>
-                <div className="mt-2 font-display text-2xl font-bold text-foreground">
+                <div className="mt-2 font-display text-2xl font-bold text-foreground group-hover:text-indigo-400 transition-colors">
                   {metrics?.activeCases ?? 0}
                 </div>
-                <div className="text-[10px] text-muted-foreground/80 mt-0.5">Total matters: {metrics?.totalCases ?? 0}</div>
-              </div>
+                <div className="text-[10px] text-muted-foreground/80 mt-0.5 flex items-center justify-between">
+                  <span>Total matters: {metrics?.totalCases ?? 0}</span>
+                  <span className="text-primary opacity-0 group-hover:opacity-100 transition-opacity font-medium">View →</span>
+                </div>
+              </button>
 
               {/* Open Tasks */}
-              <div className="rounded-xl border border-border/70 bg-card p-3.5 shadow-soft">
-                <div className="flex items-center gap-1.5 text-caption font-medium text-muted-foreground">
-                  <CheckSquare size={13} className="text-sky-400" />
-                  <span>Open Tasks</span>
+              <button
+                type="button"
+                onClick={handleOpenTasks}
+                className="rounded-xl border border-border/70 bg-card p-3.5 shadow-soft text-left transition-all hover:border-sky-400/50 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary cursor-pointer group"
+                title="View open tasks assigned to this employee"
+              >
+                <div className="flex items-center justify-between text-caption font-medium text-muted-foreground">
+                  <div className="flex items-center gap-1.5">
+                    <CheckSquare size={13} className="text-sky-400" />
+                    <span className="group-hover:text-foreground transition-colors">Open Tasks</span>
+                  </div>
+                  <ChevronRight size={13} className="text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
                 </div>
                 <div className="mt-2 font-display text-2xl font-bold text-sky-400">
                   {metrics?.openTasks ?? 0}
                 </div>
-                <div className="text-[10px] text-muted-foreground/80 mt-0.5">In progress & pending</div>
-              </div>
+                <div className="text-[10px] text-muted-foreground/80 mt-0.5 flex items-center justify-between">
+                  <span>In progress & pending</span>
+                  <span className="text-primary opacity-0 group-hover:opacity-100 transition-opacity font-medium">View →</span>
+                </div>
+              </button>
 
               {/* Overdue */}
-              <div className={cn(
-                "rounded-xl border p-3.5 shadow-soft transition-colors",
-                (metrics?.overdueTasks ?? 0) > 0 ? "border-rose-500/30 bg-rose-500/5" : "border-border/70 bg-card"
-              )}>
-                <div className="flex items-center gap-1.5 text-caption font-medium text-muted-foreground">
-                  <AlertTriangle size={13} className={(metrics?.overdueTasks ?? 0) > 0 ? "text-rose-400" : "text-muted-foreground"} />
-                  <span>Overdue</span>
+              <button
+                type="button"
+                onClick={handleOpenOverdue}
+                className={cn(
+                  "rounded-xl border p-3.5 shadow-soft text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary cursor-pointer group",
+                  (metrics?.overdueTasks ?? 0) > 0
+                    ? "border-rose-500/30 bg-rose-500/5 hover:border-rose-500/60 hover:bg-rose-500/10"
+                    : "border-border/70 bg-card hover:border-rose-400/50 hover:bg-muted/30"
+                )}
+                title="View overdue incomplete tasks for this employee"
+              >
+                <div className="flex items-center justify-between text-caption font-medium text-muted-foreground">
+                  <div className="flex items-center gap-1.5">
+                    <AlertTriangle size={13} className={(metrics?.overdueTasks ?? 0) > 0 ? "text-rose-400" : "text-muted-foreground"} />
+                    <span className="group-hover:text-foreground transition-colors">Overdue</span>
+                  </div>
+                  <ChevronRight size={13} className="text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
                 </div>
                 <div className={cn(
-                  "mt-2 font-display text-2xl font-bold",
+                  "mt-2 font-display text-2xl font-bold transition-colors",
                   (metrics?.overdueTasks ?? 0) > 0 ? "text-rose-400" : "text-foreground"
                 )}>
                   {metrics?.overdueTasks ?? 0}
                 </div>
-                <div className="text-[10px] text-muted-foreground/80 mt-0.5">Past target deadline</div>
-              </div>
+                <div className="text-[10px] text-muted-foreground/80 mt-0.5 flex items-center justify-between">
+                  <span>Past target deadline</span>
+                  <span className="text-primary opacity-0 group-hover:opacity-100 transition-opacity font-medium">View →</span>
+                </div>
+              </button>
 
               {/* Completed Today */}
-              <div className="rounded-xl border border-border/70 bg-card p-3.5 shadow-soft">
-                <div className="flex items-center gap-1.5 text-caption font-medium text-muted-foreground">
-                  <CheckCircle2 size={13} className="text-emerald-400" />
-                  <span>Done Today</span>
+              <button
+                type="button"
+                onClick={handleOpenDoneToday}
+                className="rounded-xl border border-border/70 bg-card p-3.5 shadow-soft text-left transition-all hover:border-emerald-400/50 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary cursor-pointer group"
+                title="View tasks completed by this employee today"
+              >
+                <div className="flex items-center justify-between text-caption font-medium text-muted-foreground">
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 size={13} className="text-emerald-400" />
+                    <span className="group-hover:text-foreground transition-colors">Done Today</span>
+                  </div>
+                  <ChevronRight size={13} className="text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
                 </div>
                 <div className="mt-2 font-display text-2xl font-bold text-emerald-400">
                   {metrics?.completedToday ?? 0}
                 </div>
-                <div className="text-[10px] text-muted-foreground/80 mt-0.5">Last 24h completions</div>
-              </div>
+                <div className="text-[10px] text-muted-foreground/80 mt-0.5 flex items-center justify-between">
+                  <span>Completed today</span>
+                  <span className="text-primary opacity-0 group-hover:opacity-100 transition-opacity font-medium">View →</span>
+                </div>
+              </button>
 
               {/* Completed This Week */}
-              <div className="rounded-xl border border-border/70 bg-card p-3.5 shadow-soft">
-                <div className="flex items-center gap-1.5 text-caption font-medium text-muted-foreground">
-                  <TrendingUp size={13} className="text-emerald-400" />
-                  <span>Done This Week</span>
+              <button
+                type="button"
+                onClick={handleOpenDoneThisWeek}
+                className="rounded-xl border border-border/70 bg-card p-3.5 shadow-soft text-left transition-all hover:border-emerald-400/50 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary cursor-pointer group"
+                title="View tasks completed by this employee this week"
+              >
+                <div className="flex items-center justify-between text-caption font-medium text-muted-foreground">
+                  <div className="flex items-center gap-1.5">
+                    <TrendingUp size={13} className="text-emerald-400" />
+                    <span className="group-hover:text-foreground transition-colors">Done This Week</span>
+                  </div>
+                  <ChevronRight size={13} className="text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
                 </div>
-                <div className="mt-2 font-display text-2xl font-bold text-foreground">
+                <div className="mt-2 font-display text-2xl font-bold text-foreground group-hover:text-emerald-400 transition-colors">
                   {metrics?.completedThisWeek ?? 0}
                 </div>
-                <div className="text-[10px] text-muted-foreground/80 mt-0.5">Current week activity</div>
-              </div>
+                <div className="text-[10px] text-muted-foreground/80 mt-0.5 flex items-center justify-between">
+                  <span>Current week activity</span>
+                  <span className="text-primary opacity-0 group-hover:opacity-100 transition-opacity font-medium">View →</span>
+                </div>
+              </button>
 
               {/* Pending Approvals */}
-              <div className="rounded-xl border border-border/70 bg-card p-3.5 shadow-soft">
-                <div className="flex items-center gap-1.5 text-caption font-medium text-muted-foreground">
-                  <UserCheck size={13} className="text-amber-400" />
-                  <span>Approvals</span>
+              <button
+                type="button"
+                onClick={handleOpenApprovals}
+                className="rounded-xl border border-border/70 bg-card p-3.5 shadow-soft text-left transition-all hover:border-amber-400/50 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary cursor-pointer group"
+                title="View approvals awaiting review for this employee"
+              >
+                <div className="flex items-center justify-between text-caption font-medium text-muted-foreground">
+                  <div className="flex items-center gap-1.5">
+                    <UserCheck size={13} className="text-amber-400" />
+                    <span className="group-hover:text-foreground transition-colors">Approvals</span>
+                  </div>
+                  <ChevronRight size={13} className="text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
                 </div>
                 <div className="mt-2 font-display text-2xl font-bold text-amber-400">
                   {metrics?.pendingApprovals ?? 0}
                 </div>
-                <div className="text-[10px] text-muted-foreground/80 mt-0.5">Submitted for review</div>
-              </div>
+                <div className="text-[10px] text-muted-foreground/80 mt-0.5 flex items-center justify-between">
+                  <span>Submitted for review</span>
+                  <span className="text-primary opacity-0 group-hover:opacity-100 transition-opacity font-medium">View →</span>
+                </div>
+              </button>
             </div>
           </div>
 
@@ -568,6 +757,22 @@ export function EmployeeDetailWorkspace({
             </div>
           </div>
 
+          {caseStatusFilter !== "All" && (
+            <div className="flex items-center justify-between bg-primary/10 border border-primary/20 px-3 py-1.5 rounded-lg text-xs">
+              <span className="text-primary font-medium flex items-center gap-1.5">
+                <Filter size={12} /> Filtered: <strong>{caseStatusFilter === "Active" ? "Active Matters" : caseStatusFilter} ({filteredCases.length})</strong>
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setCaseStatusFilter("All")}
+                className="h-6 px-2 text-xs text-primary hover:bg-primary/20"
+              >
+                Clear filter
+              </Button>
+            </div>
+          )}
+
           {isCasesLoading ? (
             <div className="py-12 text-center text-sm text-muted-foreground">
               <Loader2 size={24} className="animate-spin text-primary mx-auto mb-2" />
@@ -668,17 +873,20 @@ export function EmployeeDetailWorkspace({
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
               {[
                 { key: "all", label: "All" },
-                { key: "pending", label: "Pending" },
-                { key: "in_progress", label: "In Progress" },
-                { key: "pending_approval", label: "Approval" },
-                { key: "completed", label: "Completed" },
+                { key: "open", label: "Open Tasks" },
                 { key: "overdue", label: "Overdue" },
+                { key: "done_today", label: "Done Today" },
+                { key: "done_this_week", label: "Done This Week" },
+                { key: "pending_approval", label: "Approval" },
+                { key: "in_progress", label: "In Progress" },
+                { key: "pending", label: "Pending" },
+                { key: "completed", label: "Completed" },
               ].map((st) => (
                 <Button
                   key={st.key}
                   variant={taskStatusFilter === st.key ? "default" : "outline"}
                   size="sm"
-                  className={cn("h-7 px-2.5 text-xs rounded-lg", taskStatusFilter === st.key && "gradient-primary text-primary-foreground")}
+                  className={cn("h-7 px-2.5 text-xs rounded-lg whitespace-nowrap", taskStatusFilter === st.key && "gradient-primary text-primary-foreground")}
                   onClick={() => setTaskStatusFilter(st.key)}
                 >
                   {st.label}
@@ -686,6 +894,31 @@ export function EmployeeDetailWorkspace({
               ))}
             </div>
           </div>
+
+          {taskStatusFilter !== "all" && (
+            <div className="flex items-center justify-between bg-primary/10 border border-primary/20 px-3 py-1.5 rounded-lg text-xs">
+              <span className="text-primary font-medium flex items-center gap-1.5">
+                <Filter size={12} /> Filtered: <strong>{
+                  taskStatusFilter === "open" ? "Open Tasks (Pending, In Progress & Approval)" :
+                  taskStatusFilter === "overdue" ? "Overdue Incomplete Tasks" :
+                  taskStatusFilter === "done_today" ? "Tasks Completed Today" :
+                  taskStatusFilter === "done_this_week" ? "Tasks Completed This Week" :
+                  taskStatusFilter === "pending_approval" ? "Tasks Awaiting Approval" :
+                  taskStatusFilter === "in_progress" ? "In Progress Tasks" :
+                  taskStatusFilter === "pending" ? "Pending Tasks" :
+                  taskStatusFilter === "completed" ? "Completed Tasks" : taskStatusFilter
+                } ({filteredTasks.length})</strong>
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setTaskStatusFilter("all")}
+                className="h-6 px-2 text-xs text-primary hover:bg-primary/20"
+              >
+                Clear filter
+              </Button>
+            </div>
+          )}
 
           {isTasksLoading ? (
             <div className="py-12 text-center text-sm text-muted-foreground">
@@ -696,7 +929,7 @@ export function EmployeeDetailWorkspace({
             <div className="rounded-xl border border-border/80 bg-card p-12 text-center">
               <CheckSquare size={28} className="text-muted-foreground mx-auto mb-2 opacity-50" />
               <p className="font-medium text-sm text-foreground">No tasks found matching your filters</p>
-              <p className="text-xs text-muted-foreground mt-1">This employee has no matching tasks.</p>
+              <p className="text-xs text-muted-foreground mt-1">This employee has no matching tasks for the selected criteria.</p>
             </div>
           ) : (
             <div className="rounded-xl border border-border/80 bg-card overflow-x-auto shadow-soft">
@@ -706,7 +939,9 @@ export function EmployeeDetailWorkspace({
                     <th className="py-3 px-4">Task Title</th>
                     <th className="py-3 px-4">Related Matter</th>
                     <th className="py-3 px-4">Priority</th>
-                    <th className="py-3 px-4">Deadline</th>
+                    <th className="py-3 px-4">
+                      {taskStatusFilter === "done_today" || taskStatusFilter === "done_this_week" ? "Completed Date" : "Deadline"}
+                    </th>
                     <th className="py-3 px-4">Status</th>
                     <th className="py-3 px-4 text-right">Action</th>
                   </tr>
@@ -714,6 +949,7 @@ export function EmployeeDetailWorkspace({
                 <tbody className="divide-y divide-border/50">
                   {filteredTasks.map((t) => {
                     const isOverdue = t.status !== "completed" && t.deadline && new Date(t.deadline) < new Date();
+                    const isCompletionView = taskStatusFilter === "done_today" || taskStatusFilter === "done_this_week";
                     return (
                       <tr
                         key={t._id}
@@ -744,7 +980,11 @@ export function EmployeeDetailWorkspace({
                           </span>
                         </td>
                         <td className="py-3 px-4">
-                          {t.deadline ? (
+                          {isCompletionView ? (
+                            <span className="font-mono text-[11px] px-1.5 py-0.5 rounded text-emerald-400 bg-emerald-500/10 font-medium">
+                              {new Date(t.completedAt || t.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          ) : t.deadline ? (
                             <span
                               className={cn(
                                 "font-mono text-[11px] px-1.5 py-0.5 rounded",
@@ -772,6 +1012,106 @@ export function EmployeeDetailWorkspace({
                           >
                             Details <ChevronRight size={13} className="ml-0.5" />
                           </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 4: APPROVALS */}
+      {activeTab === "approvals" && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="font-display font-semibold text-sm text-foreground">Employee Approval Queue</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Authoritative approval records submitted by or associated with {employee?.name || "this employee"}.
+              </p>
+            </div>
+            <span className="text-xs font-mono text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-md">
+              {approvals.length} Pending
+            </span>
+          </div>
+
+          {isApprovalsLoading ? (
+            <div className="py-12 text-center text-sm text-muted-foreground">
+              <Loader2 size={24} className="animate-spin text-primary mx-auto mb-2" />
+              Loading employee approvals…
+            </div>
+          ) : approvals.length === 0 ? (
+            <div className="rounded-xl border border-border/80 bg-card p-12 text-center">
+              <UserCheck size={28} className="text-muted-foreground mx-auto mb-2 opacity-50" />
+              <p className="font-medium text-sm text-foreground">No pending approvals</p>
+              <p className="text-xs text-muted-foreground mt-1">This employee currently has no items awaiting administrative review.</p>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-border/80 bg-card overflow-x-auto shadow-soft">
+              <table className="w-full text-left text-xs">
+                <thead className="border-b border-border/80 bg-muted/40 font-semibold uppercase tracking-wider text-[10px] text-muted-foreground">
+                  <tr>
+                    <th className="py-3 px-4">Approval Item</th>
+                    <th className="py-3 px-4">Kind / Type</th>
+                    <th className="py-3 px-4">Context / Summary</th>
+                    <th className="py-3 px-4">Submitted</th>
+                    <th className="py-3 px-4 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {approvals.map((a) => {
+                    const isTask = a.kind === "Task Completion" || Boolean(a.taskDetails);
+                    return (
+                      <tr
+                        key={a._id}
+                        className="group hover:bg-muted/30 transition-colors"
+                      >
+                        <td className="py-3 px-4">
+                          <div className="font-semibold text-foreground group-hover:text-primary transition-colors max-w-sm truncate">
+                            {a.title}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={cn(
+                            "px-2 py-0.5 rounded text-[10px] font-semibold",
+                            isTask ? "bg-amber-500/10 text-amber-400" : "bg-sky-500/10 text-sky-400"
+                          )}>
+                            {a.kind}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-muted-foreground max-w-xs truncate">
+                          {a.context}
+                        </td>
+                        <td className="py-3 px-4 text-muted-foreground whitespace-nowrap">
+                          {a.when ? new Date(a.when).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          {isTask && a.taskDetails ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-primary hover:bg-primary/10 text-xs"
+                              onClick={() => {
+                                setSelectedTask(a.taskDetails as unknown as TaskRecord);
+                              }}
+                            >
+                              Review Task <ChevronRight size={13} className="ml-0.5" />
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-muted-foreground hover:text-foreground text-xs"
+                              onClick={() => {
+                                toast.info(`Approval: ${a.title}\n${a.context}`);
+                              }}
+                            >
+                              Details
+                            </Button>
+                          )}
                         </td>
                       </tr>
                     );

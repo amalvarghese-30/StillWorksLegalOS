@@ -378,6 +378,15 @@ export function useApprovals(options?: { enabled?: boolean }) {
   });
 }
 
+export function useEmployeeApprovals(employeeId?: string, options?: { enabled?: boolean }) {
+  return useQuery<ApprovalsResponse>({
+    queryKey: ["admin", "employees", employeeId, "approvals"],
+    queryFn: () => api.get(`/admin/employees/${employeeId}/approvals`),
+    enabled: Boolean(employeeId) && (options?.enabled ?? true),
+    refetchInterval: 30_000,
+  });
+}
+
 export function useApproveRequest() {
   const qc = useQueryClient();
   return useMutation<{ success: boolean; message?: string }, Error, { id: string; decisionRemark: string }>({
