@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useAuth } from "@/lib/auth";
 import { useSocket, useSocketEvent } from "@/lib/socket";
+import { usePresence } from "@/lib/presence";
 import {
   useChatGroups,
   useChatMessages,
@@ -112,14 +113,13 @@ function ChatPage() {
   const [showForward, setShowForward] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [typingUsers, setTypingUsers] = useState<Map<string, string>>(new Map());
-  const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set());
+  const { onlineIds } = usePresence();
   const [lastSeen, setLastSeen] = useState<Map<string, string>>(new Map());
   const [olderPages, setOlderPages] = useState<ChatMessage[][]>([]);
   const [olderCursor, setOlderCursor] = useState<string | null | undefined>(undefined);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const prevGroupRef = useRef<string | null>(null);
-  const seededPresence = useRef(false);
 
   const isAdmin = user?.role === "admin";
 
@@ -346,30 +346,10 @@ function ChatPage() {
     });
   });
 
-  // ── Socket: presence ─────────────────────────────────────────────────────
-  useSocketEvent<{ userId: string }>("user:online", (data) => {
-    setOnlineIds((prev) => new Set(prev).add(data.userId));
-  });
-
+  // ── Socket: presence lastSeen tracking ──────────────────────────────────
   useSocketEvent<{ userId: string }>("user:offline", (data) => {
-    setOnlineIds((prev) => {
-      const next = new Set(prev);
-      next.delete(data.userId);
-      return next;
-    });
     setLastSeen((prev) => new Map(prev).set(data.userId, new Date().toISOString()));
   });
-
-  // Seed presence from the first data load
-  useEffect(() => {
-    if (seededPresence.current) return;
-    if (groups.length === 0 && allUsers.length === 0) return;
-    const ids = new Set<string>();
-    groups.forEach((g) => g.members.forEach((m) => { if (m.online) ids.add(m._id); }));
-    allUsers.forEach((u) => { if (u.status === "online") ids.add(u._id); });
-    setOnlineIds(ids);
-    seededPresence.current = true;
-  }, [groups, allUsers]);
 
   // Auto-select the first group once on initial load so the desktop pane isn't
   // empty. A ref (not the activeGroupId dep) ensures an explicit "back to list"

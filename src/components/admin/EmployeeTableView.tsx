@@ -16,6 +16,7 @@ import { EmployeeAvatar } from "./EmployeeAvatar";
 import { formatRole } from "./EmployeeCard";
 import type { EmployeeRecord } from "@/services/admin";
 import type { WorkloadItem } from "@/services/reports";
+import { usePresence } from "@/lib/presence";
 import { cn } from "@/lib/utils";
 
 interface EmployeeTableViewProps {
@@ -37,6 +38,8 @@ export function EmployeeTableView({
   onMessage,
   isMessagingPending = false,
 }: EmployeeTableViewProps) {
+  const { isOnline } = usePresence();
+
   return (
     <div className="overflow-x-auto rounded-xl border border-border/80 bg-card shadow-soft">
       <table className="w-full text-left text-sm">
@@ -59,6 +62,8 @@ export function EmployeeTableView({
             const pendingTasks = workload?.pendingTasks ?? 0;
             const completedTasks = workload?.completedTasks ?? 0;
             const empCode = `EMP-${emp._id.slice(-4).toUpperCase()}`;
+            const online = isOnline(emp._id);
+            const effectiveStatus = online ? "online" : (emp.status === "online" ? "offline" : (emp.status || "offline"));
 
             return (
               <tr
@@ -73,8 +78,8 @@ export function EmployeeTableView({
                       name={emp.name}
                       avatarUrl={emp.avatarUrl}
                       size="sm"
-                      status={emp.status}
-                      showStatus={Boolean(emp.status)}
+                      status={effectiveStatus}
+                      showStatus={true}
                     />
                     <div className="min-w-0">
                       <div className="font-display font-medium text-foreground group-hover:text-primary transition-colors truncate">
@@ -141,8 +146,8 @@ export function EmployeeTableView({
 
                 {/* Status */}
                 <td className="py-3.5 px-4">
-                  <StatusPill tone={toneForStatus(emp.status)}>
-                    {emp.status || "offline"}
+                  <StatusPill tone={toneForStatus(effectiveStatus)}>
+                    {effectiveStatus}
                   </StatusPill>
                 </td>
 

@@ -16,6 +16,7 @@ import { StatusPill, toneForStatus } from "@/components/common/StatusPill";
 import { EmployeeAvatar } from "./EmployeeAvatar";
 import type { EmployeeRecord } from "@/services/admin";
 import type { WorkloadItem } from "@/services/reports";
+import { usePresence } from "@/lib/presence";
 import { cn } from "@/lib/utils";
 
 interface EmployeeCardProps {
@@ -59,7 +60,9 @@ export function EmployeeCard({
   const pendingTasks = workload?.pendingTasks ?? 0;
   const completedTasks = workload?.completedTasks ?? 0;
   // A task is overdue if pending workload exceeds a reasonable threshold or if flagged
-  const hasHighWorkload = pendingTasks >= 10;
+  const { isOnline } = usePresence();
+  const online = isOnline(employee._id);
+  const effectiveStatus = online ? "online" : (employee.status === "online" ? "offline" : (employee.status || "offline"));
 
   const handleCardClick = () => {
     onSelect(employee);
@@ -92,8 +95,8 @@ export function EmployeeCard({
               name={employee.name}
               avatarUrl={employee.avatarUrl}
               size="md"
-              status={employee.status}
-              showStatus={Boolean(employee.status)}
+              status={effectiveStatus}
+              showStatus={true}
             />
             <div className="min-w-0">
               <div className="flex items-center gap-2">
@@ -114,8 +117,8 @@ export function EmployeeCard({
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            <StatusPill tone={toneForStatus(employee.status)}>
-              {employee.status || "offline"}
+            <StatusPill tone={toneForStatus(effectiveStatus)}>
+              {effectiveStatus}
             </StatusPill>
           </div>
         </div>

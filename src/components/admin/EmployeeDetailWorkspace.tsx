@@ -41,6 +41,7 @@ import { useTasks, type TaskRecord } from "@/services/tasks";
 import { useDailyEmployeeReport } from "@/services/reports";
 import { useCreateDirectChat } from "@/services/chat";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
+import { usePresence } from "@/lib/presence";
 import { cn } from "@/lib/utils";
 
 interface EmployeeDetailWorkspaceProps {
@@ -162,6 +163,9 @@ export function EmployeeDetailWorkspace({
 
   const empCode = employee?._id ? `EMP-${employee._id.slice(-4).toUpperCase()}` : "EMP-USER";
   const displayRole = formatRole(employee?.role);
+  const { isOnline } = usePresence();
+  const online = isOnline(employee?._id);
+  const effectiveStatus = online ? "online" : (employee?.status === "online" ? "offline" : (employee?.status || "offline"));
 
   if (isDetailLoading && !employee) {
     return (
@@ -246,8 +250,8 @@ export function EmployeeDetailWorkspace({
               name={employee?.name}
               avatarUrl={employee?.avatarUrl}
               size="2xl"
-              status={employee?.status}
-              showStatus={Boolean(employee?.status)}
+              status={effectiveStatus}
+              showStatus={true}
               className="shrink-0"
             />
             <div className="space-y-1.5 min-w-0">
@@ -258,8 +262,8 @@ export function EmployeeDetailWorkspace({
                 <span className="font-mono text-xs font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-md">
                   {empCode}
                 </span>
-                <StatusPill tone={toneForStatus(employee?.status)}>
-                  {employee?.status || "offline"}
+                <StatusPill tone={toneForStatus(effectiveStatus)}>
+                  {effectiveStatus}
                 </StatusPill>
               </div>
 

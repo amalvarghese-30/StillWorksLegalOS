@@ -8,6 +8,7 @@ import {
 import { AuthProvider } from "../lib/auth";
 import { ThemeProvider } from "../lib/theme";
 import { SocketProvider } from "../lib/socket";
+import { PresenceProvider } from "../lib/presence";
 import { Toaster } from "sonner";
 
 function NotFoundComponent() {
@@ -90,13 +91,15 @@ function RootComponent() {
       <ThemeProvider>
         <AuthProvider>
           <SocketProvider>
-            <Outlet />
-            <Toaster
-              position="top-right"
-              richColors
-              closeButton
-              swipeDirections={["left", "right", "top", "bottom"]}
-            />
+            <PresenceProvider>
+              <Outlet />
+              <Toaster
+                position="top-right"
+                richColors
+                closeButton
+                swipeDirections={["left", "right", "top", "bottom"]}
+              />
+            </PresenceProvider>
           </SocketProvider>
         </AuthProvider>
       </ThemeProvider>

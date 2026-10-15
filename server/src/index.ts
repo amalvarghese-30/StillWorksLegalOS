@@ -28,10 +28,11 @@ import webhooksRoutes from "./routes/webhooks.js";
 import { ChatGroup, ChatMessage } from "./models/Chat.js";
 import { Session } from "./models/Session.js";
 import { User } from "./models/User.js";
-import { getJwtSecret } from "./middleware/auth.js";
+import { getJwtSecret, requireAuth } from "./middleware/auth.js";
 import { NotificationScheduler } from "./services/notificationScheduler.js";
 import { startReminderScheduler } from "./services/reminderScheduler.js";
 import { seedCategories } from "./scripts/seedCategories.js";
+import { presenceService } from "./services/presence.js";
 import rateLimit from "express-rate-limit";
 
 // ---------------------------------------------------------------------------
@@ -337,6 +338,11 @@ app.use("/api/gmail", gmailRoutes);
 app.use("/api/approvals", approvalsRoutes);
 app.use("/api/webhooks", webhooksRoutes);
 
+// Server-authoritative presence endpoint
+app.get("/api/presence", requireAuth, (_req: Request, res: Response) => {
+  res.json({ presence: presenceService.getLivePresenceMap() });
+});
+
 // Unmatched API routes return standard JSON 404
 app.all("/api/*", (_req: Request, res: Response) => {
   res.status(404).json({ message: "API endpoint not found" });
@@ -387,6 +393,7 @@ const io = new Server(httpServer, {
 
 // Make io accessible to route handlers
 app.set("io", io);
+presenceService.setIo(io);
 
 const MAX_SOCKETS_PER_USER = 20;
 
@@ -491,44 +498,40 @@ function allowSocketEvent(userId: string, limit: number, windowMs: number): bool
   return true;
 }
 
-// Multi-session tracking for socket presence
-const activeSocketsPerUser = new Map<string, Set<string>>();
-
 io.on("connection", (socket) => {
   console.log(`[socket] connected: ${socket.id} (${socket.data.userId})`);
 
   const userId = socket.data.userId;
   if (userId) {
-    const userSockets = activeSocketsPerUser.get(userId) ?? new Set<string>();
-    userSockets.add(socket.id);
-    activeSocketsPerUser.set(userId, userSockets);
+    const clientType: "web" | "electron" | "unknown" =
+      socket.handshake.auth?.clientType === "electron" ? "electron" :
+      socket.handshake.auth?.clientType === "web" ? "web" : "web";
 
-    // Only update DB and broadcast online when this is the user's first active socket
-    if (userSockets.size === 1) {
-      User.findById(userId)
-        .select("name")
-        .then((user) => {
-          socket.data.userName = user?.name ?? "Unknown";
-          return User.updateOne(
-            { _id: userId },
-            { status: "online" },
-          );
-        })
-        .catch((err) => console.error("[socket] presence init error:", err));
-
-      socket.broadcast.emit("user:online", {
-        userId,
-        status: "online",
+    presenceService.registerSession({
+      socketId: socket.id,
+      userId,
+      clientType,
+      io,
+    }).then(({ becameOnline }) => {
+      // Fetch userName for typing/chat events
+      return User.findById(userId).select("name").then((user) => {
+        socket.data.userName = user?.name ?? "Unknown";
+        if (becameOnline) {
+          console.log(`[presence] ${userId} came online`);
+        }
       });
-    } else {
-      User.findById(userId)
-        .select("name")
-        .then((user) => {
-          socket.data.userName = user?.name ?? "Unknown";
-        })
-        .catch(() => {});
-    }
+    }).catch((err) => console.error("[socket] presence registerSession error:", err));
   }
+
+  // Presence: client sends heartbeat every ~25 s
+  socket.on("presence:heartbeat", () => {
+    presenceService.recordHeartbeat(socket.id);
+  });
+
+  // Presence: client requests full online map on connect
+  socket.on("presence:subscribe", () => {
+    socket.emit("presence:initial", presenceService.getLivePresenceMap());
+  });
 
   // Join/leave chat rooms WITH authorization check
   socket.on("chat:join", async (roomId: string) => {
@@ -675,26 +678,9 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    const userId = socket.data.userId;
-    if (userId) {
-      const userSockets = activeSocketsPerUser.get(userId);
-      if (userSockets) {
-        userSockets.delete(socket.id);
-        if (userSockets.size === 0) {
-          activeSocketsPerUser.delete(userId);
-          // Only persist offline status and broadcast when all sessions for this user are disconnected
-          User.updateOne(
-            { _id: userId },
-            { status: "offline", lastActiveAt: new Date() },
-          ).catch((err) => console.error("[socket] presence clear error:", err));
-
-          socket.broadcast.emit("user:offline", {
-            userId,
-            status: "offline",
-          });
-        }
-      }
-    }
+    presenceService.removeSession(socket.id, io).catch((err) =>
+      console.error("[socket] presence removeSession error:", err)
+    );
     console.log(`[socket] disconnected: ${socket.id} (${socket.data.userId})`);
   });
 });

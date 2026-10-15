@@ -46,6 +46,8 @@ const { DocumentModel } = await import("../models/Document.js");
 const { processDueReminders } = await import("../services/reminderScheduler.js");
 const { syncCallReminders, deleteCallReminders } = await import("../services/reminders.js");
 const { validateMimeType } = await import("../services/nas.js");
+const { presenceService } = await import("../services/presence.js");
+const { requireAuth } = await import("../middleware/auth.js");
 
 function buildApp() {
   const app = express();
@@ -74,6 +76,10 @@ function buildApp() {
   app.use("/api/documents", documentsRoutes);
   app.use("/api/chat", chatRoutes);
   app.use("/api/search", searchRoutes);
+
+  app.get("/api/presence", requireAuth, (_req, res) => {
+    res.json({ presence: presenceService.getLivePresenceMap() });
+  });
 
   app.all("/api/*", (_req, res) => {
     res.status(404).json({ message: "API endpoint not found" });
@@ -2826,6 +2832,143 @@ async function run() {
     assert(typeof metrics.completedThisWeek === "number", "SUITE27-EMP-016: metrics.completedThisWeek is a number");
     assert(typeof metrics.completedThisMonth === "number", "SUITE27-EMP-017: metrics.completedThisMonth is a number");
     assert(typeof metrics.upcomingDeadlines === "number", "SUITE27-EMP-018: metrics.upcomingDeadlines is a number");
+  }
+
+  // -------------------------------------------------------------------------
+  // Suite 28: Server-Authoritative Presence System & Daily Reporting Drill-Down
+  // -------------------------------------------------------------------------
+  console.log("\n--- Suite 28: Server-Authoritative Presence System & Daily Reporting Drill-Down ---");
+  {
+    const s28Admin = await createUser({ role: "admin", name: "S28 Admin" });
+    const s28Advocate = await createUser({ role: "junior_advocate", name: "S28 Advocate" });
+    const s28AdminToken = await createToken(s28Admin);
+    const s28AdvocateToken = await createToken(s28Advocate);
+
+    // 1. Presence endpoint authorization: anonymous rejected with 401
+    const unauthPresence = await request(app).get("/api/presence");
+    assert(unauthPresence.status === 401, "SUITE28-PRESENCE-001: Anonymous request to /api/presence rejected with 401");
+
+    // 2. Presence endpoint authorized returns 200 with presence map
+    const authPresence = await request(app)
+      .get("/api/presence")
+      .set("Authorization", `Bearer ${s28AdvocateToken}`);
+    assert(authPresence.status === 200, "SUITE28-PRESENCE-002: Authenticated request to /api/presence succeeds with 200");
+    assert(Boolean(authPresence.body.presence), "SUITE28-PRESENCE-003: Response contains presence object");
+
+    // 3. Multi-session lifecycle in PresenceService
+    presenceService.reset();
+    const advocateId = s28Advocate._id.toString();
+
+    // Initially offline
+    assert(presenceService.isUserOnline(advocateId) === false, "SUITE28-PRESENCE-004: User initially offline");
+    assert(presenceService.getUserSessionCount(advocateId) === 0, "SUITE28-PRESENCE-005: Initial session count is 0");
+
+    // Connect first session (e.g. web browser tab)
+    const session1 = await presenceService.registerSession({
+      socketId: "socket_advocate_web_1",
+      userId: advocateId,
+      clientType: "web",
+    });
+    assert(session1.becameOnline === true, "SUITE28-PRESENCE-006: First session registration reports becameOnline: true");
+    assert(session1.sessionCount === 1, "SUITE28-PRESENCE-007: Session count is 1");
+    assert(presenceService.isUserOnline(advocateId) === true, "SUITE28-PRESENCE-008: isUserOnline is true after first session");
+
+    // Verify DB was updated to "online"
+    const dbUserAfterOnline = await User.findById(s28Advocate._id).select("status");
+    assert(dbUserAfterOnline?.status === "online", "SUITE28-PRESENCE-009: DB user status updated to 'online'");
+
+    // Connect second session (e.g. Electron desktop client or second browser tab)
+    const session2 = await presenceService.registerSession({
+      socketId: "socket_advocate_electron_2",
+      userId: advocateId,
+      clientType: "electron",
+    });
+    assert(session2.becameOnline === false, "SUITE28-PRESENCE-010: Second session reports becameOnline: false (already online)");
+    assert(session2.sessionCount === 2, "SUITE28-PRESENCE-011: User session count is 2");
+
+    // Heartbeat record
+    const hbSuccess = presenceService.recordHeartbeat("socket_advocate_web_1");
+    assert(hbSuccess === true, "SUITE28-PRESENCE-012: Heartbeat successfully recorded for active socket");
+    const hbMissing = presenceService.recordHeartbeat("non_existent_socket");
+    assert(hbMissing === false, "SUITE28-PRESENCE-013: Heartbeat returns false for unknown socket");
+
+    // Disconnect one session (tab 1 closed) — user must STAY online because tab 2 is still active
+    const removeSession1 = await presenceService.removeSession("socket_advocate_web_1");
+    assert(removeSession1.becameOffline === false, "SUITE28-PRESENCE-014: Closing 1 of 2 sessions does NOT trigger becameOffline");
+    assert(presenceService.isUserOnline(advocateId) === true, "SUITE28-PRESENCE-015: User remains online with 1 remaining session");
+    assert(presenceService.getUserSessionCount(advocateId) === 1, "SUITE28-PRESENCE-016: Session count decremented to 1");
+
+    // Disconnect final session (tab 2 closed) — user transitions to offline
+    const removeSession2 = await presenceService.removeSession("socket_advocate_electron_2");
+    assert(removeSession2.becameOffline === true, "SUITE28-PRESENCE-017: Closing final session triggers becameOffline: true");
+    assert(presenceService.isUserOnline(advocateId) === false, "SUITE28-PRESENCE-018: isUserOnline is false after all sessions disconnect");
+
+    // Verify DB was updated to "offline" and lastActiveAt is recorded
+    const dbUserAfterOffline = await User.findById(s28Advocate._id).select("status lastActiveAt");
+    assert(dbUserAfterOffline?.status === "offline", "SUITE28-PRESENCE-019: DB user status updated to 'offline'");
+    assert(Boolean(dbUserAfterOffline?.lastActiveAt), "SUITE28-PRESENCE-020: lastActiveAt timestamp recorded in DB");
+
+    // 4. Stale session automatic expiry
+    await presenceService.registerSession({
+      socketId: "socket_stale_ghost_1",
+      userId: advocateId,
+      clientType: "web",
+    });
+    assert(presenceService.isUserOnline(advocateId) === true, "SUITE28-PRESENCE-021: Stale test socket registered");
+
+    // Manually backdate the heartbeat past the 75s threshold
+    const liveSession = (presenceService as any).sessionsBySocketId.get("socket_stale_ghost_1");
+    if (liveSession) {
+      liveSession.lastHeartbeat = Date.now() - 90_000; // 90 seconds ago (>75s)
+    }
+
+    const expiredCount = await presenceService.expireStaleSessions();
+    assert(expiredCount === 1, "SUITE28-PRESENCE-022: expireStaleSessions swept 1 stale ghost session");
+    assert(presenceService.isUserOnline(advocateId) === false, "SUITE28-PRESENCE-023: User marked offline after ghost session swept");
+
+    // 5. Daily Employee Progress Reporting Drill-down & Payload Structure
+    const client = await Client.create({ name: "S28 Test Client", email: "s28client@test.local", phone: "9876543210" });
+    const matter = await Case.create({
+      title: "S28 Test Matter v. State",
+      number: "MAT/2026/028",
+      clientId: client._id,
+      assignedTo: s28Advocate._id,
+      assignedBy: s28Admin._id,
+      createdBy: s28Admin._id,
+      stage: "Active",
+      practice: "Corporate",
+    });
+
+    const todayDateStr = new Date().toISOString().slice(0, 10);
+
+    const testTask = await Task.create({
+      title: "Draft written statement in MAT/2026/028",
+      assignedTo: s28Advocate._id,
+      caseId: matter._id,
+      clientId: client._id,
+      status: "pending",
+      priority: "High",
+      createdAt: new Date(),
+    });
+
+    const reportRes = await request(app)
+      .get(`/api/admin/reports/daily-employee?date=${todayDateStr}&employeeId=${s28Advocate._id.toString()}`)
+      .set("Authorization", `Bearer ${s28AdminToken}`);
+
+    assert(reportRes.status === 200, "SUITE28-REPORT-001: Daily employee report query succeeds with 200");
+    assert(Array.isArray(reportRes.body.reports), "SUITE28-REPORT-002: Response has reports array");
+    const advocateReport = reportRes.body.reports.find((r: any) => r.employee._id === s28Advocate._id.toString());
+    assert(Boolean(advocateReport), "SUITE28-REPORT-003: Found advocate daily report");
+    assert(typeof advocateReport.metrics.assignedTodayCount === "number", "SUITE28-REPORT-004: assignedTodayCount is a number");
+    assert(typeof advocateReport.metrics.pendingCount === "number", "SUITE28-REPORT-005: pendingCount is a number");
+    assert(Array.isArray(advocateReport.tasks.assignedToday), "SUITE28-REPORT-006: tasks.assignedToday is array");
+    assert(Array.isArray(advocateReport.tasks.pending), "SUITE28-REPORT-007: tasks.pending is array");
+
+    // Ensure populated caseId and clientId for clickable drill-down
+    const foundTask = advocateReport.tasks.assignedToday.find((t: any) => t._id === testTask._id.toString());
+    assert(Boolean(foundTask), "SUITE28-REPORT-008: Created test task exists in assignedToday drill-down");
+    assert(foundTask.caseId?.title === "S28 Test Matter v. State", "SUITE28-REPORT-009: task.caseId.title is populated for drill-down navigation");
+    assert(foundTask.clientId?.name === "S28 Test Client", "SUITE28-REPORT-010: task.clientId.name is populated for drill-down display");
   }
 
   try {
