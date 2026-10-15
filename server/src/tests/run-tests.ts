@@ -3748,6 +3748,129 @@ async function run() {
     assert(latestLog?.details?.includes("Priority changed"), "SUITE32-AUD-032: Audit log contains accurate diff details");
   }
 
+  // ── Suite 33: Task clientId Filtering ──────────────────────────────────────
+  console.log("\nSuite: Task clientId Query Filtering");
+  {
+    // Setup: admin + advocate + two clients + tasks
+    const s33Admin = await createUser({ role: "admin" });
+    const s33AdminToken = await createToken(s33Admin);
+    const s33Adv = await createUser({ role: "junior_advocate" });
+
+    await seedCategories();
+
+    const clientX = await Client.create({
+      name: "Client X Corp",
+      type: "Corporate",
+      status: "Active",
+      kycStatus: "Verified",
+      createdBy: s33Admin._id,
+    });
+    const clientY = await Client.create({
+      name: "Client Y Ltd",
+      type: "Individual",
+      status: "Active",
+      kycStatus: "Pending",
+      createdBy: s33Admin._id,
+    });
+
+    // Create tasks linked to clientX
+    const taskX1 = await Task.create({
+      title: "Draft contract for Client X",
+      status: "pending",
+      priority: "High",
+      category: "Litigation",
+      assignedTo: s33Adv._id,
+      createdBy: s33Admin._id,
+      clientId: clientX._id,
+    });
+    const taskX2 = await Task.create({
+      title: "File appeal for Client X",
+      status: "in_progress",
+      priority: "Medium",
+      category: "Litigation",
+      assignedTo: s33Adv._id,
+      createdBy: s33Admin._id,
+      clientId: clientX._id,
+    });
+    // Create task linked to clientY
+    await Task.create({
+      title: "Mediation for Client Y",
+      status: "pending",
+      priority: "Low",
+      category: "Litigation",
+      assignedTo: s33Adv._id,
+      createdBy: s33Admin._id,
+      clientId: clientY._id,
+    });
+    // Create task with no clientId
+    await Task.create({
+      title: "Internal admin task",
+      status: "pending",
+      priority: "Low",
+      category: "Litigation",
+      assignedTo: s33Admin._id,
+      createdBy: s33Admin._id,
+    });
+
+    // SUITE33-CLT-001: Admin can filter tasks by clientId
+    const resClientX = await request(app)
+      .get(`/api/tasks?clientId=${clientX._id.toString()}`)
+      .set("Authorization", `Bearer ${s33AdminToken}`);
+    assert(resClientX.status === 200, "SUITE33-CLT-001: GET /api/tasks?clientId returns 200");
+
+    // SUITE33-CLT-002: Only tasks for clientX are returned
+    const returnedIds: string[] = (resClientX.body.tasks ?? []).map((t: any) => t._id);
+    assert(
+      returnedIds.includes(taskX1._id.toString()) && returnedIds.includes(taskX2._id.toString()),
+      "SUITE33-CLT-002: Both clientX tasks are in the response"
+    );
+
+    // SUITE33-CLT-003: clientY task is NOT returned in clientX query
+    const clientYTaskInX = (resClientX.body.tasks ?? []).some((t: any) => t.clientId?.toString() === clientY._id.toString());
+    assert(!clientYTaskInX, "SUITE33-CLT-003: clientY task is excluded from clientX filter");
+
+    // SUITE33-CLT-004: Task count matches (exactly 2 for clientX)
+    assert(
+      (resClientX.body.tasks ?? []).length === 2,
+      "SUITE33-CLT-004: Exactly 2 tasks returned for clientX"
+    );
+
+    // SUITE33-CLT-005: Filter by clientY returns 1 task
+    const resClientY = await request(app)
+      .get(`/api/tasks?clientId=${clientY._id.toString()}`)
+      .set("Authorization", `Bearer ${s33AdminToken}`);
+    assert(resClientY.status === 200 && (resClientY.body.tasks ?? []).length === 1, "SUITE33-CLT-005: clientY filter returns exactly 1 task");
+
+    // SUITE33-CLT-006: Non-existent (valid-format) clientId returns 200 with empty array
+    const nonExistentClientId = new mongoose.Types.ObjectId().toString();
+    const resNonExistent = await request(app)
+      .get(`/api/tasks?clientId=${nonExistentClientId}`)
+      .set("Authorization", `Bearer ${s33AdminToken}`);
+    assert(resNonExistent.status === 200, "SUITE33-CLT-006: Non-existent clientId returns 200");
+    assert((resNonExistent.body.tasks ?? []).length === 0, "SUITE33-CLT-007: Non-existent clientId returns empty tasks array");
+
+    // SUITE33-CLT-008: Multi-assignee task is included in clientId filter (admin sees all)
+    const coAssignee = await createUser({ role: "junior_advocate" });
+    await Task.create({
+      title: "Multi-assignee task for Client X",
+      status: "pending",
+      priority: "High",
+      category: "Litigation",
+      assignedTo: s33Adv._id,
+      assignedUsers: [s33Adv._id, coAssignee._id],
+      createdBy: s33Admin._id,
+      clientId: clientX._id,
+    });
+    // Admin should see 3 tasks now for clientX (2 original + 1 multi-assignee)
+    const resWithMulti = await request(app)
+      .get(`/api/tasks?clientId=${clientX._id.toString()}`)
+      .set("Authorization", `Bearer ${s33AdminToken}`);
+    assert(
+      (resWithMulti.body.tasks ?? []).length === 3,
+      "SUITE33-CLT-008: Multi-assignee task included in clientId filter (admin sees all 3)"
+    );
+  }
+
   try {
     if (mongoose.connection.readyState === 1) {
       await mongoose.connection.dropDatabase();
