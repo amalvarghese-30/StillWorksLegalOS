@@ -3372,6 +3372,175 @@ async function run() {
     assert(Boolean(foundApproval.taskDetails), "SUITE30-DASH-022: Approval item contains enriched taskDetails for TaskDetailDialog");
   }
 
+  // =========================================================================
+  // SUITE 31: Approval Centre Professional Redesign & Authoritative Workflows
+  // =========================================================================
+  console.log("\n--- Suite 31: Approval Centre Professional Redesign & Workflows ---");
+  {
+    // 1. Create Admin and Regular Employee
+    const s31Admin = await User.create({
+      name: "S31 Admin Officer",
+      email: "s31admin@stillworks.legal",
+      passwordHash: await bcrypt.hash("AdminPass123!", 4),
+      role: "admin",
+      status: "online",
+    });
+    const s31AdminToken = await createToken(s31Admin);
+
+    const s31Staff = await User.create({
+      name: "S31 Junior Staff",
+      email: "s31staff@stillworks.legal",
+      passwordHash: await bcrypt.hash("StaffPass123!", 4),
+      role: "junior_advocate",
+      status: "offline",
+      permissions: {
+        dashboard: true, clients: false, cases: false, tasks: true,
+        documents: false, calendar: false, chat: false, reports: false,
+        employees: false, approvals: false, auditLogs: false, settings: false,
+      },
+    });
+    const s31StaffToken = await createToken(s31Staff);
+
+    // 2. Authorization checks
+    const unauthMetrics = await request(app)
+      .get("/api/admin/approvals/metrics")
+      .set("Authorization", `Bearer ${s31StaffToken}`);
+    assert(unauthMetrics.status === 403, "SUITE31-APP-001: Staff without approvals permission denied metrics (403)");
+
+    const unauthApprovals = await request(app)
+      .get("/api/admin/approvals")
+      .set("Authorization", `Bearer ${s31StaffToken}`);
+    assert(unauthApprovals.status === 403, "SUITE31-APP-002: Staff without approvals permission denied approvals (403)");
+
+    // 3. Seed test case & tasks
+    const s31Case = await Case.create({
+      title: "S31 High Court Appeal",
+      number: "HC-2026-999",
+      courtCaseId: "CC-999",
+      status: "Active",
+      practice: "Civil Litigation",
+    });
+
+    const pendingTask1 = await Task.create({
+      title: "Draft Writ Petition for Appeal",
+      description: "Prepare and file writ petition in high court",
+      category: "Court Work",
+      priority: "High",
+      status: "pending_approval",
+      assignedTo: s31Staff._id,
+      assignedBy: s31Admin._id,
+      caseId: s31Case._id,
+      checklist: [
+        { text: "Verify annexures", done: true },
+        { text: "Client verification", done: true },
+      ],
+      submittedForApprovalAt: new Date(),
+    });
+
+    const pendingTask2 = await Task.create({
+      title: "Pay Court Filing Fees",
+      description: "Pay stamp duty and registry fees",
+      category: "Finance",
+      priority: "Medium",
+      status: "pending_approval",
+      assignedTo: s31Staff._id,
+      assignedBy: s31Admin._id,
+      caseId: s31Case._id,
+      checklist: [
+        { text: "Receipt attached", done: true },
+      ],
+      submittedForApprovalAt: new Date(),
+    });
+
+    // Seed an approval request
+    await ApprovalRequest.create({
+      type: "task_reassign",
+      entityType: "Task",
+      entityId: pendingTask1._id,
+      requesterId: s31Staff._id,
+      targetUserId: s31Admin._id,
+      reason: "Needs senior counsel appearance",
+      status: "pending",
+    });
+
+    // 4. Verify Metrics Endpoint
+    const metricsRes = await request(app)
+      .get("/api/admin/approvals/metrics")
+      .set("Authorization", `Bearer ${s31AdminToken}`);
+    assert(metricsRes.status === 200, "SUITE31-APP-003: GET /api/admin/approvals/metrics returns 200");
+    assert(metricsRes.body.awaitingReview >= 3, "SUITE31-APP-004: Awaiting review includes seeded tasks & request (>= 3)");
+    assert(metricsRes.body.submittedToday >= 3, "SUITE31-APP-005: Submitted today includes today's items (>= 3)");
+    assert(typeof metricsRes.body.approvedThisMonth === "number", "SUITE31-APP-006: Approved this month is a valid number");
+    assert(typeof metricsRes.body.rejectedThisMonth === "number", "SUITE31-APP-007: Rejected this month is a valid number");
+
+    const initialApproved = metricsRes.body.approvedThisMonth;
+    const initialRejected = metricsRes.body.rejectedThisMonth;
+
+    // 5. Verify Approvals Queue with category counts and aging
+    const approvalsRes = await request(app)
+      .get("/api/admin/approvals?status=pending")
+      .set("Authorization", `Bearer ${s31AdminToken}`);
+    assert(approvalsRes.status === 200, "SUITE31-APP-008: GET /api/admin/approvals?status=pending returns 200");
+    assert(Array.isArray(approvalsRes.body.approvals), "SUITE31-APP-009: Approvals list is an array");
+    assert(Boolean(approvalsRes.body.categoryCounts), "SUITE31-APP-010: Response contains categoryCounts object");
+    assert(approvalsRes.body.categoryCounts.tasks >= 2, "SUITE31-APP-011: categoryCounts.tasks >= 2");
+
+    const foundTaskApproval = approvalsRes.body.approvals.find(
+      (a: any) => a._id === `task_${pendingTask1._id.toString()}`
+    );
+    assert(Boolean(foundTaskApproval), "SUITE31-APP-012: Seeded pending task is found in approval list");
+    assert(foundTaskApproval.category === "tasks", "SUITE31-APP-013: Category is 'tasks'");
+    assert(foundTaskApproval.priority?.toLowerCase() === "high", "SUITE31-APP-014: Priority preserved as 'high'");
+    assert(foundTaskApproval.agingLabel === "Today", "SUITE31-APP-015: Aging correctly computed as 'Today'");
+    assert(foundTaskApproval.taskDetails.checklist.length === 2, "SUITE31-APP-016: Checklist items present in taskDetails");
+
+    // 6. Verify Search Filtering
+    const searchRes = await request(app)
+      .get(`/api/admin/approvals?search=${encodeURIComponent("Draft Writ Petition")}`)
+      .set("Authorization", `Bearer ${s31AdminToken}`);
+    assert(searchRes.status === 200, "SUITE31-APP-017: Search returns 200");
+    assert(searchRes.body.approvals.some((a: any) => a.title.includes("Draft Writ Petition")), "SUITE31-APP-018: Search finds title match");
+
+    // 7. Test Approval Workflow (approve pendingTask1)
+    const approveRes = await request(app)
+      .post(`/api/tasks/${pendingTask1._id}/approve`)
+      .set("Authorization", `Bearer ${s31AdminToken}`)
+      .send({});
+    assert(approveRes.status === 200, "SUITE31-APP-019: POST /api/tasks/:id/approve returns 200");
+    assert(approveRes.body.task.status === "completed", "SUITE31-APP-020: Task transitioned to 'completed'");
+    assert(Boolean(approveRes.body.task.approvedAt), "SUITE31-APP-021: Task has approvedAt timestamp");
+
+    // Verify metrics updated
+    const afterApproveMetrics = await request(app)
+      .get("/api/admin/approvals/metrics")
+      .set("Authorization", `Bearer ${s31AdminToken}`);
+    assert(afterApproveMetrics.body.approvedThisMonth === initialApproved + 1, "SUITE31-APP-022: Approved this month incremented by 1");
+
+    // 8. Test Rejection Workflow with mandatory reason
+    const rejectNoReasonRes = await request(app)
+      .post(`/api/tasks/${pendingTask2._id}/reject`)
+      .set("Authorization", `Bearer ${s31AdminToken}`)
+      .send({ reason: "   " });
+    assert(rejectNoReasonRes.status === 400, "SUITE31-APP-023: Rejection without non-empty reason rejected (400)");
+
+    const rejectWithReasonRes = await request(app)
+      .post(`/api/tasks/${pendingTask2._id}/reject`)
+      .set("Authorization", `Bearer ${s31AdminToken}`)
+      .send({ reason: "Please attach original treasury challan receipt." });
+    assert(rejectWithReasonRes.status === 200, "SUITE31-APP-024: Rejection with reason returns 200");
+
+    const reloadedTask2 = await Task.findById(pendingTask2._id);
+    assert(reloadedTask2?.status === "in_progress", "SUITE31-APP-025: Rejected task returned to 'in_progress'");
+    assert(reloadedTask2?.rejectionReason === "Please attach original treasury challan receipt.", "SUITE31-APP-026: Rejection reason persisted");
+    assert(Boolean(reloadedTask2?.rejectedAt), "SUITE31-APP-027: Task has rejectedAt timestamp");
+
+    // Verify rejection metric updated
+    const afterRejectMetrics = await request(app)
+      .get("/api/admin/approvals/metrics")
+      .set("Authorization", `Bearer ${s31AdminToken}`);
+    assert(afterRejectMetrics.body.rejectedThisMonth === initialRejected + 1, "SUITE31-APP-028: Rejected this month incremented by 1");
+  }
+
   try {
     if (mongoose.connection.readyState === 1) {
       await mongoose.connection.dropDatabase();

@@ -76,9 +76,28 @@ export interface ApprovalItem {
   _id: string;
   rawApprovalId?: string;
   kind: string;
+  category?: "tasks" | "documents" | "access" | "cases" | "clients" | string;
   title: string;
   context: string;
   when: string;
+  status?: "pending" | "approved" | "rejected" | string;
+  priority?: "low" | "medium" | "high" | "urgent" | string;
+  agingDays?: number;
+  agingLabel?: string;
+  submittedBy?: {
+    _id?: string;
+    name: string;
+    email?: string;
+    role?: string;
+    avatarUrl?: string;
+  };
+  rejectionReason?: string;
+  decisionRemark?: string;
+  reviewedAt?: string;
+  reviewedBy?: {
+    _id?: string;
+    name?: string;
+  };
   taskDetails?: {
     _id: string;
     title: string;
@@ -91,7 +110,12 @@ export interface ApprovalItem {
     deadline?: string | null;
     completedAt?: string | null;
     submittedForApprovalAt?: string | null;
+    approvedAt?: string | null;
+    rejectedAt?: string | null;
+    rejectionReason?: string;
+    rejectedByName?: string;
     assignedTo?: { _id: string; name: string; email: string; role?: string } | null;
+    assignedBy?: { _id: string; name: string; email: string; role?: string } | null;
     case?: {
       _id: string;
       title: string;
@@ -125,6 +149,26 @@ export interface ApprovalItem {
       timestamp: string;
     }>;
   };
+  documentDetails?: {
+    _id: string;
+    name: string;
+    kind?: string;
+    size?: number;
+    sizeFormatted?: string;
+    mimeType?: string;
+    state?: string;
+    storagePath?: string;
+    case?: { _id: string; title: string; number: string } | null;
+    client?: { _id: string; name: string } | null;
+    uploadedBy?: { _id: string; name: string; email?: string; role?: string } | null;
+    createdAt?: string;
+  };
+  caseDetails?: {
+    _id: string;
+    title: string;
+    number: string;
+    courtCaseId?: string;
+  };
   requestDetails?: {
     _id: string;
     type: string;
@@ -134,7 +178,9 @@ export interface ApprovalItem {
     targetUser?: { _id: string; name: string; email: string };
     originalAssignee?: { _id: string; name: string; email: string };
     reason?: string;
+    decisionRemark?: string;
     createdAt?: string;
+    reviewedAt?: string;
     metadata?: Record<string, unknown>;
   };
 }
@@ -142,6 +188,35 @@ export interface ApprovalItem {
 export interface ApprovalsResponse {
   approvals: ApprovalItem[];
   total: number;
+  page?: number;
+  limit?: number;
+  totalPages?: number;
+  categoryCounts?: {
+    all: number;
+    tasks: number;
+    documents: number;
+    access: number;
+    cases: number;
+    clients: number;
+  };
+}
+
+export interface ApprovalMetrics {
+  awaitingReview: number;
+  submittedToday: number;
+  approvedThisMonth: number;
+  rejectedThisMonth: number;
+}
+
+export interface ApprovalQueryParams {
+  status?: "pending" | "approved" | "rejected" | "all" | string;
+  category?: "all" | "tasks" | "documents" | "access" | "cases" | "clients" | string;
+  search?: string;
+  submittedToday?: boolean;
+  thisMonth?: boolean;
+  sortBy?: "newest" | "oldest" | "waiting" | "priority" | "title" | string;
+  page?: number;
+  limit?: number;
 }
 
 export interface AuditLogItem {
@@ -261,6 +336,8 @@ export const adminKeys = {
   employees: (filters?: Record<string, string>) => ["admin", "employees", filters] as const,
   detail: (id?: string) => ["admin", "employees", "detail", id ?? ""] as const,
   approvals: ["admin", "approvals"] as const,
+  approvalsQuery: (params?: ApprovalQueryParams) => ["admin", "approvals", "list", params] as const,
+  approvalMetrics: ["admin", "approvals", "metrics"] as const,
   auditLogs: (filters?: Record<string, string>) => ["admin", "auditLogs", filters] as const,
   storage: ["admin", "storage"] as const,
   taskOptions: ["admin", "taskOptions"] as const,
@@ -369,11 +446,27 @@ export function useUpdatePreferences() {
   });
 }
 
-export function useApprovals(options?: { enabled?: boolean }) {
+export function useApprovals(params?: ApprovalQueryParams, options?: { enabled?: boolean }) {
+  const queryStr = params
+    ? Object.entries(params)
+        .filter(([_, v]) => v !== undefined && v !== null && v !== "")
+        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+        .join("&")
+    : "";
+
   return useQuery<ApprovalsResponse>({
-    queryKey: adminKeys.approvals,
-    queryFn: () => api.get("/admin/approvals"),
-    refetchInterval: 30_000, // refresh every 30s for pending approvals
+    queryKey: params ? adminKeys.approvalsQuery(params) : adminKeys.approvals,
+    queryFn: () => api.get(`/admin/approvals${queryStr ? `?${queryStr}` : ""}`),
+    refetchInterval: 30_000, // refresh every 30s for approvals
+    enabled: options?.enabled ?? true,
+  });
+}
+
+export function useApprovalMetrics(options?: { enabled?: boolean }) {
+  return useQuery<ApprovalMetrics>({
+    queryKey: adminKeys.approvalMetrics,
+    queryFn: () => api.get("/admin/approvals/metrics"),
+    refetchInterval: 30_000,
     enabled: options?.enabled ?? true,
   });
 }

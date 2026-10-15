@@ -818,140 +818,618 @@ router.delete("/employees/:id", requireAdminOrPermission("employees"), async (re
 
 
 // ---------------------------------------------------------------------------
-// GET /api/admin/approvals — pending items needing approval (admin or approvals perm)
+// GET /api/admin/approvals/metrics — summary metrics for Approval Centre
+// ---------------------------------------------------------------------------
+
+router.get("/approvals/metrics", requireAdminOrPermission("approvals"), async (req: Request, res: Response) => {
+  try {
+    const now = new Date();
+    let timezone = "Asia/Kolkata";
+    try {
+      const workingHours = await (AppSettings as any).getWorkingHoursConfig();
+      if (workingHours?.timezone) {
+        timezone = workingHours.timezone;
+      }
+    } catch {}
+
+    const todayDateStr = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(now);
+
+    const [yearStr, monthStr] = todayDateStr.split("-");
+    const startOfToday = new Date(`${todayDateStr}T00:00:00.000+05:30`);
+    const endOfToday = new Date(`${todayDateStr}T23:59:59.999+05:30`);
+    const startOfMonth = new Date(`${yearStr}-${monthStr}-01T00:00:00.000+05:30`);
+
+    // 1. Awaiting Review (pending across all supported models)
+    const [
+      pendingTasks,
+      pendingRequests,
+      pendingDocs,
+      pendingDocAccessDocs,
+      pendingCaseAccessCases,
+    ] = await Promise.all([
+      Task.countDocuments({ status: "pending_approval", isDeleted: { $ne: true } }),
+      ApprovalRequest.countDocuments({ status: "pending" }),
+      DocumentModel.countDocuments({ state: "Pending" }),
+      DocumentModel.find({ "accessRequests.status": "pending" }).select("accessRequests").lean(),
+      Case.find({ "accessRequests.status": "pending" }).select("accessRequests").lean(),
+    ]);
+
+    const pendingDocAccessCount = pendingDocAccessDocs.reduce(
+      (sum, d) => sum + (d.accessRequests?.filter((ar: any) => ar.status === "pending").length || 0),
+      0
+    );
+    const pendingCaseAccessCount = pendingCaseAccessCases.reduce(
+      (sum, c) => sum + (c.accessRequests?.filter((ar: any) => ar.status === "pending").length || 0),
+      0
+    );
+
+    const awaitingReview = pendingTasks + pendingRequests + pendingDocs + pendingDocAccessCount + pendingCaseAccessCount;
+
+    // 2. Submitted Today (in Asia/Kolkata timezone)
+    const [
+      todayTasks,
+      todayRequests,
+      todayDocs,
+      todayDocAccessDocs,
+      todayCaseAccessCases,
+    ] = await Promise.all([
+      Task.countDocuments({
+        isDeleted: { $ne: true },
+        $or: [
+          { submittedForApprovalAt: { $gte: startOfToday, $lte: endOfToday } },
+          { status: "pending_approval", createdAt: { $gte: startOfToday, $lte: endOfToday } },
+        ],
+      }),
+      ApprovalRequest.countDocuments({
+        createdAt: { $gte: startOfToday, $lte: endOfToday },
+      }),
+      DocumentModel.countDocuments({
+        createdAt: { $gte: startOfToday, $lte: endOfToday },
+      }),
+      DocumentModel.find({
+        "accessRequests.createdAt": { $gte: startOfToday, $lte: endOfToday },
+      }).select("accessRequests").lean(),
+      Case.find({
+        "accessRequests.createdAt": { $gte: startOfToday, $lte: endOfToday },
+      }).select("accessRequests").lean(),
+    ]);
+
+    const todayDocAccessCount = todayDocAccessDocs.reduce(
+      (sum, d) => sum + (d.accessRequests?.filter((ar: any) => ar.createdAt >= startOfToday && ar.createdAt <= endOfToday).length || 0),
+      0
+    );
+    const todayCaseAccessCount = todayCaseAccessCases.reduce(
+      (sum, c) => sum + (c.accessRequests?.filter((ar: any) => ar.createdAt >= startOfToday && ar.createdAt <= endOfToday).length || 0),
+      0
+    );
+
+    const submittedToday = todayTasks + todayRequests + todayDocs + todayDocAccessCount + todayCaseAccessCount;
+
+    // 3. Approved This Month (in Asia/Kolkata timezone)
+    const [
+      monthTasksApproved,
+      monthRequestsApproved,
+      monthDocsApproved,
+    ] = await Promise.all([
+      Task.countDocuments({
+        status: "completed",
+        isDeleted: { $ne: true },
+        $or: [
+          { approvedAt: { $gte: startOfMonth } },
+          { completedAt: { $gte: startOfMonth } },
+        ],
+      }),
+      ApprovalRequest.countDocuments({
+        status: "approved",
+        reviewedAt: { $gte: startOfMonth },
+      }),
+      DocumentModel.countDocuments({
+        state: "Approved",
+        $or: [
+          { approvedAt: { $gte: startOfMonth } },
+          { updatedAt: { $gte: startOfMonth } },
+        ],
+      }),
+    ]);
+
+    const approvedThisMonth = monthTasksApproved + monthRequestsApproved + monthDocsApproved;
+
+    // 4. Rejected This Month (in Asia/Kolkata timezone)
+    const [
+      monthTasksRejected,
+      monthRequestsRejected,
+      monthDocsRejected,
+    ] = await Promise.all([
+      Task.countDocuments({
+        isDeleted: { $ne: true },
+        $or: [
+          { rejectedAt: { $gte: startOfMonth } },
+          { status: "in_progress", rejectionReason: { $exists: true, $ne: "" }, updatedAt: { $gte: startOfMonth } },
+        ],
+      }),
+      ApprovalRequest.countDocuments({
+        status: "rejected",
+        reviewedAt: { $gte: startOfMonth },
+      }),
+      DocumentModel.countDocuments({
+        state: "Rejected",
+        $or: [
+          { rejectedAt: { $gte: startOfMonth } },
+          { updatedAt: { $gte: startOfMonth } },
+        ],
+      }),
+    ]);
+
+    const rejectedThisMonth = monthTasksRejected + monthRequestsRejected + monthDocsRejected;
+
+    res.json({
+      awaitingReview,
+      submittedToday,
+      approvedThisMonth,
+      rejectedThisMonth,
+    });
+  } catch (err) {
+    console.error("[admin] Approvals metrics error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/admin/approvals — items needing or having approval decision
 // ---------------------------------------------------------------------------
 
 router.get("/approvals", requireAdminOrPermission("approvals"), async (req: Request, res: Response) => {
   try {
-    const [pendingDocs, pendingDocAccess, pendingCaseAccess, pendingTasks, pendingRequests] = await Promise.all([
-      DocumentModel.find({ state: "Pending" }).sort({ createdAt: -1 }).lean(),
-      DocumentModel.find({ "accessRequests.status": "pending" })
-        .select("name accessRequests")
+    const statusParam = ((req.query.status as string) || "pending").toLowerCase();
+    const categoryParam = ((req.query.category as string) || "all").toLowerCase();
+    const searchParam = ((req.query.search as string) || "").trim().toLowerCase();
+    const submittedToday = req.query.submittedToday === "true";
+    const thisMonth = req.query.thisMonth === "true";
+    const sortBy = ((req.query.sortBy as string) || "newest").toLowerCase();
+    const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string, 10) || 25));
+
+    const now = new Date();
+    let timezone = "Asia/Kolkata";
+    try {
+      const workingHours = await (AppSettings as any).getWorkingHoursConfig();
+      if (workingHours?.timezone) {
+        timezone = workingHours.timezone;
+      }
+    } catch {}
+
+    const todayDateStr = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(now);
+
+    const [yearStr, monthStr] = todayDateStr.split("-");
+    const startOfToday = new Date(`${todayDateStr}T00:00:00.000+05:30`);
+    const endOfToday = new Date(`${todayDateStr}T23:59:59.999+05:30`);
+    const startOfMonth = new Date(`${yearStr}-${monthStr}-01T00:00:00.000+05:30`);
+
+    // Helper for computing aging
+    const computeAging = (whenDate: Date | string | null | undefined, isPending: boolean) => {
+      if (!whenDate) return { agingDays: 0, agingLabel: isPending ? "Today" : "Recent" };
+      const d = new Date(whenDate);
+      const diffMs = Math.max(0, now.getTime() - d.getTime());
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+      const whenStr = new Intl.DateTimeFormat("en-CA", {
+        timeZone: timezone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(d);
+
+      if (whenStr === todayDateStr) {
+        return { agingDays: 0, agingLabel: "Today" };
+      }
+      if (diffDays <= 1) {
+        return { agingDays: diffDays, agingLabel: isPending ? "1d waiting" : "1d ago" };
+      }
+      if (diffDays < 7) {
+        return { agingDays: diffDays, agingLabel: isPending ? `${diffDays}d waiting` : `${diffDays}d ago` };
+      }
+      return { agingDays: diffDays, agingLabel: isPending ? "7d+ overdue review" : `${diffDays}d ago` };
+    };
+
+    // Queries based on statusParam
+    let docFilter: Record<string, any> = {};
+    let taskFilter: Record<string, any> = { isDeleted: { $ne: true } };
+    let reqFilter: Record<string, any> = {};
+
+    if (statusParam === "pending") {
+      docFilter = { state: "Pending" };
+      taskFilter = { ...taskFilter, status: "pending_approval" };
+      reqFilter = { status: "pending" };
+    } else if (statusParam === "approved") {
+      docFilter = { state: "Approved" };
+      taskFilter = { ...taskFilter, status: "completed", approvedAt: { $ne: null } };
+      reqFilter = { status: "approved" };
+      if (thisMonth) {
+        taskFilter.$or = [{ approvedAt: { $gte: startOfMonth } }, { completedAt: { $gte: startOfMonth } }];
+        reqFilter.reviewedAt = { $gte: startOfMonth };
+        docFilter.$or = [{ approvedAt: { $gte: startOfMonth } }, { updatedAt: { $gte: startOfMonth } }];
+      }
+    } else if (statusParam === "rejected") {
+      docFilter = { state: "Rejected" };
+      taskFilter = {
+        ...taskFilter,
+        $or: [
+          { rejectedAt: { $ne: null } },
+          { status: "in_progress", rejectionReason: { $exists: true, $ne: "" } },
+        ],
+      };
+      reqFilter = { status: "rejected" };
+      if (thisMonth) {
+        taskFilter.$or = [
+          { rejectedAt: { $gte: startOfMonth } },
+          { status: "in_progress", rejectionReason: { $exists: true, $ne: "" }, updatedAt: { $gte: startOfMonth } },
+        ];
+        reqFilter.reviewedAt = { $gte: startOfMonth };
+        docFilter.$or = [{ rejectedAt: { $gte: startOfMonth } }, { updatedAt: { $gte: startOfMonth } }];
+      }
+    } else {
+      // "all"
+    }
+
+    if (submittedToday) {
+      taskFilter.$or = [
+        { submittedForApprovalAt: { $gte: startOfToday, $lte: endOfToday } },
+        { createdAt: { $gte: startOfToday, $lte: endOfToday } },
+      ];
+      reqFilter.createdAt = { $gte: startOfToday, $lte: endOfToday };
+      docFilter.createdAt = { $gte: startOfToday, $lte: endOfToday };
+    }
+
+    const [docs, docAccessDocs, caseAccessCases, tasks, requests] = await Promise.all([
+      DocumentModel.find(docFilter)
+        .populate("uploadedBy", "name email role")
+        .populate("caseId", "title number")
+        .populate("clientId", "name")
+        .sort({ createdAt: -1 })
         .lean(),
-      Case.find({ "accessRequests.status": "pending" })
-        .select("title number accessRequests")
+      DocumentModel.find({ "accessRequests.0": { $exists: true } })
+        .populate("accessRequests.userId", "name email role")
+        .populate("caseId", "title number")
+        .select("name accessRequests caseId")
         .lean(),
-      Task.find({ status: "pending_approval" })
+      Case.find({ "accessRequests.0": { $exists: true } })
+        .populate("accessRequests.userId", "name email role")
+        .select("title number courtCaseId accessRequests")
+        .lean(),
+      Task.find(taskFilter)
         .populate("assignedTo", "name email role")
+        .populate("assignedBy", "name email role")
         .populate("caseId", "title number courtCaseId countCaseNumber")
         .populate("clientId", "name phone email")
         .sort({ updatedAt: -1 })
         .lean(),
-      ApprovalRequest.find({ status: "pending" })
+      ApprovalRequest.find(reqFilter)
         .populate("requesterId", "name email role")
         .populate("targetUserId", "name email role")
         .populate("originalAssigneeId", "name email role")
+        .populate("reviewedBy", "name email role")
         .sort({ createdAt: -1 })
         .lean(),
     ]);
 
-    const approvals = [
-      ...pendingDocs.map((d) => ({
-        _id: d._id,
+    // Map into normalized approval items
+    const allItems: any[] = [];
+
+    // 1. Documents
+    docs.forEach((d: any) => {
+      const isPending = d.state === "Pending";
+      const itemStatus = isPending ? "pending" : d.state === "Approved" ? "approved" : "rejected";
+      if (statusParam !== "all" && itemStatus !== statusParam) return;
+      const when = d.createdAt;
+      const aging = computeAging(when, isPending);
+      allItems.push({
+        _id: d._id.toString(),
         kind: "Document Upload",
+        category: "documents",
         title: d.name,
-        context: `Uploaded for review`,
-        when: d.createdAt,
-      })),
-      ...pendingDocAccess.flatMap((d) =>
-        d.accessRequests
-          .filter((ar) => ar.status === "pending")
-          .map((ar) => ({
-            _id: `${d._id}_access_${ar.createdAt.getTime()}`,
-            kind: "Access Request",
-            title: d.name,
-            context: ar.reason || "Document access request",
-            when: ar.createdAt,
-          })),
-      ),
-      ...pendingCaseAccess.flatMap((c) =>
-        (c.accessRequests || [])
-          .filter((ar) => ar.status === "pending")
-          .map((ar) => ({
-            _id: `case_${c._id}_access_${ar.createdAt.getTime()}`,
-            kind: "Case Request",
-            title: `${c.number} — ${c.title}`,
-            context: ar.reason || "Case access request",
-            when: ar.createdAt,
-          })),
-      ),
-      ...pendingTasks.map((t: any) => {
-        const assignedUser = t.assignedTo as any;
-        const totalItems = t.checklist?.length ?? 0;
-        const doneItems = t.checklist?.filter((c: any) => c.done).length ?? 0;
-        const checklistSummary = totalItems > 0 ? ` · ${doneItems}/${totalItems} subtasks completed` : "";
-        return {
-          _id: `task_${t._id.toString()}`,
-          kind: "Task Completion",
+        context: `Uploaded for review (${d.sizeFormatted || "document"})`,
+        when,
+        status: itemStatus,
+        priority: "medium",
+        agingDays: aging.agingDays,
+        agingLabel: aging.agingLabel,
+        submittedBy: d.uploadedBy ? {
+          _id: d.uploadedBy._id?.toString(),
+          name: d.uploadedBy.name,
+          email: d.uploadedBy.email,
+          role: d.uploadedBy.role,
+        } : { name: "Employee" },
+        reviewedAt: d.approvedAt || d.updatedAt,
+        documentDetails: {
+          _id: d._id.toString(),
+          name: d.name,
+          kind: d.kind,
+          size: d.size,
+          sizeFormatted: d.sizeFormatted,
+          mimeType: d.mimeType,
+          state: d.state,
+          case: d.caseId ? { _id: d.caseId._id, title: d.caseId.title, number: d.caseId.number } : null,
+          client: d.clientId ? { _id: d.clientId._id, name: d.clientId.name } : null,
+          uploadedBy: d.uploadedBy,
+          createdAt: d.createdAt,
+        },
+      });
+    });
+
+    // 2. Document Access Requests
+    docAccessDocs.forEach((d: any) => {
+      (d.accessRequests || []).forEach((ar: any) => {
+        const arStatus = ar.status || "pending";
+        if (statusParam !== "all" && arStatus !== statusParam) return;
+        const when = ar.createdAt || new Date();
+        if (submittedToday && (when < startOfToday || when > endOfToday)) return;
+        const isPending = arStatus === "pending";
+        const aging = computeAging(when, isPending);
+        const user = ar.userId as any;
+        allItems.push({
+          _id: `${d._id}_access_${new Date(ar.createdAt).getTime()}`,
+          kind: "Access Request",
+          category: "access",
+          title: d.name,
+          context: ar.reason || "Document access request",
+          when,
+          status: arStatus,
+          priority: "medium",
+          agingDays: aging.agingDays,
+          agingLabel: aging.agingLabel,
+          submittedBy: user ? {
+            _id: user._id?.toString(),
+            name: user.name,
+            email: user.email,
+            role: user.role,
+          } : { name: "Employee" },
+          documentDetails: {
+            _id: d._id.toString(),
+            name: d.name,
+            case: d.caseId,
+          },
+        });
+      });
+    });
+
+    // 3. Case Access Requests
+    caseAccessCases.forEach((c: any) => {
+      (c.accessRequests || []).forEach((ar: any) => {
+        const arStatus = ar.status || "pending";
+        if (statusParam !== "all" && arStatus !== statusParam) return;
+        const when = ar.createdAt || new Date();
+        if (submittedToday && (when < startOfToday || when > endOfToday)) return;
+        const isPending = arStatus === "pending";
+        const aging = computeAging(when, isPending);
+        const user = ar.userId as any;
+        allItems.push({
+          _id: `case_${c._id}_access_${new Date(ar.createdAt).getTime()}`,
+          kind: "Case Request",
+          category: "access",
+          title: `${c.number} — ${c.title}`,
+          context: ar.reason || "Case access request",
+          when,
+          status: arStatus,
+          priority: "medium",
+          agingDays: aging.agingDays,
+          agingLabel: aging.agingLabel,
+          submittedBy: user ? {
+            _id: user._id?.toString(),
+            name: user.name || ar.userName || "Employee",
+            email: user.email,
+            role: user.role,
+          } : { name: ar.userName || "Employee" },
+          caseDetails: {
+            _id: c._id.toString(),
+            title: c.title,
+            number: c.number,
+            courtCaseId: c.courtCaseId,
+          },
+        });
+      });
+    });
+
+    // 4. Tasks
+    tasks.forEach((t: any) => {
+      const assignedUser = t.assignedTo as any;
+      const totalItems = t.checklist?.length ?? 0;
+      const doneItems = t.checklist?.filter((c: any) => c.done).length ?? 0;
+      const checklistSummary = totalItems > 0 ? ` · ${doneItems}/${totalItems} subtasks completed` : "";
+      const isPending = t.status === "pending_approval";
+      const itemStatus = isPending ? "pending" : t.status === "completed" ? "approved" : "rejected";
+      const when = t.submittedForApprovalAt || t.updatedAt || t.createdAt;
+      const aging = computeAging(when, isPending);
+
+      allItems.push({
+        _id: `task_${t._id.toString()}`,
+        kind: "Task Completion",
+        category: "tasks",
+        title: t.title,
+        context: `Submitted by ${assignedUser?.name ?? "Assignee"}${checklistSummary}`,
+        when,
+        status: itemStatus,
+        priority: t.priority || "medium",
+        agingDays: aging.agingDays,
+        agingLabel: aging.agingLabel,
+        submittedBy: assignedUser ? {
+          _id: assignedUser._id?.toString(),
+          name: assignedUser.name,
+          email: assignedUser.email,
+          role: assignedUser.role,
+        } : { name: "Assignee" },
+        rejectionReason: t.rejectionReason,
+        reviewedAt: t.approvedAt || t.rejectedAt || (itemStatus === "approved" ? t.completedAt : undefined),
+        reviewedBy: t.rejectedBy ? { _id: t.rejectedBy.toString(), name: t.rejectedByName } : undefined,
+        taskDetails: {
+          _id: t._id.toString(),
           title: t.title,
-          context: `Submitted by ${assignedUser?.name ?? "Assignee"}${checklistSummary}`,
-          when: t.updatedAt ?? t.createdAt,
-          taskDetails: {
-            _id: t._id.toString(),
-            title: t.title,
-            description: t.description,
-            priority: t.priority,
-            status: t.status,
-            category: t.category,
-            mainCategory: t.mainCategory,
-            subCategory: t.subCategory,
-            deadline: t.deadline,
-            completedAt: t.completedAt || t.updatedAt,
-            submittedForApprovalAt: t.submittedForApprovalAt,
-            assignedTo: t.assignedTo,
-            case: t.caseId ? {
-              _id: t.caseId._id,
-              title: t.caseId.title,
-              number: t.caseId.number,
-              courtCaseId: t.caseId.courtCaseId,
-              countCaseNumber: t.caseId.countCaseNumber,
-            } : null,
-            client: t.clientId ? {
-              _id: t.clientId._id,
-              name: t.clientId.name,
-              phone: t.clientId.phone,
-              email: t.clientId.email,
-            } : null,
-            checklist: t.checklist || [],
-            remarks: t.remarks || [],
-            assignmentHistory: t.assignmentHistory || [],
-          },
-        };
-      }),
-      ...pendingRequests.map((r: any) => {
-        let kind = "General Approval";
-        if (r.type === "task_reassign") kind = "Task Reassignment";
-        else if (r.type === "task_delete") kind = "Task Deletion";
-        else if (r.type === "case_delete") kind = "Case Deletion";
-        else if (r.type === "case_reassign") kind = "Case Reassignment";
-        else if (r.type === "attachment_retention_purge") kind = "Attachment Purge";
+          description: t.description,
+          priority: t.priority,
+          status: t.status,
+          category: t.category,
+          mainCategory: t.mainCategory,
+          subCategory: t.subCategory,
+          deadline: t.deadline,
+          completedAt: t.completedAt || t.updatedAt,
+          submittedForApprovalAt: t.submittedForApprovalAt,
+          approvedAt: t.approvedAt,
+          rejectedAt: t.rejectedAt,
+          rejectionReason: t.rejectionReason,
+          rejectedByName: t.rejectedByName,
+          assignedTo: t.assignedTo,
+          assignedBy: t.assignedBy,
+          case: t.caseId ? {
+            _id: t.caseId._id,
+            title: t.caseId.title,
+            number: t.caseId.number,
+            courtCaseId: t.caseId.courtCaseId,
+            countCaseNumber: t.caseId.countCaseNumber,
+          } : null,
+          client: t.clientId ? {
+            _id: t.clientId._id,
+            name: t.clientId.name,
+            phone: t.clientId.phone,
+            email: t.clientId.email,
+          } : null,
+          checklist: t.checklist || [],
+          remarks: t.remarks || [],
+          assignmentHistory: t.assignmentHistory || [],
+        },
+      });
+    });
 
-        const requesterName = r.requesterId?.name || "Employee";
-        const targetName = r.targetUserId?.name ? ` to ${r.targetUserId.name}` : "";
-        return {
-          _id: `approval_req_${r._id.toString()}`,
-          rawApprovalId: r._id.toString(),
-          kind,
-          title: `${kind}${targetName}`,
-          context: `Requested by ${requesterName}: "${r.reason || "No remark"}"`,
-          when: r.createdAt,
-          requestDetails: {
-            _id: r._id.toString(),
-            type: r.type,
-            entityType: r.entityType,
-            entityId: r.entityId?.toString(),
-            requester: r.requesterId,
-            targetUser: r.targetUserId,
-            originalAssignee: r.originalAssigneeId,
-            reason: r.reason,
-            createdAt: r.createdAt,
-            metadata: r.metadata,
-          },
-        };
-      }),
-    ];
+    // 5. Approval Requests
+    requests.forEach((r: any) => {
+      let kind = "General Approval";
+      let category = "tasks";
+      if (r.type === "task_reassign") { kind = "Task Reassignment"; category = "tasks"; }
+      else if (r.type === "task_delete") { kind = "Task Deletion"; category = "tasks"; }
+      else if (r.type === "case_delete") { kind = "Case Deletion"; category = "cases"; }
+      else if (r.type === "case_reassign") { kind = "Case Reassignment"; category = "cases"; }
+      else if (r.type === "attachment_retention_purge") { kind = "Attachment Purge"; category = "documents"; }
+      else if (r.type === "attachment_delete") { kind = "Attachment Deletion"; category = "documents"; }
 
-    res.json({ approvals, total: approvals.length });
+      const requesterName = r.requesterId?.name || "Employee";
+      const targetName = r.targetUserId?.name ? ` to ${r.targetUserId.name}` : "";
+      const isPending = r.status === "pending";
+      const when = r.createdAt;
+      const aging = computeAging(when, isPending);
+
+      allItems.push({
+        _id: `approval_req_${r._id.toString()}`,
+        rawApprovalId: r._id.toString(),
+        kind,
+        category,
+        title: `${kind}${targetName}`,
+        context: `Requested by ${requesterName}: "${r.reason || "No remark"}"`,
+        when,
+        status: r.status,
+        priority: (r.metadata?.priority as string) || (r.type.includes("delete") ? "high" : "medium"),
+        agingDays: aging.agingDays,
+        agingLabel: aging.agingLabel,
+        submittedBy: r.requesterId ? {
+          _id: r.requesterId._id?.toString(),
+          name: r.requesterId.name,
+          email: r.requesterId.email,
+          role: r.requesterId.role,
+        } : { name: requesterName },
+        rejectionReason: r.status === "rejected" ? r.decisionRemark : undefined,
+        decisionRemark: r.decisionRemark,
+        reviewedAt: r.reviewedAt,
+        reviewedBy: r.reviewedBy ? { _id: r.reviewedBy._id?.toString(), name: r.reviewedBy.name } : undefined,
+        requestDetails: {
+          _id: r._id.toString(),
+          type: r.type,
+          entityType: r.entityType,
+          entityId: r.entityId?.toString(),
+          requester: r.requesterId,
+          targetUser: r.targetUserId,
+          originalAssignee: r.originalAssigneeId,
+          reason: r.reason,
+          decisionRemark: r.decisionRemark,
+          createdAt: r.createdAt,
+          reviewedAt: r.reviewedAt,
+          metadata: r.metadata,
+        },
+      });
+    });
+
+    // Compute live category counts under the active status filter
+    const categoryCounts = {
+      all: allItems.length,
+      tasks: allItems.filter((i) => i.category === "tasks").length,
+      documents: allItems.filter((i) => i.category === "documents").length,
+      access: allItems.filter((i) => i.category === "access").length,
+      cases: allItems.filter((i) => i.category === "cases").length,
+      clients: allItems.filter((i) => i.category === "clients").length,
+    };
+
+    // Filter by Category
+    let filtered = allItems;
+    if (categoryParam !== "all") {
+      filtered = filtered.filter((item) => item.category === categoryParam);
+    }
+
+    // Filter by Search Query
+    if (searchParam) {
+      filtered = filtered.filter((item) => {
+        const titleMatch = item.title?.toLowerCase().includes(searchParam);
+        const contextMatch = item.context?.toLowerCase().includes(searchParam);
+        const submitterMatch = item.submittedBy?.name?.toLowerCase().includes(searchParam);
+        const caseMatch = item.taskDetails?.case?.number?.toLowerCase().includes(searchParam) ||
+          item.taskDetails?.case?.title?.toLowerCase().includes(searchParam) ||
+          item.caseDetails?.number?.toLowerCase().includes(searchParam) ||
+          item.caseDetails?.title?.toLowerCase().includes(searchParam);
+        const clientMatch = item.taskDetails?.client?.name?.toLowerCase().includes(searchParam);
+        return titleMatch || contextMatch || submitterMatch || caseMatch || clientMatch;
+      });
+    }
+
+    // Sort items
+    const priorityWeight: Record<string, number> = { urgent: 4, high: 3, medium: 2, normal: 2, low: 1 };
+    filtered.sort((a, b) => {
+      if (sortBy === "oldest") {
+        return new Date(a.when).getTime() - new Date(b.when).getTime();
+      }
+      if (sortBy === "waiting") {
+        return (b.agingDays || 0) - (a.agingDays || 0);
+      }
+      if (sortBy === "priority") {
+        const pA = priorityWeight[a.priority?.toLowerCase() || "medium"] || 2;
+        const pB = priorityWeight[b.priority?.toLowerCase() || "medium"] || 2;
+        if (pA !== pB) return pB - pA;
+        return new Date(b.when).getTime() - new Date(a.when).getTime();
+      }
+      if (sortBy === "title") {
+        return a.title.localeCompare(b.title);
+      }
+      // default: newest
+      return new Date(b.when).getTime() - new Date(a.when).getTime();
+    });
+
+    const total = filtered.length;
+    const totalPages = Math.ceil(total / limit) || 1;
+    const startIndex = (page - 1) * limit;
+    const paginated = filtered.slice(startIndex, startIndex + limit);
+
+    res.json({
+      approvals: paginated,
+      total,
+      page,
+      limit,
+      totalPages,
+      categoryCounts,
+    });
   } catch (err) {
     console.error("[admin] Approvals error:", err);
     res.status(500).json({ message: "Internal server error" });
