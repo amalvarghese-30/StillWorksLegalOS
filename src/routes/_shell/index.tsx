@@ -130,7 +130,12 @@ function Dashboard() {
   const attentionTasks = allTasks.filter((t) => {
     if (t.status === "completed") return false;
     const assignedId = typeof t.assignedTo === "object" && t.assignedTo ? (t.assignedTo as any)._id : t.assignedTo;
-    const isAssignedToMe = assignedId?.toString() === user?._id?.toString();
+    const assignedUsers: string[] = Array.isArray((t as any).assignedUsers)
+      ? (t as any).assignedUsers.map((u: any) => (typeof u === "object" && u ? u._id ?? u : u)?.toString())
+      : [];
+    const isAssignedToMe =
+      assignedId?.toString() === user?._id?.toString() ||
+      assignedUsers.includes(user?._id?.toString() ?? "");
     const isCreatedByMe = (typeof t.createdBy === "object" && t.createdBy ? (t.createdBy as any)._id : t.createdBy)?.toString() === user?._id?.toString();
     const isUrgentOrHigh = t.priority === "High" || (t.priority as string) === "Urgent";
     const isOverdue = t.status !== "pending_approval" && (t.status === "overdue" || (t.deadline ? new Date(t.deadline).getTime() < today.getTime() : false));
@@ -153,6 +158,7 @@ function Dashboard() {
       return false;
     }
   });
+
 
   const dateStr = today.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" });
 

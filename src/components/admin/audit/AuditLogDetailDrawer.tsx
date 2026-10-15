@@ -3,27 +3,17 @@ import { Link } from "@tanstack/react-router";
 import {
   Sheet,
   SheetContent,
-  SheetHeader,
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
 import {
   Copy,
   Check,
-  Clock,
-  User,
   Globe,
   Laptop,
-  ShieldCheck,
   ExternalLink,
-  ChevronRight,
   GitCommit,
-  Hash,
-  Activity,
-  Layers,
-  FileCode,
   ArrowRight,
-  Sparkles,
 } from "lucide-react";
 import type { AuditLogItem } from "@/services/admin";
 import {
@@ -370,90 +360,6 @@ export function AuditLogDetailDrawer({
               ) : null}
             </div>
           )}
-
-          {/* Section 5: Cryptographic Integrity & Tamper-Evident Chain */}
-          <div className="rounded-2xl border border-border/80 bg-background/50 p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                <ShieldCheck size={13} className="text-emerald-500" />
-                Cryptographic Integrity & Hash Chain
-              </h4>
-              <span className="rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 text-[10px] font-bold">
-                SHA-256 Validated
-              </span>
-            </div>
-
-            <div className="space-y-2 text-xs">
-              <div>
-                <span className="text-[11px] text-muted-foreground">
-                  Entry SHA-256 Hash
-                </span>
-                <div className="flex items-center justify-between mt-1 rounded-lg border border-border/60 bg-card p-2 font-mono text-[10px] text-muted-foreground">
-                  <span className="truncate">{log.hash || "Hash computed upon seal"}</span>
-                  {log.hash && (
-                    <button
-                      type="button"
-                      onClick={() => handleCopy("hash", log.hash!)}
-                      className="text-muted-foreground hover:text-foreground transition-colors ml-2"
-                    >
-                      {copiedKey === "hash" ? (
-                        <Check size={12} className="text-emerald-500" />
-                      ) : (
-                        <Copy size={12} />
-                      )}
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {log.prevHash && (
-                <div>
-                  <span className="text-[11px] text-muted-foreground">
-                    Previous Entry Hash (Chain Link)
-                  </span>
-                  <div className="flex items-center justify-between mt-1 rounded-lg border border-border/60 bg-card p-2 font-mono text-[10px] text-muted-foreground">
-                    <span className="truncate">{log.prevHash}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleCopy("prevHash", log.prevHash!)}
-                      className="text-muted-foreground hover:text-foreground transition-colors ml-2"
-                    >
-                      {copiedKey === "prevHash" ? (
-                        <Check size={12} className="text-emerald-500" />
-                      ) : (
-                        <Copy size={12} />
-                      )}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {log.userAgent && (
-                <div className="pt-2">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[11px] text-muted-foreground">
-                      Full Recorded User-Agent
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleCopy("ua", log.userAgent!)}
-                      className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors font-sans"
-                    >
-                      {copiedKey === "ua" ? (
-                        <Check size={10} className="text-emerald-500" />
-                      ) : (
-                        <Copy size={10} />
-                      )}
-                      <span>Copy raw string</span>
-                    </button>
-                  </div>
-                  <div className="rounded-lg border border-border/60 bg-card p-2.5 font-mono text-[10px] text-muted-foreground leading-relaxed break-all">
-                    {log.userAgent}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
         </div>
       </SheetContent>
     </Sheet>
