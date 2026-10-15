@@ -234,22 +234,38 @@ export function AdminApprovalQueue() {
   return (
     <section className="flex flex-col rounded-2xl border border-border/80 bg-card p-5 sm:p-6 shadow-soft transition-all duration-200">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 pb-4 border-b border-border/60">
-        <div>
-          <h2 className="text-base sm:text-lg font-bold tracking-tight text-foreground">
-            Approval queue
-          </h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Requests waiting on an administrator
-          </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-border/60">
+        <div className="flex items-center gap-3">
+          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200/50 dark:border-blue-900/50 shadow-2xs">
+            <FileText size={18} strokeWidth={2} />
+          </span>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base sm:text-lg font-bold tracking-tight text-foreground">
+                Approval queue
+              </h2>
+              {approvals.length > 0 && (
+                <span className="inline-flex items-center justify-center rounded-full bg-rose-500 text-white px-2 py-0.5 text-[11px] font-bold">
+                  {approvals.length}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Requests waiting for your review and action.
+            </p>
+          </div>
         </div>
-        <Link
-          to="/admin/approvals"
-          className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors group shrink-0"
+        <Button
+          variant="outline"
+          size="sm"
+          className="rounded-xl border-primary/30 text-primary hover:bg-primary/5 hover:text-primary gap-1.5 text-xs font-semibold shrink-0"
+          asChild
         >
-          <span>Open centre</span>
-          <ArrowRight size={14} className="transition-transform group-hover:translate-x-0.5" />
-        </Link>
+          <Link to="/admin/approvals">
+            <span>Open Approval Centre</span>
+            <ArrowRight size={14} className="transition-transform group-hover:translate-x-0.5" />
+          </Link>
+        </Button>
       </div>
 
       {/* Filter Tabs */}

@@ -62,21 +62,26 @@ export function AdminRecentActivity() {
   return (
     <section className="flex flex-col rounded-2xl border border-border/80 bg-card p-5 sm:p-6 shadow-soft transition-all duration-200">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 pb-4 border-b border-border/60">
-        <div>
-          <h2 className="text-base sm:text-lg font-bold tracking-tight text-foreground">
-            Recent activity
-          </h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Everything happening across the firm
-          </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-border/60">
+        <div className="flex items-center gap-3">
+          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200/50 dark:border-blue-900/50 shadow-2xs">
+            <Activity size={18} strokeWidth={2} />
+          </span>
+          <div>
+            <h2 className="text-base sm:text-lg font-bold tracking-tight text-foreground">
+              Recent activity
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Latest actions across the firm.
+            </p>
+          </div>
         </div>
         <Link
           to="/admin/audit-logs"
-          className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors group shrink-0"
+          className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline transition-colors group shrink-0"
         >
-          <span>Full audit log</span>
-          <ArrowRight size={14} className="transition-transform group-hover:translate-x-0.5" />
+          <span>View Full Audit Log</span>
+          <ArrowRight size={13} className="transition-transform group-hover:translate-x-0.5" />
         </Link>
       </div>
 

@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { UserCog, ScrollText } from "lucide-react";
+import { UserCog, ScrollText, Calendar, ArrowRight } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
@@ -8,8 +8,6 @@ import { useApprovals, useAuditLogs } from "@/services/admin";
 import { AdminKpiRow } from "@/components/admin/dashboard/AdminKpiRow";
 import { AdminApprovalQueue } from "@/components/admin/dashboard/AdminApprovalQueue";
 import { AdminTeamCapacity } from "@/components/admin/dashboard/AdminTeamCapacity";
-import { AdminCaseOverviewChart } from "@/components/admin/dashboard/AdminCaseOverviewChart";
-import { AdminTaskStatusChart } from "@/components/admin/dashboard/AdminTaskStatusChart";
 import { AdminRecentActivity } from "@/components/admin/dashboard/AdminRecentActivity";
 
 export const Route = createFileRoute("/_admin/admin/")({
@@ -31,7 +29,7 @@ export const Route = createFileRoute("/_admin/admin/")({
   component: AdminDashboard,
 });
 
-function AdminDashboard() {
+export function AdminDashboard() {
   const { user } = useAuth();
 
   // Queries for KPI row
@@ -51,37 +49,50 @@ function AdminDashboard() {
   const docsApprovedCount = summaryLoading ? "…" : (summary?.docsApproved ?? 0);
   const auditEventsCount = auditLoading ? "…" : (auditData?.total ?? logs.length);
 
-  const greetingTitle = user?.name ? `Welcome back, ${user.name}` : "Firm administration";
+  const greetingTitle = user?.name ? `Welcome back, ${user.name} 👋` : "Firm administration";
+
+  // Current month formatting e.g. "Oct 2026"
+  const currentMonthLabel = new Date().toLocaleString("en-US", {
+    month: "short",
+    year: "numeric",
+  });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-12">
       {/* Dashboard Administrative Header */}
       <PageHeader
         breadcrumb={[{ label: "Admin", to: "/admin" }, { label: "Console" }]}
         title={greetingTitle}
-        subtitle="Here's what's happening across your firm today — governance, approvals, and team capacity."
+        subtitle="Here's what's happening across your firm today."
         actions={
-          <>
-            <Button variant="outline" className="rounded-xl gap-2 font-medium" asChild>
+          <div className="flex items-center gap-2">
+            {/* Date Pill matching reference image */}
+            <div className="inline-flex items-center gap-1.5 rounded-xl border border-border/80 bg-card px-3 py-1.5 text-xs font-semibold text-foreground shadow-2xs">
+              <Calendar size={14} className="text-muted-foreground" />
+              <span>{currentMonthLabel}</span>
+            </div>
+
+            <Button variant="outline" size="sm" className="rounded-xl gap-1.5 font-medium shadow-2xs" asChild>
               <Link to="/admin/audit-logs">
-                <ScrollText size={16} strokeWidth={1.75} />
-                <span>Audit trail</span>
+                <ScrollText size={15} strokeWidth={1.75} />
+                <span className="hidden sm:inline">Audit trail</span>
               </Link>
             </Button>
             <Button
-              className="gradient-primary rounded-xl text-primary-foreground font-semibold shadow-soft transition-transform duration-200 hover:-translate-y-0.5 gap-2"
+              size="sm"
+              className="gradient-primary rounded-xl text-primary-foreground font-semibold shadow-soft transition-transform duration-200 hover:-translate-y-0.5 gap-1.5"
               asChild
             >
               <Link to="/admin/employees">
-                <UserCog size={16} strokeWidth={2} />
+                <UserCog size={15} strokeWidth={2} />
                 <span>Manage team</span>
               </Link>
             </Button>
-          </>
+          </div>
         }
       />
 
-      {/* Responsive Row of Six Compact KPI Metrics */}
+      {/* Responsive Row of Six KPI Metric Cards */}
       <AdminKpiRow
         pendingApprovalsCount={pendingApprovalsCount}
         teamMembersCount={teamMembersCount}
@@ -96,12 +107,6 @@ function AdminDashboard() {
       <div className="grid gap-6 grid-cols-1 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <AdminApprovalQueue />
         <AdminTeamCapacity />
-      </div>
-
-      {/* Operations Overview Charts: Case Lifecycle & Task Distribution */}
-      <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
-        <AdminCaseOverviewChart />
-        <AdminTaskStatusChart />
       </div>
 
       {/* Firm-Wide Recent Activity Feed */}
