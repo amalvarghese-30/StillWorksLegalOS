@@ -4,7 +4,7 @@ import {
   LayoutDashboard, FileBadge, Home, Users, Briefcase, Plus,
   Phone, Mail, MapPin, Loader2, Edit3, ChevronDown,
   Send, Check, X, UserPlus, Building2, FileText, Trash2, Archive,
-  Download, Eye, RefreshCw, ExternalLink,
+  Download, Eye, RefreshCw, ExternalLink, CheckSquare, AlertTriangle,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
@@ -33,6 +33,9 @@ import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
 import { downloadDocument } from "@/services/documents";
 import { DocumentPreviewModal } from "@/components/documents/DocumentPreviewModal";
 import { formatSafeDate, formatSafeDateTime } from "@/lib/dates";
+import { useTasks, type TaskRecord } from "@/services/tasks";
+import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
+
 
 export const Route = createFileRoute("/_shell/clients/$clientId")({
   head: () => ({
@@ -49,11 +52,13 @@ export const Route = createFileRoute("/_shell/clients/$clientId")({
 const sections = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "cases", label: "Cases", icon: Briefcase },
+  { id: "tasks", label: "Tasks", icon: CheckSquare },
   { id: "documents", label: "Documents", icon: FileText },
   { id: "kyc", label: "Identity Verification", icon: FileBadge },
   { id: "property", label: "Property", icon: Home },
   { id: "subclients", label: "Sub-clients", icon: Users },
 ] as const;
+
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -160,6 +165,15 @@ function ClientProfile() {
     isError: isDocsError,
     refetch: refetchDocs,
   } = useClientDocuments(clientId);
+
+  const {
+    data: tasksData,
+    isLoading: isTasksLoading,
+    isError: isTasksError,
+    refetch: refetchTasks,
+  } = useTasks({ clientId }, { enabled: active === "tasks" });
+
+  const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
 
   const handleDeleteClient = async () => {
     setIsDeleting(true);
@@ -392,6 +406,91 @@ function ClientProfile() {
                     </div>
                   ))}
                 </div>
+              )}
+            </SectionCard>
+          )}
+
+          {/* ── Tasks ── */}
+          {active === "tasks" && (
+            <SectionCard
+              title="Linked Tasks"
+              description="Tasks associated with this client or their linked matters."
+              icon={CheckSquare}
+            >
+              {isTasksLoading ? (
+                <div className="flex justify-center py-12">
+                  <Loader2 size={28} className="animate-spin text-muted-foreground" />
+                </div>
+              ) : isTasksError ? (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-6 text-center">
+                  <p className="text-helper font-medium text-destructive">Failed to load tasks.</p>
+                  <Button variant="outline" size="sm" className="mt-3 gap-1.5 rounded-md" onClick={() => refetchTasks()}>
+                    <RefreshCw size={14} /> Retry
+                  </Button>
+                </div>
+              ) : !tasksData?.tasks || tasksData.tasks.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-12 text-center">
+                  <CheckSquare size={32} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
+                  <p className="mt-4 font-medium">No tasks linked to this client</p>
+                  <p className="mt-1 text-helper text-muted-foreground">
+                    Tasks assigned against this client's cases will appear here.
+                  </p>
+                </div>
+              ) : (
+                <ul className="divide-y divide-border/60">
+                  {tasksData.tasks.map((task) => {
+                    const isOverdue =
+                      task.status !== "completed" &&
+                      task.status !== "pending_approval" &&
+                      task.deadline &&
+                      new Date(task.deadline) < new Date();
+                    const priorityColor =
+                      task.priority === "High" || (task.priority as string) === "Urgent"
+                        ? "text-destructive"
+                        : task.priority === "Medium"
+                        ? "text-amber-600 dark:text-amber-400"
+                        : "text-muted-foreground";
+                    return (
+                      <li
+                        key={task._id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setSelectedTask(task)}
+                        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setSelectedTask(task)}
+                        className="flex flex-wrap items-start justify-between gap-3 py-3.5 cursor-pointer rounded-md px-2 -mx-2 hover:bg-muted/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-helper font-medium text-foreground truncate">{task.title}</p>
+                            {isOverdue && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-destructive bg-destructive/10 rounded px-1.5 py-0.5">
+                                <AlertTriangle size={10} /> Overdue
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
+                            <StatusPill tone={toneForStatus(task.status)}>{task.status.replace(/_/g, " ")}</StatusPill>
+                            {task.priority && (
+                              <span className={`font-medium ${priorityColor}`}>{task.priority}</span>
+                            )}
+                            {task.deadline && (
+                              <span>Due: {formatSafeDate(task.deadline, "—", { day: "numeric", month: "short", year: "numeric" })}</span>
+                            )}
+                            {task.assignedTo && (
+                              <span>
+                                Assigned:{" "}
+                                {typeof task.assignedTo === "object" && task.assignedTo !== null
+                                  ? (task.assignedTo as any).name
+                                  : "Staff"}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <ExternalLink size={14} className="mt-1 shrink-0 text-muted-foreground/50 group-hover:text-primary" />
+                      </li>
+                    );
+                  })}
+                </ul>
               )}
             </SectionCard>
           )}
@@ -661,6 +760,14 @@ function ClientProfile() {
           documentName={previewDoc.name}
           documentMimeType={previewDoc.mimeType}
           documentSize={previewDoc.sizeFormatted ?? previewDoc.size}
+        />
+      )}
+
+      {selectedTask && (
+        <TaskDetailDialog
+          task={selectedTask}
+          open={!!selectedTask}
+          onClose={() => setSelectedTask(null)}
         />
       )}
     </div>
