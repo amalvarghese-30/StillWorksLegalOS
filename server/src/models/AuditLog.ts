@@ -279,6 +279,7 @@ AuditLogSchema.statics.logWithActivity = async function (
       action: activityAction,
       resourceId: data.resourceId,
       resourceName: data.resourceName,
+      details: data.details,
       timestamp: new Date().toISOString(),
     });
   }

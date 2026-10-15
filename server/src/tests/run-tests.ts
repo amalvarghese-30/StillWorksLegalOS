@@ -43,6 +43,7 @@ const { seedCategories } = await import("../scripts/seedCategories.js");
 const { ChatGroup, ChatMessage } = await import("../models/Chat.js");
 const { getLocalPath } = await import("../services/storage.js");
 const { DocumentModel } = await import("../models/Document.js");
+const { AuditLog } = await import("../models/AuditLog.js");
 const { processDueReminders } = await import("../services/reminderScheduler.js");
 const { syncCallReminders, deleteCallReminders } = await import("../services/reminders.js");
 const { validateMimeType } = await import("../services/nas.js");
@@ -3539,6 +3540,212 @@ async function run() {
       .get("/api/admin/approvals/metrics")
       .set("Authorization", `Bearer ${s31AdminToken}`);
     assert(afterRejectMetrics.body.rejectedThisMonth === initialRejected + 1, "SUITE31-APP-028: Rejected this month incremented by 1");
+  }
+
+  // =========================================================================
+  // SUITE 32: AUDIT LOGS ENTERPRISE ENDPOINTS, FILTERING, EXPORT & DUPLICATE PREVENTION
+  // =========================================================================
+  {
+    console.log("\n--- SUITE 32: AUDIT LOGS ENTERPRISE ENDPOINTS & EXPORT ---");
+
+    // 1. Create Admin and Regular Employee
+    const s32Admin = await User.create({
+      name: "Adv. Audit Partner",
+      email: "audit.partner@stillworks.legal",
+      passwordHash: await bcrypt.hash("SecPass123!", 8),
+      role: "admin",
+      status: "offline",
+    });
+    const s32AdminToken = jwt.sign(
+      { userId: s32Admin._id.toString(), email: s32Admin.email, role: s32Admin.role },
+      JWT_SECRET
+    );
+    await Session.create({
+      userId: s32Admin._id,
+      token: s32AdminToken,
+      refreshTokenHash: "test_s32_admin_refresh_hash",
+      isRevoked: false,
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+    });
+
+    const s32Staff = await User.create({
+      name: "Paralegal Actor",
+      email: "paralegal.actor@stillworks.legal",
+      passwordHash: await bcrypt.hash("SecPass123!", 8),
+      role: "office_staff",
+      status: "offline",
+      permissions: { auditLogs: false },
+    });
+    const s32StaffToken = jwt.sign(
+      { userId: s32Staff._id.toString(), email: s32Staff.email, role: s32Staff.role },
+      JWT_SECRET
+    );
+    await Session.create({
+      userId: s32Staff._id,
+      token: s32StaffToken,
+      refreshTokenHash: "test_s32_staff_refresh_hash",
+      isRevoked: false,
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+    });
+
+    // 2. Authorization check on audit-logs endpoints
+    const unauthMetricsRes = await request(app)
+      .get("/api/admin/audit-logs/metrics")
+      .set("Authorization", `Bearer ${s32StaffToken}`);
+    assert(unauthMetricsRes.status === 403, "SUITE32-AUD-001: Staff without auditLogs permission rejected (403) from metrics");
+
+    const unauthLogsRes = await request(app)
+      .get("/api/admin/audit-logs")
+      .set("Authorization", `Bearer ${s32StaffToken}`);
+    assert(unauthLogsRes.status === 403, "SUITE32-AUD-002: Staff without auditLogs permission rejected (403) from logs");
+
+    const unauthExportRes = await request(app)
+      .get("/api/admin/audit-logs/export")
+      .set("Authorization", `Bearer ${s32StaffToken}`);
+    assert(unauthExportRes.status === 403, "SUITE32-AUD-003: Staff without auditLogs permission rejected (403) from export");
+
+    // 3. Create Seed Audit Logs for testing
+    // Normal entry
+    await AuditLog.create({
+      userId: s32Admin._id,
+      userName: s32Admin.name,
+      action: "create",
+      resource: "case",
+      resourceName: "Union of India vs ABC Infrastructure",
+      details: "New commercial arbitration case registered",
+      ip: "192.168.1.100",
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+    });
+
+    // Security entry (login)
+    await AuditLog.create({
+      userId: s32Staff._id,
+      userName: s32Staff.name,
+      action: "login",
+      resource: "auth",
+      details: "Staff logged into workstation",
+      ip: "10.0.0.50",
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+    });
+
+    // Malicious CSV formula injection attempt entry
+    await AuditLog.create({
+      userId: s32Admin._id,
+      userName: "=cmd|' /C calc'!A0",
+      action: "update",
+      resource: "task",
+      resourceName: "+2+5+cmd|' /C calc'!A0",
+      details: "@SUM(1+1)*Something",
+      ip: "-127.0.0.1",
+      userAgent: "Node.js Custom Client",
+    });
+
+    // 4. Test GET /api/admin/audit-logs/metrics
+    const metricsRes = await request(app)
+      .get("/api/admin/audit-logs/metrics")
+      .set("Authorization", `Bearer ${s32AdminToken}`);
+    assert(metricsRes.status === 200, "SUITE32-AUD-004: GET /api/admin/audit-logs/metrics returns 200");
+    assert(typeof metricsRes.body.totalEvents === "number" && metricsRes.body.totalEvents >= 3, "SUITE32-AUD-005: totalEvents returned");
+    assert(typeof metricsRes.body.eventsToday === "number" && metricsRes.body.eventsToday >= 3, "SUITE32-AUD-006: eventsToday returned in IST");
+    assert(typeof metricsRes.body.activeUsers === "number" && metricsRes.body.activeUsers >= 2, "SUITE32-AUD-007: activeUsers returned");
+    assert(typeof metricsRes.body.securityEvents === "number" && metricsRes.body.securityEvents >= 1, "SUITE32-AUD-008: securityEvents returned");
+
+    // 5. Test GET /api/admin/audit-logs with filters & pagination
+    const logsRes = await request(app)
+      .get("/api/admin/audit-logs?page=1&limit=10")
+      .set("Authorization", `Bearer ${s32AdminToken}`);
+    assert(logsRes.status === 200, "SUITE32-AUD-009: GET /api/admin/audit-logs returns 200");
+    assert(Array.isArray(logsRes.body.logs), "SUITE32-AUD-010: logs is an array");
+    assert(typeof logsRes.body.total === "number", "SUITE32-AUD-011: total count returned");
+    assert(logsRes.body.page === 1, "SUITE32-AUD-012: page is 1");
+
+    // Test action filter
+    const actionFilterRes = await request(app)
+      .get("/api/admin/audit-logs?action=login")
+      .set("Authorization", `Bearer ${s32AdminToken}`);
+    assert(actionFilterRes.status === 200, "SUITE32-AUD-013: action=login filter returns 200");
+    assert(actionFilterRes.body.logs.every((l: any) => l.action === "login"), "SUITE32-AUD-014: All returned logs have action=login");
+
+    // Test security filter
+    const securityFilterRes = await request(app)
+      .get("/api/admin/audit-logs?action=security")
+      .set("Authorization", `Bearer ${s32AdminToken}`);
+    assert(securityFilterRes.status === 200, "SUITE32-AUD-015: action=security filter returns 200");
+    assert(securityFilterRes.body.logs.some((l: any) => l.action === "login"), "SUITE32-AUD-016: Security filter includes login events");
+
+    // Test search filter
+    const searchRes = await request(app)
+      .get("/api/admin/audit-logs?search=arbitration")
+      .set("Authorization", `Bearer ${s32AdminToken}`);
+    assert(searchRes.status === 200, "SUITE32-AUD-017: search=arbitration returns 200");
+    assert(searchRes.body.logs.some((l: any) => l.resourceName?.includes("ABC Infrastructure")), "SUITE32-AUD-018: Search finds matching record");
+
+    // Test sorting
+    const oldestRes = await request(app)
+      .get("/api/admin/audit-logs?sortBy=oldest&limit=2")
+      .set("Authorization", `Bearer ${s32AdminToken}`);
+    assert(oldestRes.status === 200, "SUITE32-AUD-019: sortBy=oldest returns 200");
+
+    // 6. Test GET /api/admin/audit-logs/export & CSV Formula Injection Sanitization
+    const exportRes = await request(app)
+      .get("/api/admin/audit-logs/export")
+      .set("Authorization", `Bearer ${s32AdminToken}`);
+    assert(exportRes.status === 200, "SUITE32-AUD-020: GET /api/admin/audit-logs/export returns 200");
+    assert(exportRes.headers["content-type"]?.includes("text/csv"), "SUITE32-AUD-021: Content-Type is text/csv");
+    assert(exportRes.headers["content-disposition"]?.includes("attachment"), "SUITE32-AUD-022: Content-Disposition is attachment");
+
+    const csvText = exportRes.text;
+    assert(csvText.includes("Timestamp (IST)"), "SUITE32-AUD-023: CSV header row present");
+
+    // Formula injection check: cell starting with '=' must be sanitized to "'="
+    assert(csvText.includes("\"'=cmd|' /C calc'!A0\""), "SUITE32-AUD-024: Formula injection '=' sanitized with single quote");
+    // Cell starting with '+' must be sanitized to "'+..."
+    assert(csvText.includes("\"'+2+5+cmd|' /C calc'!A0\""), "SUITE32-AUD-025: Formula injection '+' sanitized with single quote");
+    // Cell starting with '@' must be sanitized to "'@..."
+    assert(csvText.includes("\"'@SUM(1+1)*Something\""), "SUITE32-AUD-026: Formula injection '@' sanitized with single quote");
+    // Cell starting with '-' must be sanitized to "'-..."
+    assert(csvText.includes("\"'-127.0.0.1\""), "SUITE32-AUD-027: Formula injection '-' sanitized with single quote");
+
+    // 7. Test Duplicate Audit Log Prevention on Task PATCH
+    const testTask = await Task.create({
+      title: "Task For Duplicate Log Audit",
+      description: "Original description",
+      status: "pending",
+      category: "Litigation",
+      priority: "Medium",
+      assignedTo: s32Staff._id,
+      createdBy: s32Admin._id,
+    });
+
+    const initialAuditCount = await AuditLog.countDocuments({ resourceId: testTask._id.toString() });
+
+    // No-op PATCH with identical values (same title, category, priority, status)
+    const noOpPatchRes = await request(app)
+      .patch(`/api/tasks/${testTask._id}`)
+      .set("Authorization", `Bearer ${s32AdminToken}`)
+      .send({
+        title: "Task For Duplicate Log Audit",
+        category: "Litigation",
+        priority: "Medium",
+      });
+    assert(noOpPatchRes.status === 200, "SUITE32-AUD-028: No-op task PATCH returns 200");
+
+    const afterNoOpCount = await AuditLog.countDocuments({ resourceId: testTask._id.toString() });
+    assert(afterNoOpCount === initialAuditCount, "SUITE32-AUD-029: No redundant audit log entry created on no-op task PATCH");
+
+    // Actual change PATCH
+    const realPatchRes = await request(app)
+      .patch(`/api/tasks/${testTask._id}`)
+      .set("Authorization", `Bearer ${s32AdminToken}`)
+      .send({
+        priority: "High",
+      });
+    assert(realPatchRes.status === 200, "SUITE32-AUD-030: Real change task PATCH returns 200");
+
+    const afterRealChangeCount = await AuditLog.countDocuments({ resourceId: testTask._id.toString() });
+    assert(afterRealChangeCount === initialAuditCount + 1, "SUITE32-AUD-031: Exactly one audit log entry created on genuine change");
+    const latestLog = await AuditLog.findOne({ resourceId: testTask._id.toString() }).sort({ createdAt: -1 });
+    assert(latestLog?.details?.includes("Priority changed"), "SUITE32-AUD-032: Audit log contains accurate diff details");
   }
 
   try {

@@ -1086,8 +1086,11 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
     if (updates["checklist"] !== undefined) {
       diffs.push(`Checklist modified (${Array.isArray(updates["checklist"]) ? updates["checklist"].length : 0} items)`);
     }
-    if (updates["mainCategory"] !== undefined || updates["category"] !== undefined) {
-      diffs.push(`Category updated`);
+    if (updates["category"] !== undefined && updates["category"] !== originalTask.category) {
+      diffs.push(`Category changed to "${updates["category"]}"`);
+    }
+    if (updates["mainCategory"] !== undefined && updates["mainCategory"] !== originalTask.mainCategory) {
+      diffs.push(`Main category changed to "${updates["mainCategory"]}"`);
     }
     if (updates["caseId"] !== undefined && String(updates["caseId"] ?? "") !== String(originalTask.caseId ?? "")) {
       diffs.push(`Linked case updated`);
@@ -1479,19 +1482,21 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       });
     }
 
-    const auditDetails = diffs.length > 0 ? diffs.join("; ") : "Task updated";
-    await AuditLog.create({
-      userId: req.userId,
-      userName: req.user?.name ?? "Unknown",
-      action: updates["status"] === "completed" ? "approve" : "update",
-      resource: "task",
-      resourceId: task._id.toString(),
-      resourceName: task.title,
-      details: auditDetails,
-      metadata: { diffs },
-      ip: req.ip,
-      userAgent: req.headers["user-agent"],
-    });
+    if (diffs.length > 0 || (updates["status"] !== undefined && updates["status"] !== originalTask.status)) {
+      const auditDetails = diffs.length > 0 ? diffs.join("; ") : `Status updated to ${updates["status"]}`;
+      await AuditLog.create({
+        userId: req.userId,
+        userName: req.user?.name ?? "Unknown",
+        action: updates["status"] === "completed" ? "approve" : "update",
+        resource: "task",
+        resourceId: task._id.toString(),
+        resourceName: task.title,
+        details: auditDetails,
+        metadata: { diffs },
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+      });
+    }
 
     const io = req.app.get("io");
     if (io) {

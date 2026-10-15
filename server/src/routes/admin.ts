@@ -26,34 +26,281 @@ router.use(requireAuth);
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
+// Helpers: Audit log filtering & CSV export
+// ---------------------------------------------------------------------------
+
+function buildAuditLogFilter(query: Record<string, string | undefined>): Record<string, unknown> {
+  const {
+    userId,
+    action,
+    resource,
+    search,
+    startDate,
+    endDate,
+    todayOnly,
+    ip,
+  } = query;
+
+  const filter: Record<string, unknown> = {};
+  const andConditions: Record<string, unknown>[] = [];
+
+  if (userId && Types.ObjectId.isValid(userId)) {
+    filter["userId"] = new Types.ObjectId(userId);
+  }
+
+  if (action && action !== "all") {
+    if (action === "security") {
+      andConditions.push({
+        $or: [
+          { action: { $in: ["login", "logout", "delete", "access_request", "settings_change"] } },
+          { resource: { $in: ["auth", "settings"] } },
+        ],
+      });
+    } else {
+      filter["action"] = action;
+    }
+  }
+
+  if (resource && resource !== "all") {
+    filter["resource"] = resource;
+  }
+
+  if (ip && ip.trim()) {
+    const cleanIp = ip.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    filter["ip"] = { $regex: cleanIp, $options: "i" };
+  }
+
+  // Time handling in Asia/Kolkata (UTC +5:30)
+  const istOffsetMs = 5.5 * 60 * 60 * 1000;
+
+  if (todayOnly === "true") {
+    const now = new Date();
+    const istNow = new Date(now.getTime() + istOffsetMs);
+    const istMidnight = new Date(Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth(), istNow.getUTCDate(), 0, 0, 0, 0));
+    const startOfTodayUtc = new Date(istMidnight.getTime() - istOffsetMs);
+    andConditions.push({ createdAt: { $gte: startOfTodayUtc } });
+  } else if (startDate || endDate) {
+    const dateCond: Record<string, unknown> = {};
+    if (startDate) {
+      const d = new Date(startDate);
+      if (!isNaN(d.getTime())) {
+        dateCond["$gte"] = d;
+      }
+    }
+    if (endDate) {
+      const d = new Date(endDate);
+      if (!isNaN(d.getTime())) {
+        if (endDate.length === 10) {
+          d.setUTCHours(23, 59, 59, 999);
+        }
+        dateCond["$lte"] = d;
+      }
+    }
+    if (Object.keys(dateCond).length > 0) {
+      andConditions.push({ createdAt: dateCond });
+    }
+  }
+
+  if (search && search.trim()) {
+    const cleanSearch = search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(cleanSearch, "i");
+    andConditions.push({
+      $or: [
+        { userName: regex },
+        { action: regex },
+        { resource: regex },
+        { resourceName: regex },
+        { details: regex },
+        { ip: regex },
+      ],
+    });
+  }
+
+  if (andConditions.length > 0) {
+    filter["$and"] = andConditions;
+  }
+
+  return filter;
+}
+
+function parseUserAgentSummary(ua?: string): string {
+  if (!ua || typeof ua !== "string") return "Unknown Client";
+  let browser = "Browser";
+  let os = "Device";
+
+  if (/windows/i.test(ua)) os = "Windows";
+  else if (/macintosh|mac os x/i.test(ua)) os = "macOS";
+  else if (/android/i.test(ua)) os = "Android";
+  else if (/iphone|ipad|ipod/i.test(ua)) os = "iOS";
+  else if (/linux/i.test(ua)) os = "Linux";
+
+  if (/edg\//i.test(ua)) browser = "Edge";
+  else if (/chrome\//i.test(ua) && !/edg\//i.test(ua)) browser = "Chrome";
+  else if (/firefox\//i.test(ua)) browser = "Firefox";
+  else if (/safari\//i.test(ua) && !/chrome\//i.test(ua)) browser = "Safari";
+  else if (/postman/i.test(ua)) browser = "Postman";
+  else if (/node/i.test(ua)) browser = "Node.js";
+
+  return `${browser} · ${os}`;
+}
+
+function sanitizeCsvValue(val: unknown): string {
+  if (val === null || val === undefined) return '""';
+  let str = String(val);
+  // Neutralize CSV formula injection: if first character is =, +, -, @, \t, \r
+  if (/^[=+\-@\t\r]/.test(str)) {
+    str = "'" + str;
+  }
+  return `"${str.replace(/"/g, '""')}"`;
+}
+
+function formatToIST(date: Date | string): string {
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/admin/audit-logs/metrics — summary counts for audit log cards
+// ---------------------------------------------------------------------------
+
+router.get("/audit-logs/metrics", requireAdminOrPermission("auditLogs"), async (_req: Request, res: Response) => {
+  try {
+    const istOffsetMs = 5.5 * 60 * 60 * 1000;
+    const now = new Date();
+    const istNow = new Date(now.getTime() + istOffsetMs);
+    const istMidnight = new Date(Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth(), istNow.getUTCDate(), 0, 0, 0, 0));
+    const startOfTodayUtc = new Date(istMidnight.getTime() - istOffsetMs);
+
+    const [totalEvents, eventsToday, activeUserIds, securityEvents] = await Promise.all([
+      AuditLog.countDocuments({}),
+      AuditLog.countDocuments({ createdAt: { $gte: startOfTodayUtc } }),
+      AuditLog.distinct("userId"),
+      AuditLog.countDocuments({
+        $or: [
+          { action: { $in: ["login", "logout", "delete", "access_request", "settings_change"] } },
+          { resource: { $in: ["auth", "settings"] } },
+        ],
+      }),
+    ]);
+
+    res.json({
+      totalEvents,
+      eventsToday,
+      activeUsers: activeUserIds.length,
+      securityEvents,
+    });
+  } catch (err) {
+    console.error("[admin] Audit logs metrics error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/admin/audit-logs/export — export filtered logs as CSV
+// ---------------------------------------------------------------------------
+
+router.get("/audit-logs/export", requireAdminOrPermission("auditLogs"), async (req: Request, res: Response) => {
+  try {
+    const query = req.query as Record<string, string>;
+    const filter = buildAuditLogFilter(query);
+
+    const sortMap: Record<string, Record<string, 1 | -1>> = {
+      newest: { createdAt: -1 },
+      oldest: { createdAt: 1 },
+      action: { action: 1, createdAt: -1 },
+      user: { userName: 1, createdAt: -1 },
+    };
+    const sortOption = (query.sortBy && sortMap[query.sortBy]) || { createdAt: -1 };
+
+    // Limit export to 5000 records for memory safety
+    const logs = await AuditLog.find(filter)
+      .sort(sortOption)
+      .limit(5000)
+      .lean();
+
+    const headers = [
+      "Timestamp (IST)",
+      "User",
+      "Action",
+      "Resource",
+      "Resource Name",
+      "Details",
+      "IP Address",
+      "Client Device",
+      "Full User-Agent",
+      "Sequence",
+      "Tamper-Proof Hash",
+    ];
+
+    const rows = logs.map((l) => [
+      sanitizeCsvValue(formatToIST(l.createdAt)),
+      sanitizeCsvValue(l.userName),
+      sanitizeCsvValue(l.action),
+      sanitizeCsvValue(l.resource),
+      sanitizeCsvValue(l.resourceName || ""),
+      sanitizeCsvValue(l.details || ""),
+      sanitizeCsvValue(l.ip || ""),
+      sanitizeCsvValue(parseUserAgentSummary(l.userAgent)),
+      sanitizeCsvValue(l.userAgent || ""),
+      sanitizeCsvValue(l.sequence != null ? String(l.sequence) : ""),
+      sanitizeCsvValue(l.hash || ""),
+    ]);
+
+    const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\r\n");
+
+    const filename = `audit-logs-${new Date().toISOString().slice(0, 10)}.csv`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(csvContent);
+  } catch (err) {
+    console.error("[admin] Audit logs export error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/admin/audit-logs — paginated audit trail (admin or auditLogs perm)
 // ---------------------------------------------------------------------------
 
 router.get("/audit-logs", requireAdminOrPermission("auditLogs"), async (req: Request, res: Response) => {
   try {
+    const query = req.query as Record<string, string>;
     const {
-      userId,
-      action,
-      resource,
       page = "1",
       limit = "50",
-    } = req.query as Record<string, string>;
+      sortBy = "newest",
+    } = query;
 
-    const filter: Record<string, unknown> = {};
-    if (userId) filter["userId"] = userId;
-    if (action) filter["action"] = action;
-    if (resource) filter["resource"] = resource;
+    const filter = buildAuditLogFilter(query);
+
+    const sortMap: Record<string, Record<string, 1 | -1>> = {
+      newest: { createdAt: -1 },
+      oldest: { createdAt: 1 },
+      action: { action: 1, createdAt: -1 },
+      user: { userName: 1, createdAt: -1 },
+    };
+    const sortOption = sortMap[sortBy] || { createdAt: -1 };
 
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
     const limitNum = Math.min(200, Math.max(1, parseInt(limit, 10) || 50));
     const skip = (pageNum - 1) * limitNum;
 
     const [logs, total] = await Promise.all([
-      AuditLog.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limitNum).lean(),
+      AuditLog.find(filter).sort(sortOption).skip(skip).limit(limitNum).lean(),
       AuditLog.countDocuments(filter),
     ]);
 
-    res.json({ logs, total, page: pageNum, totalPages: Math.ceil(total / limitNum) });
+    res.json({ logs, total, page: pageNum, totalPages: Math.ceil(total / limitNum), limit: limitNum });
   } catch (err) {
     console.error("[admin] Audit logs error:", err);
     res.status(500).json({ message: "Internal server error" });

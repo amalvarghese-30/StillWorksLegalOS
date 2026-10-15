@@ -848,6 +848,9 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
       await DocumentModel.updateMany({ caseId: record._id }, { clientId: newClientId });
     }
 
+    const updatedFields = Object.keys(updates).filter((k) => k !== "updatedBy");
+    const updateDetails = updatedFields.length > 0 ? `Updated ${updatedFields.join(", ")}` : "Case updated";
+
     await AuditLog.logWithActivity(
       {
         userId: new mongoose.Types.ObjectId(req.userId!),
@@ -856,6 +859,7 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
         resource: "case",
         resourceId: record._id.toString(),
         resourceName: record.title,
+        details: updateDetails,
         ip: req.ip,
         userAgent: req.headers["user-agent"],
       },

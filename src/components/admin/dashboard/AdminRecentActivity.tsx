@@ -133,6 +133,11 @@ export function AdminRecentActivity() {
                     <span className="font-medium text-foreground group-hover:text-primary transition-colors">
                       {a.resourceName ?? a.resource}
                     </span>
+                    {a.details ? (
+                      <span className="text-muted-foreground/80 font-normal ml-1.5 text-xs truncate">
+                        — {a.details}
+                      </span>
+                    ) : null}
                   </p>
                 </div>
                 <span className="shrink-0 text-caption text-muted-foreground font-mono pl-11 sm:pl-0">

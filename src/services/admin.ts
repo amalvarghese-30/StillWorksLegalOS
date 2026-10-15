@@ -230,6 +230,13 @@ export interface AuditLogItem {
   details?: string;
   ip?: string;
   userAgent?: string;
+  metadata?: {
+    diffs?: string[];
+    [key: string]: unknown;
+  };
+  hash?: string;
+  prevHash?: string;
+  sequence?: number;
   createdAt: string;
 }
 
@@ -238,6 +245,28 @@ export interface AuditLogsResponse {
   total: number;
   page: number;
   totalPages: number;
+  limit?: number;
+}
+
+export interface AuditLogMetrics {
+  totalEvents: number;
+  eventsToday: number;
+  activeUsers: number;
+  securityEvents: number;
+}
+
+export interface AuditLogQueryParams {
+  search?: string;
+  userId?: string;
+  action?: string;
+  resource?: string;
+  startDate?: string;
+  endDate?: string;
+  todayOnly?: boolean;
+  ip?: string;
+  sortBy?: "newest" | "oldest" | "action" | "user";
+  page?: number;
+  limit?: number;
 }
 
 export interface AuditChainVerification {
@@ -338,7 +367,8 @@ export const adminKeys = {
   approvals: ["admin", "approvals"] as const,
   approvalsQuery: (params?: ApprovalQueryParams) => ["admin", "approvals", "list", params] as const,
   approvalMetrics: ["admin", "approvals", "metrics"] as const,
-  auditLogs: (filters?: Record<string, string>) => ["admin", "auditLogs", filters] as const,
+  auditLogs: (filters?: Record<string, unknown>) => ["admin", "auditLogs", filters] as const,
+  auditLogMetrics: ["admin", "auditLogs", "metrics"] as const,
   storage: ["admin", "storage"] as const,
   taskOptions: ["admin", "taskOptions"] as const,
 };
@@ -508,13 +538,72 @@ export function useRejectRequest() {
   });
 }
 
-export function useAuditLogs(filters?: Record<string, string>, options?: { enabled?: boolean }) {
-  const params = filters ? new URLSearchParams(filters).toString() : "";
+export function useAuditLogs(
+  filters?: AuditLogQueryParams | Record<string, string>,
+  options?: { enabled?: boolean; refetchInterval?: number }
+) {
+  const queryRecord: Record<string, string> = {};
+  if (filters) {
+    for (const [key, value] of Object.entries(filters)) {
+      if (value !== undefined && value !== null && value !== "") {
+        queryRecord[key] = String(value);
+      }
+    }
+  }
+  const params = new URLSearchParams(queryRecord).toString();
   return useQuery<AuditLogsResponse>({
-    queryKey: adminKeys.auditLogs(filters),
-    queryFn: () => api.get(`/admin/audit-logs?limit=100${params ? `&${params}` : ""}`),
+    queryKey: adminKeys.auditLogs(queryRecord),
+    queryFn: () => api.get(`/admin/audit-logs${params ? `?${params}` : ""}`),
     enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval,
   });
+}
+
+export function useAuditLogMetrics(options?: { enabled?: boolean }) {
+  return useQuery<AuditLogMetrics>({
+    queryKey: adminKeys.auditLogMetrics,
+    queryFn: () => api.get("/admin/audit-logs/metrics"),
+    enabled: options?.enabled ?? true,
+    refetchInterval: 30_000,
+  });
+}
+
+export async function downloadAuditLogsCsv(params?: AuditLogQueryParams | Record<string, string>): Promise<void> {
+  const queryRecord: Record<string, string> = {};
+  if (params) {
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null && value !== "") {
+        queryRecord[key] = String(value);
+      }
+    }
+  }
+  const queryString = new URLSearchParams(queryRecord).toString();
+  const token = localStorage.getItem("legalos_token") || localStorage.getItem("auth_token") || localStorage.getItem("token") || "";
+  const url = `/api/admin/audit-logs/export${queryString ? `?${queryString}` : ""}`;
+  
+  const res = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  
+  if (!res.ok) {
+    throw new Error("Failed to export audit logs");
+  }
+  
+  const blob = await res.blob();
+  const downloadUrl = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = downloadUrl;
+  const contentDisposition = res.headers.get("content-disposition");
+  let filename = `audit-logs-${new Date().toISOString().slice(0, 10)}.csv`;
+  if (contentDisposition) {
+    const match = contentDisposition.match(/filename="?([^"]+)"?/);
+    if (match && match[1]) filename = match[1];
+  }
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(downloadUrl);
 }
 
 export function useVerifyAuditChain() {
