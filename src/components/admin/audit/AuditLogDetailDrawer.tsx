@@ -90,11 +90,7 @@ export function AuditLogDetailDrawer({
                 {resourceBadge.label}
               </span>
             </div>
-            {log.sequence != null && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs font-mono font-bold text-muted-foreground">
-                <Hash size={11} /> Sequence #{log.sequence}
-              </span>
-            )}
+
           </div>
 
           <SheetTitle className="text-lg font-bold text-foreground truncate">
@@ -187,22 +183,11 @@ export function AuditLogDetailDrawer({
                 {log.userName.slice(0, 2).toUpperCase()}
               </div>
               <div className="min-w-0">
-                <p className="font-bold text-foreground text-sm">{log.userName}</p>
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
-                  <span className="font-mono text-[11px]">User ID: {log.userId}</span>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy("userId", log.userId)}
-                    className="text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {copiedKey === "userId" ? (
-                      <Check size={11} className="text-emerald-500" />
-                    ) : (
-                      <Copy size={11} />
-                    )}
-                  </button>
+                  <p className="font-bold text-foreground text-sm">{log.userName}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 capitalize">
+                    {log.action.replace(/_/g, " ")} · {log.resource}
+                  </p>
                 </div>
-              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3 pt-2 text-xs">
@@ -262,15 +247,9 @@ export function AuditLogDetailDrawer({
                   </div>
                 ))}
               </div>
-            ) : otherMetadata ? (
-              <div className="rounded-xl border border-border/60 bg-card p-3 font-mono text-xs overflow-x-auto">
-                <pre className="text-muted-foreground leading-relaxed">
-                  {JSON.stringify(otherMetadata, null, 2)}
-                </pre>
-              </div>
             ) : (
               <p className="text-xs text-muted-foreground italic bg-card p-3 rounded-xl border border-border/60">
-                No individual field modifications or payloads recorded for this event.
+                No detailed field changes recorded for this event.
               </p>
             )}
           </div>
@@ -303,11 +282,12 @@ export function AuditLogDetailDrawer({
               ) : log.resource === "task" ? (
                 <Link
                   to="/tasks"
+                  search={log.resourceName ? { q: log.resourceName } : {}}
                   className="mt-2 inline-flex items-center justify-between w-full rounded-xl border border-primary/30 bg-primary/5 hover:bg-primary/10 px-4 py-2.5 text-xs font-semibold text-primary transition-all group"
                 >
                   <span className="flex items-center gap-2">
                     <ExternalLink size={13} />
-                    Open Tasks Board ({log.resourceName ?? "Task Details"})
+                    View Task: {log.resourceName ?? "Open Tasks Board"}
                   </span>
                   <ArrowRight
                     size={14}

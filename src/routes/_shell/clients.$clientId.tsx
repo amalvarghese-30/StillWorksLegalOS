@@ -1,10 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo, type ComponentType } from "react";
 import {
   LayoutDashboard, FileBadge, Home, Users, Briefcase, Plus,
   Phone, Mail, MapPin, Loader2, Edit3, ChevronDown,
   Send, Check, X, UserPlus, Building2, FileText, Trash2, Archive,
   Download, Eye, RefreshCw, ExternalLink, CheckSquare, AlertTriangle,
+  Activity,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
@@ -57,6 +58,7 @@ const sections = [
   { id: "kyc", label: "Identity Verification", icon: FileBadge },
   { id: "property", label: "Property", icon: Home },
   { id: "subclients", label: "Sub-clients", icon: Users },
+  { id: "activity", label: "Activity", icon: Activity },
 ] as const;
 
 
@@ -174,6 +176,64 @@ function ClientProfile() {
   } = useTasks({ clientId }, { enabled: active === "tasks" });
 
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
+
+  // Derive activity feed from already-fetched client data (cases, tasks, docs)
+  const activityItems = useMemo(() => {
+    const items: Array<{
+      id: string;
+      type: "case" | "task" | "document";
+      label: string;
+      sub: string;
+      date: string | null;
+      link?: { to: string; params?: Record<string, string> };
+      icon: ComponentType<{ size?: number; className?: string }>;
+      color: string;
+    }> = [];
+
+    (casesData?.cases ?? []).forEach((c) => {
+      items.push({
+        id: `case-${c._id}`,
+        type: "case",
+        label: c.title,
+        sub: `Case · ${(c as any).practice || "General"} · ${c.status}`,
+        date: c.createdAt ?? null,
+        link: { to: "/cases/$caseId", params: { caseId: c._id } },
+        icon: Briefcase,
+        color: "text-purple-500",
+      });
+    });
+
+    (tasksData?.tasks ?? []).forEach((t) => {
+      items.push({
+        id: `task-${t._id}`,
+        type: "task",
+        label: t.title,
+        sub: `Task · ${t.status.replace(/_/g, " ")} · ${t.priority} priority`,
+        date: t.createdAt ?? null,
+        link: undefined,
+        icon: CheckSquare,
+        color: "text-blue-500",
+      });
+    });
+
+    (docsData?.documents ?? []).forEach((d) => {
+      items.push({
+        id: `doc-${d._id}`,
+        type: "document",
+        label: d.name,
+        sub: `Document · ${d.kind || "General"} · ${d.sizeFormatted || ""}`,
+        date: d.createdAt ?? null,
+        icon: FileText,
+        color: "text-amber-500",
+      });
+    });
+
+    return items.sort((a, b) => {
+      if (!a.date) return 1;
+      if (!b.date) return -1;
+      return new Date(b.date).getTime() - new Date(a.date).getTime();
+    });
+  }, [casesData, tasksData, docsData]);
 
   const handleDeleteClient = async () => {
     setIsDeleting(true);
@@ -708,6 +768,61 @@ function ClientProfile() {
                     </li>
                   ))}
                 </ul>
+              )}
+            </SectionCard>
+          )}
+
+          {/* ── Activity ── */}
+          {active === "activity" && (
+            <SectionCard
+              title="Client Activity"
+              description="A chronological record of cases, tasks, and documents linked to this client."
+              icon={Activity}
+            >
+              {isCasesLoading || isTasksLoading || isDocsLoading ? (
+                <div className="flex justify-center py-12">
+                  <Loader2 size={28} className="animate-spin text-muted-foreground" />
+                </div>
+              ) : activityItems.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-12 text-center">
+                  <Activity size={32} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
+                  <p className="mt-4 font-medium">No activity recorded yet</p>
+                  <p className="mt-1 text-helper text-muted-foreground">
+                    Activity will appear here as cases, tasks, and documents are added to this client.
+                  </p>
+                </div>
+              ) : (
+                <ol className="relative border-l border-border/60 ml-2 space-y-0">
+                  {activityItems.map((item) => {
+                    const ItemIcon = item.icon;
+                    return (
+                      <li key={item.id} className="mb-6 ml-6">
+                        <span className="absolute -left-3 flex size-6 items-center justify-center rounded-full border border-border bg-card shadow-sm">
+                          <ItemIcon size={12} className={item.color} />
+                        </span>
+                        <div className="flex flex-col gap-0.5">
+                          {item.link ? (
+                            <Link
+                              to={item.link.to as any}
+                              params={item.link.params}
+                              className="text-helper font-semibold text-foreground hover:text-primary hover:underline transition-colors"
+                            >
+                              {item.label}
+                            </Link>
+                          ) : (
+                            <p className="text-helper font-semibold text-foreground">{item.label}</p>
+                          )}
+                          <p className="text-caption text-muted-foreground">{item.sub}</p>
+                          {item.date && (
+                            <time className="text-caption text-muted-foreground/70">
+                              {formatDate(item.date)}
+                            </time>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
               )}
             </SectionCard>
           )}
