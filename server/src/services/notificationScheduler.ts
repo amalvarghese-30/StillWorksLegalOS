@@ -159,41 +159,48 @@ export class NotificationScheduler {
     const overdueTasks = await Task.find({
       deadline: { $lt: now },
       status: { $nin: ["completed", "pending_approval"] },
-      assignedTo: { $ne: null },
+      $or: [{ assignedTo: { $ne: null } }, { assignedUsers: { $exists: true, $not: { $size: 0 } } }],
       isDeleted: { $ne: true },
     })
-      .select("_id title deadline assignedTo caseId priority")
+      .select("_id title deadline assignedTo assignedUsers caseId priority")
       .lean();
 
     if (overdueTasks.length === 0) return;
 
     for (const task of overdueTasks) {
-      if (!task.assignedTo) continue;
-
       const taskId = (task._id as Types.ObjectId).toString();
-      const assigneeId = (task.assignedTo as Types.ObjectId).toString();
-      const dedupeKey = overdueDedupeKey(`${taskId}:${assigneeId}`, now);
 
-      await NotificationService.createNotification(
-        {
-          userId: new Types.ObjectId(assigneeId),
-          type: "OVERDUE_TASK",
-          title: "Overdue Task",
-          message: `Task "${task.title}" is overdue (deadline was ${task.deadline ? new Date(task.deadline).toLocaleDateString() : "unknown"}). Please review or complete it.`,
-          relatedId: task._id as Types.ObjectId,
-          relatedModel: "Task",
-          metadata: {
-            taskId,
-            priority: task.priority,
-            deadline: task.deadline ? new Date(task.deadline).toISOString() : null,
-            caseId: task.caseId ? (task.caseId as Types.ObjectId).toString() : null,
+      // Build unique recipient set from lead assignee + all co-assignees
+      const recipientIds = new Set<string>();
+      if (task.assignedTo) recipientIds.add((task.assignedTo as Types.ObjectId).toString());
+      const extraAssignees: Types.ObjectId[] = (task as any).assignedUsers || [];
+      for (const uid of extraAssignees) recipientIds.add(uid.toString());
+
+      for (const assigneeId of recipientIds) {
+        const dedupeKey = overdueDedupeKey(`${taskId}:${assigneeId}`, now);
+
+        await NotificationService.createNotification(
+          {
+            userId: new Types.ObjectId(assigneeId),
+            type: "OVERDUE_TASK",
+            title: "Overdue Task",
+            message: `Task "${task.title}" is overdue (deadline was ${task.deadline ? new Date(task.deadline).toLocaleDateString() : "unknown"}). Please review or complete it.`,
+            relatedId: task._id as Types.ObjectId,
+            relatedModel: "Task",
+            metadata: {
+              taskId,
+              priority: task.priority,
+              deadline: task.deadline ? new Date(task.deadline).toISOString() : null,
+              caseId: task.caseId ? (task.caseId as Types.ObjectId).toString() : null,
+            },
+            dedupeKey,
           },
-          dedupeKey,
-        },
-        this.io,
-      );
+          this.io,
+        );
+      }
     }
   }
+
 
   // ---------------------------------------------------------------------------
   // Tasks due today
@@ -220,45 +227,52 @@ export class NotificationScheduler {
     const tasksDueToday = await Task.find({
       deadline: { $gte: todayStart, $lte: todayEnd },
       status: { $nin: ["completed", "pending_approval"] },
-      assignedTo: { $ne: null },
+      $or: [{ assignedTo: { $ne: null } }, { assignedUsers: { $exists: true, $not: { $size: 0 } } }],
       isDeleted: { $ne: true },
     })
-      .select("_id title deadline assignedTo caseId priority")
+      .select("_id title deadline assignedTo assignedUsers caseId priority")
       .lean();
 
     if (tasksDueToday.length === 0) return;
 
     for (const task of tasksDueToday) {
-      if (!task.assignedTo) continue;
-
       const taskId = (task._id as Types.ObjectId).toString();
-      const assigneeId = (task.assignedTo as Types.ObjectId).toString();
-      const dedupeKey = taskDueTodayDedupeKey(`${taskId}:${assigneeId}`, now);
 
       const timeStr = task.deadline
         ? new Date(task.deadline).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
         : "";
 
-      await NotificationService.createNotification(
-        {
-          userId: new Types.ObjectId(assigneeId),
-          type: "TASK_DUE",
-          title: "Task Due Today",
-          message: `Task "${task.title}" is due today${timeStr ? ` at ${timeStr}` : ""}. Make sure to complete it on time.`,
-          relatedId: task._id as Types.ObjectId,
-          relatedModel: "Task",
-          metadata: {
-            taskId,
-            priority: task.priority,
-            deadline: task.deadline ? new Date(task.deadline).toISOString() : null,
-            caseId: task.caseId ? (task.caseId as Types.ObjectId).toString() : null,
+      // Build unique recipient set from lead assignee + all co-assignees
+      const recipientIds = new Set<string>();
+      if (task.assignedTo) recipientIds.add((task.assignedTo as Types.ObjectId).toString());
+      const extraAssignees: Types.ObjectId[] = (task as any).assignedUsers || [];
+      for (const uid of extraAssignees) recipientIds.add(uid.toString());
+
+      for (const assigneeId of recipientIds) {
+        const dedupeKey = taskDueTodayDedupeKey(`${taskId}:${assigneeId}`, now);
+
+        await NotificationService.createNotification(
+          {
+            userId: new Types.ObjectId(assigneeId),
+            type: "TASK_DUE",
+            title: "Task Due Today",
+            message: `Task "${task.title}" is due today${timeStr ? ` at ${timeStr}` : ""}. Make sure to complete it on time.`,
+            relatedId: task._id as Types.ObjectId,
+            relatedModel: "Task",
+            metadata: {
+              taskId,
+              priority: task.priority,
+              deadline: task.deadline ? new Date(task.deadline).toISOString() : null,
+              caseId: task.caseId ? (task.caseId as Types.ObjectId).toString() : null,
+            },
+            dedupeKey,
           },
-          dedupeKey,
-        },
-        this.io,
-      );
+          this.io,
+        );
+      }
     }
   }
+
 
   // ---------------------------------------------------------------------------
   // Two-hour pending-task reminders (Remind every 2 hours for all pending tasks)

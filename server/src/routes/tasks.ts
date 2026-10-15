@@ -1567,6 +1567,9 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
     if (isRejectionOrChangesRequested) {
       const assigneeTargetId = (task.assignedTo as any)?._id?.toString?.() ?? task.assignedTo?.toString();
       const creatorTargetId = (task.createdBy as any)?._id?.toString?.() ?? task.createdBy?.toString();
+      const coAssigneeIds: string[] = ((task as any).assignedUsers || []).map(
+        (u: any) => u?._id?.toString?.() ?? u?.toString?.() ?? ""
+      ).filter(Boolean);
       const clientName = resolveTaskClientName(task);
       const deadlineStr = task.deadline ? new Date(task.deadline).toLocaleDateString() : "No deadline";
       const reviewerName = req.user?.name ?? "Administrator";
@@ -1580,10 +1583,11 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
         reviewerName,
         reviewerId: req.userId,
         reasonText,
-        recipientIds: [assigneeTargetId, creatorTargetId],
+        recipientIds: [assigneeTargetId, creatorTargetId, ...coAssigneeIds],
         io: req.app.get("io"),
       });
     }
+
 
     if (diffs.length > 0 || (updates["status"] !== undefined && updates["status"] !== originalTask.status)) {
       const auditDetails = diffs.length > 0 ? diffs.join("; ") : `Status updated to ${updates["status"]}`;
