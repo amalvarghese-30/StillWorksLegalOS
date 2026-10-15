@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/lib/auth";
+import { AssigneeMultiSelect } from "@/components/common/AssigneeMultiSelect";
 import { toast } from "sonner";
 import { useCreateTask, useTaskOptions, type CreateTaskPayload } from "@/services/tasks";
 import { useCategories, useCategoryTree } from "@/services/categories";
@@ -57,7 +58,7 @@ interface FormState {
   localPath: string;
   caseId: string;
   clientId: string;
-  assignedTo: string;
+  assignedTo: string[];
   callClientName: string;
   callPhone: string;
   callScheduledAt: string;
@@ -78,7 +79,7 @@ const EMPTY_FORM: FormState = {
   localPath: "",
   caseId: "",
   clientId: "",
-  assignedTo: "",
+  assignedTo: [],
   callClientName: "",
   callPhone: "",
   callScheduledAt: "",
@@ -118,7 +119,7 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
 
   const [form, setForm] = useState<FormState>({
     ...EMPTY_FORM,
-    assignedTo: user?._id ?? "",
+    assignedTo: user?._id ? [user._id] : [],
     caseId: initialCaseId ?? "",
     clientId: initialClientId ?? "",
   });
@@ -410,7 +411,10 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
       ...(form.localPath && { localPath: form.localPath.trim() }),
       ...(form.caseId && { caseId: form.caseId }),
       ...(form.clientId && { clientId: form.clientId }),
-      ...(form.assignedTo && { assignedTo: form.assignedTo }),
+      ...(form.assignedTo && form.assignedTo.length > 0 && {
+        assignedTo: form.assignedTo,
+        assignedUsers: form.assignedTo,
+      }),
       ...(finalAgent && { agent: finalAgent }),
       ...(checklist.length > 0 && {
         checklist: checklist
@@ -687,27 +691,12 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
 
             {/* ── Assignee ── */}
             <div className="space-y-1.5">
-              <Label htmlFor="task-assigned" className="text-helper">Assigned to</Label>
-              <Select
+              <Label className="text-helper">Assigned to</Label>
+              <AssigneeMultiSelect
                 value={form.assignedTo}
-                onValueChange={(val) => update("assignedTo", val)}
-              >
-                <SelectTrigger id="task-assigned" className="h-11 rounded-md">
-                  <SelectValue placeholder="Select staff member" />
-                </SelectTrigger>
-                <SelectContent className="max-h-60">
-                  {user && (
-                    <SelectItem value={user._id}>
-                      Self ({user.name})
-                    </SelectItem>
-                  )}
-                  {staff.map((s) => (
-                    <SelectItem key={s._id} value={s._id}>
-                      {s.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                onChange={(val) => update("assignedTo", val)}
+                placeholder="Tick employees to assign..."
+              />
             </div>
 
             {/* ── Local Folder / File Path ── */}

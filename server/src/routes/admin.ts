@@ -388,6 +388,8 @@ router.get("/employees/:id", async (req: Request, res: Response) => {
     const inSevenDays = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
     const empObjId = new Types.ObjectId(targetId);
+    const empCaseMatch = { $or: [{ assignedTo: empObjId }, { assignedUsers: empObjId }] };
+    const empTaskMatch = { $or: [{ assignedTo: targetId }, { assignedTo: empObjId }, { assignedUsers: targetId }, { assignedUsers: empObjId }] };
 
     const [
       activeCases,
@@ -405,32 +407,32 @@ router.get("/employees/:id", async (req: Request, res: Response) => {
       Case.countDocuments({
         isDeleted: { $ne: true },
         status: { $nin: ["Closed", "Archived"] },
-        assignedTo: empObjId,
+        ...empCaseMatch,
       }),
       Case.countDocuments({
         isDeleted: { $ne: true },
-        assignedTo: empObjId,
+        ...empCaseMatch,
       }),
       Task.countDocuments({
         isDeleted: { $ne: true },
-        assignedTo: targetId,
+        ...empTaskMatch,
         status: { $in: ["pending", "in_progress", "pending_approval"] },
       }),
       Task.countDocuments({
         isDeleted: { $ne: true },
-        assignedTo: targetId,
+        ...empTaskMatch,
         status: "completed",
       }),
       Task.countDocuments({
         isDeleted: { $ne: true },
-        assignedTo: targetId,
+        ...empTaskMatch,
         status: { $ne: "completed" },
         deadline: { $lt: now },
       }),
       Promise.all([
         Task.countDocuments({
           isDeleted: { $ne: true },
-          assignedTo: targetId,
+          ...empTaskMatch,
           status: "pending_approval",
         }),
         ApprovalRequest.countDocuments({
@@ -443,32 +445,38 @@ router.get("/employees/:id", async (req: Request, res: Response) => {
         }),
       ]).then(([taskApprovals, reqApprovals]) => taskApprovals + reqApprovals),
       Task.countDocuments({
-        isDeleted: { $ne: true },
-        assignedTo: targetId,
-        status: "completed",
-        $or: [
-          { completedAt: { $gte: startOfToday, $lte: endOfToday } },
-          { completedAt: { $in: [null, undefined] }, updatedAt: { $gte: startOfToday, $lte: endOfToday } },
+        $and: [
+          { isDeleted: { $ne: true }, status: "completed" },
+          empTaskMatch,
+          {
+            $or: [
+              { completedAt: { $gte: startOfToday, $lte: endOfToday } },
+              { completedAt: { $in: [null, undefined] }, updatedAt: { $gte: startOfToday, $lte: endOfToday } },
+            ],
+          },
+        ],
+      }),
+      Task.countDocuments({
+        $and: [
+          { isDeleted: { $ne: true }, status: "completed" },
+          empTaskMatch,
+          {
+            $or: [
+              { completedAt: { $gte: startOfWeek, $lte: endOfToday } },
+              { completedAt: { $in: [null, undefined] }, updatedAt: { $gte: startOfWeek, $lte: endOfToday } },
+            ],
+          },
         ],
       }),
       Task.countDocuments({
         isDeleted: { $ne: true },
-        assignedTo: targetId,
-        status: "completed",
-        $or: [
-          { completedAt: { $gte: startOfWeek, $lte: endOfToday } },
-          { completedAt: { $in: [null, undefined] }, updatedAt: { $gte: startOfWeek, $lte: endOfToday } },
-        ],
-      }),
-      Task.countDocuments({
-        isDeleted: { $ne: true },
-        assignedTo: targetId,
+        ...empTaskMatch,
         status: "completed",
         updatedAt: { $gte: startOfMonth },
       }),
       Task.countDocuments({
         isDeleted: { $ne: true },
-        assignedTo: targetId,
+        ...empTaskMatch,
         status: { $ne: "completed" },
         deadline: { $gte: now, $lte: inSevenDays },
       }),
@@ -527,7 +535,12 @@ router.get("/employees/:id/approvals", async (req: Request, res: Response) => {
     const [pendingTasks, pendingRequests] = await Promise.all([
       Task.find({
         isDeleted: { $ne: true },
-        assignedTo: targetId,
+        $or: [
+          { assignedTo: targetId },
+          { assignedTo: empObjId },
+          { assignedUsers: targetId },
+          { assignedUsers: empObjId },
+        ],
         status: "pending_approval",
       })
         .populate("assignedTo", "name email role")
@@ -1948,14 +1961,14 @@ router.get("/reports/employee-workload", requireAdminOrPermission("reports"), as
     const workloads = await Promise.all(
       employees.map(async (emp) => {
         const [cases, pendingTasksCount, topTasks, completedTasks] = await Promise.all([
-          Case.countDocuments({ assignedTo: emp._id, status: { $ne: "Closed" } }),
-          Task.countDocuments({ assignedTo: emp._id, status: { $ne: "completed" } }),
-          Task.find({ assignedTo: emp._id, status: { $ne: "completed" } })
+          Case.countDocuments({ $or: [{ assignedTo: emp._id }, { assignedUsers: emp._id }], status: { $ne: "Closed" } }),
+          Task.countDocuments({ $or: [{ assignedTo: emp._id }, { assignedUsers: emp._id }], status: { $ne: "completed" } }),
+          Task.find({ $or: [{ assignedTo: emp._id }, { assignedUsers: emp._id }], status: { $ne: "completed" } })
             .sort({ priority: -1, deadline: 1 })
             .limit(1)
             .select("_id title priority deadline")
             .lean(),
-          Task.countDocuments({ assignedTo: emp._id, status: "completed" }),
+          Task.countDocuments({ $or: [{ assignedTo: emp._id }, { assignedUsers: emp._id }], status: "completed" }),
         ]);
         const currentTask = topTasks[0] ?? null;
 

@@ -41,14 +41,15 @@ export async function canAccessCase(
   if (userRole === "admin") return true;
   if (userPermissions && userPermissions["cases"] === false) return false;
 
-  const c = await Case.findById(caseId).select("assignedTo createdBy accessRequests").lean();
+  const c = await Case.findById(caseId).select("assignedTo assignedUsers createdBy accessRequests").lean();
   if (!c) return false;
 
   const assignedStr = c.assignedTo ? ((c.assignedTo as any)._id || c.assignedTo).toString() : null;
+  const assignedUsers = Array.isArray((c as any).assignedUsers) ? (c as any).assignedUsers : [];
   const createdStr = c.createdBy ? ((c.createdBy as any)._id || c.createdBy).toString() : null;
 
-  // 1. Directly assigned staff
-  if (assignedStr && assignedStr === userId) {
+  // 1. Directly assigned staff (primary or co-assignee)
+  if ((assignedStr && assignedStr === userId) || assignedUsers.some((u: any) => ((u?._id || u)?.toString() === userId))) {
     return true;
   }
 
@@ -139,15 +140,16 @@ export async function canAccessTask(
   if (userPermissions && userPermissions["tasks"] === false) return false;
 
   const task = await Task.findById(taskId)
-    .select("assignedTo createdBy caseId assignmentHistory")
+    .select("assignedTo assignedUsers createdBy caseId assignmentHistory")
     .lean();
   if (!task) return false;
 
   const assignedStr = task.assignedTo ? ((task.assignedTo as any)._id || task.assignedTo).toString() : null;
+  const assignedUsers = Array.isArray((task as any).assignedUsers) ? (task as any).assignedUsers : [];
   const createdStr = task.createdBy ? ((task.createdBy as any)._id || task.createdBy).toString() : null;
 
-  // 1. Direct assignment
-  if (assignedStr && assignedStr === userId) return true;
+  // 1. Direct assignment (primary or co-assignee)
+  if ((assignedStr && assignedStr === userId) || assignedUsers.some((u: any) => ((u?._id || u)?.toString() === userId))) return true;
 
   // 2. Creator can always access tasks they created
   if (createdStr && createdStr === userId) return true;
@@ -347,6 +349,8 @@ export async function getAccessibleCaseIds(userId: string, userRole: string): Pr
       // 1. Directly assigned to user
       { assignedTo: uid },
       { assignedTo: userId },
+      { assignedUsers: uid },
+      { assignedUsers: userId },
       // 2. Created by user AND not assigned to anyone else
       {
         $and: [
@@ -357,6 +361,8 @@ export async function getAccessibleCaseIds(userId: string, userRole: string): Pr
               { assignedTo: null },
               { assignedTo: uid },
               { assignedTo: userId },
+              { assignedUsers: uid },
+              { assignedUsers: userId },
             ],
           },
         ],
@@ -390,7 +396,7 @@ export async function getAccessibleClientIds(userId: string, userRole: string): 
 
   // Clients linked as parties in cases the user can access
   const accessibleCases = await Case.find({
-    $or: [{ assignedTo: userId }, { createdBy: userId }],
+    $or: [{ assignedTo: userId }, { assignedUsers: userId }, { createdBy: userId }],
   })
     .select("parties.clientId")
     .lean();

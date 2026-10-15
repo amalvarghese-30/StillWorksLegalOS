@@ -188,8 +188,11 @@ function TaskCard({ task, onSelect }: { task: TaskRecord; onSelect?: (task: Task
       </div>
 
       <div className="mt-3 flex items-center justify-between">
-        <p className="num text-caption text-muted-foreground">
-          {task.assignedTo?.name ?? "Unassigned"} · {formatDeadline(task.deadline)}
+        <p className="num text-caption text-muted-foreground truncate max-w-[200px]" title={task.assignedUsers && task.assignedUsers.length > 0 ? task.assignedUsers.map((u) => u.name).join(", ") : (task.assignedTo?.name ?? "Unassigned")}>
+          {task.assignedUsers && task.assignedUsers.length > 0
+            ? task.assignedUsers.map((u) => u.name).join(", ")
+            : (task.assignedTo?.name ?? "Unassigned")}{" "}
+          · {formatDeadline(task.deadline)}
         </p>
         {task.callReminder && (
           <span className="flex items-center gap-1 text-caption text-warning">
@@ -296,8 +299,11 @@ function TasksPage() {
     if (isAdmin) return rawTasks;
     return rawTasks.filter((t) => {
       const assignedId = typeof t.assignedTo === "object" && t.assignedTo ? (t.assignedTo as any)._id : t.assignedTo;
-      if (assignedId && String(assignedId) !== String(user?._id)) {
-        return false;
+      const isAssigned =
+        (t.assignedUsers && t.assignedUsers.some((u) => String(u._id) === String(user?._id))) ||
+        (assignedId && String(assignedId) === String(user?._id));
+      if (assignedId || (t.assignedUsers && t.assignedUsers.length > 0)) {
+        return isAssigned;
       }
       return true;
     });

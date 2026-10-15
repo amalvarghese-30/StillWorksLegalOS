@@ -114,8 +114,10 @@ function CaseCard({
         </div>
         <div>
           <dt className="text-caption text-muted-foreground">Assigned</dt>
-          <dd className="mt-0.5 truncate text-helper font-medium">
-            {c.assignedTo?.name ?? "Unassigned"}
+          <dd className="mt-0.5 truncate text-helper font-medium" title={c.assignedUsers && c.assignedUsers.length > 0 ? c.assignedUsers.map((u) => u.name).join(", ") : (c.assignedTo?.name ?? "Unassigned")}>
+            {c.assignedUsers && c.assignedUsers.length > 0
+              ? c.assignedUsers.map((u) => u.name).join(", ")
+              : (c.assignedTo?.name ?? "Unassigned")}
           </dd>
         </div>
       </dl>
@@ -205,8 +207,11 @@ function CasesPage() {
     if (isAdmin) return list;
     return list.filter((c) => {
       const assignedId = (c.assignedTo as any)?._id || (c.assignedTo as any);
-      if (assignedId && String(assignedId) !== String(user?._id)) {
-        return false;
+      const isAssigned =
+        (c.assignedUsers && c.assignedUsers.some((u) => String(u._id) === String(user?._id))) ||
+        (assignedId && String(assignedId) === String(user?._id));
+      if (assignedId || (c.assignedUsers && c.assignedUsers.length > 0)) {
+        return isAssigned;
       }
       return true;
     });

@@ -88,6 +88,7 @@ export interface ICase extends Document {
   nextHearing?: Date | null;
   parties: CaseParty[];
   assignedTo?: mongoose.Types.ObjectId | null;
+  assignedUsers?: mongoose.Types.ObjectId[];
   assignedBy?: mongoose.Types.ObjectId | null;
   assignedAt?: Date | null;
   startedAt?: Date | null;
@@ -216,6 +217,7 @@ const CaseSchema = new Schema<ICase>(
     nextHearing: { type: Date, default: null },
     parties: { type: [CasePartySchema], default: [] },
     assignedTo: { type: Schema.Types.ObjectId, ref: "User", index: true },
+    assignedUsers: { type: [Schema.Types.ObjectId], ref: "User", default: [], index: true },
     assignedBy: { type: Schema.Types.ObjectId, ref: "User" },
     assignedAt: { type: Date },
     startedAt: { type: Date },

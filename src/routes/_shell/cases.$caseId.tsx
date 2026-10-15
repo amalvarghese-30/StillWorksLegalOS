@@ -621,7 +621,12 @@ function CaseWorkspace() {
             ["Status", record.status],
             ["Priority", record.priority],
             ["Category", record.category || record.practice || "General Legal"],
-            ["Assigned Counsel", record.assignedTo?.name ?? "Unassigned"],
+            [
+              "Assigned Counsel",
+              record.assignedUsers && record.assignedUsers.length > 0
+                ? record.assignedUsers.map((u) => u.name).join(", ")
+                : (record.assignedTo?.name ?? "Unassigned"),
+            ],
           ].map(([label, value]) => (
             <div key={label} className="min-w-0">
               <p className="text-[11px] sm:text-caption opacity-85">{label}</p>

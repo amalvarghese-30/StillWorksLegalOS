@@ -57,7 +57,8 @@ export interface CaseRecord {
   nextHearing?: string | null;
   localPath?: string;
   parties: CaseParty[];
-  assignedTo?: { _id: string; name: string; email?: string; title?: string };
+  assignedTo?: { _id: string; name: string; email?: string; title?: string; role?: string; avatar?: string };
+  assignedUsers?: Array<{ _id: string; name: string; email?: string; title?: string; role?: string; avatar?: string }>;
   assignedBy?: { _id: string; name: string; email?: string; title?: string };
   assignedAt?: string | null;
   startedAt?: string | null;
@@ -102,7 +103,8 @@ export interface CaseTaskPayload {
   category?: string;
   priority?: "High" | "Medium" | "Low";
   deadline?: string;
-  assignedTo?: string;
+  assignedTo?: string | string[];
+  assignedUsers?: string[];
   checklist?: { text: string; done?: boolean }[];
   agent?: string;
 }
@@ -124,7 +126,8 @@ export interface CreateCasePayload {
   nextHearing?: string;
   localPath?: string;
   parties?: CaseParty[];
-  assignedTo?: string;
+  assignedTo?: string | string[];
+  assignedUsers?: string[];
   tags?: string[];
   progress?: number;
   tasks?: CaseTaskPayload[];

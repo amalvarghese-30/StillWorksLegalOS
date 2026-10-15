@@ -314,19 +314,36 @@ router.get("/", async (req: Request, res: Response) => {
       filter["agent"] = agent;
     }
 
-    if (assignedTo && assignedTo !== "all") {
-      if (assignedTo.includes(",")) {
-        filter["assignedTo"] = { $in: assignedTo.split(",").map((id) => id.trim()) };
-      } else {
-        filter["assignedTo"] = assignedTo;
-      }
-    }
-
     if (isCall === "true" || hasCallReminder === "true") {
       filter["$or"] = [{ isCall: true }, { "callReminder.scheduledAt": { $exists: true, $ne: null } }];
     }
 
     const andConditions: Record<string, unknown>[] = [];
+
+    if (assignedTo && assignedTo !== "all") {
+      if (assignedTo.includes(",")) {
+        const rawIds = assignedTo.split(",").map((id) => id.trim()).filter(Boolean);
+        const objIds = rawIds.filter((id) => Types.ObjectId.isValid(id)).map((id) => new Types.ObjectId(id));
+        const allIds = Array.from(new Set([...rawIds, ...objIds]));
+        andConditions.push({
+          $or: [
+            { assignedTo: { $in: allIds } },
+            { assignedUsers: { $in: allIds } },
+          ],
+        });
+      } else {
+        const trimmed = assignedTo.trim();
+        const objId = Types.ObjectId.isValid(trimmed) ? new Types.ObjectId(trimmed) : null;
+        andConditions.push({
+          $or: [
+            { assignedTo: trimmed },
+            ...(objId ? [{ assignedTo: objId }] : []),
+            { assignedUsers: trimmed },
+            ...(objId ? [{ assignedUsers: objId }] : []),
+          ],
+        });
+      }
+    }
 
     // Date range filters on deadline
     if (dueFrom || dueTo) {
@@ -374,6 +391,8 @@ router.get("/", async (req: Request, res: Response) => {
         $or: [
           { assignedTo: uid },
           { assignedTo: uObjectId },
+          { assignedUsers: uid },
+          { assignedUsers: uObjectId },
           {
             $and: [
               { $or: [{ createdBy: uid }, { createdBy: uObjectId }] },
@@ -383,6 +402,8 @@ router.get("/", async (req: Request, res: Response) => {
                   { assignedTo: null },
                   { assignedTo: uid },
                   { assignedTo: uObjectId },
+                  { assignedUsers: uid },
+                  { assignedUsers: uObjectId },
                 ],
               },
             ],
@@ -431,6 +452,7 @@ router.get("/", async (req: Request, res: Response) => {
     if (req.user!.role !== "admin") {
       baseAccessibleTaskFilter["$or"] = [
         { assignedTo: req.userId },
+        { assignedUsers: req.userId },
         { createdBy: req.userId },
       ];
     }
@@ -440,7 +462,8 @@ router.get("/", async (req: Request, res: Response) => {
         .sort({ deadline: 1, priority: -1, createdAt: -1 })
         .skip(skip)
         .limit(limitNum)
-        .populate("assignedTo", "name email")
+        .populate("assignedTo", "name email title role avatar")
+        .populate("assignedUsers", "name email title role avatar")
         .populate("assignedBy", "name email")
         .populate("createdBy", "name email")
         .populate("updatedBy", "name email")
@@ -453,6 +476,17 @@ router.get("/", async (req: Request, res: Response) => {
       Task.countDocuments(filter),
       Task.find(baseAccessibleTaskFilter, { status: 1, deadline: 1, isCall: 1, callReminder: 1 }).lean(),
     ]);
+
+    const mappedTasks = tasks.map((t: any) => {
+      const assignedUsers = Array.isArray(t.assignedUsers) && t.assignedUsers.length > 0
+        ? t.assignedUsers
+        : (t.assignedTo ? [t.assignedTo] : []);
+      return {
+        ...t,
+        assignedUsers,
+        assignedTo: t.assignedTo || (assignedUsers.length > 0 ? assignedUsers[0] : null),
+      };
+    });
 
     const stats = {
       total: allAccessible.length,
@@ -483,7 +517,7 @@ router.get("/", async (req: Request, res: Response) => {
     }
 
     res.json({
-      tasks,
+      tasks: mappedTasks,
       total,
       page: pageNum,
       totalPages: Math.ceil(total / limitNum) || 1,
@@ -617,7 +651,8 @@ router.get("/pending-reminders", async (req: Request, res: Response) => {
 router.get("/:id", requireResourceAccess("task"), async (req: Request, res: Response) => {
   try {
     const task = await Task.findById(req.params["id"])
-      .populate("assignedTo", "name email title")
+      .populate("assignedTo", "name email title role avatar")
+      .populate("assignedUsers", "name email title role avatar")
       .populate("assignedBy", "name email title")
       .populate("createdBy", "name email title")
       .populate("updatedBy", "name email title")
@@ -630,7 +665,15 @@ router.get("/:id", requireResourceAccess("task"), async (req: Request, res: Resp
       res.status(404).json({ message: "Task not found" });
       return;
     }
-    res.json({ task });
+    const taskObj: any = task.toObject();
+    const assignedUsers = Array.isArray(taskObj.assignedUsers) && taskObj.assignedUsers.length > 0
+      ? taskObj.assignedUsers
+      : (taskObj.assignedTo ? [taskObj.assignedTo] : []);
+    taskObj.assignedUsers = assignedUsers;
+    if (!taskObj.assignedTo && assignedUsers.length > 0) {
+      taskObj.assignedTo = assignedUsers[0];
+    }
+    res.json({ task: taskObj });
   } catch (err) {
     console.error("[tasks] Get error:", err);
     res.status(500).json({ message: "Internal server error" });
@@ -745,15 +788,31 @@ router.post("/", async (req: Request, res: Response) => {
       }
     }
 
-    // Any employee or admin can assign to anyone or themselves
-    let finalAssignedTo: Types.ObjectId | null = null;
-    if (assignedTo && Types.ObjectId.isValid(assignedTo)) {
-      finalAssignedTo = new Types.ObjectId(assignedTo);
+    // Multiple assignees support: accept array or single ID
+    let finalAssignedUsers: Types.ObjectId[] = [];
+    if (Array.isArray(assignedTo)) {
+      finalAssignedUsers = assignedTo
+        .filter((id) => id && Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id));
+    } else if (Array.isArray(req.body.assignedUsers)) {
+      finalAssignedUsers = req.body.assignedUsers
+        .filter((id: any) => id && Types.ObjectId.isValid(id))
+        .map((id: any) => new Types.ObjectId(id));
+    } else if (typeof assignedTo === "string" && assignedTo.includes(",")) {
+      finalAssignedUsers = assignedTo
+        .split(",")
+        .map((id) => id.trim())
+        .filter((id) => Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id));
+    } else if (assignedTo && Types.ObjectId.isValid(assignedTo)) {
+      finalAssignedUsers = [new Types.ObjectId(assignedTo)];
     } else if (assignedTo === null) {
-      finalAssignedTo = null;
+      finalAssignedUsers = [];
     } else {
-      finalAssignedTo = new Types.ObjectId(req.userId!);
+      finalAssignedUsers = [new Types.ObjectId(req.userId!)];
     }
+
+    const finalAssignedTo: Types.ObjectId | null = finalAssignedUsers.length > 0 ? finalAssignedUsers[0] : null;
     const cleanAgent = sanitizeInputText(agent, 100);
 
     // Initial note / remark / important message
@@ -784,10 +843,10 @@ router.post("/", async (req: Request, res: Response) => {
     }
 
     const initialAssignmentHistory: any[] = [];
-    if (finalAssignedTo) {
+    for (const assigneeId of finalAssignedUsers) {
       initialAssignmentHistory.push({
         fromUser: null,
-        toUser: finalAssignedTo,
+        toUser: assigneeId,
         assignedBy: new Types.ObjectId(req.userId!),
         action: "assigned",
         note: `Initial task assignment by ${req.user?.name || "Staff"}`,
@@ -808,6 +867,7 @@ router.post("/", async (req: Request, res: Response) => {
       status: "pending",
       deadline: parsedDeadline,
       assignedTo: finalAssignedTo,
+      assignedUsers: finalAssignedUsers,
       caseId: cleanCaseId,
       clientId: cleanClientId,
       checklist: parseChecklistRecursive(checklist),
@@ -823,27 +883,29 @@ router.post("/", async (req: Request, res: Response) => {
       updatedBy: req.userId,
     });
 
-    // Notify assignee if task is assigned to someone else
-    if (finalAssignedTo && finalAssignedTo.toString() !== req.userId) {
-      const isUrgent = task.priority === "High";
-      await NotificationService.createNotification({
-        userId: finalAssignedTo,
-        type: "TASK_ASSIGNED",
-        title: isUrgent ? "🚨 Urgent Task Assigned" : "New Task Assigned",
-        message: `${req.user?.name ?? "Admin"} assigned you ${isUrgent ? "an urgent" : "a"} task: "${task.title}"`,
-        relatedId: task._id,
-        relatedModel: "Task",
-        actorId: new Types.ObjectId(req.userId),
-        metadata: {
-          taskTitle: task.title,
-          taskId: task._id.toString(),
-          caseId: cleanCaseId ? cleanCaseId.toString() : undefined,
-          priority: task.priority,
-          clientName: resolveTaskClientName(task),
-          deadline: task.deadline ? new Date(task.deadline).toLocaleDateString() : "No deadline",
-          assignedBy: req.user?.name ?? "Staff",
-        },
-      }, req.app.get("io")); // Pass the Socket.IO instance for real-time emission
+    // Notify all assigned staff if assigned to someone else
+    for (const assigneeId of finalAssignedUsers) {
+      if (assigneeId.toString() !== req.userId) {
+        const isUrgent = task.priority === "High";
+        await NotificationService.createNotification({
+          userId: assigneeId,
+          type: "TASK_ASSIGNED",
+          title: isUrgent ? "🚨 Urgent Task Assigned" : "New Task Assigned",
+          message: `${req.user?.name ?? "Admin"} assigned you ${isUrgent ? "an urgent" : "a"} task: "${task.title}"`,
+          relatedId: task._id,
+          relatedModel: "Task",
+          actorId: new Types.ObjectId(req.userId),
+          metadata: {
+            taskTitle: task.title,
+            taskId: task._id.toString(),
+            caseId: cleanCaseId ? cleanCaseId.toString() : undefined,
+            priority: task.priority,
+            clientName: resolveTaskClientName(task),
+            deadline: task.deadline ? new Date(task.deadline).toLocaleDateString() : "No deadline",
+            assignedBy: req.user?.name ?? "Staff",
+          },
+        }, req.app.get("io"));
+      }
     }
 
     // Audit log
@@ -861,7 +923,7 @@ router.post("/", async (req: Request, res: Response) => {
     // Create synchronized Reminder documents if callReminder is present
     // Reminders are strictly for the assigned user(s). Fallback to creator only if unassigned.
     if (task.callReminder && task.callReminder.clientName) {
-      const explicitAssignees = Array.isArray(assignedTo) ? assignedTo.filter(Boolean) : (finalAssignedTo ? [finalAssignedTo] : []);
+      const explicitAssignees = finalAssignedUsers.length > 0 ? finalAssignedUsers : (finalAssignedTo ? [finalAssignedTo] : []);
       const taskUserIds = explicitAssignees.length > 0 ? explicitAssignees : [task.createdBy || req.userId].filter(Boolean);
       try {
         await syncCallReminders({
@@ -879,16 +941,29 @@ router.post("/", async (req: Request, res: Response) => {
       }
     }
 
+    await task.populate([
+      { path: "assignedTo", select: "name email title role avatar" },
+      { path: "assignedUsers", select: "name email title role avatar" },
+    ]);
+
+    const taskObj: any = task.toObject();
+    taskObj.assignedUsers = Array.isArray(taskObj.assignedUsers) && taskObj.assignedUsers.length > 0
+      ? taskObj.assignedUsers
+      : (taskObj.assignedTo ? [taskObj.assignedTo] : []);
+    if (!taskObj.assignedTo && taskObj.assignedUsers.length > 0) {
+      taskObj.assignedTo = taskObj.assignedUsers[0];
+    }
+
     const io = req.app.get("io");
     if (io) {
       io.emit("task:created", {
-        task,
+        task: taskObj,
         assignedTo: task.assignedTo ? task.assignedTo.toString() : null,
         createdBy: task.createdBy ? task.createdBy.toString() : null,
       });
     }
 
-    res.status(201).json({ task });
+    res.status(201).json({ task: taskObj });
   } catch (err: any) {
     console.error("[tasks] Create error:", err);
     res.status(500).json({ message: "Internal server error" });
@@ -922,6 +997,7 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       "status",
       "deadline",
       "assignedTo",
+      "assignedUsers",
       "caseId",
       "clientId",
       "agent",
@@ -931,6 +1007,32 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
     ];
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
+    }
+
+    let newAssignedUsers: Types.ObjectId[] | undefined = undefined;
+    const rawAssignVal = updates["assignedUsers"] !== undefined ? updates["assignedUsers"] : updates["assignedTo"];
+    if (rawAssignVal !== undefined) {
+      if (Array.isArray(rawAssignVal)) {
+        newAssignedUsers = rawAssignVal
+          .map((id: any) => String(id?._id || id).trim())
+          .filter((id: string) => Types.ObjectId.isValid(id))
+          .map((id: string) => new Types.ObjectId(id));
+      } else if (typeof rawAssignVal === "string" && rawAssignVal.includes(",")) {
+        newAssignedUsers = rawAssignVal
+          .split(",")
+          .map((id: string) => id.trim())
+          .filter((id: string) => Types.ObjectId.isValid(id))
+          .map((id: string) => new Types.ObjectId(id));
+      } else if (rawAssignVal && Types.ObjectId.isValid(String(rawAssignVal))) {
+        newAssignedUsers = [new Types.ObjectId(String(rawAssignVal))];
+      } else if (rawAssignVal === null || rawAssignVal === "") {
+        newAssignedUsers = [];
+      }
+
+      if (newAssignedUsers !== undefined) {
+        updates["assignedUsers"] = newAssignedUsers;
+        updates["assignedTo"] = newAssignedUsers.length > 0 ? newAssignedUsers[0] : null;
+      }
     }
 
     if (updates["title"] !== undefined) {
@@ -1287,7 +1389,8 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
         new: true,
         runValidators: true,
       })
-        .populate("assignedTo", "name email title")
+        .populate("assignedTo", "name email title role avatar")
+        .populate("assignedUsers", "name email title role avatar")
         .populate("assignedBy", "name email title")
         .populate("createdBy", "name email title")
         .populate("updatedBy", "name email title")
@@ -1507,7 +1610,16 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       });
     }
 
-    res.json({ task });
+    const taskObj: any = task.toObject ? task.toObject() : task;
+    const assignedUsers = Array.isArray(taskObj.assignedUsers) && taskObj.assignedUsers.length > 0
+      ? taskObj.assignedUsers
+      : (taskObj.assignedTo ? [taskObj.assignedTo] : []);
+    taskObj.assignedUsers = assignedUsers;
+    if (!taskObj.assignedTo && taskObj.assignedUsers.length > 0) {
+      taskObj.assignedTo = taskObj.assignedUsers[0];
+    }
+
+    res.json({ task: taskObj });
   } catch (err) {
     console.error("[tasks] Update error:", err);
     res.status(500).json({ message: "Internal server error" });

@@ -67,6 +67,7 @@ export interface ITask extends Document {
   status: TaskStatus;
   deadline: Date | null;
   assignedTo: mongoose.Types.ObjectId | null;
+  assignedUsers?: mongoose.Types.ObjectId[];
   assignedBy?: mongoose.Types.ObjectId | null;
   assignedAt?: Date | null;
   startedAt?: Date | null;
@@ -197,6 +198,7 @@ const TaskSchema = new Schema<ITask>(
     },
     deadline: { type: Date, default: null, index: true },
     assignedTo: { type: Schema.Types.ObjectId, ref: "User", index: true },
+    assignedUsers: { type: [Schema.Types.ObjectId], ref: "User", default: [], index: true },
     assignedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     assignedAt: { type: Date, default: null },
     startedAt: { type: Date, default: null },

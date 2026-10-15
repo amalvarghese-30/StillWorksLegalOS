@@ -121,10 +121,22 @@ router.get("/", async (req: Request, res: Response) => {
       if (assignedTo.includes(",")) {
         const ids = assignedTo.split(",").map((id) => id.trim()).filter((id) => mongoose.Types.ObjectId.isValid(id));
         if (ids.length > 0) {
-          filter["assignedTo"] = { $in: ids.map((id) => new mongoose.Types.ObjectId(id)) };
+          const objIds = ids.map((id) => new mongoose.Types.ObjectId(id));
+          andConditions.push({
+            $or: [
+              { assignedTo: { $in: objIds } },
+              { assignedUsers: { $in: objIds } },
+            ],
+          });
         }
       } else if (mongoose.Types.ObjectId.isValid(assignedTo)) {
-        filter["assignedTo"] = new mongoose.Types.ObjectId(assignedTo);
+        const idObj = new mongoose.Types.ObjectId(assignedTo);
+        andConditions.push({
+          $or: [
+            { assignedTo: idObj },
+            { assignedUsers: idObj },
+          ],
+        });
       }
     }
 
@@ -199,7 +211,8 @@ router.get("/", async (req: Request, res: Response) => {
 
     const [cases, total, statusCounts] = await Promise.all([
       Case.find(filter)
-        .populate("assignedTo", "name email")
+        .populate("assignedTo", "name email title role avatar")
+        .populate("assignedUsers", "name email title role avatar")
         .populate("assignedBy", "name email")
         .populate("createdBy", "name")
         .sort({ updatedAt: -1 })
@@ -212,6 +225,17 @@ router.get("/", async (req: Request, res: Response) => {
         { $group: { _id: "$status", count: { $sum: 1 } } },
       ]),
     ]);
+
+    const mappedCases = cases.map((c: any) => {
+      const assignedUsers = Array.isArray(c.assignedUsers) && c.assignedUsers.length > 0
+        ? c.assignedUsers
+        : (c.assignedTo ? [c.assignedTo] : []);
+      return {
+        ...c,
+        assignedUsers,
+        assignedTo: c.assignedTo || (assignedUsers.length > 0 ? assignedUsers[0] : null),
+      };
+    });
 
     const stats = {
       total: 0,
@@ -229,7 +253,7 @@ router.get("/", async (req: Request, res: Response) => {
     }
 
     res.json({
-      cases,
+      cases: mappedCases,
       total,
       page: pageNum,
       totalPages: Math.ceil(total / limitNum) || 1,
@@ -284,7 +308,8 @@ router.get("/requestable", async (req: Request, res: Response) => {
 router.get("/:id", requireResourceAccess("case"), async (req: Request, res: Response) => {
   try {
     const record = await Case.findById(req.params["id"])
-      .populate("assignedTo", "name email title")
+      .populate("assignedTo", "name email title role avatar")
+      .populate("assignedUsers", "name email title role avatar")
       .populate("assignedBy", "name email title")
       .populate("createdBy", "name email title")
       .populate("parties.clientId", "name email phone")
@@ -297,6 +322,14 @@ router.get("/:id", requireResourceAccess("case"), async (req: Request, res: Resp
     if (!record) {
       res.status(404).json({ message: "Case not found" });
       return;
+    }
+
+    const assignedUsers = Array.isArray((record as any).assignedUsers) && (record as any).assignedUsers.length > 0
+      ? (record as any).assignedUsers
+      : (record.assignedTo ? [record.assignedTo] : []);
+    (record as any).assignedUsers = assignedUsers;
+    if (!record.assignedTo && assignedUsers.length > 0) {
+      (record as any).assignedTo = assignedUsers[0];
     }
 
     res.json({ case: record });
@@ -375,10 +408,21 @@ router.post("/", async (req: Request, res: Response) => {
     }
 
     // Non-admins can only assign to themselves. Ensure valid ObjectId if specified.
-    const finalAssignedTo =
-      userRole === "admin" && assignedTo && mongoose.Types.ObjectId.isValid(assignedTo)
-        ? assignedTo
-        : userId;
+    let finalAssignedUsers: mongoose.Types.ObjectId[] = [];
+    if (userRole === "admin") {
+      const rawAssignees = Array.isArray(req.body.assignedUsers)
+        ? req.body.assignedUsers
+        : (Array.isArray(assignedTo) ? assignedTo : (typeof assignedTo === "string" && assignedTo.includes(",") ? assignedTo.split(",") : (assignedTo ? [assignedTo] : [])));
+      
+      finalAssignedUsers = rawAssignees
+        .map((id: any) => String(id?._id || id).trim())
+        .filter((id: string) => mongoose.Types.ObjectId.isValid(id))
+        .map((id: string) => new mongoose.Types.ObjectId(id));
+    }
+    if (finalAssignedUsers.length === 0) {
+      finalAssignedUsers = [new mongoose.Types.ObjectId(userId)];
+    }
+    const finalAssignedTo = finalAssignedUsers[0];
 
     let parsedNextHearing: Date | null = null;
     if (nextHearing) {
@@ -496,6 +540,7 @@ router.post("/", async (req: Request, res: Response) => {
       nextHearing: parsedNextHearing,
       parties: sanitizedParties,
       assignedTo: finalAssignedTo,
+      assignedUsers: finalAssignedUsers,
       assignedBy: finalAssignedTo ? userId : null,
       assignedAt: finalAssignedTo ? new Date() : null,
       localPath: typeof localPath === "string" ? localPath.trim() : "",
@@ -537,7 +582,7 @@ router.post("/", async (req: Request, res: Response) => {
 
     console.log(`[cases:create] [corrId: ${corrId}] [stage: created] [caseId: ${record._id}] [number: ${record.number}]`);
 
-    await record.populate(["assignedTo", "createdBy"]);
+    await record.populate(["assignedTo", "assignedUsers", "createdBy"]);
 
     // 5. Non-Fatal Audit Logging
     try {
@@ -667,7 +712,40 @@ router.post("/", async (req: Request, res: Response) => {
       }
     }
 
-    res.status(201).json({ case: record });
+    // Notify all assigned staff members for the new case
+    for (const assignee of finalAssignedUsers) {
+      if (assignee.toString() !== userId.toString()) {
+        try {
+          await NotificationService.createNotification({
+            userId: assignee,
+            type: "CASE_ASSIGNED",
+            title: "New Case Assigned",
+            message: `${req.user?.name ?? "Admin"} assigned you to case: "${record.title}" (${record.number})`,
+            relatedId: record._id as any,
+            relatedModel: "Case",
+            actorId: new mongoose.Types.ObjectId(userId),
+            metadata: {
+              caseTitle: record.title,
+              caseNumber: record.number,
+              caseId: record._id.toString(),
+            },
+          }, io);
+        } catch (notifErr) {
+          console.warn("[cases:create] Case assignment notification error:", notifErr);
+        }
+      }
+    }
+
+    const recordObj: any = record.toObject ? record.toObject() : record;
+    const assignedUsers = Array.isArray(recordObj.assignedUsers) && recordObj.assignedUsers.length > 0
+      ? recordObj.assignedUsers
+      : (recordObj.assignedTo ? [recordObj.assignedTo] : []);
+    recordObj.assignedUsers = assignedUsers;
+    if (!recordObj.assignedTo && assignedUsers.length > 0) {
+      recordObj.assignedTo = assignedUsers[0];
+    }
+
+    res.status(201).json({ case: recordObj });
   } catch (err: any) {
     console.error(`[cases:create] [corrId: ${corrId}] [stage: failed] Error:`, err);
     if (err.name === "ValidationError") {
@@ -723,31 +801,46 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
       return;
     }
 
-    // assignedTo: only admins may reassign to other users.
-    if (req.body["assignedTo"] !== undefined) {
-      let targetAssignee = req.body["assignedTo"];
-      if (targetAssignee === "none" || targetAssignee === "" || targetAssignee === null) {
-        targetAssignee = null;
+    // assignedTo / assignedUsers: only admins may reassign to other users.
+    if (req.body["assignedTo"] !== undefined || req.body["assignedUsers"] !== undefined) {
+      const rawAssignVal = req.body["assignedUsers"] !== undefined ? req.body["assignedUsers"] : req.body["assignedTo"];
+      let newAssignees: mongoose.Types.ObjectId[] = [];
+      if (Array.isArray(rawAssignVal)) {
+        newAssignees = rawAssignVal
+          .map((id: any) => String(id?._id || id).trim())
+          .filter((id: string) => mongoose.Types.ObjectId.isValid(id))
+          .map((id: string) => new mongoose.Types.ObjectId(id));
+      } else if (typeof rawAssignVal === "string" && rawAssignVal.includes(",")) {
+        newAssignees = rawAssignVal
+          .split(",")
+          .map((id: string) => id.trim())
+          .filter((id: string) => mongoose.Types.ObjectId.isValid(id))
+          .map((id: string) => new mongoose.Types.ObjectId(id));
+      } else if (rawAssignVal && mongoose.Types.ObjectId.isValid(String(rawAssignVal))) {
+        newAssignees = [new mongoose.Types.ObjectId(String(rawAssignVal))];
+      } else if (rawAssignVal === null || rawAssignVal === "" || rawAssignVal === "none") {
+        newAssignees = [];
       }
 
-      if (req.user?.role === "admin" || String(targetAssignee) === String(req.userId)) {
-        if (String(existing.assignedTo ?? "") !== String(targetAssignee ?? "")) {
-          updates["assignedTo"] = targetAssignee;
-          updates["assignedBy"] = req.userId;
-          updates["assignedAt"] = targetAssignee ? new Date() : null;
+      const isSelf = newAssignees.length === 1 && newAssignees[0].toString() === String(req.userId);
+      if (req.user?.role === "admin" || isSelf || newAssignees.length === 0) {
+        const primaryAssignee = newAssignees.length > 0 ? newAssignees[0] : null;
+        updates["assignedUsers"] = newAssignees;
+        updates["assignedTo"] = primaryAssignee;
+        updates["assignedBy"] = req.userId;
+        updates["assignedAt"] = primaryAssignee ? new Date() : null;
 
-          if (targetAssignee) {
-            const histEntry = {
-              fromUser: existing.assignedTo || null,
-              toUser: targetAssignee,
-              assignedBy: req.userId,
-              action: "assigned",
-              note: "Case assignment updated",
-              timestamp: new Date(),
-            };
-            if (!updates["$push"]) updates["$push"] = {};
-            (updates["$push"] as any)["assignmentHistory"] = histEntry;
-          }
+        if (primaryAssignee) {
+          const histEntry = {
+            fromUser: existing.assignedTo || null,
+            toUser: primaryAssignee,
+            assignedBy: req.userId,
+            action: "assigned",
+            note: "Case assignment updated",
+            timestamp: new Date(),
+          };
+          if (!updates["$push"]) updates["$push"] = {};
+          (updates["$push"] as any)["assignmentHistory"] = histEntry;
         }
       } else {
         res.status(403).json({ message: "Cannot assign case to another user" });
@@ -829,7 +922,8 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
       new: true,
       runValidators: true,
     })
-      .populate("assignedTo", "name email title")
+      .populate("assignedTo", "name email title role avatar")
+      .populate("assignedUsers", "name email title role avatar")
       .populate("assignedBy", "name email title")
       .populate("createdBy", "name email")
       .populate("parties.clientId", "name email phone")
@@ -875,7 +969,16 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
       });
     }
 
-    res.json({ case: record });
+    const recordObj: any = record.toObject ? record.toObject() : record;
+    const assignedUsers = Array.isArray(recordObj.assignedUsers) && recordObj.assignedUsers.length > 0
+      ? recordObj.assignedUsers
+      : (recordObj.assignedTo ? [recordObj.assignedTo] : []);
+    recordObj.assignedUsers = assignedUsers;
+    if (!recordObj.assignedTo && assignedUsers.length > 0) {
+      recordObj.assignedTo = assignedUsers[0];
+    }
+
+    res.json({ case: recordObj });
   } catch (err: any) {
     console.error("[cases] Update error:", err);
     if (err.name === "ValidationError") {

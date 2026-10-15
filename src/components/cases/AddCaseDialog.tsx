@@ -20,6 +20,7 @@ import { useClients } from "@/services/clients";
 import { useTaskOptions, type ChecklistItem } from "@/services/tasks";
 import { useCategoryTree, useCategories } from "@/services/categories";
 import { DiscardConfirmationDialog } from "@/components/ui/discard-confirmation-dialog";
+import { AssigneeMultiSelect } from "@/components/common/AssigneeMultiSelect";
 import {
   Dialog,
   DialogContent,
@@ -38,7 +39,7 @@ export interface CaseTaskEntry {
   category: string;
   priority: "High" | "Medium" | "Low";
   deadline: string;
-  assignedTo: string;
+  assignedTo: string[];
   checklist: ChecklistItem[];
 }
 
@@ -64,6 +65,7 @@ interface FormState {
   status: "Active" | "On Hold" | "Closed" | "Urgent";
   priority: "High" | "Medium" | "Low";
   tags: string;
+  assignedTo: string[];
 }
 
 const EMPTY_FORM: FormState = {
@@ -81,6 +83,7 @@ const EMPTY_FORM: FormState = {
   status: "Active",
   priority: "Medium",
   tags: "",
+  assignedTo: [],
 };
 
 // ---------------------------------------------------------------------------
@@ -212,7 +215,7 @@ export function AddCaseDialog({
         category: form.category || "Other Work",
         priority: "Medium",
         deadline: "",
-        assignedTo: "",
+        assignedTo: [],
         checklist: [],
       },
     ]);
@@ -411,7 +414,8 @@ export function AddCaseDialog({
           category: t.category || "Other Work",
           priority: t.priority,
           deadline: t.deadline ? new Date(t.deadline).toISOString() : undefined,
-          assignedTo: t.assignedTo || undefined,
+          assignedTo: t.assignedTo && t.assignedTo.length > 0 ? t.assignedTo : undefined,
+          assignedUsers: t.assignedTo && t.assignedTo.length > 0 ? t.assignedTo : undefined,
           checklist: t.checklist
             .filter((item) => item.text && item.text.trim())
             .map((item) => ({
@@ -451,6 +455,8 @@ export function AddCaseDialog({
         localPath: form.localPath.trim() || undefined,
         status: form.status,
         priority: form.priority,
+        assignedTo: form.assignedTo && form.assignedTo.length > 0 ? form.assignedTo : undefined,
+        assignedUsers: form.assignedTo && form.assignedTo.length > 0 ? form.assignedTo : undefined,
         parties: validParties.length > 0 ? validParties : undefined,
         tags: tags.length > 0 ? tags : undefined,
         tasks: validTasks.length > 0 ? validTasks : undefined,
@@ -842,6 +848,16 @@ export function AddCaseDialog({
               </div>
             </div>
 
+            {/* ── Assigned Team / Counsel ── */}
+            <div className="space-y-1.5">
+              <Label className="text-helper">Assigned Team / Counsel</Label>
+              <AssigneeMultiSelect
+                value={form.assignedTo}
+                onChange={(val) => update("assignedTo", val)}
+                placeholder="Tick employees / counsel to assign..."
+              />
+            </div>
+
             {/* ── Tags ── */}
             <div className="space-y-2">
               <Label htmlFor="case-tags" className="text-helper">Tags</Label>
@@ -1053,18 +1069,12 @@ export function AddCaseDialog({
                         </div>
 
                         <div className="space-y-1.5">
-                          <Label htmlFor={`task-assign-${idx}`} className="text-helper">Assign to (optional)</Label>
-                          <select
-                            id={`task-assign-${idx}`}
-                            value={t.assignedTo}
-                            onChange={(e) => updateTask(idx, "assignedTo", e.target.value)}
-                            className="h-10 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary"
-                          >
-                            <option value="">Self (Default)</option>
-                            {staffList.map((s) => (
-                              <option key={s._id} value={s._id}>{s.name}</option>
-                            ))}
-                          </select>
+                          <Label className="text-helper">Assign to (optional)</Label>
+                          <AssigneeMultiSelect
+                            value={Array.isArray(t.assignedTo) ? t.assignedTo : (t.assignedTo ? [t.assignedTo] : [])}
+                            onChange={(val) => updateTask(idx, "assignedTo", val)}
+                            placeholder="Tick employees to assign..."
+                          />
                         </div>
                       </div>
 

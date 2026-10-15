@@ -24,6 +24,7 @@ import { useEmployees } from "@/services/admin";
 import { useCategories } from "@/services/categories";
 import { useAuth } from "@/lib/auth";
 import { DiscardConfirmationDialog } from "@/components/ui/discard-confirmation-dialog";
+import { AssigneeMultiSelect } from "@/components/common/AssigneeMultiSelect";
 
 interface EditCaseDialogProps {
   open: boolean;
@@ -44,9 +45,13 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
     record.priority || "Medium"
   );
   const [progress, setProgress] = useState<number>(record.progress ?? 0);
-  const [assignedTo, setAssignedTo] = useState<string>(
-    record.assignedTo?._id || ""
-  );
+  const initialAssigned = useMemo(() => {
+    if (record.assignedUsers && record.assignedUsers.length > 0) {
+      return record.assignedUsers.map((u) => u._id);
+    }
+    return record.assignedTo?._id ? [record.assignedTo._id] : [];
+  }, [record.assignedUsers, record.assignedTo]);
+  const [assignedTo, setAssignedTo] = useState<string[]>(initialAssigned);
   const [tags, setTags] = useState<string>((record.tags || []).join(", "));
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
@@ -68,7 +73,10 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
       setStatus((record.status as any) || "Active");
       setPriority(record.priority || "Medium");
       setProgress(record.progress ?? 0);
-      setAssignedTo(record.assignedTo?._id || "");
+      const freshAssigned = record.assignedUsers && record.assignedUsers.length > 0
+        ? record.assignedUsers.map((u) => u._id)
+        : (record.assignedTo?._id ? [record.assignedTo._id] : []);
+      setAssignedTo(freshAssigned);
       setTags((record.tags || []).join(", "));
       setErrorMsg(null);
       setShowDiscardConfirm(false);
@@ -77,6 +85,9 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
 
   const isDirty = useMemo(() => {
     const origTags = (record.tags || []).join(", ");
+    const assignedChanged =
+      assignedTo.length !== initialAssigned.length ||
+      assignedTo.some((id) => !initialAssigned.includes(id));
     return (
       title !== (record.title || "") ||
       description !== (record.description || "") ||
@@ -85,10 +96,10 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
       status !== (record.status || "Active") ||
       priority !== (record.priority || "Medium") ||
       progress !== (record.progress ?? 0) ||
-      assignedTo !== (record.assignedTo?._id || "") ||
+      assignedChanged ||
       tags !== origTags
     );
-  }, [title, description, category, localPath, status, priority, progress, assignedTo, tags, record]);
+  }, [title, description, category, localPath, status, priority, progress, assignedTo, initialAssigned, tags, record]);
 
   const handleAttemptClose = () => {
     if (isDirty) {
@@ -130,7 +141,13 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
         progress: Number(progress),
         tags: tagList,
       };
-      if (assignedTo) payload.assignedTo = assignedTo;
+      if (assignedTo && assignedTo.length > 0) {
+        payload.assignedTo = assignedTo;
+        payload.assignedUsers = assignedTo;
+      } else {
+        payload.assignedTo = null as any;
+        payload.assignedUsers = [];
+      }
 
       await updateCase.mutateAsync({
         id: caseId,
@@ -247,23 +264,15 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
 
             {/* Counsel Assignment */}
             <div className="space-y-1.5">
-              <Label htmlFor="case-assignee" className="text-helper font-medium flex items-center gap-1.5">
+              <Label className="text-helper font-medium flex items-center gap-1.5">
                 <Briefcase size={14} className="text-muted-foreground" />
-                Assigned Counsel
+                Assigned Counsel / Team
               </Label>
-              <select
-                id="case-assignee"
+              <AssigneeMultiSelect
                 value={assignedTo}
-                onChange={(e) => setAssignedTo(e.target.value)}
-                className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              >
-                <option value="">Unassigned</option>
-                {employees.map((emp) => (
-                  <option key={emp._id} value={emp._id}>
-                    {emp.name} ({emp.title || emp.role})
-                  </option>
-                ))}
-              </select>
+                onChange={setAssignedTo}
+                placeholder="Tick counsel to assign..."
+              />
             </div>
 
             {/* Status & Priority */}

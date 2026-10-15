@@ -68,7 +68,8 @@ export interface TaskRecord {
   priority: "High" | "Medium" | "Low";
   status: "pending" | "in_progress" | "pending_approval" | "completed" | "overdue";
   deadline: string | null;
-  assignedTo?: { _id: string; name: string; email?: string; title?: string };
+  assignedTo?: { _id: string; name: string; email?: string; title?: string; role?: string; avatar?: string };
+  assignedUsers?: Array<{ _id: string; name: string; email?: string; title?: string; role?: string; avatar?: string }>;
   assignedBy?: { _id: string; name: string; email?: string; title?: string };
   assignedAt?: string | null;
   startedAt?: string | null;
@@ -134,7 +135,8 @@ export interface CreateTaskPayload {
   priority?: string | undefined;
   status?: "pending" | "in_progress" | "pending_approval" | "completed" | "overdue" | undefined;
   deadline?: string | undefined;
-  assignedTo?: string | undefined;
+  assignedTo?: string | string[] | undefined;
+  assignedUsers?: string[] | undefined;
   localPath?: string | undefined;
   caseId?: string | null | undefined;
   clientId?: string | null | undefined;

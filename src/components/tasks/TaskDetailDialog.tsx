@@ -96,6 +96,7 @@ import { useAuth } from "@/lib/auth";
 import { formatSafeDateTime, toSafeIso } from "@/lib/dates";
 import { openLocalPath } from "@/platform/localPath";
 import { DiscardConfirmationDialog } from "@/components/ui/discard-confirmation-dialog";
+import { AssigneeMultiSelect } from "@/components/common/AssigneeMultiSelect";
 import { toast } from "sonner";
 
 interface TaskDetailDialogProps {
@@ -133,7 +134,13 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
   const [deadline, setDeadline] = useState(
     activeTask.deadline ? new Date(activeTask.deadline).toISOString().slice(0, 16) : ""
   );
-  const [assignedTo, setAssignedTo] = useState(activeTask.assignedTo?._id || "");
+  const initialAssigned = useMemo(() => {
+    if (activeTask.assignedUsers && activeTask.assignedUsers.length > 0) {
+      return activeTask.assignedUsers.map((u) => u._id);
+    }
+    return activeTask.assignedTo?._id ? [activeTask.assignedTo._id] : [];
+  }, [activeTask.assignedUsers, activeTask.assignedTo]);
+  const [assignedTo, setAssignedTo] = useState<string[]>(initialAssigned);
   const [caseId, setCaseId] = useState("");
   const [clientId, setClientId] = useState("");
   const [manualCase, setManualCase] = useState(false);
@@ -349,8 +356,10 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
       setSubCategory(activeTask.subCategory || "");
       setCustomCategory(activeTask.customCategory || "");
       setPriority(activeTask.priority || "Medium");
-      setDeadline(activeTask.deadline ? new Date(activeTask.deadline).toISOString().slice(0, 16) : "");
-      setAssignedTo(activeTask.assignedTo?._id || "");
+      const freshAssigned = activeTask.assignedUsers && activeTask.assignedUsers.length > 0
+        ? activeTask.assignedUsers.map((u) => u._id)
+        : (activeTask.assignedTo?._id ? [activeTask.assignedTo._id] : []);
+      setAssignedTo(freshAssigned);
 
       // Handle Agent / Broker initialization
       if (activeTask.agent) {
@@ -827,8 +836,9 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
         const iso = toSafeIso(deadline);
         if (iso) payload.deadline = iso;
       }
-      if (isAdmin && assignedTo) {
+      if (isAdmin) {
         payload.assignedTo = assignedTo;
+        payload.assignedUsers = assignedTo;
       }
 
       if (isCallTask || callClientName.trim()) {
@@ -966,20 +976,31 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
     }
   };
 
+  const isAssigned =
+    (activeTask.assignedUsers &&
+      activeTask.assignedUsers.some(
+        (u) => (typeof u === "object" ? u._id : u)?.toString() === user?._id?.toString()
+      )) ||
+    (activeTask.assignedTo &&
+      (typeof activeTask.assignedTo === "object" ? (activeTask.assignedTo as any)._id : activeTask.assignedTo)?.toString() ===
+        user?._id?.toString());
+
   const canDeleteTask =
     isAdmin ||
     user?.permissions?.tasks !== false ||
     (activeTask.createdBy &&
       (typeof activeTask.createdBy === "object" ? (activeTask.createdBy as any)._id : activeTask.createdBy)?.toString() ===
         user?._id?.toString()) ||
-    (activeTask.assignedTo &&
-      (typeof activeTask.assignedTo === "object" ? (activeTask.assignedTo as any)._id : activeTask.assignedTo)?.toString() ===
-        user?._id?.toString());
+    isAssigned;
 
   const isCreatorOrAdmin = canDeleteTask;
 
   const isDirty = useMemo(() => {
     if (!isEditing) return false;
+    const assignedChanged =
+      isAdmin &&
+      (assignedTo.length !== initialAssigned.length ||
+        assignedTo.some((id) => !initialAssigned.includes(id)));
     return (
       title !== (activeTask.title || "") ||
       description !== (activeTask.description || "") ||
@@ -988,9 +1009,9 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
       subCategory !== (activeTask.subCategory || "") ||
       customCategory !== (activeTask.customCategory || "") ||
       priority !== (activeTask.priority || "Medium") ||
-      (isAdmin && assignedTo !== (activeTask.assignedTo?._id || ""))
+      assignedChanged
     );
-  }, [isEditing, title, description, category, mainCategory, subCategory, customCategory, priority, assignedTo, activeTask, isAdmin]);
+  }, [isEditing, title, description, category, mainCategory, subCategory, customCategory, priority, assignedTo, initialAssigned, activeTask, isAdmin]);
 
   const handleAttemptClose = () => {
     if (isEditing && isDirty) {
@@ -1468,20 +1489,12 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="task-assignee" className="text-helper font-medium">Assignee</Label>
-                  <select
-                    id="task-assignee"
+                  <Label className="text-helper font-medium">Assignees</Label>
+                  <AssigneeMultiSelect
                     value={assignedTo}
-                    onChange={(e) => setAssignedTo(e.target.value)}
-                    className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    <option value="">Unassigned</option>
-                    {allStaffMembers.map((emp: any) => (
-                      <option key={emp._id} value={emp._id}>
-                        {emp.name} {emp.title ? `(${emp.title})` : emp.role ? `(${emp.role})` : ""}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setAssignedTo}
+                    placeholder="Tick employees to assign..."
+                  />
                 </div>
 
                 <div className="space-y-1.5">
@@ -1680,9 +1693,23 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
               )}
 
               <div className="grid gap-3 sm:grid-cols-2 text-helper">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <User size={15} />
-                  <span>Assignee: <strong className="text-foreground">{activeTask.assignedTo?.name || "Unassigned"}</strong></span>
+                <div className="flex items-start gap-2 text-muted-foreground sm:col-span-2">
+                  <User size={15} className="mt-0.5 shrink-0" />
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span>Assignees:</span>
+                    {activeTask.assignedUsers && activeTask.assignedUsers.length > 0 ? (
+                      activeTask.assignedUsers.map((u) => (
+                        <span
+                          key={u._id}
+                          className="inline-flex items-center gap-1 rounded bg-secondary/80 px-2 py-0.5 text-xs font-semibold text-secondary-foreground"
+                        >
+                          {u.name}
+                        </span>
+                      ))
+                    ) : (
+                      <strong className="text-foreground">{activeTask.assignedTo?.name || "Unassigned"}</strong>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Calendar size={15} />
@@ -1896,7 +1923,11 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
                           <div className="mt-1 flex items-center gap-1.5 font-medium text-foreground text-xs">
                             <span className="text-muted-foreground">Created</span>
                             <ArrowRight size={12} className="text-muted-foreground shrink-0" />
-                            <span className="text-foreground font-semibold">{activeTask.assignedTo?.name || "Unassigned"}</span>
+                            <span className="text-foreground font-semibold">
+                              {activeTask.assignedUsers && activeTask.assignedUsers.length > 0
+                                ? activeTask.assignedUsers.map((u) => u.name).join(", ")
+                                : (activeTask.assignedTo?.name || "Unassigned")}
+                            </span>
                           </div>
                           <p className="text-[11px] text-muted-foreground mt-0.5">
                             Assigned by <strong className="text-foreground/90">{typeof activeTask.assignedBy === "object" ? activeTask.assignedBy?.name : (activeTask.assignedBy || (typeof activeTask.createdBy === "object" ? activeTask.createdBy?.name : "Creator"))}</strong>
