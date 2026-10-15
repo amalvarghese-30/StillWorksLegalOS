@@ -3745,7 +3745,7 @@ async function run() {
     const afterRealChangeCount = await AuditLog.countDocuments({ resourceId: testTask._id.toString() });
     assert(afterRealChangeCount === initialAuditCount + 1, "SUITE32-AUD-031: Exactly one audit log entry created on genuine change");
     const latestLog = await AuditLog.findOne({ resourceId: testTask._id.toString() }).sort({ createdAt: -1 });
-    assert(latestLog?.details?.includes("Priority changed"), "SUITE32-AUD-032: Audit log contains accurate diff details");
+    assert(Boolean(latestLog?.details?.includes("Priority changed")), "SUITE32-AUD-032: Audit log contains accurate diff details");
   }
 
   // ── Suite 33: Task clientId Filtering ──────────────────────────────────────
