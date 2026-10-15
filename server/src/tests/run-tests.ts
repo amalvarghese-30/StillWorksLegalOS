@@ -2764,6 +2764,70 @@ async function run() {
     assert(validHexEmpRes.status === 200, "SUITE26-VALIDATE-007: Valid 24-char hex employeeId accepted with 200");
   }
 
+  // -------------------------------------------------------------------------
+  // Suite 27: Employee Directory & Detail Workspace Verification
+  // -------------------------------------------------------------------------
+  console.log("\n--- Suite 27: Employee Directory & Detail Workspace Verification ---");
+  {
+    const s27Admin = await createUser({ role: "admin", name: "S27 Admin" });
+    const s27Employee = await createUser({ role: "junior_advocate", name: "S27 Advocate" });
+    const s27OtherEmployee = await createUser({ role: "junior_advocate", name: "S27 Other Advocate" });
+    const s27AdminToken = await createToken(s27Admin);
+    const s27EmpToken = await createToken(s27Employee);
+    const s27OtherEmpToken = await createToken(s27OtherEmployee);
+
+    // 1. Invalid employee ID format returns 400
+    const invalidIdRes = await request(app)
+      .get("/api/admin/employees/not-a-valid-id")
+      .set("Authorization", `Bearer ${s27AdminToken}`);
+    assert(invalidIdRes.status === 400, "SUITE27-EMP-001: Invalid employee ID format rejected with 400");
+
+    // 2. Non-existent employee returns 404
+    const nonExistentId = new mongoose.Types.ObjectId().toString();
+    const notFoundRes = await request(app)
+      .get(`/api/admin/employees/${nonExistentId}`)
+      .set("Authorization", `Bearer ${s27AdminToken}`);
+    assert(notFoundRes.status === 404, "SUITE27-EMP-002: Non-existent employee ID returns 404");
+
+    // 3. Unauthorized non-admin employee viewing someone else's profile rejected with 403
+    const forbiddenRes = await request(app)
+      .get(`/api/admin/employees/${s27OtherEmployee._id.toString()}`)
+      .set("Authorization", `Bearer ${s27EmpToken}`);
+    assert(forbiddenRes.status === 403, "SUITE27-EMP-003: Unauthorized employee access to other employee detail rejected with 403");
+
+    // 4. Employee viewing own profile succeeds with 200
+    const selfRes = await request(app)
+      .get(`/api/admin/employees/${s27Employee._id.toString()}`)
+      .set("Authorization", `Bearer ${s27EmpToken}`);
+    assert(selfRes.status === 200, "SUITE27-EMP-004: Employee can view own profile with 200");
+
+    // 5. Admin viewing employee profile succeeds with 200
+    const adminViewRes = await request(app)
+      .get(`/api/admin/employees/${s27Employee._id.toString()}`)
+      .set("Authorization", `Bearer ${s27AdminToken}`);
+    assert(adminViewRes.status === 200, "SUITE27-EMP-005: Admin can view employee profile with 200");
+
+    // 6. Response structure check: employee, metrics, recentActivity
+    assert(Boolean(adminViewRes.body.employee), "SUITE27-EMP-006: Response contains employee object");
+    assert(Boolean(adminViewRes.body.metrics), "SUITE27-EMP-007: Response contains metrics object");
+    assert(Array.isArray(adminViewRes.body.recentActivity), "SUITE27-EMP-008: Response contains recentActivity array");
+
+    // 7. Sensitive fields are NOT exposed
+    assert(adminViewRes.body.employee.passwordHash === undefined, "SUITE27-EMP-009: passwordHash is not exposed");
+    assert(adminViewRes.body.employee.resetOtpHash === undefined, "SUITE27-EMP-010: resetOtpHash is not exposed");
+
+    // 8. Metric fields exist and are numbers
+    const metrics = adminViewRes.body.metrics;
+    assert(typeof metrics.activeCases === "number", "SUITE27-EMP-011: metrics.activeCases is a number");
+    assert(typeof metrics.openTasks === "number", "SUITE27-EMP-012: metrics.openTasks is a number");
+    assert(typeof metrics.completedTasks === "number", "SUITE27-EMP-013: metrics.completedTasks is a number");
+    assert(typeof metrics.overdueTasks === "number", "SUITE27-EMP-014: metrics.overdueTasks is a number");
+    assert(typeof metrics.completedToday === "number", "SUITE27-EMP-015: metrics.completedToday is a number");
+    assert(typeof metrics.completedThisWeek === "number", "SUITE27-EMP-016: metrics.completedThisWeek is a number");
+    assert(typeof metrics.completedThisMonth === "number", "SUITE27-EMP-017: metrics.completedThisMonth is a number");
+    assert(typeof metrics.upcomingDeadlines === "number", "SUITE27-EMP-018: metrics.upcomingDeadlines is a number");
+  }
+
   try {
     if (mongoose.connection.readyState === 1) {
       await mongoose.connection.dropDatabase();

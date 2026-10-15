@@ -85,6 +85,140 @@ router.get("/employees", async (req: Request, res: Response) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/admin/employees/:id — get employee profile, workload metrics, activity
+// ---------------------------------------------------------------------------
+
+router.get("/employees/:id", async (req: Request, res: Response) => {
+  try {
+    const targetId = String(req.params["id"] || "");
+    if (!targetId || !Types.ObjectId.isValid(targetId)) {
+      res.status(400).json({ message: "Invalid employee ID format" });
+      return;
+    }
+
+    const isActualAdmin = req.user?.role === "admin";
+    const hasEmployeePerm = Boolean(req.user?.permissions?.employees);
+    const isSelf = req.userId === targetId;
+
+    if (!isActualAdmin && !hasEmployeePerm && !isSelf) {
+      res.status(403).json({ message: "You do not have permission to view this employee profile" });
+      return;
+    }
+
+    const employee = await User.findById(targetId)
+      .select("-passwordHash -resetOtpHash -resetOtpExpires -resetOtpAttempts")
+      .lean();
+
+    if (!employee) {
+      res.status(404).json({ message: "Employee not found" });
+      return;
+    }
+
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfWeek = new Date(startOfToday);
+    startOfWeek.setDate(startOfToday.getDate() - startOfToday.getDay());
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const inSevenDays = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const empObjId = new Types.ObjectId(targetId);
+
+    const [
+      activeCases,
+      totalCases,
+      openTasks,
+      completedTasks,
+      overdueTasks,
+      pendingApprovals,
+      completedToday,
+      completedThisWeek,
+      completedThisMonth,
+      upcomingDeadlines,
+      recentActivity,
+    ] = await Promise.all([
+      Case.countDocuments({
+        isDeleted: { $ne: true },
+        status: { $nin: ["Closed", "Archived"] },
+        assignedTo: empObjId,
+      }),
+      Case.countDocuments({
+        isDeleted: { $ne: true },
+        assignedTo: empObjId,
+      }),
+      Task.countDocuments({
+        isDeleted: { $ne: true },
+        assignedTo: targetId,
+        status: { $in: ["pending", "in_progress", "pending_approval"] },
+      }),
+      Task.countDocuments({
+        isDeleted: { $ne: true },
+        assignedTo: targetId,
+        status: "completed",
+      }),
+      Task.countDocuments({
+        isDeleted: { $ne: true },
+        assignedTo: targetId,
+        status: { $ne: "completed" },
+        deadline: { $lt: now },
+      }),
+      Task.countDocuments({
+        isDeleted: { $ne: true },
+        assignedTo: targetId,
+        status: "pending_approval",
+      }),
+      Task.countDocuments({
+        isDeleted: { $ne: true },
+        assignedTo: targetId,
+        status: "completed",
+        updatedAt: { $gte: startOfToday },
+      }),
+      Task.countDocuments({
+        isDeleted: { $ne: true },
+        assignedTo: targetId,
+        status: "completed",
+        updatedAt: { $gte: startOfWeek },
+      }),
+      Task.countDocuments({
+        isDeleted: { $ne: true },
+        assignedTo: targetId,
+        status: "completed",
+        updatedAt: { $gte: startOfMonth },
+      }),
+      Task.countDocuments({
+        isDeleted: { $ne: true },
+        assignedTo: targetId,
+        status: { $ne: "completed" },
+        deadline: { $gte: now, $lte: inSevenDays },
+      }),
+      AuditLog.find({ userId: empObjId })
+        .sort({ createdAt: -1 })
+        .limit(20)
+        .lean(),
+    ]);
+
+    res.json({
+      employee,
+      metrics: {
+        activeCases,
+        totalCases,
+        openTasks,
+        completedTasks,
+        overdueTasks,
+        pendingApprovals,
+        completedToday,
+        completedThisWeek,
+        completedThisMonth,
+        upcomingDeadlines,
+      },
+      recentActivity,
+    });
+  } catch (err) {
+    console.error("[admin] Employee detail error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // POST /api/admin/employees — create employee (admin or employees perm)
 // ---------------------------------------------------------------------------
 

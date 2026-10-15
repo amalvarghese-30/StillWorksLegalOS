@@ -30,9 +30,41 @@ export interface EmployeeRecord {
   status: string;
   phone?: string;
   secondaryPhone?: string;
+  avatarUrl?: string;
   permissions?: UserPermissions;
+  lastActiveAt?: string;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface EmployeeMetrics {
+  activeCases: number;
+  totalCases: number;
+  openTasks: number;
+  completedTasks: number;
+  overdueTasks: number;
+  pendingApprovals: number;
+  completedToday: number;
+  completedThisWeek: number;
+  completedThisMonth: number;
+  upcomingDeadlines: number;
+}
+
+export interface EmployeeActivityItem {
+  _id: string;
+  action: string;
+  resource: string;
+  resourceName?: string;
+  details?: string;
+  ip?: string;
+  userAgent?: string;
+  createdAt: string;
+}
+
+export interface EmployeeDetailResponse {
+  employee: EmployeeRecord;
+  metrics: EmployeeMetrics;
+  recentActivity: EmployeeActivityItem[];
 }
 
 export interface EmployeesResponse {
@@ -227,6 +259,7 @@ export interface UpdatePreferencesPayload {
 export const adminKeys = {
   all: ["admin"] as const,
   employees: (filters?: Record<string, string>) => ["admin", "employees", filters] as const,
+  detail: (id?: string) => ["admin", "employees", "detail", id ?? ""] as const,
   approvals: ["admin", "approvals"] as const,
   auditLogs: (filters?: Record<string, string>) => ["admin", "auditLogs", filters] as const,
   storage: ["admin", "storage"] as const,
@@ -243,6 +276,14 @@ export function useEmployees(filters?: Record<string, string>, options?: { enabl
     queryKey: adminKeys.employees(filters),
     queryFn: () => api.get(`/admin/employees${params ? `?${params}` : ""}`),
     enabled: options?.enabled ?? true,
+  });
+}
+
+export function useEmployeeDetail(id?: string, options?: { enabled?: boolean }) {
+  return useQuery<EmployeeDetailResponse>({
+    queryKey: adminKeys.detail(id),
+    queryFn: () => api.get(`/admin/employees/${id}`),
+    enabled: Boolean(id) && (options?.enabled ?? true),
   });
 }
 
