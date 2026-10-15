@@ -63,6 +63,7 @@ export function EmployeeCard({
   const { isOnline } = usePresence();
   const online = isOnline(employee._id);
   const effectiveStatus = online ? "online" : (employee.status === "online" ? "offline" : (employee.status || "offline"));
+  const hasHighWorkload = pendingTasks >= 10;
 
   const handleCardClick = () => {
     onSelect(employee);
