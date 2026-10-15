@@ -14,6 +14,7 @@ import {
   ExternalLink,
   GitCommit,
   ArrowRight,
+  Shield,
 } from "lucide-react";
 import type { AuditLogItem } from "@/services/admin";
 import {
@@ -111,14 +112,9 @@ export function AuditLogDetailDrawer({
         <div className="space-y-6 px-6 py-6 text-sm">
           {/* Section 1: Event Summary */}
           <div className="rounded-2xl border border-border/80 bg-background/50 p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                Event Summary
-              </h4>
-              <span className="text-[11px] font-mono text-muted-foreground">
-                ID: {log._id.slice(-8)}
-              </span>
-            </div>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Event Summary
+            </h4>
 
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div>
@@ -139,25 +135,6 @@ export function AuditLogDetailDrawer({
                   <p className="font-semibold text-foreground mt-0.5 break-words">
                     {log.resourceName}
                   </p>
-                </div>
-              )}
-              {log.resourceId && (
-                <div className="col-span-2">
-                  <span className="text-muted-foreground">Resource Identifier</span>
-                  <div className="flex items-center justify-between mt-0.5 rounded-lg border border-border/60 bg-card px-2.5 py-1.5 font-mono text-[11px] text-foreground">
-                    <span className="truncate">{log.resourceId}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleCopy("resourceId", log.resourceId!)}
-                      className="text-muted-foreground hover:text-foreground transition-colors ml-2"
-                    >
-                      {copiedKey === "resourceId" ? (
-                        <Check size={12} className="text-emerald-500" />
-                      ) : (
-                        <Copy size={12} />
-                      )}
-                    </button>
-                  </div>
                 </div>
               )}
             </div>
@@ -183,44 +160,9 @@ export function AuditLogDetailDrawer({
                 {log.userName.slice(0, 2).toUpperCase()}
               </div>
               <div className="min-w-0">
-                  <p className="font-bold text-foreground text-sm">{log.userName}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5 capitalize">
-                    {log.action.replace(/_/g, " ")} · {log.resource}
-                  </p>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 pt-2 text-xs">
-              <div className="rounded-xl border border-border/60 bg-card p-2.5">
-                <div className="flex items-center justify-between text-muted-foreground mb-1">
-                  <span className="flex items-center gap-1 text-[11px]">
-                    <Globe size={11} /> IP Address
-                  </span>
-                  {log.ip && (
-                    <button
-                      type="button"
-                      onClick={() => handleCopy("ip", log.ip!)}
-                      className="text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      {copiedKey === "ip" ? (
-                        <Check size={11} className="text-emerald-500" />
-                      ) : (
-                        <Copy size={11} />
-                      )}
-                    </button>
-                  )}
-                </div>
-                <p className="font-mono font-semibold text-foreground text-xs truncate">
-                  {log.ip || "Unknown"}
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-border/60 bg-card p-2.5">
-                <div className="text-muted-foreground mb-1 flex items-center gap-1 text-[11px]">
-                  <Laptop size={11} /> Client Device
-                </div>
-                <p className="font-semibold text-foreground text-xs truncate">
-                  {device.summary}
+                <p className="font-bold text-foreground text-sm">{log.userName}</p>
+                <p className="text-xs text-muted-foreground mt-0.5 capitalize">
+                  {log.action.replace(/_/g, " ")} · {log.resource}
                 </p>
               </div>
             </div>
@@ -282,12 +224,12 @@ export function AuditLogDetailDrawer({
               ) : log.resource === "task" ? (
                 <Link
                   to="/tasks"
-                  search={log.resourceName ? { q: log.resourceName } : {}}
+                  search={{ taskId: log.resourceId }}
                   className="mt-2 inline-flex items-center justify-between w-full rounded-xl border border-primary/30 bg-primary/5 hover:bg-primary/10 px-4 py-2.5 text-xs font-semibold text-primary transition-all group"
                 >
                   <span className="flex items-center gap-2">
                     <ExternalLink size={13} />
-                    View Task: {log.resourceName ?? "Open Tasks Board"}
+                    Open Task: {log.resourceName ?? "Task Details"}
                   </span>
                   <ArrowRight
                     size={14}
@@ -340,6 +282,99 @@ export function AuditLogDetailDrawer({
               ) : null}
             </div>
           )}
+
+          {/* Section 5: Collapsible Technical & Security Metadata */}
+          <details className="group rounded-2xl border border-border/80 bg-background/50 p-4 transition-all">
+            <summary className="flex cursor-pointer list-none items-center justify-between text-xs font-bold uppercase tracking-wider text-muted-foreground select-none">
+              <span className="flex items-center gap-1.5">
+                <Shield size={13} />
+                Technical &amp; Security Metadata
+              </span>
+              <span className="text-[11px] font-normal lowercase text-primary group-open:hidden">
+                Show details
+              </span>
+            </summary>
+
+            <div className="mt-4 space-y-3 pt-3 border-t border-border/60">
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <span className="text-muted-foreground">Event Audit ID</span>
+                  <div className="flex items-center justify-between mt-0.5 rounded-lg border border-border/60 bg-card px-2.5 py-1.5 font-mono text-[11px] text-foreground">
+                    <span className="truncate">{log._id}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy("eventId", log._id)}
+                      className="text-muted-foreground hover:text-foreground transition-colors ml-2"
+                      title="Copy Event ID"
+                    >
+                      {copiedKey === "eventId" ? (
+                        <Check size={12} className="text-emerald-500" />
+                      ) : (
+                        <Copy size={12} />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {log.resourceId && (
+                  <div>
+                    <span className="text-muted-foreground">Resource ID</span>
+                    <div className="flex items-center justify-between mt-0.5 rounded-lg border border-border/60 bg-card px-2.5 py-1.5 font-mono text-[11px] text-foreground">
+                      <span className="truncate">{log.resourceId}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy("resourceId", log.resourceId!)}
+                        className="text-muted-foreground hover:text-foreground transition-colors ml-2"
+                        title="Copy Resource ID"
+                      >
+                        {copiedKey === "resourceId" ? (
+                          <Check size={12} className="text-emerald-500" />
+                        ) : (
+                          <Copy size={12} />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-1 text-xs">
+                <div className="rounded-xl border border-border/60 bg-card p-2.5">
+                  <div className="flex items-center justify-between text-muted-foreground mb-1">
+                    <span className="flex items-center gap-1 text-[11px]">
+                      <Globe size={11} /> IP Address
+                    </span>
+                    {log.ip && (
+                      <button
+                        type="button"
+                        onClick={() => handleCopy("ip", log.ip!)}
+                        className="text-muted-foreground hover:text-foreground transition-colors"
+                        title="Copy IP"
+                      >
+                        {copiedKey === "ip" ? (
+                          <Check size={11} className="text-emerald-500" />
+                        ) : (
+                          <Copy size={11} />
+                        )}
+                      </button>
+                    )}
+                  </div>
+                  <p className="font-mono font-semibold text-foreground text-xs truncate">
+                    {log.ip || "Unknown"}
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-border/60 bg-card p-2.5">
+                  <div className="text-muted-foreground mb-1 flex items-center gap-1 text-[11px]">
+                    <Laptop size={11} /> Client Device
+                  </div>
+                  <p className="font-semibold text-foreground text-xs truncate">
+                    {device.summary}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </details>
         </div>
       </SheetContent>
     </Sheet>

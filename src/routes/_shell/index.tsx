@@ -200,6 +200,11 @@ function Dashboard() {
         subtitle={`${dateStr} · ${hearings.length} hearings, ${attentionTasks.length} urgent tasks, ${approvals.length} approvals waiting.`}
         actions={
           <>
+            {isAdmin && (
+              <Button variant="outline" className="rounded-md gap-1.5" onClick={() => navigate({ to: "/admin" })}>
+                <ShieldCheck size={16} strokeWidth={1.75} /> Admin console
+              </Button>
+            )}
             <Button variant="outline" className="rounded-md" onClick={() => navigate({ to: "/calendar" })}>
               <CalendarDays size={17} strokeWidth={1.75} /> Open calendar
             </Button>
@@ -230,6 +235,13 @@ function Dashboard() {
           to="/calendar"
         />
         <StatCard
+          label="Urgent tasks"
+          value={tasksLoading ? "…" : attentionTasks.length}
+          hint="Requiring action"
+          icon={AlertTriangle}
+          to="/tasks"
+        />
+        <StatCard
           label="Active cases"
           value={summaryLoading ? "…" : summary?.activeCases ?? 0}
           hint="Firm-wide"
@@ -239,31 +251,34 @@ function Dashboard() {
         <StatCard
           label="Clients"
           value={summaryLoading ? "…" : summary?.totalClients ?? 0}
-          hint={summary?.period ?? ""}
+          hint={summary?.period ?? "Active clients"}
           icon={Users}
           to="/clients"
         />
         <StatCard
           label="Tasks done"
           value={summaryLoading ? "…" : summary?.tasksCompleted ?? 0}
-          hint={summary?.period ?? ""}
+          hint={summary?.period ?? "Completed"}
           icon={CheckSquare}
           to="/tasks"
         />
-        <StatCard
-          label="Pending approval"
-          value={approvals.length}
-          hint="Needs review"
-          icon={ShieldCheck}
-          to="/admin/approvals"
-        />
-        <StatCard
-          label="Team on duty"
-          value={team.length}
-          hint={`${team.filter((t) => t.status === "active").length} active`}
-          icon={UserCog}
-          to="/admin/employees"
-        />
+        {isAdmin ? (
+          <StatCard
+            label="Admin console"
+            value={approvals.length > 0 ? `${approvals.length} pending` : "Governance"}
+            hint={approvals.length > 0 ? "Approvals waiting" : "Console & Team"}
+            icon={ShieldCheck}
+            to="/admin"
+          />
+        ) : (
+          <StatCard
+            label="Documents"
+            value={docsLoading ? "…" : documents.length}
+            hint="Vault files"
+            icon={FileText}
+            to="/documents"
+          />
+        )}
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
@@ -353,110 +368,9 @@ function Dashboard() {
                     <StatusPill tone="primary">Hearing</StatusPill>
                   </li>
                 ))}
-                {/* Pending Approvals */}
-                {approvals.slice(0, 1).map((a) => (
-                  <li key={a._id} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-4 rounded-md border border-border bg-card p-4">
-                    <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-md bg-warning/10 text-warning"><ShieldCheck size={17} strokeWidth={1.75} /></span>
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">{a.kind}</p>
-                      <p className="mt-0.5 truncate text-helper text-muted-foreground">{a.title}</p>
-                      <p className="mt-1 num text-caption text-muted-foreground">{a.context}</p>
-                    </div>
-                    <StatusPill tone="warning">Pending</StatusPill>
-                  </li>
-                ))}
               </ul>
             )}
           </SectionCard>
-
-          {/* Today's hearings */}
-          <SectionCard
-            title="Today's hearings"
-            description="Your schedule in court today."
-            icon={Gavel}
-            action={
-              <Button variant="ghost" size="sm" className="rounded-sm" onClick={() => navigate({ to: "/calendar" })}>
-                View all <ArrowRight size={15} strokeWidth={1.75} />
-              </Button>
-            }
-          >
-            {hearingsLoading ? (
-              <div className="flex items-center justify-center py-8"><Loader2 className="animate-spin text-muted-foreground" size={20} /></div>
-            ) : hearingsError ? (
-              <ErrorState title="Couldn't load today's hearings" onRetry={refetchHearings} />
-            ) : hearings.length === 0 ? (
-              <p className="py-8 text-center text-helper text-muted-foreground">No hearings scheduled for today.</p>
-            ) : (
-              <ol className="relative space-y-4 border-l border-border pl-6">
-                {hearings.map((h) => (
-                  <li key={h._id} className="relative">
-                    <span className="absolute top-2 -left-[1.9rem] size-2.5 rounded-full ring-4 ring-card bg-primary" />
-                    <div
-                      onClick={() => navigate({ to: "/calendar" })}
-                      className="lift cursor-pointer grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-md border border-border bg-card p-4 hover:border-primary/40 transition-colors"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{h.title}</p>
-                      </div>
-                      <span className="num shrink-0 rounded-pill bg-muted px-3 py-1 text-caption">
-                        {new Date(h.start).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </SectionCard>
-
-          {/* Approvals */}
-          {approvals.length > 0 && (
-            <SectionCard
-              title="Pending approval"
-              description="Requests waiting on you."
-              icon={ShieldCheck}
-              action={
-                <Button variant="ghost" size="sm" className="rounded-sm" onClick={() => navigate({ to: "/admin/approvals" })}>
-                  Approval centre <ArrowRight size={15} strokeWidth={1.75} />
-                </Button>
-              }
-            >
-              <ul className="space-y-3">
-                {approvals.slice(0, 3).map((a) => (
-                  <li key={a._id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-md border border-border p-4">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <StatusPill tone="primary">{a.kind}</StatusPill>
-                        <span className="text-caption text-muted-foreground">{a.when ? new Date(a.when).toLocaleDateString() : ""}</span>
-                      </div>
-                      <p className="mt-2 truncate font-medium">{a.title}</p>
-                      <p className="truncate text-helper text-muted-foreground">{a.context}</p>
-                    </div>
-                    <div className="flex shrink-0 gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="rounded-sm"
-                        onClick={() => runApproval(a, "rejected")}
-                        disabled={actingOn === a._id}
-                      >
-                        <X size={15} strokeWidth={1.75} />
-                        Reject
-                      </Button>
-                      <Button
-                        size="sm"
-                        className="gradient-primary rounded-sm text-primary-foreground"
-                        onClick={() => runApproval(a, "approved")}
-                        disabled={actingOn === a._id}
-                      >
-                        {actingOn === a._id ? <Loader2 size={15} strokeWidth={1.75} className="animate-spin" /> : <Check size={15} strokeWidth={1.75} />}
-                        Approve
-                      </Button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </SectionCard>
-          )}
 
           {/* Recent cases */}
           <SectionCard
@@ -496,71 +410,44 @@ function Dashboard() {
           </SectionCard>
         </div>
 
-        {/* ── Right column ── */}
+        {/* ── Right column: Schedule, Documents & Governance ── */}
         <div className="space-y-6">
-          {/* Live activity */}
-          {hasAuditAccess && (
-            <SectionCard title="Live activity" description="What the team just did." icon={ActivityIcon}>
-              {auditLoading ? (
-                <div className="flex items-center justify-center py-8"><Loader2 className="animate-spin text-muted-foreground" size={20} /></div>
-              ) : auditError ? (
-                <ErrorState title="Couldn't load activity" onRetry={refetchAudit} />
-              ) : activity.length === 0 ? (
-                <p className="py-8 text-center text-helper text-muted-foreground">No recent activity to show.</p>
-              ) : (
-                <ul className="space-y-4">
-                  {activity.slice(0, 6).map((a) => (
-                    <li key={a._id} className="flex gap-3">
-                      <span className="mt-1 grid size-8 shrink-0 place-items-center rounded-full bg-primary/10 text-caption font-semibold text-primary">
-                        {(a.userName ?? "?").slice(0, 1)}
-                      </span>
-                      <p className="min-w-0 text-helper">
-                        <span className="font-medium">{a.userName}</span>{" "}
-                        <span className="text-muted-foreground">{a.action.replace(/_/g, " ")} {a.resourceName ?? a.resource}</span>
-                        <span className="block text-caption text-muted-foreground/80">
-                          {new Date(a.createdAt).toLocaleString("en-IN", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}
-                        </span>
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </SectionCard>
-          )}
-
-          {/* Team status */}
-          <SectionCard title="Team status" description="Who's working on what." icon={UserCog}>
-            {workloadError ? (
-              <ErrorState title="Couldn't load team status" onRetry={refetchWorkload} />
-            ) : team.length === 0 ? (
-              <p className="py-8 text-center text-helper text-muted-foreground">No team data available.</p>
+          {/* Today's hearings */}
+          <SectionCard
+            title="Today's hearings"
+            description="Your schedule in court today."
+            icon={Gavel}
+            action={
+              <Button variant="ghost" size="sm" className="rounded-sm" onClick={() => navigate({ to: "/calendar" })}>
+                View calendar <ArrowRight size={15} strokeWidth={1.75} />
+              </Button>
+            }
+          >
+            {hearingsLoading ? (
+              <div className="flex items-center justify-center py-8"><Loader2 className="animate-spin text-muted-foreground" size={20} /></div>
+            ) : hearingsError ? (
+              <ErrorState title="Couldn't load today's hearings" onRetry={refetchHearings} />
+            ) : hearings.length === 0 ? (
+              <p className="py-8 text-center text-helper text-muted-foreground">No hearings scheduled for today.</p>
             ) : (
-              <ul className="space-y-4">
-                {team.slice(0, 4).map((t) => (
-                  <li key={t._id} className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <p className="truncate text-helper font-medium">{t.name}</p>
-                        <StatusPill tone={t.status === "active" ? "success" : "muted"}>{t.status}</StatusPill>
+              <ol className="relative space-y-4 border-l border-border pl-6">
+                {hearings.map((h) => (
+                  <li key={h._id} className="relative">
+                    <span className="absolute top-2 -left-[1.9rem] size-2.5 rounded-full ring-4 ring-card bg-primary" />
+                    <div
+                      onClick={() => navigate({ to: "/calendar" })}
+                      className="lift cursor-pointer grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-md border border-border bg-card p-4 hover:border-primary/40 transition-colors"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{h.title}</p>
                       </div>
-                      {t.currentTask && (
-                        <div className="text-sm text-muted-foreground">
-                          Current: {t.currentTask.title}{" "}
-                          <StatusPill
-                            tone={t.currentTask.priority === "High" ? "destructive" : t.currentTask.priority === "Medium" ? "warning" : "neutral"}
-                          >
-                            {t.currentTask.priority}
-                          </StatusPill>
-                        </div>
-                      )}
-                    </div>
-                    <div className="mt-2 flex items-center gap-3">
-                      <Progress value={t.workload} className="h-1.5" />
-                      <span className="num shrink-0 text-caption text-muted-foreground">{t.workload}%</span>
+                      <span className="num shrink-0 rounded-pill bg-muted px-3 py-1 text-caption">
+                        {new Date(h.start).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                      </span>
                     </div>
                   </li>
                 ))}
-              </ul>
+              </ol>
             )}
           </SectionCard>
 
@@ -589,6 +476,30 @@ function Dashboard() {
               </ul>
             )}
           </SectionCard>
+
+          {/* Admin Oversight Notice (Calm direct link to Admin Console Approval Centre) */}
+          {hasApprovalsAccess && approvals.length > 0 && (
+            <div className="rounded-xl border border-primary/25 bg-primary/5 p-4 flex items-center justify-between gap-3 shadow-2xs">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="grid size-9 place-items-center rounded-lg bg-primary/10 text-primary shrink-0">
+                  <ShieldCheck size={18} />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-foreground">
+                    {approvals.length} {approvals.length === 1 ? "Item Awaiting Approval" : "Items Awaiting Approval"}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground truncate">
+                    Review and sign off in the Approval Centre
+                  </p>
+                </div>
+              </div>
+              <Button size="sm" variant="outline" className="rounded-lg text-xs font-semibold gap-1 shrink-0" asChild>
+                <Link to="/admin/approvals">
+                  Review <ArrowRight size={13} />
+                </Link>
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 

@@ -235,6 +235,17 @@ function ClientProfile() {
     });
   }, [casesData, tasksData, docsData]);
 
+  const dynamicSections = useMemo(() => [
+    { id: "overview" as const, label: "Overview", icon: LayoutDashboard },
+    { id: "cases" as const, label: "Cases", icon: Briefcase, badge: casesData?.cases?.length ?? 0 },
+    { id: "tasks" as const, label: "Tasks", icon: CheckSquare, badge: tasksData?.tasks?.length ?? 0 },
+    { id: "documents" as const, label: "Documents", icon: FileText, badge: docsData?.documents?.length ?? 0 },
+    { id: "kyc" as const, label: "Identity Verification", icon: FileBadge, badge: record?.kyc === "Verified" ? "Verified" : record?.kyc },
+    { id: "property" as const, label: "Property", icon: Home, badge: record?.properties?.length ? record.properties.length : null },
+    { id: "subclients" as const, label: "Sub-clients", icon: Users, badge: record?.subClients?.length ? record.subClients.length : null },
+    { id: "activity" as const, label: "Activity", icon: Activity, badge: activityItems.length },
+  ], [casesData?.cases?.length, tasksData?.tasks?.length, docsData?.documents?.length, record?.kyc, record?.properties?.length, record?.subClients?.length, activityItems.length]);
+
   const handleDeleteClient = async () => {
     setIsDeleting(true);
     try {
@@ -330,7 +341,7 @@ function ClientProfile() {
       <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
         {/* Section nav */}
         <MobileSectionNav
-          sections={sections}
+          sections={dynamicSections}
           active={active}
           onChange={(id) => setActive(id as typeof active)}
           ariaLabel="Client sections"
