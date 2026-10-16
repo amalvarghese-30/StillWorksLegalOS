@@ -144,6 +144,7 @@ function QuickEditDropdown({ record }: { record: ClientRecord }) {
 function ClientProfile() {
   const { clientId } = Route.useParams();
   const { data, isLoading, isError } = useClient(clientId);
+  const record = data?.client;
   const [active, setActive] = useState("overview");
 
   const navigate = useNavigate();
@@ -241,10 +242,10 @@ function ClientProfile() {
     { id: "tasks" as const, label: "Tasks", icon: CheckSquare, badge: tasksData?.tasks?.length ?? 0 },
     { id: "documents" as const, label: "Documents", icon: FileText, badge: docsData?.documents?.length ?? 0 },
     { id: "kyc" as const, label: "Identity Verification", icon: FileBadge, badge: record?.kyc === "Verified" ? "Verified" : record?.kyc },
-    { id: "property" as const, label: "Property", icon: Home, badge: record?.properties?.length ? record.properties.length : null },
+    { id: "property" as const, label: "Property", icon: Home, badge: record?.propertyDetails?.address ? 1 : null },
     { id: "subclients" as const, label: "Sub-clients", icon: Users, badge: record?.subClients?.length ? record.subClients.length : null },
     { id: "activity" as const, label: "Activity", icon: Activity, badge: activityItems.length },
-  ], [casesData?.cases?.length, tasksData?.tasks?.length, docsData?.documents?.length, record?.kyc, record?.properties?.length, record?.subClients?.length, activityItems.length]);
+  ], [casesData?.cases?.length, tasksData?.tasks?.length, docsData?.documents?.length, record?.kyc, record?.propertyDetails?.address, record?.subClients?.length, activityItems.length]);
 
   const handleDeleteClient = async () => {
     setIsDeleting(true);
@@ -268,7 +269,7 @@ function ClientProfile() {
     );
   }
 
-  if (isError || !data) {
+  if (isError || !data || !record) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="max-w-sm text-center">
@@ -279,8 +280,7 @@ function ClientProfile() {
     );
   }
 
-  const record = data.client;
-  const hasProperty = record.propertyDetails?.address;
+  const hasProperty = Boolean(record.propertyDetails?.address);
 
   return (
     <div>
