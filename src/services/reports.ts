@@ -104,6 +104,45 @@ export interface DailyEmployeeTaskItem {
   clientId?: { _id: string; name: string; phone?: string } | null;
 }
 
+export interface DailyEmployeeAuditLogItem {
+  _id: string;
+  action: string;
+  resource: string;
+  resourceId?: string;
+  resourceName?: string;
+  details?: string;
+  createdAt: string;
+  ip?: string;
+}
+
+export interface DailyEmployeeCaseItem {
+  _id: string;
+  number: string;
+  title: string;
+  court?: string;
+  practice?: string;
+  status: string;
+  priority?: string;
+  nextHearing?: string | null;
+  updatedAt?: string;
+  completedAt?: string;
+  parties?: Array<{ name: string; role?: string; type?: string }>;
+}
+
+export interface EmployeeAllTimeReport {
+  tasksCompleted: number;
+  tasksAssigned: number;
+  tasksPending: number;
+  tasksOverdue: number;
+  completionRate: number;
+  activeCasesCount: number;
+  totalCasesCount: number;
+  closedCasesCount: number;
+  totalAuditLogsCount: number;
+  recentAuditLogs: DailyEmployeeAuditLogItem[];
+  activeCases: DailyEmployeeCaseItem[];
+}
+
 export interface EmployeeDailyReport {
   employee: {
     _id: string;
@@ -118,6 +157,9 @@ export interface EmployeeDailyReport {
     completedTodayCount: number;
     pendingCount: number;
     overdueCount: number;
+    auditLogsTodayCount?: number;
+    casesWorkedTodayCount?: number;
+    casesCompletedTodayCount?: number;
   };
   tasks: {
     assignedToday: DailyEmployeeTaskItem[];
@@ -125,6 +167,12 @@ export interface EmployeeDailyReport {
     pending: DailyEmployeeTaskItem[];
     overdue: DailyEmployeeTaskItem[];
   };
+  cases?: {
+    completedToday: DailyEmployeeCaseItem[];
+    workedOnToday: DailyEmployeeCaseItem[];
+  };
+  auditLogs?: DailyEmployeeAuditLogItem[];
+  allTime?: EmployeeAllTimeReport;
 }
 
 export interface DailyEmployeeReportResponse {

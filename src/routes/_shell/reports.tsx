@@ -25,6 +25,12 @@ import {
   Briefcase,
   ExternalLink,
   User as UserIcon,
+  Shield,
+  Activity,
+  Layers,
+  History,
+  FolderKanban,
+  ArrowUpRight,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
@@ -395,6 +401,7 @@ function ReportsPage() {
                   <EmployeeDailyReportCard
                     key={report.employee._id}
                     report={report}
+                    selectedDate={selectedDate}
                     onOpenTask={handleOpenTask}
                   />
                 ))}
@@ -707,33 +714,118 @@ function CaseStatusChart({ caseStatusBreakdown }: { caseStatusBreakdown: any }) 
 }
 
 // ---------------------------------------------------------------------------
-// Employee Daily Report Card with Clickable Tasks & Cases Drill-Down
+// Employee Daily & All-Time Report Card with Full-Box Clickable Expansion
 // ---------------------------------------------------------------------------
+
+function formatLogTime(isoDateStr?: string): { time: string; relative: string } {
+  if (!isoDateStr) return { time: "—", relative: "" };
+  try {
+    const d = new Date(isoDateStr);
+    if (isNaN(d.getTime())) return { time: "—", relative: "" };
+    const time = d.toLocaleTimeString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+    });
+    const now = Date.now();
+    const diffSec = Math.max(0, Math.floor((now - d.getTime()) / 1000));
+    let relative = "";
+    if (diffSec < 60) relative = "just now";
+    else if (diffSec < 3600) relative = `${Math.floor(diffSec / 60)}m ago`;
+    else if (diffSec < 86400) relative = `${Math.floor(diffSec / 3600)}h ago`;
+    else relative = `${Math.floor(diffSec / 86400)}d ago`;
+
+    return { time, relative };
+  } catch {
+    return { time: "—", relative: "" };
+  }
+}
+
+function getActionBadgeStyle(action: string): string {
+  switch (action?.toLowerCase()) {
+    case "create":
+      return "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25";
+    case "update":
+      return "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/25";
+    case "delete":
+      return "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/25";
+    case "approve":
+      return "bg-emerald-600/15 text-emerald-700 dark:text-emerald-300 border-emerald-600/25";
+    case "reject":
+      return "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/25";
+    case "login":
+    case "logout":
+      return "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/25";
+    case "upload":
+    case "download":
+      return "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/25";
+    default:
+      return "bg-muted text-muted-foreground border-border";
+  }
+}
 
 interface EmployeeDailyReportCardProps {
   report: EmployeeDailyReport;
+  selectedDate: string;
   onOpenTask: (task: TaskRecord) => void;
 }
 
-function EmployeeDailyReportCard({ report, onOpenTask }: EmployeeDailyReportCardProps) {
+function EmployeeDailyReportCard({ report, selectedDate, onOpenTask }: EmployeeDailyReportCardProps) {
   const [expanded, setExpanded] = useState(false);
-  const [activeTab, setActiveTab] = useState<"assignedToday" | "completedToday" | "pending" | "overdue">("assignedToday");
+  const [reportMode, setReportMode] = useState<"daily" | "allTime">("daily");
+  const [dailySubTab, setDailySubTab] = useState<
+    "auditLogs" | "completedToday" | "casesToday" | "assignedToday" | "pending" | "overdue"
+  >("auditLogs");
+  const [allTimeSubTab, setAllTimeSubTab] = useState<"activeCases" | "allTimeAudit">("activeCases");
   const navigate = useNavigate();
 
-  const { employee, metrics, tasks } = report;
-  const currentTasks = tasks[activeTab] || [];
+  const { employee, metrics, tasks, cases, auditLogs, allTime } = report;
+  const currentTasks = tasks[dailySubTab as keyof typeof tasks] || [];
+  const workedCases = cases?.workedOnToday || [];
+  const completedCases = cases?.completedToday || [];
+  const todayLogs = auditLogs || [];
+  const allTimeRecentLogs = allTime?.recentAuditLogs || [];
+  const activeCasesList = allTime?.activeCases || [];
+
+  const todayStr = getTodayKolkata();
+  const isSelectedToday = selectedDate === todayStr;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border/80 bg-card p-4.5 shadow-soft transition-all hover:border-primary/40">
-      <div className="flex flex-col gap-3.5 lg:flex-row lg:items-center lg:justify-between">
-        {/* Employee identification */}
+    <div
+      className={cn(
+        "overflow-hidden rounded-xl border transition-all duration-200 bg-card shadow-soft",
+        expanded
+          ? "border-primary/50 ring-1 ring-primary/25 shadow-md"
+          : "border-border/80 hover:border-primary/40 hover:bg-muted/10"
+      )}
+    >
+      {/* ── Entire Employee Box Header (Click anywhere to load/toggle the report) ── */}
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        onClick={() => setExpanded(!expanded)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setExpanded(!expanded);
+          }
+        }}
+        className="flex flex-col gap-3.5 p-4.5 lg:flex-row lg:items-center lg:justify-between cursor-pointer select-none transition-colors group"
+        title={expanded ? "Click box to collapse report" : "Click box to view employee report"}
+      >
+        {/* Employee Identification */}
         <div className="min-w-0 flex items-center gap-3">
-          <div className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary font-bold text-sm">
+          <div className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary font-bold text-sm ring-1 ring-primary/20 group-hover:bg-primary/20 transition-colors">
             {employee.name.slice(0, 2).toUpperCase()}
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h4 className="truncate font-display text-sm font-semibold text-foreground">{employee.name}</h4>
+              <h4 className="truncate font-display text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
+                {employee.name}
+              </h4>
               <span className="rounded-md bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
                 {employee.role?.replace(/_/g, " ")}
               </span>
@@ -742,7 +834,7 @@ function EmployeeDailyReportCard({ report, onOpenTask }: EmployeeDailyReportCard
           </div>
         </div>
 
-        {/* 4 Metric Badges + Drill Down Button */}
+        {/* 4 Metric Badges + Expand Toggle */}
         <div className="flex flex-wrap items-center gap-2">
           {/* Assigned on Date */}
           <div className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-xs">
@@ -777,166 +869,680 @@ function EmployeeDailyReportCard({ report, onOpenTask }: EmployeeDailyReportCard
             </div>
           )}
 
-          {/* Drill Down Toggle */}
+          {/* Toggle Indicator Button */}
           <Button
             type="button"
-            variant="outline"
+            variant={expanded ? "secondary" : "outline"}
             size="sm"
-            onClick={() => setExpanded(!expanded)}
-            className="h-8 gap-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-muted"
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded(!expanded);
+            }}
+            className="h-8 gap-1.5 rounded-lg text-xs font-medium"
           >
-            <span>{expanded ? "Hide Details" : "Drill Down"}</span>
+            <span>{expanded ? "Hide Report" : "View Report"}</span>
             {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </Button>
         </div>
       </div>
 
-      {/* Expanded Drill-Down Drawer */}
+      {/* ── Expanded Full Employee Report Drawer ── */}
       {expanded && (
-        <div className="mt-4 border-t border-border/60 pt-4">
-          {/* Section Divider: Selected Day Activity vs Outstanding Workload */}
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap gap-1.5">
-              {[
-                {
-                  id: "assignedToday",
-                  label: `Assigned Today (${metrics.assignedTodayCount})`,
-                  category: "Day Activity",
-                },
-                {
-                  id: "completedToday",
-                  label: `Completed Today (${metrics.completedTodayCount})`,
-                  category: "Day Activity",
-                },
-                {
-                  id: "pending",
-                  label: `Pending Active (${metrics.pendingCount})`,
-                  category: "Outstanding Workload",
-                },
-                {
-                  id: "overdue",
-                  label: `Overdue Items (${metrics.overdueCount})`,
-                  category: "Outstanding Workload",
-                },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveTab(tab.id as any)}
-                  className={cn(
-                    "rounded-lg px-3 py-1.5 text-xs font-medium transition-all cursor-pointer",
-                    activeTab === tab.id
-                      ? "bg-primary text-primary-foreground shadow-xs font-semibold"
-                      : "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground"
-                  )}
-                >
-                  {tab.label}
-                </button>
-              ))}
+        <div className="border-t border-border/70 bg-muted/10 p-4 sm:p-5 space-y-4">
+          {/* Top Scope Switcher: Daily Report vs All-Time Total Report */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-border/70 bg-card p-2 sm:p-2.5 shadow-xs">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setReportMode("daily")}
+                className={cn(
+                  "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer",
+                  reportMode === "daily"
+                    ? "bg-primary text-primary-foreground shadow-xs"
+                    : "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                <Calendar size={14} />
+                <span>Daily Activity ({formatReadableDate(selectedDate)})</span>
+                {isSelectedToday && (
+                  <span className="rounded bg-black/20 dark:bg-white/20 px-1 py-0.2 text-[9px] font-bold uppercase">
+                    Today
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setReportMode("allTime")}
+                className={cn(
+                  "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer",
+                  reportMode === "allTime"
+                    ? "bg-primary text-primary-foreground shadow-xs"
+                    : "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                <BarChart3 size={14} />
+                <span>All-Time Total Report</span>
+              </button>
             </div>
 
-            <span className="text-[11px] text-muted-foreground font-mono">
-              Click any task or case below to open details
-            </span>
+            <div className="text-[11px] text-muted-foreground font-mono px-1">
+              {reportMode === "daily"
+                ? `Activity for ${employee.name} on ${selectedDate}`
+                : `Lifetime performance & active matters for ${employee.name}`}
+            </div>
           </div>
 
-          {/* Task Drill-Down Items List */}
-          <div className="mt-2 rounded-xl border border-border/70 bg-muted/20 p-2 sm:p-3">
-            {currentTasks.length === 0 ? (
-              <div className="py-6 text-center text-xs text-muted-foreground">
-                No tasks in this category for the selected date.
+          {/* ═══════════════════════════════════════════════════════════════════
+              MODE 1: DAILY ACTIVITY REPORT (TODAY / SELECTED DATE)
+              ═══════════════════════════════════════════════════════════════════ */}
+          {reportMode === "daily" && (
+            <div className="space-y-4">
+              {/* Daily KPI Metric Cards Strip */}
+              <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+                <div className="rounded-lg border border-border bg-card p-2.5 text-center shadow-xs">
+                  <span className="text-[11px] text-muted-foreground">Assigned Today</span>
+                  <p className="num text-lg font-bold text-foreground mt-0.5">{metrics.assignedTodayCount}</p>
+                </div>
+
+                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2.5 text-center shadow-xs">
+                  <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">Completed Today</span>
+                  <p className="num text-lg font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">{metrics.completedTodayCount}</p>
+                </div>
+
+                <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/5 p-2.5 text-center shadow-xs">
+                  <span className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium">Cases Worked/Done</span>
+                  <p className="num text-lg font-bold text-indigo-600 dark:text-indigo-400 mt-0.5">{workedCases.length}</p>
+                </div>
+
+                <div className="rounded-lg border border-purple-500/30 bg-purple-500/5 p-2.5 text-center shadow-xs">
+                  <span className="text-[11px] text-purple-600 dark:text-purple-400 font-medium">Audit Log Actions</span>
+                  <p className="num text-lg font-bold text-purple-600 dark:text-purple-400 mt-0.5">{todayLogs.length}</p>
+                </div>
+
+                <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-2.5 text-center shadow-xs">
+                  <span className="text-[11px] text-blue-600 dark:text-blue-400 font-medium">Active Pending</span>
+                  <p className="num text-lg font-bold text-blue-600 dark:text-blue-400 mt-0.5">{metrics.pendingCount}</p>
+                </div>
+
+                <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-2.5 text-center shadow-xs">
+                  <span className="text-[11px] text-rose-600 dark:text-rose-400 font-medium">Overdue Items</span>
+                  <p className="num text-lg font-bold text-rose-600 dark:text-rose-400 mt-0.5">{metrics.overdueCount}</p>
+                </div>
               </div>
-            ) : (
-              <div className="divide-y divide-border/40 space-y-1.5">
-                {currentTasks.map((t) => {
-                  const caseId = typeof t.caseId === "object" ? (t.caseId as any)?._id : t.caseId;
-                  const caseTitle = typeof t.caseId === "object"
-                    ? ((t.caseId as any)?.title || (t.caseId as any)?.number || "Matter Details")
-                    : "Matter Details";
 
-                  return (
-                    <div
-                      key={t._id}
-                      onClick={() => onOpenTask(t as any as TaskRecord)}
-                      className="group flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 rounded-lg p-2.5 transition-colors hover:bg-card hover:shadow-xs cursor-pointer"
-                    >
-                      {/* Left: Task Title & Matter Meta */}
-                      <div className="min-w-0 space-y-1">
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onOpenTask(t as any as TaskRecord);
-                            }}
-                            className="text-left font-medium text-foreground group-hover:text-primary transition-colors text-xs sm:text-sm truncate max-w-lg flex items-center gap-1.5 cursor-pointer"
-                            title="Open Task Details"
-                          >
-                            <span className="truncate">{t.title}</span>
-                            <ExternalLink size={12} className="shrink-0 opacity-40 group-hover:opacity-100" />
-                          </button>
-                        </div>
+              {/* Daily Report Sub-Tabs Navigation */}
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2">
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    {
+                      id: "auditLogs",
+                      label: `Today's Audit Trail (${todayLogs.length})`,
+                      icon: Shield,
+                    },
+                    {
+                      id: "completedToday",
+                      label: `Tasks Completed (${metrics.completedTodayCount})`,
+                      icon: CheckCircle2,
+                    },
+                    {
+                      id: "casesToday",
+                      label: `Cases Worked / Completed (${workedCases.length})`,
+                      icon: Briefcase,
+                    },
+                    {
+                      id: "assignedToday",
+                      label: `Assigned Today (${metrics.assignedTodayCount})`,
+                      icon: CheckSquare,
+                    },
+                    {
+                      id: "pending",
+                      label: `Pending Active (${metrics.pendingCount})`,
+                      icon: Clock,
+                    },
+                    {
+                      id: "overdue",
+                      label: `Overdue (${metrics.overdueCount})`,
+                      icon: AlertTriangle,
+                    },
+                  ].map((tab) => {
+                    const Icon = tab.icon;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setDailySubTab(tab.id as any)}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all cursor-pointer",
+                          dailySubTab === tab.id
+                            ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                            : "bg-card text-muted-foreground hover:bg-muted hover:text-foreground border border-border/60"
+                        )}
+                      >
+                        <Icon size={13} />
+                        <span>{tab.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
 
-                        {/* Associated Case & Client Metadata */}
-                        <div className="flex flex-wrap items-center gap-2.5 text-[11px] text-muted-foreground">
-                          {caseId && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                navigate({ to: "/cases/$caseId", params: { caseId: String(caseId) } });
-                              }}
-                              className="inline-flex items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 font-medium text-foreground hover:bg-primary/10 hover:text-primary transition-colors cursor-pointer"
-                              title="Navigate to Matter"
-                            >
-                              <Briefcase size={11} className="shrink-0 text-primary" />
-                              <span className="truncate max-w-[200px]">{caseTitle}</span>
-                              <ExternalLink size={10} className="shrink-0 opacity-60" />
-                            </button>
-                          )}
+                <span className="text-[11px] text-muted-foreground font-mono">
+                  {dailySubTab === "auditLogs"
+                    ? "Chronological audit events recorded for employee"
+                    : "Click any item to view matter or task details"}
+                </span>
+              </div>
 
-                          {t.clientId && (
-                            <span className="inline-flex items-center gap-1">
-                              <span className="text-muted-foreground/60">Client:</span>
-                              <span className="font-medium text-foreground truncate max-w-[150px]">
-                                {typeof t.clientId === "object" ? (t.clientId as any).name : "Client"}
-                              </span>
-                            </span>
-                          )}
-
-                          {t.deadline && (
-                            <span className="inline-flex items-center gap-1">
-                              <Clock size={11} className="shrink-0 text-muted-foreground/70" />
-                              <span>Due: {new Date(t.deadline).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</span>
-                            </span>
-                          )}
-                        </div>
+              {/* Sub-Tab 1: Today's Audit Log Trail */}
+              {dailySubTab === "auditLogs" && (
+                <div className="rounded-xl border border-border/80 bg-card p-3 shadow-xs">
+                  {todayLogs.length === 0 ? (
+                    <div className="py-8 text-center text-xs text-muted-foreground">
+                      <Shield size={24} className="mx-auto mb-1.5 text-muted-foreground/40" />
+                      No system audit actions or status changes recorded by {employee.name} on {formatReadableDate(selectedDate)}.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-2 py-1 flex items-center justify-between">
+                        <span>Event Details &amp; Target Resource</span>
+                        <span>Action &amp; Time (IST)</span>
                       </div>
+                      <div className="divide-y divide-border/40">
+                        {todayLogs.map((log) => {
+                          const { time, relative } = formatLogTime(log.createdAt);
+                          return (
+                            <div
+                              key={log._id}
+                              className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 p-2.5 transition-colors hover:bg-muted/30 rounded-lg"
+                            >
+                              {/* Left: Resource & Details */}
+                              <div className="min-w-0 space-y-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="rounded-md bg-muted px-2 py-0.5 text-[10px] font-semibold text-foreground uppercase tracking-wide border border-border/80">
+                                    {log.resource}
+                                  </span>
+                                  {log.resourceName && (
+                                    <span className="font-medium text-xs text-foreground truncate max-w-md">
+                                      {log.resourceName}
+                                    </span>
+                                  )}
+                                  {log.resource === "case" && log.resourceId && (
+                                    <button
+                                      type="button"
+                                      onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: log.resourceId! } })}
+                                      className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+                                    >
+                                      <span>View Case</span>
+                                      <ExternalLink size={10} />
+                                    </button>
+                                  )}
+                                </div>
+                                {log.details && (
+                                  <p className="text-caption text-muted-foreground break-words">{log.details}</p>
+                                )}
+                              </div>
 
-                      {/* Right: Priority & Status Pills */}
-                      <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
-                        <span
-                          className={cn(
-                            "rounded-md px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase",
-                            t.priority === "High"
-                              ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20"
-                              : t.priority === "Medium"
-                              ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
-                              : "bg-slate-500/10 text-slate-600 dark:text-slate-400 border border-slate-500/20"
-                          )}
-                        >
-                          {t.priority || "Normal"}
-                        </span>
-                        <span className="rounded-md border border-border bg-background px-2 py-0.5 text-[10px] font-medium text-muted-foreground capitalize">
-                          {t.status?.replace(/_/g, " ") || "Pending"}
-                        </span>
+                              {/* Right: Action Badge & Timestamp */}
+                              <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
+                                <span
+                                  className={cn(
+                                    "rounded-md px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase border",
+                                    getActionBadgeStyle(log.action)
+                                  )}
+                                >
+                                  {log.action}
+                                </span>
+                                <div className="text-right">
+                                  <p className="font-mono text-xs font-medium text-foreground">{time}</p>
+                                  {relative && <p className="text-[10px] text-muted-foreground">{relative}</p>}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                  );
-                })}
+                  )}
+                </div>
+              )}
+
+              {/* Sub-Tab 2: Cases Worked On / Completed Today */}
+              {dailySubTab === "casesToday" && (
+                <div className="rounded-xl border border-border/80 bg-card p-3 shadow-xs">
+                  {workedCases.length === 0 ? (
+                    <div className="py-8 text-center text-xs text-muted-foreground">
+                      <Briefcase size={24} className="mx-auto mb-1.5 text-muted-foreground/40" />
+                      No case actions or closures recorded by {employee.name} on {formatReadableDate(selectedDate)}.
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-border/40 space-y-1.5">
+                      {workedCases.map((c) => {
+                        const isClosedToday = c.status === "Closed";
+                        return (
+                          <div
+                            key={c._id}
+                            onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: c._id } })}
+                            className="group flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 rounded-lg transition-colors hover:bg-muted/40 cursor-pointer"
+                          >
+                            <div className="min-w-0 space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-xs font-semibold text-primary">{c.number}</span>
+                                <h5 className="font-medium text-xs sm:text-sm text-foreground truncate max-w-lg group-hover:text-primary transition-colors">
+                                  {c.title}
+                                </h5>
+                                <ExternalLink size={12} className="shrink-0 opacity-40 group-hover:opacity-100 text-primary" />
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-2.5 text-[11px] text-muted-foreground">
+                                {c.court && <span>Court: <strong className="text-foreground">{c.court}</strong></span>}
+                                {c.practice && (
+                                  <>
+                                    <span>•</span>
+                                    <span>{c.practice}</span>
+                                  </>
+                                )}
+                                {c.parties?.[0]?.name && (
+                                  <>
+                                    <span>•</span>
+                                    <span>Client: <strong className="text-foreground">{c.parties[0].name}</strong></span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
+                              {isClosedToday ? (
+                                <span className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                                  Closed / Disposed
+                                </span>
+                              ) : (
+                                <span className="rounded-md border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                                  {c.status}
+                                </span>
+                              )}
+                              {c.priority && (
+                                <span className="rounded-md border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                  {c.priority}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Sub-Tabs: Tasks (Completed Today, Assigned Today, Pending, Overdue) */}
+              {["completedToday", "assignedToday", "pending", "overdue"].includes(dailySubTab) && (
+                <div className="rounded-xl border border-border/80 bg-card p-2 sm:p-3 shadow-xs">
+                  {currentTasks.length === 0 ? (
+                    <div className="py-8 text-center text-xs text-muted-foreground">
+                      No tasks in this category for {employee.name} on {formatReadableDate(selectedDate)}.
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-border/40 space-y-1.5">
+                      {currentTasks.map((t) => {
+                        const caseId = typeof t.caseId === "object" ? (t.caseId as any)?._id : t.caseId;
+                        const caseTitle =
+                          typeof t.caseId === "object"
+                            ? (t.caseId as any)?.title || (t.caseId as any)?.number || "Matter Details"
+                            : "Matter Details";
+
+                        return (
+                          <div
+                            key={t._id}
+                            onClick={() => onOpenTask(t as any as TaskRecord)}
+                            className="group flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 rounded-lg p-2.5 transition-colors hover:bg-muted/40 cursor-pointer"
+                          >
+                            <div className="min-w-0 space-y-1">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onOpenTask(t as any as TaskRecord);
+                                  }}
+                                  className="text-left font-medium text-foreground group-hover:text-primary transition-colors text-xs sm:text-sm truncate max-w-lg flex items-center gap-1.5 cursor-pointer"
+                                  title="Open Task Details"
+                                >
+                                  <span className="truncate">{t.title}</span>
+                                  <ExternalLink size={12} className="shrink-0 opacity-40 group-hover:opacity-100" />
+                                </button>
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-2.5 text-[11px] text-muted-foreground">
+                                {caseId && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      navigate({ to: "/cases/$caseId", params: { caseId: String(caseId) } });
+                                    }}
+                                    className="inline-flex items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 font-medium text-foreground hover:bg-primary/10 hover:text-primary transition-colors cursor-pointer"
+                                    title="Navigate to Matter"
+                                  >
+                                    <Briefcase size={11} className="shrink-0 text-primary" />
+                                    <span className="truncate max-w-[200px]">{caseTitle}</span>
+                                    <ExternalLink size={10} className="shrink-0 opacity-60" />
+                                  </button>
+                                )}
+
+                                {t.clientId && (
+                                  <span className="inline-flex items-center gap-1">
+                                    <span className="text-muted-foreground/60">Client:</span>
+                                    <span className="font-medium text-foreground truncate max-w-[150px]">
+                                      {typeof t.clientId === "object" ? (t.clientId as any).name : "Client"}
+                                    </span>
+                                  </span>
+                                )}
+
+                                {t.deadline && (
+                                  <span className="inline-flex items-center gap-1">
+                                    <Clock size={11} className="shrink-0 text-muted-foreground/70" />
+                                    <span>Due: {new Date(t.deadline).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</span>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
+                              <span
+                                className={cn(
+                                  "rounded-md px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase",
+                                  t.priority === "High"
+                                    ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20"
+                                    : t.priority === "Medium"
+                                    ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                                    : "bg-slate-500/10 text-slate-600 dark:text-slate-400 border border-slate-500/20"
+                                )}
+                              >
+                                {t.priority || "Normal"}
+                              </span>
+                              <span className="rounded-md border border-border bg-background px-2 py-0.5 text-[10px] font-medium text-muted-foreground capitalize">
+                                {t.status?.replace(/_/g, " ") || "Pending"}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════════
+              MODE 2: ALL-TIME TOTAL REPORT (CUMULATIVE PERFORMANCE & CASES)
+              ═══════════════════════════════════════════════════════════════════ */}
+          {reportMode === "allTime" && (
+            <div className="space-y-4">
+              {/* Lifetime High-Level Metric Tiles */}
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {/* 1. Lifetime Tasks Completed */}
+                <div className="rounded-xl border border-border bg-card p-4 shadow-soft">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-caption font-medium text-muted-foreground">Lifetime Tasks Completed</span>
+                    <span className="grid size-7 place-items-center rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                      <CheckCircle2 size={14} />
+                    </span>
+                  </div>
+                  <div className="mt-2 flex items-baseline justify-between gap-2">
+                    <span className="text-2xl font-bold tracking-tight text-foreground">{allTime?.tasksCompleted ?? 0}</span>
+                    <span className="text-caption text-muted-foreground">
+                      of {allTime?.tasksAssigned ?? 0} assigned
+                    </span>
+                  </div>
+                  <div className="mt-2.5">
+                    <div className="flex justify-between text-[11px] text-muted-foreground mb-1">
+                      <span>Completion Rate</span>
+                      <span className="font-semibold text-foreground">{allTime?.completionRate ?? 0}%</span>
+                    </div>
+                    <Progress value={allTime?.completionRate ?? 0} className="h-1.5" />
+                  </div>
+                </div>
+
+                {/* 2. Active Matters Currently Assigned */}
+                <div className="rounded-xl border border-border bg-card p-4 shadow-soft">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-caption font-medium text-muted-foreground">Active Matters Handled</span>
+                    <span className="grid size-7 place-items-center rounded-md bg-primary/10 text-primary">
+                      <Briefcase size={14} />
+                    </span>
+                  </div>
+                  <div className="mt-2 flex items-baseline justify-between gap-2">
+                    <span className="text-2xl font-bold tracking-tight text-primary">{allTime?.activeCasesCount ?? 0}</span>
+                    <span className="text-caption text-muted-foreground">
+                      {allTime?.totalCasesCount ?? 0} total lifetime
+                    </span>
+                  </div>
+                  <p className="mt-2 text-[11px] text-muted-foreground">
+                    Currently Institute &amp; Active Matters assigned in firm
+                  </p>
+                </div>
+
+                {/* 3. Matters Successfully Closed */}
+                <div className="rounded-xl border border-border bg-card p-4 shadow-soft">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-caption font-medium text-muted-foreground">Matters Closed / Disposed</span>
+                    <span className="grid size-7 place-items-center rounded-md bg-muted text-muted-foreground">
+                      <FolderKanban size={14} />
+                    </span>
+                  </div>
+                  <div className="mt-2 flex items-baseline justify-between gap-2">
+                    <span className="text-2xl font-bold tracking-tight text-foreground">{allTime?.closedCasesCount ?? 0}</span>
+                    <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                      Disposed
+                    </span>
+                  </div>
+                  <p className="mt-2 text-[11px] text-muted-foreground">
+                    Successfully concluded legal matters &amp; disputes
+                  </p>
+                </div>
+
+                {/* 4. Total Lifetime Audit Actions */}
+                <div className="rounded-xl border border-border bg-card p-4 shadow-soft">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-caption font-medium text-muted-foreground">Total Audit Actions Logged</span>
+                    <span className="grid size-7 place-items-center rounded-md bg-purple-500/10 text-purple-600 dark:text-purple-400">
+                      <Shield size={14} />
+                    </span>
+                  </div>
+                  <div className="mt-2 flex items-baseline justify-between gap-2">
+                    <span className="text-2xl font-bold tracking-tight text-foreground">{allTime?.totalAuditLogsCount ?? 0}</span>
+                    <span className="rounded-full bg-purple-500/10 px-2 py-0.5 text-[10px] font-medium text-purple-600 dark:text-purple-400">
+                      Tamper-evident
+                    </span>
+                  </div>
+                  <p className="mt-2 text-[11px] text-muted-foreground">
+                    Total recorded system events and modifications
+                  </p>
+                </div>
               </div>
-            )}
-          </div>
+
+              {/* All-Time Sub-tabs Navigation */}
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2">
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setAllTimeSubTab("activeCases")}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all cursor-pointer",
+                      allTimeSubTab === "activeCases"
+                        ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                        : "bg-card text-muted-foreground hover:bg-muted hover:text-foreground border border-border/60"
+                    )}
+                  >
+                    <Briefcase size={13} />
+                    <span>Active Assigned Matters ({activeCasesList.length})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setAllTimeSubTab("allTimeAudit")}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all cursor-pointer",
+                      allTimeSubTab === "allTimeAudit"
+                        ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                        : "bg-card text-muted-foreground hover:bg-muted hover:text-foreground border border-border/60"
+                    )}
+                  >
+                    <History size={13} />
+                    <span>Recent Lifetime Audit Trail ({allTimeRecentLogs.length})</span>
+                  </button>
+                </div>
+
+                <span className="text-[11px] text-muted-foreground font-mono">
+                  {allTimeSubTab === "activeCases"
+                    ? "Matters currently in progress with this employee"
+                    : "Latest 25 chronological activity logs"}
+                </span>
+              </div>
+
+              {/* All-Time Tab 1: Active Cases List */}
+              {allTimeSubTab === "activeCases" && (
+                <div className="rounded-xl border border-border/80 bg-card p-3 shadow-xs">
+                  {activeCasesList.length === 0 ? (
+                    <div className="py-8 text-center text-xs text-muted-foreground">
+                      <Briefcase size={24} className="mx-auto mb-1.5 text-muted-foreground/40" />
+                      No active matters currently assigned to {employee.name}.
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-border/40 space-y-1.5">
+                      {activeCasesList.map((c) => (
+                        <div
+                          key={c._id}
+                          onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: c._id } })}
+                          className="group flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 rounded-lg transition-colors hover:bg-muted/40 cursor-pointer"
+                        >
+                          <div className="min-w-0 space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs font-semibold text-primary">{c.number}</span>
+                              <h5 className="font-medium text-xs sm:text-sm text-foreground truncate max-w-lg group-hover:text-primary transition-colors">
+                                {c.title}
+                              </h5>
+                              <ExternalLink size={12} className="shrink-0 opacity-40 group-hover:opacity-100 text-primary" />
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2.5 text-[11px] text-muted-foreground">
+                              {c.court && <span>Court: <strong className="text-foreground">{c.court}</strong></span>}
+                              {c.practice && (
+                                <>
+                                  <span>•</span>
+                                  <span>{c.practice}</span>
+                                </>
+                              )}
+                              {c.parties?.[0]?.name && (
+                                <>
+                                  <span>•</span>
+                                  <span>Client: <strong className="text-foreground">{c.parties[0].name}</strong></span>
+                                </>
+                              )}
+                              {c.nextHearing && (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-amber-600 dark:text-amber-400 font-medium">
+                                    Next Hearing: {new Date(c.nextHearing).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
+                            <span className="rounded-md border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                              {c.status}
+                            </span>
+                            {c.priority && (
+                              <span className="rounded-md border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                {c.priority}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* All-Time Tab 2: Recent Lifetime Audit Trail */}
+              {allTimeSubTab === "allTimeAudit" && (
+                <div className="rounded-xl border border-border/80 bg-card p-3 shadow-xs">
+                  {allTimeRecentLogs.length === 0 ? (
+                    <div className="py-8 text-center text-xs text-muted-foreground">
+                      <Shield size={24} className="mx-auto mb-1.5 text-muted-foreground/40" />
+                      No audit events recorded for this employee.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-2 py-1 flex items-center justify-between">
+                        <span>Event &amp; Target</span>
+                        <span>Action &amp; Date / Time (IST)</span>
+                      </div>
+                      <div className="divide-y divide-border/40">
+                        {allTimeRecentLogs.map((log) => {
+                          const { time, relative } = formatLogTime(log.createdAt);
+                          const logDate = log.createdAt
+                            ? new Date(log.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+                            : "";
+                          return (
+                            <div
+                              key={log._id}
+                              className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 p-2.5 transition-colors hover:bg-muted/30 rounded-lg"
+                            >
+                              <div className="min-w-0 space-y-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="rounded-md bg-muted px-2 py-0.5 text-[10px] font-semibold text-foreground uppercase tracking-wide border border-border/80">
+                                    {log.resource}
+                                  </span>
+                                  {log.resourceName && (
+                                    <span className="font-medium text-xs text-foreground truncate max-w-md">
+                                      {log.resourceName}
+                                    </span>
+                                  )}
+                                  {log.resource === "case" && log.resourceId && (
+                                    <button
+                                      type="button"
+                                      onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: log.resourceId! } })}
+                                      className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+                                    >
+                                      <span>View Case</span>
+                                      <ExternalLink size={10} />
+                                    </button>
+                                  )}
+                                </div>
+                                {log.details && (
+                                  <p className="text-caption text-muted-foreground break-words">{log.details}</p>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
+                                <span
+                                  className={cn(
+                                    "rounded-md px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase border",
+                                    getActionBadgeStyle(log.action)
+                                  )}
+                                >
+                                  {log.action}
+                                </span>
+                                <div className="text-right">
+                                  <p className="font-mono text-xs font-medium text-foreground">{logDate} {time}</p>
+                                  {relative && <p className="text-[10px] text-muted-foreground">{relative}</p>}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
