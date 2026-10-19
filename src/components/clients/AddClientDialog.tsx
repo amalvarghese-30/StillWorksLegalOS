@@ -19,6 +19,8 @@ import {
   AlertCircle,
   Briefcase,
   CheckSquare,
+  FolderOpen,
+  CornerDownRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -26,8 +28,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useCreateClient, type CreateClientPayload, type SubClient } from "@/services/clients";
-import { useCreateCase, type CaseTaskPayload } from "@/services/cases";
+import { useCreateCase, type CaseTaskPayload, type CaseParty } from "@/services/cases";
 import { useEmployees } from "@/services/admin";
+import { useTaskOptions, type ChecklistItem } from "@/services/tasks";
+import { useCategoryTree, useCategories } from "@/services/categories";
+import { AssigneeMultiSelect } from "@/components/common/AssigneeMultiSelect";
 import { toSafeIso } from "@/lib/dates";
 import {
   validatePhone,
@@ -108,9 +113,51 @@ interface AddClientDialogProps {
   onClose: () => void;
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+interface CaseFormState {
+  title: string;
+  courtCaseId: string;
+  countCaseNumber: string;
+  nextHearing: string;
+  description: string;
+  category: string;
+  mainCategory: string;
+  subCategory: string;
+  selectedSubCategories: string[];
+  customCategory: string;
+  localPath: string;
+  status: "Active" | "On Hold" | "Closed" | "Urgent";
+  priority: "High" | "Medium" | "Low";
+  tags: string[];
+  assignedTo: string[];
+}
+
+const EMPTY_CASE_FORM: CaseFormState = {
+  title: "",
+  courtCaseId: "",
+  countCaseNumber: "",
+  nextHearing: "",
+  description: "",
+  category: "Other Work",
+  mainCategory: "",
+  subCategory: "",
+  selectedSubCategories: [],
+  customCategory: "",
+  localPath: "",
+  status: "Active",
+  priority: "Medium",
+  tags: [],
+  assignedTo: [],
+};
+
+export interface OnboardingTaskEntry {
+  title: string;
+  description?: string;
+  category: string;
+  priority: "High" | "Medium" | "Low";
+  deadline: string;
+  assignedTo: string[];
+  checklist: ChecklistItem[];
+}
 
 interface FormErrors {
   name?: string;
@@ -129,10 +176,238 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
 
   // Optional Onboarding Case & Tasks State
   const [createInitialCase, setCreateInitialCase] = useState(false);
-  const [caseTitle, setCaseTitle] = useState("");
-  const [casePractice, setCasePractice] = useState("Property");
-  const [initialTasks, setInitialTasks] = useState<Array<{ title: string; priority: "High" | "Medium" | "Low"; assignedTo: string[]; deadline: string }>>([]);
+  const [caseForm, setCaseForm] = useState<CaseFormState>(EMPTY_CASE_FORM);
+  const [parties, setParties] = useState<Array<{ name: string; role: string; type: "client" | "sub_client" | "opposing_party" | "counsel" | "other" }>>([]);
+  const [initialTasks, setInitialTasks] = useState<OnboardingTaskEntry[]>([]);
+  const [tagInput, setTagInput] = useState("");
+  const [subtaskInput, setSubtaskInput] = useState<Record<number, string>>({});
   const [isCreatingCase, setIsCreatingCase] = useState(false);
+
+  const { data: categories = [] } = useCategories();
+  const { data: categoryTree = [], isLoading: isCategoriesLoading, isError: isCategoriesError } = useCategoryTree();
+
+  const selectedParent = categoryTree.find((c) => c.name === caseForm.mainCategory);
+  const availableSubCategories = selectedParent?.children ?? [];
+
+  const updateCase = <K extends keyof CaseFormState>(key: K, value: CaseFormState[K]) => {
+    setCaseForm((prev) => ({ ...prev, [key]: value }));
+    if (key === "title" && fieldErrors.caseTitle) {
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next.caseTitle;
+        return next;
+      });
+    }
+  };
+
+  const addTag = () => {
+    const trimmed = tagInput.trim();
+    if (trimmed && !caseForm.tags.includes(trimmed)) {
+      updateCase("tags", [...caseForm.tags, trimmed]);
+      setTagInput("");
+    }
+  };
+
+  const removeTag = (tagToRemove: string) => {
+    updateCase("tags", caseForm.tags.filter((t) => t !== tagToRemove));
+  };
+
+  const addParty = () => {
+    setParties((prev) => [
+      ...prev,
+      { name: "", role: "Opposing Party", type: "opposing_party" },
+    ]);
+  };
+
+  const updateParty = (
+    index: number,
+    field: "name" | "role" | "type",
+    val: string
+  ) => {
+    setParties((prev) =>
+      prev.map((p, i) => (i === index ? { ...p, [field]: val } : p))
+    );
+  };
+
+  const removeParty = (index: number) => {
+    setParties((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const addTask = () => {
+    setInitialTasks((prev) => [
+      ...prev,
+      {
+        title: "",
+        category: caseForm.category || "Other Work",
+        priority: "Medium",
+        deadline: "",
+        assignedTo: [],
+        checklist: [],
+      },
+    ]);
+  };
+
+  const updateTask = (
+    index: number,
+    field: keyof OnboardingTaskEntry,
+    val: any
+  ) => {
+    setInitialTasks((prev) =>
+      prev.map((t, i) => (i === index ? { ...t, [field]: val } : t))
+    );
+  };
+
+  const removeTask = (index: number) => {
+    setInitialTasks((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const addChecklistItemToTask = (taskIndex: number) => {
+    const text = (subtaskInput[taskIndex] || "").trim();
+    if (!text) return;
+    setInitialTasks((prev) =>
+      prev.map((t, i) => {
+        if (i !== taskIndex) return t;
+        const newItem: ChecklistItem = {
+          id: `task_${taskIndex}_cl_${Date.now()}_${t.checklist.length}`,
+          text,
+          done: false,
+          subItems: [],
+        };
+        return { ...t, checklist: [...t.checklist, newItem] };
+      })
+    );
+    setSubtaskInput((prev) => ({ ...prev, [taskIndex]: "" }));
+  };
+
+  const addSubCategoryToTaskChecklist = (taskIndex: number, scName: string) => {
+    setInitialTasks((prev) =>
+      prev.map((t, i) => {
+        if (i !== taskIndex) return t;
+        if (t.checklist.some((item) => item.text.toLowerCase() === scName.toLowerCase())) {
+          return t;
+        }
+        const newItem: ChecklistItem = {
+          id: `task_${taskIndex}_cl_${Date.now()}_${t.checklist.length}`,
+          text: scName,
+          done: false,
+          subItems: [],
+        };
+        return { ...t, checklist: [...t.checklist, newItem] };
+      })
+    );
+  };
+
+  const addAllSubCategoriesToTaskChecklist = (taskIndex: number) => {
+    if (!availableSubCategories.length) return;
+    setInitialTasks((prev) =>
+      prev.map((t, i) => {
+        if (i !== taskIndex) return t;
+        const existingTexts = new Set(t.checklist.map((item) => item.text.toLowerCase()));
+        const toAdd: ChecklistItem[] = availableSubCategories
+          .filter((sc) => !existingTexts.has(sc.name.toLowerCase()))
+          .map((sc, idx) => ({
+            id: `task_${taskIndex}_cl_${Date.now()}_${t.checklist.length + idx}`,
+            text: sc.name,
+            done: false,
+            subItems: [],
+          }));
+        return { ...t, checklist: [...t.checklist, ...toAdd] };
+      })
+    );
+  };
+
+  const removeChecklistItemFromTask = (taskIndex: number, checkIndex: number) => {
+    setInitialTasks((prev) =>
+      prev.map((t, i) => {
+        if (i !== taskIndex) return t;
+        return {
+          ...t,
+          checklist: t.checklist.filter((_, ci) => ci !== checkIndex),
+        };
+      })
+    );
+  };
+
+  const updateChecklistItemText = (taskIndex: number, checkIndex: number, text: string) => {
+    setInitialTasks((prev) =>
+      prev.map((t, i) => {
+        if (i !== taskIndex) return t;
+        return {
+          ...t,
+          checklist: t.checklist.map((item, ci) => (ci === checkIndex ? { ...item, text } : item)),
+        };
+      })
+    );
+  };
+
+  const addSubItemToTaskChecklist = (taskIndex: number, checkIndex: number) => {
+    setInitialTasks((prev) =>
+      prev.map((t, i) => {
+        if (i !== taskIndex) return t;
+        return {
+          ...t,
+          checklist: t.checklist.map((item, ci) => {
+            if (ci !== checkIndex) return item;
+            const subItems = Array.isArray(item.subItems) ? item.subItems : [];
+            return {
+              ...item,
+              subItems: [
+                ...subItems,
+                { id: `sub_${Date.now()}_${subItems.length}`, text: "", done: false },
+              ],
+            };
+          }),
+        };
+      })
+    );
+  };
+
+  const updateSubItemText = (
+    taskIndex: number,
+    checkIndex: number,
+    subIndex: number,
+    text: string
+  ) => {
+    setInitialTasks((prev) =>
+      prev.map((t, i) => {
+        if (i !== taskIndex) return t;
+        return {
+          ...t,
+          checklist: t.checklist.map((item, ci) => {
+            if (ci !== checkIndex) return item;
+            const subItems = Array.isArray(item.subItems) ? item.subItems : [];
+            return {
+              ...item,
+              subItems: subItems.map((sub, si) => (si === subIndex ? { ...sub, text } : sub)),
+            };
+          }),
+        };
+      })
+    );
+  };
+
+  const removeSubItemFromTaskChecklist = (
+    taskIndex: number,
+    checkIndex: number,
+    subIndex: number
+  ) => {
+    setInitialTasks((prev) =>
+      prev.map((t, i) => {
+        if (i !== taskIndex) return t;
+        return {
+          ...t,
+          checklist: t.checklist.map((item, ci) => {
+            if (ci !== checkIndex) return item;
+            const subItems = Array.isArray(item.subItems) ? item.subItems : [];
+            return {
+              ...item,
+              subItems: subItems.filter((_, si) => si !== subIndex),
+            };
+          }),
+        };
+      })
+    );
+  };
 
   const [fieldErrors, setFieldErrors] = useState<FormErrors>({});
   const [subClientErrors, setSubClientErrors] = useState<{
@@ -290,7 +565,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
     });
 
     // Case Title validation if initial case creation is toggled on
-    if (createInitialCase && !caseTitle.trim()) {
+    if (createInitialCase && !caseForm.title.trim()) {
       errors.caseTitle = "Matter / Case title is required when initial case is enabled";
     }
 
@@ -342,39 +617,114 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
       onSuccess: async (clientRes) => {
         const newClient = clientRes.client;
 
-        if (createInitialCase && caseTitle.trim()) {
+        if (createInitialCase && caseForm.title.trim()) {
           setIsCreatingCase(true);
           try {
+            const validParties: CaseParty[] = [
+              {
+                clientId: newClient._id,
+                name: newClient.name,
+                role: "Primary Client",
+                type: "client",
+              },
+              ...parties
+                .filter((p) => p.name.trim())
+                .map((p) => ({
+                  name: p.name.trim(),
+                  role: p.role.trim() || "Party",
+                  type: p.type,
+                })),
+            ];
+
             const caseTasksPayload: CaseTaskPayload[] = initialTasks
               .filter((t) => t.title.trim())
               .map((t) => ({
                 title: t.title.trim(),
+                description: t.description?.trim() || undefined,
+                category: t.category || "Other Work",
                 priority: t.priority,
                 deadline: t.deadline ? toSafeIso(t.deadline) ?? undefined : undefined,
                 assignedTo: t.assignedTo.length > 0 ? t.assignedTo : undefined,
                 assignedUsers: t.assignedTo.length > 0 ? t.assignedTo : undefined,
+                checklist: t.checklist
+                  .filter((item) => item.text && item.text.trim())
+                  .map((item) => ({
+                    text: item.text.trim(),
+                    done: Boolean(item.done),
+                    subItems: (item.subItems || [])
+                      .filter((sub) => sub.text && sub.text.trim())
+                      .map((sub) => ({
+                        text: sub.text.trim(),
+                        done: Boolean(sub.done),
+                      })),
+                  })),
               }));
 
-            await createCase.mutateAsync({
-              title: caseTitle.trim(),
-              practice: casePractice,
-              status: "Active",
-              priority: "Medium",
-              parties: [
-                {
-                  clientId: newClient._id,
-                  name: newClient.name,
-                  role: "Client",
-                  type: "client",
-                },
-              ],
-              tasks: caseTasksPayload.length > 0 ? caseTasksPayload : undefined,
-            });
+            const subCatJoined =
+              caseForm.selectedSubCategories.length > 0
+                ? caseForm.selectedSubCategories.join(", ")
+                : caseForm.subCategory;
 
-            toast.success(`Client and initial matter "${caseTitle.trim()}" created successfully`);
+            const chosenCategory =
+              (subCatJoined === "__other__" || caseForm.mainCategory === "__other__"
+                ? caseForm.customCategory.trim()
+                : subCatJoined) ||
+              (caseForm.mainCategory === "__other__"
+                ? caseForm.customCategory.trim()
+                : caseForm.mainCategory) ||
+              caseForm.category ||
+              "Other Work";
+
+            const casePayload = {
+              title: caseForm.title.trim(),
+              description: caseForm.description.trim() || undefined,
+              category: chosenCategory,
+              mainCategory:
+                caseForm.mainCategory === "__other__"
+                  ? caseForm.customCategory.trim() || "Other Work"
+                  : caseForm.mainCategory || undefined,
+              subCategory:
+                subCatJoined === "__other__"
+                  ? caseForm.customCategory.trim() || undefined
+                  : subCatJoined || undefined,
+              categoryPath:
+                caseForm.selectedSubCategories.length > 0
+                  ? caseForm.selectedSubCategories
+                  : undefined,
+              courtCaseId: caseForm.courtCaseId.trim() || undefined,
+              countCaseNumber:
+                caseForm.countCaseNumber.trim() ||
+                caseForm.courtCaseId.trim() ||
+                undefined,
+              nextHearing: caseForm.nextHearing
+                ? new Date(caseForm.nextHearing).toISOString()
+                : undefined,
+              localPath: caseForm.localPath.trim() || undefined,
+              status: caseForm.status,
+              priority: caseForm.priority,
+              assignedTo:
+                caseForm.assignedTo && caseForm.assignedTo.length > 0
+                  ? caseForm.assignedTo
+                  : undefined,
+              assignedUsers:
+                caseForm.assignedTo && caseForm.assignedTo.length > 0
+                  ? caseForm.assignedTo
+                  : undefined,
+              parties: validParties,
+              tags: caseForm.tags.length > 0 ? caseForm.tags : undefined,
+              tasks: caseTasksPayload.length > 0 ? caseTasksPayload : undefined,
+            };
+
+            await createCase.mutateAsync(casePayload);
+
+            toast.success(
+              `Client and initial matter "${caseForm.title.trim()}" created successfully`
+            );
           } catch (caseErr: any) {
             console.error("Failed to create initial case for client:", caseErr);
-            toast.error("Client created, but failed to create initial matter. You can add the case manually.");
+            toast.error(
+              "Client created, but failed to create initial matter. You can add the case manually."
+            );
           } finally {
             setIsCreatingCase(false);
           }
@@ -387,15 +737,21 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
         setShowProperty(false);
         setShowSubClient(false);
         setCreateInitialCase(false);
-        setCaseTitle("");
+        setCaseForm(EMPTY_CASE_FORM);
+        setParties([]);
         setInitialTasks([]);
+        setTagInput("");
+        setSubtaskInput({});
         setFieldErrors({});
         setSubClientErrors({});
         setGeneralError(null);
         onClose();
       },
       onError: (err: any) => {
-        const msg = err?.message || err?.body?.message || "Failed to save client. Please check entered details.";
+        const msg =
+          err?.message ||
+          err?.body?.message ||
+          "Failed to save client. Please check entered details.";
         setGeneralError(msg);
         toast.error(msg);
       },
@@ -858,7 +1214,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                     Create an initial case for this client (Optional)
                   </Label>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Onboard this client directly with an active matter and assign initial tasks.
+                    Onboard this client directly with a full matter record, practice categories, counsel assignments, and initial tasks.
                   </p>
                 </div>
               </div>
@@ -874,108 +1230,494 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
             </div>
 
             {createInitialCase && (
-              <div className="space-y-4 pt-3 border-t border-primary/20 animate-in fade-in-50">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="case-title" className="text-helper font-medium">Matter / Case Title *</Label>
-                    <Input
-                      id="case-title"
-                      value={caseTitle}
-                      onChange={(e) => {
-                        setCaseTitle(e.target.value);
-                        if (fieldErrors.caseTitle) {
-                          setFieldErrors((prev) => {
-                            const next = { ...prev };
-                            delete next.caseTitle;
-                            return next;
-                          });
-                        }
-                      }}
-                      placeholder="e.g. Title Clearance & Search Report"
-                      className={`h-9 rounded-md bg-card text-xs ${fieldErrors.caseTitle ? "border-destructive focus-visible:ring-destructive" : ""}`}
-                      required={createInitialCase}
-                    />
-                    {fieldErrors.caseTitle && (
-                      <p className="text-caption text-destructive font-medium">{fieldErrors.caseTitle}</p>
+              <div className="space-y-5 pt-3 border-t border-primary/20 animate-in fade-in-50">
+                {/* ── Matter / Case Title ── */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="case-title" className="text-helper font-medium">
+                      Case Title / Matter Subject <span className="text-destructive">*</span>
+                    </Label>
+                    {form.name.trim() && (
+                      <button
+                        type="button"
+                        onClick={() => updateCase("title", `${form.name.trim()} - Legal Matter`)}
+                        className="text-[11px] text-primary hover:underline"
+                      >
+                        Use &quot;{form.name.trim()} - Legal Matter&quot;
+                      </button>
                     )}
                   </div>
+                  <Input
+                    id="case-title"
+                    value={caseForm.title}
+                    onChange={(e) => updateCase("title", e.target.value)}
+                    placeholder="e.g. Title Clearance & Search Report or Special Civil Suit 2026"
+                    className={`h-10 rounded-md bg-card text-xs sm:text-sm ${
+                      fieldErrors.caseTitle ? "border-destructive focus-visible:ring-destructive" : ""
+                    }`}
+                    required={createInitialCase}
+                  />
+                  {fieldErrors.caseTitle && (
+                    <p className="text-caption text-destructive font-medium">{fieldErrors.caseTitle}</p>
+                  )}
+                </div>
+
+                {/* ── Case Number Identifiers ── */}
+                <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-1.5">
-                    <Label htmlFor="case-practice" className="text-helper font-medium">Practice Area</Label>
+                    <Label htmlFor="case-court-id" className="text-helper">
+                      Court Case / CNR / Filing Number (Optional)
+                    </Label>
                     <Input
-                      id="case-practice"
-                      value={casePractice}
-                      onChange={(e) => setCasePractice(e.target.value)}
-                      placeholder="e.g. Property, Litigation, Corporate"
-                      className="h-9 rounded-md bg-card text-xs"
+                      id="case-court-id"
+                      value={caseForm.courtCaseId}
+                      onChange={(e) => updateCase("courtCaseId", e.target.value)}
+                      placeholder="e.g. CNR: MHCC01-123456-2026 or Suit 45/2026"
+                      className="h-10 rounded-md font-mono text-xs bg-card"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="case-count-number" className="text-helper">
+                      Count Case Number / Internal Index (Optional)
+                    </Label>
+                    <Input
+                      id="case-count-number"
+                      value={caseForm.countCaseNumber}
+                      onChange={(e) => updateCase("countCaseNumber", e.target.value)}
+                      placeholder="e.g. Case Count #042 or CR-2026-99"
+                      className="h-10 rounded-md font-mono text-xs bg-card"
                     />
                   </div>
                 </div>
 
-                {/* Initial Tasks Section */}
-                <div className="space-y-2 pt-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                      <CheckSquare size={14} className="text-primary" />
-                      Initial Action Items &amp; Tasks ({initialTasks.length})
+                {/* ── Category & Subcategories Hierarchy ── */}
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="case-main-category" className="text-helper font-medium">Main Category / Practice Area</Label>
+                      {isCategoriesLoading && (
+                        <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                          <Loader2 size={11} className="animate-spin" /> Loading categories...
+                        </span>
+                      )}
+                      {isCategoriesError && (
+                        <span className="text-[11px] text-destructive">Failed to load categories</span>
+                      )}
+                    </div>
+                    <select
+                      id="case-main-category"
+                      value={caseForm.mainCategory}
+                      disabled={isCategoriesLoading}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        updateCase("mainCategory", val);
+                        updateCase("subCategory", "");
+                        updateCase("selectedSubCategories", []);
+                        if (val !== "__other__") updateCase("customCategory", "");
+                      }}
+                      className="h-10 w-full rounded-md border border-border bg-card px-3 text-xs sm:text-sm outline-none transition-colors focus:border-primary disabled:opacity-50"
+                    >
+                      <option value="">
+                        {isCategoriesLoading
+                          ? "Loading categories…"
+                          : isCategoriesError
+                          ? "Error loading categories"
+                          : categoryTree.length === 0
+                          ? "No categories configured"
+                          : "Select main category…"}
+                      </option>
+                      {categoryTree.map((c) => (
+                        <option key={c.name} value={c.name}>{c.name}</option>
+                      ))}
+                      <option value="__other__">+ Other Work / Custom Category...</option>
+                    </select>
+                  </div>
+
+                  {/* Subcategories Checklist */}
+                  {caseForm.mainCategory && caseForm.mainCategory !== "__other__" && availableSubCategories.length > 0 && (
+                    <div className="space-y-2 rounded-lg border border-border bg-muted/20 p-3">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-helper font-medium flex items-center gap-1.5">
+                          <CheckSquare size={14} className="text-primary" />
+                          Subcategories / Work Types (Check all that apply)
+                        </Label>
+                        <span className="text-[11px] text-muted-foreground">
+                          {caseForm.selectedSubCategories.length} selected
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-1">
+                        {availableSubCategories.map((sc) => {
+                          const isChecked = caseForm.selectedSubCategories.includes(sc.name);
+                          return (
+                            <label
+                              key={sc._id || sc.name}
+                              className={`flex items-start gap-2.5 rounded-md border p-2 text-xs cursor-pointer transition-colors ${
+                                isChecked
+                                  ? "border-primary bg-primary/10 text-foreground font-medium"
+                                  : "border-border/60 bg-card hover:bg-muted text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  const updated = checked
+                                    ? [...caseForm.selectedSubCategories, sc.name]
+                                    : caseForm.selectedSubCategories.filter((name) => name !== sc.name);
+                                  updateCase("selectedSubCategories", updated);
+                                  updateCase("subCategory", updated[0] || "");
+                                }}
+                                className="mt-0.5 size-3.5 rounded border-border text-primary focus:ring-primary"
+                              />
+                              <span className="leading-tight select-none">{sc.name}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 text-[11px]">
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const allNames = availableSubCategories.map((s) => s.name);
+                              updateCase("selectedSubCategories", allNames);
+                              updateCase("subCategory", allNames[0] || "");
+                            }}
+                            className="text-primary hover:underline"
+                          >
+                            Select all
+                          </button>
+                          <span className="text-muted-foreground">|</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              updateCase("selectedSubCategories", []);
+                              updateCase("subCategory", "");
+                            }}
+                            className="text-muted-foreground hover:underline"
+                          >
+                            Clear
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const val = caseForm.subCategory === "__other__" ? "" : "__other__";
+                            updateCase("subCategory", val);
+                          }}
+                          className="text-primary hover:underline font-medium"
+                        >
+                          + Custom subcategory
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {(caseForm.mainCategory === "__other__" || caseForm.subCategory === "__other__") && (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="case-custom-category" className="text-helper">
+                        Custom Category / Work Type <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id="case-custom-category"
+                        value={caseForm.customCategory}
+                        onChange={(e) => updateCase("customCategory", e.target.value)}
+                        placeholder="Enter manual category name (e.g. Real Estate Joint Venture)..."
+                        className="h-10 rounded-md bg-card text-xs sm:text-sm"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* ── Hearing Date & Local Folder Path ── */}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="case-next-hearing" className="text-helper flex items-center gap-1.5">
+                      <Calendar size={14} className="text-primary" />
+                      Initial / Next Hearing Date (Optional)
                     </Label>
+                    <Input
+                      id="case-next-hearing"
+                      type="date"
+                      value={caseForm.nextHearing}
+                      onChange={(e) => updateCase("nextHearing", e.target.value)}
+                      className="h-10 rounded-md bg-card text-xs sm:text-sm"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="case-localpath" className="text-helper flex items-center gap-1.5">
+                      <FolderOpen size={14} className="text-muted-foreground" />
+                      Local Folder Path (Desktop)
+                    </Label>
+                    <Input
+                      id="case-localpath"
+                      value={caseForm.localPath}
+                      onChange={(e) => updateCase("localPath", e.target.value)}
+                      placeholder="e.g. C:\LegalFiles\Cases\Matter-2026"
+                      className="h-10 rounded-md bg-card text-xs sm:text-sm"
+                    />
+                  </div>
+                </div>
+
+                {/* ── Description ── */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="case-desc" className="text-helper">Case Description &amp; Details</Label>
+                  <textarea
+                    id="case-desc"
+                    value={caseForm.description}
+                    onChange={(e) => updateCase("description", e.target.value)}
+                    placeholder="Brief summary of facts, dispute background, key dates, or instructions…"
+                    rows={2}
+                    className="w-full rounded-md border border-border bg-card px-3 py-2 text-xs sm:text-sm outline-none transition-colors focus:border-primary resize-none"
+                  />
+                </div>
+
+                {/* ── Status & Priority ── */}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-helper">Case Status</Label>
+                    <div className="flex rounded-md border border-border">
+                      {(["Active", "Urgent", "On Hold", "Closed"] as const).map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => updateCase("status", s)}
+                          className={`flex-1 px-2 py-1.5 text-caption font-medium transition-colors first:rounded-l-md last:rounded-r-md border-r border-border last:border-r-0 ${
+                            caseForm.status === s
+                              ? "bg-primary/10 text-primary font-semibold"
+                              : "text-muted-foreground hover:text-foreground bg-card"
+                          }`}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-helper">Priority</Label>
+                    <div className="flex rounded-md border border-border">
+                      {(["High", "Medium", "Low"] as const).map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => updateCase("priority", p)}
+                          className={`flex-1 px-2 py-1.5 text-caption font-medium transition-colors ${
+                            p === "High" ? "rounded-l-md border-r" : p === "Low" ? "rounded-r-md border-l" : "border-r"
+                          } border-border ${
+                            caseForm.priority === p
+                              ? p === "High"
+                                ? "bg-destructive/10 text-destructive font-semibold"
+                                : p === "Medium"
+                                ? "bg-warning/10 text-warning font-semibold"
+                                : "bg-muted text-foreground font-semibold"
+                              : "text-muted-foreground hover:text-foreground bg-card"
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Responsible Staff / Counsel Assignment ── */}
+                <div className="space-y-1.5">
+                  <Label className="text-helper">Case Team / Assigned Counsel</Label>
+                  <AssigneeMultiSelect
+                    value={caseForm.assignedTo}
+                    onChange={(val) => updateCase("assignedTo", val)}
+                    placeholder="Assign advocates or staff to this case..."
+                  />
+                </div>
+
+                {/* ── Case Tags ── */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="case-tags" className="text-helper">Tags</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="case-tags"
+                      value={tagInput}
+                      onChange={(e) => setTagInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addTag();
+                        }
+                      }}
+                      placeholder="Type a tag and press Enter"
+                      className="h-9 flex-1 rounded-md bg-card text-xs"
+                    />
+                    <Button type="button" variant="outline" className="rounded-md h-9 px-3 text-xs" onClick={addTag}>
+                      <Plus size={14} className="mr-1" /> Add
+                    </Button>
+                  </div>
+                  {caseForm.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {caseForm.tags.map((t) => (
+                        <span
+                          key={t}
+                          className="flex items-center gap-1 rounded-pill bg-muted px-2.5 py-0.5 text-caption font-medium text-foreground"
+                        >
+                          {t}
+                          <button
+                            type="button"
+                            onClick={() => removeTag(t)}
+                            className="ml-0.5 grid size-3.5 place-items-center rounded-full text-muted-foreground hover:text-destructive"
+                            aria-label={`Remove tag ${t}`}
+                          >
+                            <X size={10} strokeWidth={2.5} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* ── Additional Parties ── */}
+                <div className="rounded-lg border border-border bg-card">
+                  <div className="flex items-center justify-between px-3.5 py-2.5">
+                    <p className="flex items-center gap-2 text-xs font-semibold text-foreground">
+                      <Users size={15} strokeWidth={1.75} className="text-primary" />
+                      Related Parties &amp; Opposing Counsel ({parties.length})
+                    </p>
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="text-xs text-primary border-primary/30 h-7 px-2.5 hover:bg-primary/10"
-                      onClick={() =>
-                        setInitialTasks((prev) => [
-                          ...prev,
-                          { title: "", priority: "Medium", assignedTo: [], deadline: "" },
-                        ])
-                      }
+                      className="rounded-md text-xs h-7 px-2"
+                      onClick={addParty}
                     >
-                      <Plus size={13} className="mr-1" /> Add Initial Task
+                      <Plus size={12} className="mr-1" /> Add Party
+                    </Button>
+                  </div>
+                  {parties.length > 0 && (
+                    <div className="border-t border-border p-3 space-y-2.5">
+                      {parties.map((p, idx) => (
+                        <div key={idx} className="grid gap-2 sm:grid-cols-3 rounded-md border border-border/70 p-2.5 bg-muted/20">
+                          <Input
+                            placeholder="Party name *"
+                            value={p.name}
+                            onChange={(e) => updateParty(idx, "name", e.target.value)}
+                            className="h-8 text-xs rounded-md bg-card"
+                          />
+                          <Input
+                            placeholder="Role (e.g. Respondent, Opposing Counsel)"
+                            value={p.role}
+                            onChange={(e) => updateParty(idx, "role", e.target.value)}
+                            className="h-8 text-xs rounded-md bg-card"
+                          />
+                          <div className="flex gap-1.5">
+                            <select
+                              value={p.type}
+                              onChange={(e) => updateParty(idx, "type", e.target.value as any)}
+                              className="h-8 flex-1 rounded-md border border-border bg-card px-2 text-[11px] outline-none focus:border-primary"
+                            >
+                              <option value="opposing_party">Opposing Party</option>
+                              <option value="counsel">Counsel</option>
+                              <option value="sub_client">Sub-Client</option>
+                              <option value="client">Client</option>
+                              <option value="other">Other</option>
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => removeParty(idx)}
+                              className="p-1 text-muted-foreground hover:text-destructive rounded"
+                              aria-label="Remove party"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* ── Initial Tasks Section ── */}
+                <div className="rounded-lg border border-border bg-card p-3.5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                        <CheckSquare size={15} className="text-primary" />
+                        Initial Action Items &amp; Tasks ({initialTasks.length})
+                      </Label>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        Define tasks with independent assignees, priorities, deadlines, and multi-step checklists.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="text-xs text-primary border-primary/30 h-7 px-2.5 hover:bg-primary/10 shrink-0"
+                      onClick={addTask}
+                    >
+                      <Plus size={13} className="mr-1" /> Add Task
                     </Button>
                   </div>
 
                   {initialTasks.length === 0 && (
-                    <p className="text-xs text-muted-foreground italic bg-background/50 rounded-md p-2.5 border border-dashed border-border text-center">
-                      No initial tasks added yet. Click &quot;+ Add Initial Task&quot; to assign tasks to your team right away.
-                    </p>
+                    <div className="text-xs text-muted-foreground italic bg-muted/20 rounded-md p-3 border border-dashed border-border text-center">
+                      No initial tasks added yet. Click &quot;+ Add Task&quot; to assign tasks to your team right away.
+                    </div>
                   )}
 
                   {initialTasks.map((t, tIdx) => (
-                    <div key={tIdx} className="rounded-lg border border-border bg-card p-3 space-y-2.5">
+                    <div key={tIdx} className="rounded-lg border border-border bg-muted/10 p-3 space-y-3">
                       <div className="flex items-center justify-between gap-2">
                         <Input
                           value={t.title}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setInitialTasks((prev) =>
-                              prev.map((item, idx) => (idx === tIdx ? { ...item, title: val } : item))
-                            );
-                          }}
-                          placeholder="Task title (e.g. Collect Property Deeds)"
-                          className="h-8 text-xs rounded-md flex-1"
+                          onChange={(e) => updateTask(tIdx, "title", e.target.value)}
+                          placeholder="Task title (e.g. Title Search at Sub-Registrar Office) *"
+                          className="h-8 text-xs rounded-md flex-1 font-medium bg-card"
+                          required
                         />
                         <button
                           type="button"
-                          onClick={() => setInitialTasks((prev) => prev.filter((_, idx) => idx !== tIdx))}
+                          onClick={() => removeTask(tIdx)}
                           className="text-muted-foreground hover:text-destructive p-1 rounded-sm"
                           title="Remove task"
                         >
-                          <Trash2 size={14} />
+                          <Trash2 size={15} />
                         </button>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {/* Task Description */}
+                      <Input
+                        value={t.description || ""}
+                        onChange={(e) => updateTask(tIdx, "description", e.target.value)}
+                        placeholder="Task instructions or notes (optional)"
+                        className="h-8 text-xs rounded-md bg-card"
+                      />
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                         <div>
-                          <Label className="text-[10px] text-muted-foreground">Priority</Label>
+                          <Label className="text-[10px] text-muted-foreground font-medium">Category</Label>
+                          <select
+                            value={t.category}
+                            onChange={(e) => updateTask(tIdx, "category", e.target.value)}
+                            className="h-8 w-full rounded-md border border-border bg-card px-2 text-xs"
+                          >
+                            {categories.map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                            <option value="Other Work">Other Work</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <Label className="text-[10px] text-muted-foreground font-medium">Priority</Label>
                           <select
                             value={t.priority}
-                            onChange={(e) => {
-                              const val = e.target.value as "High" | "Medium" | "Low";
-                              setInitialTasks((prev) =>
-                                prev.map((item, idx) => (idx === tIdx ? { ...item, priority: val } : item))
-                              );
-                            }}
-                            className="h-7 w-full rounded-md border border-border bg-card px-2 text-[11px]"
+                            onChange={(e) => updateTask(tIdx, "priority", e.target.value as any)}
+                            className="h-8 w-full rounded-md border border-border bg-card px-2 text-xs"
                           >
                             <option value="High">High Priority</option>
                             <option value="Medium">Medium Priority</option>
@@ -984,42 +1726,161 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                         </div>
 
                         <div>
-                          <Label className="text-[10px] text-muted-foreground">Deadline</Label>
+                          <Label className="text-[10px] text-muted-foreground font-medium">Deadline</Label>
                           <Input
-                            type="date"
+                            type="datetime-local"
                             value={t.deadline}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setInitialTasks((prev) =>
-                                prev.map((item, idx) => (idx === tIdx ? { ...item, deadline: val } : item))
-                              );
-                            }}
-                            className="h-7 text-[11px] rounded-md"
+                            onChange={(e) => updateTask(tIdx, "deadline", e.target.value)}
+                            className="h-8 text-xs rounded-md bg-card"
                           />
                         </div>
+                      </div>
 
-                        <div>
-                          <Label className="text-[10px] text-muted-foreground">Assignee</Label>
-                          <select
-                            value={t.assignedTo[0] || ""}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setInitialTasks((prev) =>
-                                prev.map((item, idx) =>
-                                  idx === tIdx ? { ...item, assignedTo: val ? [val] : [] } : item
-                                )
-                              );
-                            }}
-                            className="h-7 w-full rounded-md border border-border bg-card px-2 text-[11px]"
-                          >
-                            <option value="">Unassigned (Defaults to Creator)</option>
-                            {employees.map((emp) => (
-                              <option key={emp._id} value={emp._id}>
-                                {emp.name} ({emp.role})
-                              </option>
-                            ))}
-                          </select>
+                      {/* Independent Assignee Selector */}
+                      <div className="space-y-1">
+                        <Label className="text-[10px] text-muted-foreground font-medium">Assign To Staff / Counsel</Label>
+                        <AssigneeMultiSelect
+                          value={t.assignedTo}
+                          onChange={(val) => updateTask(tIdx, "assignedTo", val)}
+                          placeholder="Select one or more assignees (defaults to creator)..."
+                        />
+                      </div>
+
+                      {/* Subtasks / Checklist Items */}
+                      <div className="space-y-2 pt-2 border-t border-border/50">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1.5">
+                            <CheckSquare size={13} className="text-primary" />
+                            Sub-tasks &amp; Checklist Steps ({t.checklist.length})
+                          </Label>
                         </div>
+
+                        {/* Subcategory steps chips if mainCategory configured */}
+                        {caseForm.mainCategory && availableSubCategories.length > 0 && (
+                          <div className="rounded border border-primary/20 bg-primary/5 p-2 space-y-1.5">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="font-semibold text-foreground">
+                                Subcategory Steps ({caseForm.mainCategory}):
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => addAllSubCategoriesToTaskChecklist(tIdx)}
+                                className="text-primary hover:underline font-medium text-[10px]"
+                              >
+                                + Add all subcategories
+                              </button>
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {availableSubCategories.map((sc) => {
+                                const alreadyAdded = t.checklist.some(
+                                  (item) => item.text.toLowerCase() === sc.name.toLowerCase()
+                                );
+                                return (
+                                  <button
+                                    key={sc._id || sc.name}
+                                    type="button"
+                                    onClick={() => addSubCategoryToTaskChecklist(tIdx, sc.name)}
+                                    className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
+                                      alreadyAdded
+                                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-medium"
+                                        : "border-border/80 bg-background text-foreground/80 hover:border-primary hover:text-primary"
+                                    }`}
+                                    title={alreadyAdded ? "Already in checklist" : `Add "${sc.name}"`}
+                                  >
+                                    <Plus size={9} />
+                                    {sc.name}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex gap-2">
+                          <Input
+                            value={subtaskInput[tIdx] || ""}
+                            onChange={(e) => setSubtaskInput((prev) => ({ ...prev, [tIdx]: e.target.value }))}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                addChecklistItemToTask(tIdx);
+                              }
+                            }}
+                            placeholder="Add custom checklist step and press Enter..."
+                            className="h-8 text-xs rounded-md bg-card"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 px-2.5 text-xs rounded-md"
+                            onClick={() => addChecklistItemToTask(tIdx)}
+                          >
+                            <Plus size={12} className="mr-1" /> Add Step
+                          </Button>
+                        </div>
+
+                        {t.checklist.length > 0 && (
+                          <div className="space-y-1.5 mt-1.5">
+                            {t.checklist.map((item, cIdx) => (
+                              <div
+                                key={item.id || cIdx}
+                                className="space-y-1.5 rounded-md border border-border/70 bg-card p-2 text-xs"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <Input
+                                    value={item.text}
+                                    onChange={(e) => updateChecklistItemText(tIdx, cIdx, e.target.value)}
+                                    placeholder="Step description..."
+                                    className="h-7 flex-1 text-xs font-medium rounded-md"
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => addSubItemToTaskChecklist(tIdx, cIdx)}
+                                    className="h-7 text-xs text-primary hover:bg-primary/10 px-1.5"
+                                  >
+                                    <Plus size={11} className="mr-1" /> Sub-item
+                                  </Button>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeChecklistItemFromTask(tIdx, cIdx)}
+                                    className="grid size-6 shrink-0 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                    aria-label="Remove checklist item"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+
+                                {/* Nested sub-items */}
+                                {Array.isArray(item.subItems) && item.subItems.length > 0 && (
+                                  <div className="pl-3 space-y-1 border-l-2 border-primary/20 ml-2 mt-1">
+                                    {item.subItems.map((sub, sIdx) => (
+                                      <div key={sub.id || sIdx} className="flex items-center gap-1.5">
+                                        <CornerDownRight size={11} className="text-muted-foreground shrink-0" />
+                                        <Input
+                                          value={sub.text}
+                                          onChange={(e) => updateSubItemText(tIdx, cIdx, sIdx, e.target.value)}
+                                          placeholder="Sub-step detail…"
+                                          className="h-6 text-[11px] rounded-md"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => removeSubItemFromTaskChecklist(tIdx, cIdx, sIdx)}
+                                          className="grid size-5 shrink-0 place-items-center text-muted-foreground hover:text-destructive"
+                                          aria-label="Remove sub-item"
+                                        >
+                                          <Trash2 size={11} />
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
