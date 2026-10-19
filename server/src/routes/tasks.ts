@@ -16,6 +16,7 @@ import { canAccessCase, canAccessClient, canAccessTask, requireResourceAccess, g
 import { resolveTaskClientName, resolveTaskAssigneeName } from "../utils/taskHelpers.js";
 import { validateSnoozePayload } from "../utils/snoozeValidation.js";
 import { dispatchRejectionNotifications } from "../services/rejectionNotifications.js";
+import { recordTaskAuditAndAdminNotification } from "../utils/auditNotificationHelper.js";
 
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -1591,17 +1592,29 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
 
     if (diffs.length > 0 || (updates["status"] !== undefined && updates["status"] !== originalTask.status)) {
       const auditDetails = diffs.length > 0 ? diffs.join("; ") : `Status updated to ${updates["status"]}`;
-      await AuditLog.create({
-        userId: req.userId,
-        userName: req.user?.name ?? "Unknown",
+      const humanMessage = `${req.user?.name || "An employee"} updated task "${task.title}": ${auditDetails}`;
+      await recordTaskAuditAndAdminNotification(req, {
+        task,
         action: updates["status"] === "completed" ? "approve" : "update",
-        resource: "task",
-        resourceId: task._id.toString(),
-        resourceName: task.title,
+        mutationType: updates["status"] !== undefined ? "status_change" : "details_update",
         details: auditDetails,
-        metadata: { diffs },
-        ip: req.ip,
-        userAgent: req.headers["user-agent"],
+        humanMessage,
+        diffs,
+        previousValues: {
+          title: originalTask.title,
+          status: originalTask.status,
+          priority: originalTask.priority,
+          deadline: originalTask.deadline,
+          assignedTo: originalTask.assignedTo,
+        },
+        newValues: {
+          title: task.title,
+          status: task.status,
+          priority: task.priority,
+          deadline: task.deadline,
+          assignedTo: task.assignedTo,
+        },
+        io: req.app.get("io"),
       });
     }
 
@@ -2361,16 +2374,14 @@ router.post("/:id/forward", requireResourceAccess("task"), async (req: Request, 
       );
     }
 
-    await AuditLog.create({
-      userId: req.userId,
-      userName: req.user?.name ?? "Unknown",
+    await recordTaskAuditAndAdminNotification(req, {
+      task: effectiveTask,
       action: "update",
-      resource: "task",
-      resourceId: task._id.toString(),
-      resourceName: task.title,
+      mutationType: "forwarded",
       details: `Task forwarded to ${targetUser.name}`,
-      ip: req.ip,
-      userAgent: req.headers["user-agent"],
+      humanMessage: `${req.user?.name || "An employee"} forwarded task "${effectiveTask.title}" to ${targetUser.name}${note ? ` (Note: ${note})` : ""}`,
+      newValues: { assignedTo: toUserId },
+      io,
     });
 
     res.json({ message: "Task forwarded successfully", task: populated });
@@ -2496,16 +2507,15 @@ router.post("/:id/reassign", requireResourceAccess("task"), async (req: Request,
       );
     }
 
-    await AuditLog.create({
-      userId: req.userId,
-      userName: req.user?.name ?? "Unknown",
+    await recordTaskAuditAndAdminNotification(req, {
+      task: effectiveTask,
       action: "update",
-      resource: "task",
-      resourceId: task._id.toString(),
-      resourceName: task.title,
-      details: `Task reassigned to ${targetUser.name}`,
-      ip: req.ip,
-      userAgent: req.headers["user-agent"],
+      mutationType: "reassigned",
+      details: `Task reassigned from ${fromUser ? "previous assignee" : "unassigned"} to ${targetUser.name}`,
+      humanMessage: `${req.user?.name || "An employee"} reassigned task "${effectiveTask.title}" from ${fromUser ? "previous assignee" : "unassigned"} to ${targetUser.name}${note ? ` (Note: ${note})` : ""}`,
+      previousValues: { assignedTo: fromUser },
+      newValues: { assignedTo: toUserId },
+      io,
     });
 
     res.json({ message: "Task reassigned successfully", task: populated });
@@ -2613,6 +2623,27 @@ router.post("/:id/request-deletion", requireResourceAccess("task"), async (req: 
     if (!task) {
       res.status(404).json({ message: "Task not found" });
       return;
+    }
+
+    if (task.isDeleted) {
+      res.status(400).json({ message: "This task has already been deleted." });
+      return;
+    }
+
+    if (task.pendingDeletion) {
+      const existing = await ApprovalRequest.findOne({
+        entityId: task._id,
+        type: "task_delete",
+        status: "pending",
+      });
+      if (existing) {
+        res.status(409).json({
+          message: "A deletion request is already pending administrator approval for this task.",
+          code: "DELETION_ALREADY_PENDING",
+          approvalRequest: existing,
+        });
+        return;
+      }
     }
 
     const approvalRequest = await ApprovalRequest.create({

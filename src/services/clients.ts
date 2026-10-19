@@ -207,10 +207,47 @@ export function useUpdateClient() {
 
 export function useDeleteClient() {
   const qc = useQueryClient();
-  return useMutation<{ message: string }, Error, string>({
-    mutationFn: (id) => api.delete(`/clients/${id}`),
+  return useMutation<{ message: string }, Error, { id: string; permanent?: boolean } | string>({
+    mutationFn: (param) => {
+      const id = typeof param === "string" ? param : param.id;
+      const permanent = typeof param === "object" ? param.permanent : false;
+      return api.delete(`/clients/${id}${permanent ? "?permanent=true" : ""}`);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: clientKeys.all });
+      qc.invalidateQueries({ queryKey: ["cases"] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["reports"] });
     },
   });
 }
+
+export function useClientDeletionPreview(clientId: string | undefined, enabled = false) {
+  return useQuery<{
+    client: { _id: string; name: string; tag: string; type: string };
+    caseCount: number;
+    taskCount: number;
+    documentCount: number;
+  }>({
+    queryKey: ["clients", clientId, "deletionPreview"],
+    queryFn: () => api.get(`/clients/${clientId}/deletion-preview`),
+    enabled: !!clientId && enabled,
+  });
+}
+
+export function useRecordClientVisit() {
+  const qc = useQueryClient();
+  return useMutation<
+    { message: string; visits: any[] },
+    Error,
+    { clientId: string; purpose: string; notes?: string; caseId?: string; handledBy?: string }
+  >({
+    mutationFn: ({ clientId, ...data }) => api.post(`/clients/${clientId}/visits`, data),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: clientKeys.detail(vars.clientId) });
+      qc.invalidateQueries({ queryKey: ["reports", "clientDetail", vars.clientId] });
+      qc.invalidateQueries({ queryKey: ["reports", "clientReports"] });
+    },
+  });
+}
+

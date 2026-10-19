@@ -21,6 +21,7 @@ interface TaskActionFooterProps {
   isAdmin: boolean;
   handleOpenRejectModal: () => void;
   handleSetStatus: (status: "pending" | "in_progress" | "pending_approval" | "completed") => void;
+  handleOpenRequestDeleteModal?: () => void;
 }
 
 export function TaskActionFooter({
@@ -40,11 +41,12 @@ export function TaskActionFooter({
   isAdmin,
   handleOpenRejectModal,
   handleSetStatus,
+  handleOpenRequestDeleteModal,
 }: TaskActionFooterProps) {
   return (
     <DialogFooter className="mt-6 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 border-t border-border/60 pt-4">
       <div>
-        {isCreatorOrAdmin ? (
+        {isAdmin ? (
           showDeleteConfirm ? (
             <div className="flex flex-wrap items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-2 text-xs animate-in fade-in">
               <span className="font-semibold text-destructive flex items-center gap-1">
@@ -89,7 +91,25 @@ export function TaskActionFooter({
               Delete Task
             </Button>
           )
-        ) : null}
+        ) : (
+          activeTask.pendingDeletion ? (
+            <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/25 px-2.5 py-1 rounded-md font-medium">
+              <Clock size={13} />
+              Deletion Requested (Pending Admin Approval)
+            </span>
+          ) : handleOpenRequestDeleteModal ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleOpenRequestDeleteModal}
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive rounded-md"
+            >
+              <Trash2 size={15} className="mr-1.5" />
+              Request Deletion
+            </Button>
+          ) : null
+        )}
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-2">

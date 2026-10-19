@@ -479,15 +479,17 @@ function EditCallDialogInner({ open, onClose, task }: { open: boolean; onClose: 
             </div>
 
             <DialogFooter className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setShowDeleteConfirm(true)}
-                className="text-destructive hover:bg-destructive/10 border-destructive/30"
-              >
-                <Trash2 size={14} className="mr-1.5" /> Delete
-              </Button>
+              {isAdmin ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="text-destructive hover:bg-destructive/10 border-destructive/30"
+                >
+                  <Trash2 size={14} className="mr-1.5" /> Delete
+                </Button>
+              ) : <div />}
 
               <div className="flex items-center gap-2">
                 <Button type="button" variant="ghost" size="sm" onClick={onClose}>

@@ -31,16 +31,22 @@ import {
   History,
   FolderKanban,
   ArrowUpRight,
+  Printer,
+  Download,
+  Search,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
 import { ErrorState } from "@/components/common/ErrorState";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import { useAuth } from "@/lib/auth";
 import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import {
   useReportsSummary,
   useCaseGrowth,
@@ -50,8 +56,12 @@ import {
   useCaseStatusBreakdown,
   useMyPerformance,
   useDailyEmployeeReport,
+  useClientReports,
+  useClientDetailReport,
+  useEmployeeDetailReport,
   EmployeeDailyReport,
 } from "@/services/reports";
+import { useRecordClientVisit } from "@/services/clients";
 import type { TaskRecord } from "@/services/tasks";
 
 export const Route = createFileRoute("/_shell/reports")({
@@ -127,9 +137,25 @@ function ReportsPage() {
   const isAdmin = user?.role === "admin";
   const navigate = useNavigate();
 
+  // Navigation Tabs: "employees" | "clients" | "firm_analytics"
+  const [activeTab, setActiveTab] = useState<"employees" | "clients" | "firm_analytics">("employees");
+
   // Selected date & employee filter for daily reporting
   const [selectedDate, setSelectedDate] = useState(() => getTodayKolkata());
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
+
+  // Drilldown states for detailed employee & client reports
+  const [drilldownEmployeeId, setDrilldownEmployeeId] = useState<string | null>(null);
+  const [drilldownClientId, setDrilldownClientId] = useState<string | null>(null);
+
+  // Client Reports state & filters
+  const [clientSearch, setClientSearch] = useState("");
+  const [clientTagFilter, setClientTagFilter] = useState("All");
+
+  // Visit recording modal in client drill-down
+  const [showRecordVisitModal, setShowRecordVisitModal] = useState(false);
+  const [visitPurpose, setVisitPurpose] = useState("");
+  const [visitNotes, setVisitNotes] = useState("");
 
   // Task detail dialog modal state
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
@@ -153,6 +179,16 @@ function ReportsPage() {
     { date: selectedDate, employeeId: selectedEmployeeId || undefined },
     isAdmin
   );
+
+  const { data: clientReportsData, isLoading: clientReportsLoading, refetch: refetchClientReports } = useClientReports({
+    search: clientSearch,
+    tag: clientTagFilter !== "All" ? clientTagFilter : undefined,
+  });
+
+  const { data: clientDetailData, isLoading: clientDetailLoading } = useClientDetailReport(drilldownClientId || undefined);
+  const { data: employeeDetailData, isLoading: employeeDetailLoading } = useEmployeeDetailReport(drilldownEmployeeId || undefined);
+
+  const recordVisitMutation = useRecordClientVisit();
 
   const growth = caseGrowthData?.growth ?? [];
   const distribution = practiceData?.distribution ?? [];
@@ -203,18 +239,80 @@ function ReportsPage() {
             : "Your personal performance and work completed. No financial data."
         }
         actions={
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-muted/50 px-3 py-1 text-caption font-medium">
-            <span
-              className={`size-2 rounded-full ${isAdmin ? "bg-primary" : "bg-emerald-500"}`}
-            />
-            <span>Scope: {isAdmin ? "Entire Firm" : "Personal (You)"}</span>
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-muted/50 px-3 py-1 text-caption font-medium">
+              <span
+                className={`size-2 rounded-full ${isAdmin ? "bg-primary" : "bg-emerald-500"}`}
+              />
+              <span>Scope: {isAdmin ? "Entire Firm" : "Personal (You)"}</span>
+            </span>
+          </div>
         }
       />
 
-      {/* ── ADMIN FEATURED: Daily Employee Activity Report (Prominent Top Placement) ── */}
-      {isAdmin && (
-        <section aria-label="Daily Employee Activity Report">
+      {/* ── Top-Level View Selector ── */}
+      <div className="flex items-center border-b border-border/60 pb-1 gap-2 no-print">
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab("employees");
+            setDrilldownEmployeeId(null);
+          }}
+          className={cn(
+            "flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg transition-all",
+            activeTab === "employees"
+              ? "bg-primary text-primary-foreground shadow-xs"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+          )}
+        >
+          <Users size={16} />
+          <span>Employee Reports</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab("clients");
+            setDrilldownClientId(null);
+          }}
+          className={cn(
+            "flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg transition-all",
+            activeTab === "clients"
+              ? "bg-primary text-primary-foreground shadow-xs"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+          )}
+        >
+          <Briefcase size={16} />
+          <span>Client Reports</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("firm_analytics")}
+          className={cn(
+            "flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg transition-all",
+            activeTab === "firm_analytics"
+              ? "bg-primary text-primary-foreground shadow-xs"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+          )}
+        >
+          <BarChart3 size={16} />
+          <span>Firm Analytics</span>
+        </button>
+      </div>
+
+      {/* ── SECTION 1: EMPLOYEE REPORTS & DRILL-DOWN ── */}
+      {activeTab === "employees" && (
+        <>
+          {drilldownEmployeeId ? (
+            <EmployeeDetailReportView
+              employeeId={drilldownEmployeeId}
+              onBack={() => setDrilldownEmployeeId(null)}
+              onOpenTask={handleOpenTask}
+            />
+          ) : (
+            <>
+              {/* Daily Employee Activity Report (Preserved & Enhanced with View Drill-Down) */}
+              {isAdmin && (
+                <section aria-label="Daily Employee Activity Report">
           <SectionCard
             title="Daily Employee Activity Report"
             description="Operational monitoring of employee daily workload, completed tasks, active pending workload, and overdue items."
@@ -403,6 +501,7 @@ function ReportsPage() {
                     report={report}
                     selectedDate={selectedDate}
                     onOpenTask={handleOpenTask}
+                    onDrilldown={() => setDrilldownEmployeeId(report.employee._id)}
                   />
                 ))}
               </div>
@@ -410,168 +509,265 @@ function ReportsPage() {
           </SectionCard>
         </section>
       )}
+            </>
+          )}
+        </>
+      )}
 
-      {/* ── Firm-wide Work Completed (High-level Summary) ── */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {[
-          { label: "Active Cases", value: summary?.activeCases ?? "—", icon: Gavel, change: summary?.period ?? "" },
-          { label: "Total Clients", value: summary?.totalClients ?? "—", icon: TrendingUp, change: summary?.period ?? "" },
-          { label: "Tasks Completed", value: summary?.tasksCompleted ?? "—", icon: CheckSquare, change: summary?.period ?? "" },
-          { label: "Docs Approved", value: summary?.docsApproved ?? "—", icon: FileText, change: summary?.period ?? "" },
-        ].map((item) => (
-          <article key={item.label} className="rounded-xl border border-border bg-card p-5 shadow-soft">
-            <div className="flex items-center gap-3">
-              <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-                <item.icon size={18} strokeWidth={1.75} />
-              </span>
-              <div className="min-w-0">
-                <p className="text-caption text-muted-foreground">{item.label}</p>
-                <p className="num text-section font-semibold">{item.value}</p>
-              </div>
-            </div>
-            <p className="mt-2 text-caption text-success">{item.change}</p>
-          </article>
-        ))}
-      </div>
-
-      {/* ── Analytical Charts Grid ── */}
-      <div className="grid gap-6 xl:grid-cols-2">
-        {/* Case growth */}
-        <SectionCard
-          title="Monthly Case Trajectory"
-          description="Comparison of newly instituted client matters vs. successfully resolved/closed matters."
-          icon={TrendingUp}
-        >
-          <div className="h-72">
-            {growthLoading ? (
-              <div key="growth-loading" className="flex h-full items-center justify-center"><Loader2 className="animate-spin text-muted-foreground" size={24} /></div>
-            ) : growthError ? (
-              <div key="growth-error" className="flex h-full items-center justify-center"><ErrorState title="Couldn't load case growth" onRetry={refetchGrowth} /></div>
-            ) : growth.length === 0 ? (
-              <div key="growth-empty" className="flex h-full items-center justify-center text-muted-foreground text-helper">No historical case data available yet</div>
-            ) : (
-              <CaseGrowthChart key="growth-chart" growth={growth} />
-            )}
-          </div>
-          <p className="mt-2 text-[11px] text-muted-foreground border-t border-border/40 pt-2">
-            Tracks total intake of new client litigation &amp; advisory matters against matters completed or disposed during each calendar month.
-          </p>
-        </SectionCard>
-
-        {/* Practice areas (Wide Label Width to Prevent Overlapping) */}
-        <SectionCard
-          title="Practice Area Distribution"
-          description="Active client matters categorized across specialized legal domains."
-          icon={BarChart3}
-        >
-          <div className="h-72">
-            {practiceLoading ? (
-              <div key="practice-loading" className="flex h-full items-center justify-center"><Loader2 className="animate-spin text-muted-foreground" size={24} /></div>
-            ) : practiceError ? (
-              <div key="practice-error" className="flex h-full items-center justify-center"><ErrorState title="Couldn't load practice areas" onRetry={refetchPractice} /></div>
-            ) : distribution.length === 0 ? (
-              <div key="practice-empty" className="flex h-full items-center justify-center text-muted-foreground text-helper">No active practice area records yet</div>
-            ) : (
-              <PracticeAreaChart key="practice-chart" distribution={distribution} />
-            )}
-          </div>
-          <p className="mt-2 text-[11px] text-muted-foreground border-t border-border/40 pt-2">
-            Displays active matters concentration across practice areas to help partners allocate advocate resources and court appearances effectively.
-          </p>
-        </SectionCard>
-
-        {/* Admin: Top Clients */}
-        {isAdmin && topClients.length > 0 && (
-          <SectionCard title="Top clients" description="Clients with most active matters." icon={Star}>
-            <ul className="space-y-3">
-              {topClients.map((c, i) => (
-                <li key={c.name} className="flex items-center justify-between rounded-md border border-border p-4">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="grid size-9 shrink-0 place-items-center rounded-full bg-primary/10 text-caption font-semibold text-primary">{i + 1}</span>
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">{c.name}</p>
+      {/* ── SECTION 2: CLIENT REPORTS & DRILL-DOWN ── */}
+      {activeTab === "clients" && (
+        <>
+          {drilldownClientId ? (
+            <ClientDetailReportView
+              clientId={drilldownClientId}
+              onBack={() => setDrilldownClientId(null)}
+              onOpenTask={handleOpenTask}
+            />
+          ) : (
+            <section aria-label="Client Reports List" className="space-y-4">
+              <SectionCard
+                title="Client Reports & Matters Overview"
+                description="Master client reporting register with active matter counts, task loads, and office visit histories."
+                icon={Briefcase}
+                actions={
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative">
+                      <Search size={14} className="absolute left-2.5 top-2.5 text-muted-foreground" />
+                      <Input
+                        value={clientSearch}
+                        onChange={(e) => setClientSearch(e.target.value)}
+                        placeholder="Search clients, phone, KYC..."
+                        className="h-8 pl-8 text-xs w-48 sm:w-60 rounded-md"
+                      />
                     </div>
+                    <select
+                      value={clientTagFilter}
+                      onChange={(e) => setClientTagFilter(e.target.value)}
+                      className="h-8 rounded-md border border-border bg-card px-2 text-xs"
+                    >
+                      <option value="All">All Tags</option>
+                      <option value="Active">Active</option>
+                      <option value="VIP">VIP</option>
+                      <option value="Corporate">Corporate</option>
+                      <option value="Individual">Individual</option>
+                      <option value="Archived">Archived</option>
+                    </select>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => window.print()}
+                      className="h-8 text-xs rounded-md"
+                    >
+                      <Printer size={14} className="mr-1.5" /> Print Register
+                    </Button>
                   </div>
-                  <span className="num shrink-0 text-helper font-semibold">{c.cases} cases</span>
-                </li>
-              ))}
-            </ul>
-          </SectionCard>
-        )}
+                }
+              >
+                {clientReportsLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="animate-spin text-muted-foreground" size={24} />
+                  </div>
+                ) : !clientReportsData?.clients || clientReportsData.clients.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-border p-12 text-center bg-card/30">
+                    <Briefcase size={32} className="mx-auto text-muted-foreground/60 mb-2" />
+                    <p className="text-sm font-medium text-foreground">No clients found matching search criteria</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-border text-muted-foreground font-medium bg-muted/30">
+                          <th className="py-2.5 px-3">Client Name</th>
+                          <th className="py-2.5 px-3">Type / Tag</th>
+                          <th className="py-2.5 px-3">Contact</th>
+                          <th className="py-2.5 px-3 text-center">Active Matters</th>
+                          <th className="py-2.5 px-3 text-center">Pending Tasks</th>
+                          <th className="py-2.5 px-3 text-center">Visits</th>
+                          <th className="py-2.5 px-3">Last Visit</th>
+                          <th className="py-2.5 px-3 text-right no-print">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/60">
+                        {clientReportsData.clients.map((c) => (
+                          <tr key={c._id} className="hover:bg-muted/20 transition-colors">
+                            <td className="py-2.5 px-3 font-semibold text-foreground">
+                              {c.name}
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary mr-1">
+                                {c.type}
+                              </span>
+                              <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground">
+                                {c.tag}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-muted-foreground">
+                              <div>{c.phone || "—"}</div>
+                              <div className="text-[10px] truncate max-w-[150px]">{c.email || ""}</div>
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-semibold num">
+                              {c.metrics.activeCases}
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-semibold num">
+                              <span className={c.metrics.pendingTasks > 0 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}>
+                                {c.metrics.pendingTasks}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-semibold num">
+                              {c.visitCount}
+                            </td>
+                            <td className="py-2.5 px-3 text-muted-foreground">
+                              {c.lastVisitAt ? new Date(c.lastVisitAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                            </td>
+                            <td className="py-2.5 px-3 text-right no-print">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setDrilldownClientId(c._id)}
+                                className="h-7 text-xs rounded-md"
+                              >
+                                View Report
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </SectionCard>
+            </section>
+          )}
+        </>
+      )}
 
-        {/* Admin: Employee workload / Non-admin: Personal performance */}
-        {isAdmin ? (
-          <SectionCard title="Employee workload" description="Capacity used this month." icon={Users}>
-            {workloadLoading ? (
-              <div className="flex items-center justify-center py-12"><Loader2 className="animate-spin text-muted-foreground" size={24} /></div>
-            ) : workloadError ? (
-              <ErrorState title="Couldn't load employee workload" onRetry={refetchWorkload} />
-            ) : workloads.length === 0 ? (
-              <div className="py-8 text-center text-helper text-muted-foreground">No workload data yet</div>
-            ) : (
-              <ul className="space-y-4">
-                {workloads.map((w) => (
-                  <li key={w._id}>
-                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-                      <p className="truncate text-helper font-medium">{w.name}</p>
-                      <span className="num text-caption text-muted-foreground">{w.workload}%</span>
-                    </div>
-                    <Progress value={w.workload} className="mt-2 h-1.5" />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </SectionCard>
-        ) : (
-          <SectionCard title="Your performance" description="Your contributions so far." icon={Trophy}>
-            {performanceLoading ? (
-              <div className="flex items-center justify-center py-12"><Loader2 className="animate-spin text-muted-foreground" size={24} /></div>
-            ) : performanceError ? (
-              <ErrorState title="Couldn't load your performance" onRetry={refetchPerformance} />
-            ) : performance.length === 0 ? (
-              <div className="py-8 text-center text-helper text-muted-foreground">No activity recorded yet</div>
-            ) : (
-              <ul className="space-y-4">
-                {performance.map((item) => (
-                  <li key={item.label}>
-                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-                      <p className="truncate text-helper">{item.label}</p>
-                      <span className="num text-caption text-muted-foreground">{item.done}/{item.total}</span>
-                    </div>
-                    <Progress value={item.total > 0 ? (item.done / item.total) * 100 : 0} className="mt-2 h-1.5" />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </SectionCard>
-        )}
-
-        {/* Case status pie */}
-        <SectionCard
-          title="Case Status Distribution"
-          description="Firm matters partitioned by current lifecycle stage."
-          icon={PieIcon}
-        >
-          <div className="h-72">
-            <CaseStatusChart caseStatusBreakdown={caseStatusBreakdown} />
-          </div>
-
-          {/* Quick status summary count pill bar */}
-          <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 border-t border-border/40 pt-3">
+      {/* ── SECTION 3: FIRM ANALYTICS (Charts & High-level Overview) ── */}
+      {activeTab === "firm_analytics" && (
+        <div className="space-y-6">
+          {/* Summary stats */}
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {[
-              { label: "Active", count: caseStatusBreakdown.Active, color: "text-emerald-600 dark:text-emerald-400" },
-              { label: "Urgent", count: caseStatusBreakdown.Urgent, color: "text-rose-600 dark:text-rose-400" },
-              { label: "On Hold", count: caseStatusBreakdown["On Hold"], color: "text-amber-600 dark:text-amber-400" },
-              { label: "Closed", count: caseStatusBreakdown.Closed, color: "text-muted-foreground" },
-            ].map((s) => (
-              <div key={s.label} className="rounded-md bg-muted/40 p-2 text-center">
-                <p className="text-[11px] text-muted-foreground">{s.label}</p>
-                <p className={`num text-base font-semibold ${s.color}`}>{s.count}</p>
-              </div>
+              { label: "Active Cases", value: summary?.activeCases ?? "—", icon: Gavel, change: summary?.period ?? "" },
+              { label: "Total Clients", value: summary?.totalClients ?? "—", icon: TrendingUp, change: summary?.period ?? "" },
+              { label: "Tasks Completed", value: summary?.tasksCompleted ?? "—", icon: CheckSquare, change: summary?.period ?? "" },
+              { label: "Docs Approved", value: summary?.docsApproved ?? "—", icon: FileText, change: summary?.period ?? "" },
+            ].map((item) => (
+              <article key={item.label} className="rounded-xl border border-border bg-card p-5 shadow-soft">
+                <div className="flex items-center gap-3">
+                  <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                    <item.icon size={18} strokeWidth={1.75} />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-caption text-muted-foreground">{item.label}</p>
+                    <p className="num text-section font-semibold">{item.value}</p>
+                  </div>
+                </div>
+                <p className="mt-2 text-caption text-success">{item.change}</p>
+              </article>
             ))}
           </div>
-        </SectionCard>
-      </div>
+
+          {/* Charts Grid */}
+          <div className="grid gap-6 xl:grid-cols-2">
+            <SectionCard
+              title="Monthly Case Trajectory"
+              description="Comparison of newly instituted client matters vs. successfully resolved/closed matters."
+              icon={TrendingUp}
+            >
+              <div className="h-72">
+                {growthLoading ? (
+                  <div className="flex h-full items-center justify-center"><Loader2 className="animate-spin text-muted-foreground" size={24} /></div>
+                ) : growthError ? (
+                  <div className="flex h-full items-center justify-center"><ErrorState title="Couldn't load case growth" onRetry={refetchGrowth} /></div>
+                ) : growth.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-muted-foreground text-helper">No historical case data available yet</div>
+                ) : (
+                  <CaseGrowthChart growth={growth} />
+                )}
+              </div>
+            </SectionCard>
+
+            <SectionCard
+              title="Practice Area Distribution"
+              description="Active client matters categorized across specialized legal domains."
+              icon={BarChart3}
+            >
+              <div className="h-72">
+                {practiceLoading ? (
+                  <div className="flex h-full items-center justify-center"><Loader2 className="animate-spin text-muted-foreground" size={24} /></div>
+                ) : practiceError ? (
+                  <div className="flex h-full items-center justify-center"><ErrorState title="Couldn't load practice areas" onRetry={refetchPractice} /></div>
+                ) : distribution.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-muted-foreground text-helper">No active practice area records yet</div>
+                ) : (
+                  <PracticeAreaChart distribution={distribution} />
+                )}
+              </div>
+            </SectionCard>
+
+            <SectionCard
+              title="Case Status Distribution"
+              description="Firm matters partitioned by current lifecycle stage."
+              icon={PieIcon}
+            >
+              <div className="h-72">
+                <CaseStatusChart caseStatusBreakdown={caseStatusBreakdown} />
+              </div>
+              <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 border-t border-border/40 pt-3">
+                {[
+                  { label: "Active", count: caseStatusBreakdown.Active, color: "text-emerald-600 dark:text-emerald-400" },
+                  { label: "Urgent", count: caseStatusBreakdown.Urgent, color: "text-rose-600 dark:text-rose-400" },
+                  { label: "On Hold", count: caseStatusBreakdown["On Hold"], color: "text-amber-600 dark:text-amber-400" },
+                  { label: "Closed", count: caseStatusBreakdown.Closed, color: "text-muted-foreground" },
+                ].map((s) => (
+                  <div key={s.label} className="rounded-md bg-muted/40 p-2 text-center">
+                    <p className="text-[11px] text-muted-foreground">{s.label}</p>
+                    <p className={`num text-base font-semibold ${s.color}`}>{s.count}</p>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+
+            {isAdmin ? (
+              <SectionCard title="Employee workload" description="Capacity used this month." icon={Users}>
+                {workloadLoading ? (
+                  <div className="flex items-center justify-center py-12"><Loader2 className="animate-spin text-muted-foreground" size={24} /></div>
+                ) : workloadError ? (
+                  <ErrorState title="Couldn't load employee workload" onRetry={refetchWorkload} />
+                ) : workloads.length === 0 ? (
+                  <div className="py-8 text-center text-helper text-muted-foreground">No workload data yet</div>
+                ) : (
+                  <ul className="space-y-4">
+                    {workloads.map((w) => (
+                      <li key={w._id}>
+                        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+                          <p className="truncate text-helper font-medium">{w.name}</p>
+                          <span className="num text-caption text-muted-foreground">{w.workload}%</span>
+                        </div>
+                        <Progress value={w.workload} className="mt-2 h-1.5" />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </SectionCard>
+            ) : (
+              <SectionCard title="Your performance" description="Your contributions so far." icon={Trophy}>
+                <ul className="space-y-4">
+                  {performance.map((item) => (
+                    <li key={item.label}>
+                      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+                        <p className="truncate text-helper">{item.label}</p>
+                        <span className="num text-caption text-muted-foreground">{item.done}/{item.total}</span>
+                      </div>
+                      <Progress value={item.total > 0 ? (item.done / item.total) * 100 : 0} className="mt-2 h-1.5" />
+                    </li>
+                  ))}
+                </ul>
+              </SectionCard>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Authoritative Task Detail Dialog Modal */}
       {selectedTask && (
@@ -770,9 +966,10 @@ interface EmployeeDailyReportCardProps {
   report: EmployeeDailyReport;
   selectedDate: string;
   onOpenTask: (task: TaskRecord) => void;
+  onDrilldown?: () => void;
 }
 
-function EmployeeDailyReportCard({ report, selectedDate, onOpenTask }: EmployeeDailyReportCardProps) {
+function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown }: EmployeeDailyReportCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [reportMode, setReportMode] = useState<"daily" | "allTime">("daily");
   const [dailySubTab, setDailySubTab] = useState<
@@ -869,6 +1066,23 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask }: EmployeeD
             </div>
           )}
 
+          {onDrilldown && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDrilldown();
+              }}
+              className="h-8 gap-1.5 rounded-lg text-xs font-medium text-primary hover:bg-primary/10"
+              title="Open full employee report and drill-down history"
+            >
+              <ExternalLink size={13} />
+              <span>Full Report</span>
+            </Button>
+          )}
+
           {/* Toggle Indicator Button */}
           <Button
             type="button"
@@ -880,7 +1094,7 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask }: EmployeeD
             }}
             className="h-8 gap-1.5 rounded-lg text-xs font-medium"
           >
-            <span>{expanded ? "Hide Report" : "View Report"}</span>
+            <span>{expanded ? "Hide" : "Expand"}</span>
             {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </Button>
         </div>
@@ -1543,6 +1757,558 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask }: EmployeeD
               )}
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Employee Detailed Report & Drilldown Component
+// ---------------------------------------------------------------------------
+
+function EmployeeDetailReportView({
+  employeeId,
+  onBack,
+  onOpenTask,
+}: {
+  employeeId: string;
+  onBack: () => void;
+  onOpenTask: (task: TaskRecord) => void;
+}) {
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const { data, isLoading, isError, refetch } = useEmployeeDetailReport(employeeId, {
+    startDate: startDate || undefined,
+    endDate: endDate || undefined,
+  });
+
+  const navigate = useNavigate();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="animate-spin text-muted-foreground" size={32} />
+      </div>
+    );
+  }
+
+  if (isError || !data?.employee) {
+    return (
+      <div className="rounded-xl border border-border p-8 text-center bg-card">
+        <AlertTriangle size={32} className="mx-auto text-destructive mb-2" />
+        <p className="font-semibold text-foreground">Failed to load employee detailed report</p>
+        <Button variant="outline" size="sm" onClick={() => refetch()} className="mt-4">
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  const { employee, metrics, tasks, cases, auditLogs } = data;
+
+  return (
+    <div className="space-y-6 printable-report">
+      {/* Header and Print Actions */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-4 no-print">
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" onClick={onBack} className="rounded-md h-8">
+            <ChevronLeft size={16} className="mr-1" /> Back to List
+          </Button>
+          <div>
+            <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
+              <span>{employee.name}</span>
+              <span className="text-xs font-normal text-muted-foreground bg-muted px-2 py-0.5 rounded">
+                {employee.role?.replace(/_/g, " ")}
+              </span>
+            </h2>
+            <p className="text-xs text-muted-foreground">{employee.email}</p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span>Filter:</span>
+            <Input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="h-8 text-xs w-32 rounded-md"
+            />
+            <span>to</span>
+            <Input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="h-8 text-xs w-32 rounded-md"
+            />
+          </div>
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => window.print()}
+            className="h-8 text-xs rounded-md shadow-xs"
+          >
+            <Printer size={14} className="mr-1.5" /> Print / Export PDF
+          </Button>
+        </div>
+      </div>
+
+      {/* Printable Report Header */}
+      <div className="hidden print:block border-b border-gray-300 pb-4 mb-4">
+        <h1 className="text-xl font-bold">S & S ASSOCIATES LEGAL-TECH LLP</h1>
+        <h2 className="text-sm font-semibold text-gray-700 mt-1">OFFICIAL EMPLOYEE WORKLOAD & PERFORMANCE AUDIT</h2>
+        <div className="grid grid-cols-2 text-xs mt-3">
+          <div>
+            <p><strong>Employee:</strong> {employee.name} ({employee.role})</p>
+            <p><strong>Email:</strong> {employee.email}</p>
+          </div>
+          <div className="text-right">
+            <p><strong>Report Generated:</strong> {new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</p>
+            {startDate && endDate ? <p><strong>Date Filter:</strong> {startDate} to {endDate}</p> : null}
+          </div>
+        </div>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="text-[11px] text-muted-foreground">Assigned Tasks</p>
+          <p className="num text-xl font-bold text-foreground mt-1">{metrics.totalTasks}</p>
+        </div>
+        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+          <p className="text-[11px] text-emerald-600 dark:text-emerald-400">Completed Tasks</p>
+          <p className="num text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{metrics.completedTasks}</p>
+        </div>
+        <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
+          <p className="text-[11px] text-blue-600 dark:text-blue-400">Completion Rate</p>
+          <p className="num text-xl font-bold text-blue-600 dark:text-blue-400 mt-1">{metrics.completionRate}%</p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="text-[11px] text-muted-foreground">Active Matters</p>
+          <p className="num text-xl font-bold text-foreground mt-1">{metrics.activeCases}</p>
+        </div>
+      </div>
+
+      {/* Tasks Register */}
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        <div className="p-4 border-b border-border bg-muted/30 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <CheckSquare size={16} className="text-primary" />
+            <span>Assigned Tasks Register ({tasks.length})</span>
+          </h3>
+        </div>
+        {tasks.length === 0 ? (
+          <div className="p-8 text-center text-xs text-muted-foreground">No tasks matching date filters</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-border text-muted-foreground bg-muted/20 font-medium">
+                  <th className="py-2.5 px-3">Title</th>
+                  <th className="py-2.5 px-3">Case / Matter</th>
+                  <th className="py-2.5 px-3">Client</th>
+                  <th className="py-2.5 px-3">Priority</th>
+                  <th className="py-2.5 px-3">Deadline</th>
+                  <th className="py-2.5 px-3">Status</th>
+                  <th className="py-2.5 px-3 text-right no-print">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/60">
+                {tasks.map((t) => (
+                  <tr key={t._id} className="hover:bg-muted/15">
+                    <td className="py-2.5 px-3 font-medium text-foreground">{t.title}</td>
+                    <td className="py-2.5 px-3 text-muted-foreground">{t.caseId?.title || "—"}</td>
+                    <td className="py-2.5 px-3 text-muted-foreground">{t.clientId?.name || "—"}</td>
+                    <td className="py-2.5 px-3">
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                        t.priority === "High" ? "bg-rose-500/10 text-rose-600" : "bg-muted text-muted-foreground"
+                      }`}>
+                        {t.priority}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 text-muted-foreground">
+                      {t.deadline ? new Date(t.deadline).toLocaleDateString("en-IN") : "—"}
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <span className="capitalize text-[11px] font-medium text-foreground">
+                        {t.status.replace(/_/g, " ")}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 text-right no-print">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onOpenTask(t as any)}
+                        className="h-6 text-xs text-primary px-2"
+                      >
+                        Inspect
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Cases Assigned Register */}
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        <div className="p-4 border-b border-border bg-muted/30">
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <Briefcase size={16} className="text-primary" />
+            <span>Assigned Matters & Cases ({cases.length})</span>
+          </h3>
+        </div>
+        {cases.length === 0 ? (
+          <div className="p-8 text-center text-xs text-muted-foreground">No matters currently assigned</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-border text-muted-foreground bg-muted/20 font-medium">
+                  <th className="py-2.5 px-3">Matter No</th>
+                  <th className="py-2.5 px-3">Title</th>
+                  <th className="py-2.5 px-3">Practice</th>
+                  <th className="py-2.5 px-3">Court</th>
+                  <th className="py-2.5 px-3">Next Hearing</th>
+                  <th className="py-2.5 px-3">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/60">
+                {cases.map((c) => (
+                  <tr key={c._id} className="hover:bg-muted/15">
+                    <td className="py-2.5 px-3 font-mono font-medium text-primary">{c.number}</td>
+                    <td className="py-2.5 px-3 font-medium text-foreground">{c.title}</td>
+                    <td className="py-2.5 px-3 text-muted-foreground">{c.practice || "General"}</td>
+                    <td className="py-2.5 px-3 text-muted-foreground">{c.court || "—"}</td>
+                    <td className="py-2.5 px-3 text-muted-foreground">
+                      {c.nextHearing ? new Date(c.nextHearing).toLocaleDateString("en-IN") : "—"}
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-foreground">
+                        {c.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Audit Trail */}
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        <div className="p-4 border-b border-border bg-muted/30">
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <Activity size={16} className="text-primary" />
+            <span>Chronological Action Log ({auditLogs.length})</span>
+          </h3>
+        </div>
+        {auditLogs.length === 0 ? (
+          <div className="p-8 text-center text-xs text-muted-foreground">No activity logs recorded</div>
+        ) : (
+          <div className="divide-y divide-border/60 p-2">
+            {auditLogs.map((log) => (
+              <div key={log._id} className="p-2.5 flex items-center justify-between text-xs hover:bg-muted/10 rounded">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-foreground uppercase text-[10px] bg-muted px-1.5 py-0.5 rounded">
+                      {log.action}
+                    </span>
+                    <span className="font-medium text-foreground">{log.resource}</span>
+                    {log.resourceName && <span className="text-muted-foreground">({log.resourceName})</span>}
+                  </div>
+                  {log.details && <p className="text-[11px] text-muted-foreground mt-0.5">{log.details}</p>}
+                </div>
+                <div className="text-right text-[11px] font-mono text-muted-foreground">
+                  {new Date(log.createdAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Client Detailed Report & Drilldown Component
+// ---------------------------------------------------------------------------
+
+function ClientDetailReportView({
+  clientId,
+  onBack,
+  onOpenTask,
+}: {
+  clientId: string;
+  onBack: () => void;
+  onOpenTask: (task: TaskRecord) => void;
+}) {
+  const { data, isLoading, isError, refetch } = useClientDetailReport(clientId);
+  const [showVisitModal, setShowVisitModal] = useState(false);
+  const [visitPurpose, setVisitPurpose] = useState("");
+  const [visitNotes, setVisitNotes] = useState("");
+  const recordVisitMutation = useRecordClientVisit();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="animate-spin text-muted-foreground" size={32} />
+      </div>
+    );
+  }
+
+  if (isError || !data?.client) {
+    return (
+      <div className="rounded-xl border border-border p-8 text-center bg-card">
+        <AlertTriangle size={32} className="mx-auto text-destructive mb-2" />
+        <p className="font-semibold text-foreground">Failed to load client detailed report</p>
+        <Button variant="outline" size="sm" onClick={() => refetch()} className="mt-4">
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  const { client, metrics, cases, tasks, documents, auditLogs } = data;
+
+  const handleRecordVisit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!visitPurpose.trim()) return;
+    try {
+      await recordVisitMutation.mutateAsync({
+        clientId: client._id,
+        purpose: visitPurpose.trim(),
+        notes: visitNotes.trim() || undefined,
+      });
+      toast.success("Client visit recorded successfully");
+      setShowVisitModal(false);
+      setVisitPurpose("");
+      setVisitNotes("");
+      refetch();
+    } catch {
+      toast.error("Failed to record visit");
+    }
+  };
+
+  return (
+    <div className="space-y-6 printable-report">
+      {/* Action Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-4 no-print">
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" onClick={onBack} className="rounded-md h-8">
+            <ChevronLeft size={16} className="mr-1" /> Back to Register
+          </Button>
+          <div>
+            <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
+              <span>{client.name}</span>
+              <span className="text-xs font-normal text-primary bg-primary/10 px-2 py-0.5 rounded">
+                {client.type} · {client.tag}
+              </span>
+            </h2>
+            <p className="text-xs text-muted-foreground">{client.phone} {client.email ? `· ${client.email}` : ""}</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowVisitModal(true)}
+            className="h-8 text-xs rounded-md"
+          >
+            <Calendar size={14} className="mr-1.5" /> Record Office Visit
+          </Button>
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => window.print()}
+            className="h-8 text-xs rounded-md shadow-xs"
+          >
+            <Printer size={14} className="mr-1.5" /> Print / Export PDF
+          </Button>
+        </div>
+      </div>
+
+      {/* Printable Report Header */}
+      <div className="hidden print:block border-b border-gray-300 pb-4 mb-4">
+        <h1 className="text-xl font-bold">S & S ASSOCIATES LEGAL-TECH LLP</h1>
+        <h2 className="text-sm font-semibold text-gray-700 mt-1">CLIENT DOSSIER & COMPREHENSIVE MATTER REPORT</h2>
+        <div className="grid grid-cols-2 text-xs mt-3">
+          <div>
+            <p><strong>Client Name:</strong> {client.name}</p>
+            <p><strong>Classification:</strong> {client.type} · {client.tag}</p>
+            <p><strong>Contact:</strong> {client.phone} | {client.email || "N/A"}</p>
+          </div>
+          <div className="text-right">
+            <p><strong>Report Date:</strong> {new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" })}</p>
+            <p><strong>Total Recorded Office Visits:</strong> {metrics.totalVisits}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Metrics Row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="text-[11px] text-muted-foreground">Active Matters</p>
+          <p className="num text-xl font-bold text-foreground mt-1">{metrics.activeCases}</p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="text-[11px] text-muted-foreground">Pending Tasks</p>
+          <p className="num text-xl font-bold text-amber-600 dark:text-amber-400 mt-1">{metrics.pendingTasks}</p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="text-[11px] text-muted-foreground">Law-Firm Visits</p>
+          <p className="num text-xl font-bold text-foreground mt-1">{metrics.totalVisits}</p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="text-[11px] text-muted-foreground">Documents Filed</p>
+          <p className="num text-xl font-bold text-foreground mt-1">{metrics.totalDocuments}</p>
+        </div>
+      </div>
+
+      {/* Office Visits History */}
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        <div className="p-4 border-b border-border bg-muted/30 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <Calendar size={16} className="text-primary" />
+            <span>Law-Firm Visit History ({client.visits?.length || 0})</span>
+          </h3>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowVisitModal(true)}
+            className="h-7 text-xs text-primary no-print"
+          >
+            + Record Visit
+          </Button>
+        </div>
+        {!client.visits || client.visits.length === 0 ? (
+          <div className="p-6 text-center text-xs text-muted-foreground">No law-firm office visits recorded yet</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-border text-muted-foreground bg-muted/20 font-medium">
+                  <th className="py-2.5 px-3">Date & Time</th>
+                  <th className="py-2.5 px-3">Purpose</th>
+                  <th className="py-2.5 px-3">Handled By</th>
+                  <th className="py-2.5 px-3">Notes</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/60">
+                {client.visits.map((v, idx) => (
+                  <tr key={v._id || idx} className="hover:bg-muted/15">
+                    <td className="py-2.5 px-3 font-mono text-muted-foreground">
+                      {new Date(v.visitedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
+                    </td>
+                    <td className="py-2.5 px-3 font-semibold text-foreground">{v.purpose}</td>
+                    <td className="py-2.5 px-3 text-muted-foreground">
+                      {v.handledBy ? (typeof v.handledBy === "object" ? v.handledBy.name : v.handledBy) : "Partner / Staff"}
+                    </td>
+                    <td className="py-2.5 px-3 text-muted-foreground">{v.notes || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Linked Matters */}
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        <div className="p-4 border-b border-border bg-muted/30">
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <Briefcase size={16} className="text-primary" />
+            <span>Client Matters & Cases Register ({cases.length})</span>
+          </h3>
+        </div>
+        {cases.length === 0 ? (
+          <div className="p-6 text-center text-xs text-muted-foreground">No cases linked to this client</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-border text-muted-foreground bg-muted/20 font-medium">
+                  <th className="py-2.5 px-3">Matter No</th>
+                  <th className="py-2.5 px-3">Title</th>
+                  <th className="py-2.5 px-3">Practice</th>
+                  <th className="py-2.5 px-3">Court</th>
+                  <th className="py-2.5 px-3">Assignee</th>
+                  <th className="py-2.5 px-3">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/60">
+                {cases.map((c) => (
+                  <tr key={c._id} className="hover:bg-muted/15">
+                    <td className="py-2.5 px-3 font-mono font-medium text-primary">{c.number}</td>
+                    <td className="py-2.5 px-3 font-medium text-foreground">{c.title}</td>
+                    <td className="py-2.5 px-3 text-muted-foreground">{c.practice || "General"}</td>
+                    <td className="py-2.5 px-3 text-muted-foreground">{c.court || "—"}</td>
+                    <td className="py-2.5 px-3 text-muted-foreground">{c.assignedTo?.name || "Unassigned"}</td>
+                    <td className="py-2.5 px-3">
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-foreground">
+                        {c.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Record Visit Modal */}
+      {showVisitModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-card border border-border rounded-xl p-6 max-w-md w-full shadow-lift space-y-4">
+            <h3 className="text-base font-bold text-foreground">Record Client Office Visit</h3>
+            <form onSubmit={handleRecordVisit} className="space-y-3.5">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Visit Purpose *</Label>
+                <Input
+                  value={visitPurpose}
+                  onChange={(e) => setVisitPurpose(e.target.value)}
+                  placeholder="e.g. Document signing, consultation, fee discussion"
+                  className="text-xs rounded-md"
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Notes / Consultation Summary</Label>
+                <Input
+                  value={visitNotes}
+                  onChange={(e) => setVisitNotes(e.target.value)}
+                  placeholder="Summary of meeting notes"
+                  className="text-xs rounded-md"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowVisitModal(false)}
+                  className="rounded-md"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={!visitPurpose.trim() || recordVisitMutation.isPending}
+                  className="rounded-md"
+                >
+                  {recordVisitMutation.isPending ? "Saving…" : "Save Visit Record"}
+                </Button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

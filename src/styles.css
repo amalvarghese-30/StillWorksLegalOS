@@ -643,3 +643,63 @@ html, body {
   }
 }
 
+/* ── Professional Legal Report Print Styles ── */
+@media print {
+  /* Hide interactive application chrome, sidebar, nav, header buttons, and dialogs */
+  nav,
+  aside,
+  header,
+  .no-print,
+  button,
+  [role="dialog"],
+  .PageHeader-actions {
+    display: none !important;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #111827 !important;
+    font-size: 11pt !important;
+    line-height: 1.4 !important;
+  }
+
+  .printable-report {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Keep table headers repeated across pages and prevent row breaks */
+  thead {
+    display: table-header-group;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Clean table borders in print */
+  table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+  }
+
+  th, td {
+    border: 1px solid #d1d5db !important;
+    padding: 6px 10px !important;
+  }
+
+  /* Force background colors on badges / status indicators */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  @page {
+    margin: 1.5cm;
+    size: A4 portrait;
+  }
+}
+
+

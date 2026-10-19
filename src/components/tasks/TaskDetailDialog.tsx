@@ -1200,6 +1200,7 @@ function TaskDetailDialogInner({ open, onClose, task }: { open: boolean; onClose
             isAdmin={isAdmin}
             handleOpenRejectModal={handleOpenRejectModal}
             handleSetStatus={handleSetStatus}
+            handleOpenRequestDeleteModal={handleOpenRequestDeleteModal}
           />
         </DialogContent>
       </Dialog>

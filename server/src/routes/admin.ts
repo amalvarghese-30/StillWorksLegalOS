@@ -2366,6 +2366,264 @@ router.get("/reports/my-performance", async (req: Request, res: Response) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// GET /api/admin/reports/client-reports — all clients overview for reports
+// ---------------------------------------------------------------------------
+
+router.get("/reports/client-reports", requireAdminOrPermission("reports"), async (req: Request, res: Response) => {
+  try {
+    const { search, tag, type } = req.query as { search?: string; tag?: string; type?: string };
+    const filter: Record<string, unknown> = {};
+
+    if (tag && tag !== "All") filter["tag"] = tag;
+    if (type && type !== "All") filter["type"] = type;
+
+    if (search && search.trim()) {
+      const escaped = search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const rx = new RegExp(escaped, "i");
+      filter["$or"] = [{ name: rx }, { phone: rx }, { email: rx }, { aadhar: rx }, { pan: rx }];
+    }
+
+    const clients = await Client.find(filter)
+      .select("name email phone type tag kyc promisedCompletionDate visits createdAt updatedAt")
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    const clientReports = await Promise.all(
+      clients.map(async (c) => {
+        const cId = c._id;
+        const [activeCases, totalCases, pendingTasks, completedTasks, docCount] = await Promise.all([
+          Case.countDocuments({
+            $or: [{ "parties.clientId": cId }, { "parties.name": c.name, "parties.type": "client" }],
+            status: { $nin: ["Closed", "Archived"] },
+            isDeleted: { $ne: true },
+          }),
+          Case.countDocuments({
+            $or: [{ "parties.clientId": cId }, { "parties.name": c.name, "parties.type": "client" }],
+            isDeleted: { $ne: true },
+          }),
+          Task.countDocuments({
+            clientId: cId,
+            status: { $in: ["pending", "in_progress", "pending_approval"] },
+            isDeleted: { $ne: true },
+          }),
+          Task.countDocuments({
+            clientId: cId,
+            status: "completed",
+            isDeleted: { $ne: true },
+          }),
+          DocumentModel.countDocuments({
+            clientId: cId,
+          }),
+        ]);
+
+        return {
+          _id: c._id.toString(),
+          name: c.name,
+          email: c.email || "",
+          phone: c.phone || "",
+          type: c.type,
+          tag: c.tag,
+          kyc: c.kyc,
+          promisedCompletionDate: c.promisedCompletionDate || null,
+          visitCount: Array.isArray((c as any).visits) ? (c as any).visits.length : 0,
+          lastVisitAt: Array.isArray((c as any).visits) && (c as any).visits.length > 0
+            ? (c as any).visits[(c as any).visits.length - 1].visitedAt
+            : null,
+          metrics: {
+            activeCases,
+            totalCases,
+            pendingTasks,
+            completedTasks,
+            documentCount: docCount,
+          },
+          createdAt: c.createdAt,
+          updatedAt: c.updatedAt,
+        };
+      })
+    );
+
+    res.json({ clients: clientReports });
+  } catch (err) {
+    console.error("[reports] Client reports list error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/admin/reports/client-detail/:id — full client report drill-down
+// ---------------------------------------------------------------------------
+
+router.get("/reports/client-detail/:id", requireAdminOrPermission("reports"), async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!id || !Types.ObjectId.isValid(id)) {
+      res.status(400).json({ message: "Invalid client ID format" });
+      return;
+    }
+
+    const clientObjId = new Types.ObjectId(id);
+    const client = await Client.findById(clientObjId)
+      .populate("assignedTo", "name email role")
+      .populate("visits.handledBy", "name email role")
+      .populate("visits.recordedBy", "name email role")
+      .lean();
+
+    if (!client) {
+      res.status(404).json({ message: "Client not found" });
+      return;
+    }
+
+    const [cases, tasks, documents, auditLogs] = await Promise.all([
+      Case.find({
+        $or: [{ "parties.clientId": clientObjId }, { "parties.name": client.name, "parties.type": "client" }],
+        isDeleted: { $ne: true },
+      })
+        .populate("assignedTo", "name email role")
+        .sort({ updatedAt: -1 })
+        .lean(),
+
+      Task.find({
+        clientId: clientObjId,
+        isDeleted: { $ne: true },
+      })
+        .populate("assignedTo", "name email role")
+        .populate("caseId", "title number courtCaseId")
+        .sort({ createdAt: -1 })
+        .lean(),
+
+      DocumentModel.find({ clientId: clientObjId })
+        .populate("uploadedBy", "name email")
+        .populate("caseId", "title number")
+        .sort({ createdAt: -1 })
+        .lean(),
+
+      AuditLog.find({
+        $or: [
+          { resource: "client", resourceId: id },
+          { resource: "case", resourceName: new RegExp(client.name, "i") },
+        ],
+      })
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .lean(),
+    ]);
+
+    const activeCasesCount = cases.filter((c) => !["Closed", "Archived"].includes(c.status)).length;
+    const completedTasksCount = tasks.filter((t) => t.status === "completed").length;
+    const pendingTasksCount = tasks.filter((t) => ["pending", "in_progress", "pending_approval"].includes(t.status)).length;
+    const overdueTasksCount = tasks.filter((t) => t.status !== "completed" && t.deadline && new Date(t.deadline) < new Date()).length;
+
+    res.json({
+      client,
+      metrics: {
+        totalCases: cases.length,
+        activeCases: activeCasesCount,
+        closedCases: cases.length - activeCasesCount,
+        totalTasks: tasks.length,
+        completedTasks: completedTasksCount,
+        pendingTasks: pendingTasksCount,
+        overdueTasks: overdueTasksCount,
+        totalDocuments: documents.length,
+        totalVisits: (client as any).visits?.length || 0,
+      },
+      cases,
+      tasks,
+      documents,
+      auditLogs,
+    });
+  } catch (err) {
+    console.error("[reports] Client detail report error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/admin/reports/employee-detail/:id — full employee report drill-down
+// ---------------------------------------------------------------------------
+
+router.get("/reports/employee-detail/:id", requireAdminOrPermission("reports"), async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!id || !Types.ObjectId.isValid(id)) {
+      res.status(400).json({ message: "Invalid employee ID format" });
+      return;
+    }
+
+    const empObjId = new Types.ObjectId(id);
+    const employee = await User.findById(empObjId).select("name email role title status createdAt").lean();
+    if (!employee) {
+      res.status(404).json({ message: "Employee not found" });
+      return;
+    }
+
+    const { startDate, endDate } = req.query as { startDate?: string; endDate?: string };
+    const dateFilter: Record<string, unknown> = {};
+    if (startDate || endDate) {
+      const range: Record<string, Date> = {};
+      if (startDate) range["$gte"] = new Date(startDate);
+      if (endDate) range["$lte"] = new Date(endDate);
+      dateFilter["createdAt"] = range;
+    }
+
+    const [allTasks, cases, auditLogs] = await Promise.all([
+      Task.find({
+        $or: [{ assignedTo: empObjId }, { assignedUsers: empObjId }],
+        isDeleted: { $ne: true },
+        ...dateFilter,
+      })
+        .populate("caseId", "title number courtCaseId")
+        .populate("clientId", "name phone")
+        .sort({ updatedAt: -1 })
+        .lean(),
+
+      Case.find({
+        $or: [{ assignedTo: empObjId }, { assignedUsers: empObjId }],
+        isDeleted: { $ne: true },
+      })
+        .select("number title court practice status priority nextHearing completedAt updatedAt parties")
+        .sort({ updatedAt: -1 })
+        .lean(),
+
+      AuditLog.find({
+        userId: empObjId,
+        ...dateFilter,
+      })
+        .sort({ createdAt: -1 })
+        .limit(100)
+        .lean(),
+    ]);
+
+    const completedTasks = allTasks.filter((t) => t.status === "completed");
+    const pendingTasks = allTasks.filter((t) => ["pending", "in_progress", "pending_approval"].includes(t.status));
+    const overdueTasks = allTasks.filter((t) => t.status !== "completed" && t.deadline && new Date(t.deadline) < new Date());
+    const activeCases = cases.filter((c) => !["Closed", "Archived"].includes(c.status));
+
+    const completionRate = allTasks.length > 0 ? Math.round((completedTasks.length / allTasks.length) * 100) : 0;
+
+    res.json({
+      employee,
+      metrics: {
+        totalTasks: allTasks.length,
+        completedTasks: completedTasks.length,
+        pendingTasks: pendingTasks.length,
+        overdueTasks: overdueTasks.length,
+        completionRate,
+        totalCases: cases.length,
+        activeCases: activeCases.length,
+        closedCases: cases.length - activeCases.length,
+        totalAuditLogs: auditLogs.length,
+      },
+      tasks: allTasks,
+      cases,
+      auditLogs,
+    });
+  } catch (err) {
+    console.error("[reports] Employee detail report error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
 // ===========================================================================
 // DATA INTEGRITY ROUTES
 // ===========================================================================

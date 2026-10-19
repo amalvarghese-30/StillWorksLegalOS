@@ -26,9 +26,10 @@ import {
 import { MobileSectionNav } from "@/components/layout/MobileSectionNav";
 import {
   useClient, useUpdateClient, useDeleteClient,
-  useClientCases, useClientDocuments,
-  type ClientRecord,
+  useClientCases, useClientDocuments, useClientDeletionPreview,
+  type ClientRecord, type ClientDocument,
 } from "@/services/clients";
+import { useAuth } from "@/lib/auth";
 import { EditClientDialog } from "@/components/clients/EditClientDialog";
 import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
 import { downloadDocument } from "@/services/documents";
@@ -143,6 +144,8 @@ function QuickEditDropdown({ record }: { record: ClientRecord }) {
 
 function ClientProfile() {
   const { clientId } = Route.useParams();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const { data, isLoading, isError } = useClient(clientId);
   const record = data?.client;
   const [active, setActive] = useState("overview");
@@ -151,6 +154,9 @@ function ClientProfile() {
   const deleteClient = useDeleteClient();
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showPermanentDeleteConfirm, setShowPermanentDeleteConfirm] = useState(false);
+  const [confirmDeleteInput, setConfirmDeleteInput] = useState("");
+  const { data: deletionPreview, isLoading: isPreviewLoading } = useClientDeletionPreview(clientId, showPermanentDeleteConfirm);
   const [showAddCaseDialog, setShowAddCaseDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<ClientDocument | null>(null);
@@ -306,6 +312,19 @@ function ClientProfile() {
               <Archive size={15} strokeWidth={1.75} />
               Archive Client
             </Button>
+            {isAdmin && (
+              <Button
+                variant="outline"
+                className="rounded-md text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
+                onClick={() => {
+                  setConfirmDeleteInput("");
+                  setShowPermanentDeleteConfirm(true);
+                }}
+              >
+                <Trash2 size={15} strokeWidth={1.75} />
+                Delete Client
+              </Button>
+            )}
           </div>
         }
       />
@@ -874,6 +893,73 @@ function ClientProfile() {
             >
               {isDeleting ? "Archiving…" : "Archive Client"}
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Admin-only Permanent Cascade Deletion Dialog */}
+      <AlertDialog open={showPermanentDeleteConfirm} onOpenChange={setShowPermanentDeleteConfirm}>
+        <AlertDialogContent className="rounded-xl border border-destructive/30 bg-card p-6 shadow-lift max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-title font-semibold text-destructive flex items-center gap-2">
+              <AlertTriangle size={20} className="text-destructive" />
+              Permanent Client & Matter Deletion
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-helper text-muted-foreground mt-2 space-y-3">
+              <p>
+                You are about to permanently delete <strong className="text-foreground">{record.name}</strong> and all associated legal records.
+                <span className="text-destructive font-medium block mt-1">This action is irreversible and cannot be undone.</span>
+              </p>
+
+              {isPreviewLoading ? (
+                <div className="flex items-center gap-2 py-3 text-muted-foreground text-xs">
+                  <Loader2 size={16} className="animate-spin" />
+                  Calculating linked dependencies…
+                </div>
+              ) : deletionPreview ? (
+                <div className="rounded-lg border border-border bg-muted/40 p-3 text-xs space-y-1.5">
+                  <p className="font-semibold text-foreground">Records that will be permanently destroyed:</p>
+                  <ul className="list-disc list-inside text-muted-foreground space-y-0.5">
+                    <li><strong className="text-foreground">{deletionPreview.caseCount}</strong> Linked Cases & Legal Matters</li>
+                    <li><strong className="text-foreground">{deletionPreview.taskCount}</strong> Tasks & Task Reminders</li>
+                    <li><strong className="text-foreground">{deletionPreview.documentCount}</strong> Uploaded Documents & Storage Files</li>
+                  </ul>
+                </div>
+              ) : null}
+
+              <div className="pt-2">
+                <Label className="text-xs font-semibold text-foreground block mb-1">
+                  Type <span className="text-destructive font-mono uppercase">{record.name}</span> to confirm permanent deletion:
+                </Label>
+                <Input
+                  value={confirmDeleteInput}
+                  onChange={(e) => setConfirmDeleteInput(e.target.value)}
+                  placeholder={record.name}
+                  className="text-xs rounded-md"
+                />
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-5 flex justify-end gap-2">
+            <AlertDialogCancel className="rounded-md" disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <Button
+              variant="destructive"
+              className="rounded-md"
+              disabled={isDeleting || confirmDeleteInput.trim().toLowerCase() !== record.name.trim().toLowerCase()}
+              onClick={async () => {
+                setIsDeleting(true);
+                try {
+                  await deleteClient.mutateAsync({ id: clientId, permanent: true });
+                  setShowPermanentDeleteConfirm(false);
+                  navigate({ to: "/clients" });
+                } catch (err) {
+                  console.error("Failed to permanently delete client:", err);
+                  setIsDeleting(false);
+                }
+              }}
+            >
+              {isDeleting ? "Deleting Permanently…" : "Delete Everything Permanently"}
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

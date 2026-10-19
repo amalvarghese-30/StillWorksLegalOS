@@ -19,6 +19,17 @@ export interface SubClient {
   notes?: string;
 }
 
+export interface ClientVisit {
+  _id?: mongoose.Types.ObjectId;
+  visitedAt: Date;
+  purpose: string;
+  notes?: string;
+  caseId?: mongoose.Types.ObjectId | null;
+  handledBy?: mongoose.Types.ObjectId | null;
+  recordedBy?: mongoose.Types.ObjectId | null;
+  createdAt?: Date;
+}
+
 export interface IClient extends Document {
   type: ClientType;
   tag: ClientTag;
@@ -42,6 +53,7 @@ export interface IClient extends Document {
     area: string;
   };
   subClients: SubClient[];
+  visits: ClientVisit[];
   createdBy: mongoose.Types.ObjectId;
   updatedBy: mongoose.Types.ObjectId;
   createdAt: Date;
@@ -50,7 +62,17 @@ export interface IClient extends Document {
 
 // ---------------------------------------------------------------------------
 // Schema
-// ---------------------------------------------------------------------------
+const ClientVisitSchema = new Schema<ClientVisit>(
+  {
+    visitedAt: { type: Date, required: true, default: Date.now },
+    purpose: { type: String, required: true, trim: true },
+    notes: { type: String, default: "" },
+    caseId: { type: Schema.Types.ObjectId, ref: "Case", default: null },
+    handledBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    recordedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+  },
+  { _id: true, timestamps: { createdAt: true, updatedAt: false } }
+);
 
 const SubClientSchema = new Schema<SubClient>(
   {
@@ -106,6 +128,7 @@ const ClientSchema = new Schema<IClient>(
       default: undefined,
     },
     subClients: { type: [SubClientSchema], default: [] },
+    visits: { type: [ClientVisitSchema], default: [] },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", index: true },
     updatedBy: { type: Schema.Types.ObjectId, ref: "User" },
   },

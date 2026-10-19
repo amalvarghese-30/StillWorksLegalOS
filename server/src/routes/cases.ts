@@ -13,6 +13,7 @@ import { NotificationService } from "../services/notifications.js";
 import { requireAuth } from "../middleware/auth.js";
 import { canAccessCase, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
 import { normaliseAssignees, buildInitialAssignmentHistory } from "../utils/assigneeNormalization.js";
+import { recordCaseAuditAndAdminNotification } from "../utils/auditNotificationHelper.js";
 
 const router = Router();
 
@@ -1001,21 +1002,17 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
 
     const updatedFields = Object.keys(updates).filter((k) => k !== "updatedBy");
     const updateDetails = updatedFields.length > 0 ? `Updated ${updatedFields.join(", ")}` : "Case updated";
+    const humanMessage = `${req.user?.name || "An employee"} updated case "${record.number} — ${record.title}": ${updateDetails}`;
 
-    await AuditLog.logWithActivity(
-      {
-        userId: new mongoose.Types.ObjectId(req.userId!),
-        userName: req.user?.name ?? "Unknown",
-        action: "update",
-        resource: "case",
-        resourceId: record._id.toString(),
-        resourceName: record.title,
-        details: updateDetails,
-        ip: req.ip,
-        userAgent: req.headers["user-agent"],
-      },
-      req.app.get("io")
-    );
+    await recordCaseAuditAndAdminNotification(req, {
+      caseRecord: record,
+      action: "update",
+      mutationType: "details_update",
+      details: updateDetails,
+      humanMessage,
+      diffs: updatedFields,
+      io: req.app.get("io"),
+    });
 
     const io = req.app.get("io");
     if (io) {
@@ -1282,20 +1279,15 @@ router.post("/:id/forward", requireResourceAccess("case"), async (req: Request, 
       );
     }
 
-    await AuditLog.logWithActivity(
-      {
-        userId: new mongoose.Types.ObjectId(req.userId!),
-        userName: req.user?.name ?? "Unknown",
-        action: "update",
-        resource: "case",
-        resourceId: record._id.toString(),
-        resourceName: record.title,
-        details: `Case forwarded to ${targetUser.name}`,
-        ip: req.ip,
-        userAgent: req.headers["user-agent"],
-      },
-      io
-    );
+    await recordCaseAuditAndAdminNotification(req, {
+      caseRecord: record,
+      action: "update",
+      mutationType: "forwarded",
+      details: `Case forwarded to ${targetUser.name}`,
+      humanMessage: `${req.user?.name || "An employee"} forwarded case "${record.number} — ${record.title}" to ${targetUser.name}${note ? ` (Note: ${note})` : ""}`,
+      newValues: { assignedTo: toUserId },
+      io,
+    });
 
     res.json({ message: "Case forwarded successfully", case: populatedRecord });
   } catch (err: any) {
@@ -1392,20 +1384,15 @@ router.post("/:id/reassign", requireResourceAccess("case"), async (req: Request,
       );
     }
 
-    await AuditLog.logWithActivity(
-      {
-        userId: new mongoose.Types.ObjectId(req.userId!),
-        userName: req.user?.name ?? "Unknown",
-        action: "update",
-        resource: "case",
-        resourceId: record._id.toString(),
-        resourceName: record.title,
-        details: `Case reassigned to ${targetUser.name}`,
-        ip: req.ip,
-        userAgent: req.headers["user-agent"],
-      },
-      io
-    );
+    await recordCaseAuditAndAdminNotification(req, {
+      caseRecord: record,
+      action: "update",
+      mutationType: "reassigned",
+      details: `Case reassigned to ${targetUser.name}`,
+      humanMessage: `${req.user?.name || "An employee"} reassigned case "${record.number} — ${record.title}" to ${targetUser.name}${note ? ` (Note: ${note})` : ""}`,
+      newValues: { assignedTo: toUserId },
+      io,
+    });
 
     res.json({ message: "Case reassigned successfully", case: populatedRecord });
   } catch (err: any) {

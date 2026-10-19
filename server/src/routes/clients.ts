@@ -2,8 +2,11 @@ import { Router, type Request, type Response } from "express";
 import { Types } from "mongoose";
 import { Client } from "../models/Client.js";
 import { Case } from "../models/Case.js";
+import { Task } from "../models/Task.js";
+import { Reminder } from "../models/Reminder.js";
 import { DocumentModel } from "../models/Document.js";
 import { AuditLog } from "../models/AuditLog.js";
+import { StorageService } from "../services/storage.js";
 import { requireAuth } from "../middleware/auth.js";
 import {
   canAccessClient,
@@ -617,24 +620,210 @@ router.patch("/:id", requireResourceAccess("client"), async (req: Request, res: 
 });
 
 // ---------------------------------------------------------------------------
-// DELETE /api/clients/:id — archive client (preserve historical case data)
-// Hard-delete is prohibited: historical case parties reference client records.
+// POST /api/clients/:id/visits — record law-firm visit
 // ---------------------------------------------------------------------------
 
-router.delete("/:id", requireResourceAccess("client"), async (req: Request, res: Response) => {
+router.post("/:id/visits", requireResourceAccess("client"), async (req: Request, res: Response) => {
   try {
-    // Archive semantics: set tag to "Archived". The client record is retained
-    // so that existing case parties and audit logs continue to resolve correctly.
-    const client = await Client.findByIdAndUpdate(
-      req.params["id"],
-      { $set: { tag: "Archived", updatedBy: req.userId } },
-      { new: true }
-    );
+    const { id } = req.params;
+    if (!id || !Types.ObjectId.isValid(id)) {
+      res.status(400).json({ message: "Invalid client ID format" });
+      return;
+    }
 
+    const { purpose, notes, caseId, handledBy } = req.body as {
+      purpose: string;
+      notes?: string;
+      caseId?: string;
+      handledBy?: string;
+    };
+
+    if (!purpose || !purpose.trim()) {
+      res.status(400).json({ message: "Visit purpose is required" });
+      return;
+    }
+
+    const client = await Client.findById(id);
     if (!client) {
       res.status(404).json({ message: "Client not found" });
       return;
     }
+
+    const newVisit = {
+      visitedAt: new Date(),
+      purpose: purpose.trim(),
+      notes: notes ? notes.trim() : undefined,
+      caseId: caseId && Types.ObjectId.isValid(caseId) ? new Types.ObjectId(caseId) : undefined,
+      handledBy: handledBy && Types.ObjectId.isValid(handledBy) ? new Types.ObjectId(handledBy) : new Types.ObjectId(req.userId!),
+      recordedBy: new Types.ObjectId(req.userId!),
+    };
+
+    client.visits.push(newVisit as any);
+    await client.save();
+
+    await AuditLog.create({
+      userId: req.userId,
+      userName: req.user?.name ?? "Unknown",
+      action: "create",
+      resource: "client",
+      resourceId: client._id.toString(),
+      resourceName: client.name,
+      details: `Recorded client office visit: "${purpose.trim()}"`,
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    const populated = await Client.findById(id)
+      .populate("visits.handledBy", "name email role")
+      .populate("visits.recordedBy", "name email role")
+      .lean();
+
+    res.status(201).json({
+      message: "Client visit recorded successfully",
+      visits: (populated as any)?.visits || [],
+    });
+  } catch (err) {
+    console.error("[clients] Record visit error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/clients/:id/deletion-preview — preview cascade deletion impact (Admin only)
+// ---------------------------------------------------------------------------
+
+router.get("/:id/deletion-preview", async (req: Request, res: Response) => {
+  try {
+    if (req.user?.role !== "admin") {
+      res.status(403).json({ message: "Only administrators can preview or perform client deletion" });
+      return;
+    }
+
+    const { id } = req.params;
+    if (!id || !Types.ObjectId.isValid(id)) {
+      res.status(400).json({ message: "Invalid client ID format" });
+      return;
+    }
+
+    const client = await Client.findById(id).select("_id name tag type").lean();
+    if (!client) {
+      res.status(404).json({ message: "Client not found" });
+      return;
+    }
+
+    const clientObjId = new Types.ObjectId(id);
+    const [caseCount, taskCount, docCount] = await Promise.all([
+      Case.countDocuments({
+        $or: [{ "parties.clientId": clientObjId }, { "parties.name": client.name, "parties.type": "client" }],
+      }),
+      Task.countDocuments({ clientId: clientObjId }),
+      DocumentModel.countDocuments({ clientId: clientObjId }),
+    ]);
+
+    res.json({
+      client,
+      caseCount,
+      taskCount,
+      documentCount: docCount,
+    });
+  } catch (err) {
+    console.error("[clients] Deletion preview error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/clients/:id — client deletion
+// Supports:
+// 1) Soft-delete / Archive (default / backward compatible for legal records)
+// 2) Full cascade permanent deletion (when ?permanent=true is passed by Admin)
+// ---------------------------------------------------------------------------
+
+router.delete("/:id", async (req: Request, res: Response) => {
+  try {
+    const isPermanent = req.query["permanent"] === "true";
+
+    // Non-admin check: Only admin can delete/archive client
+    if (req.user?.role !== "admin") {
+      res.status(403).json({ message: "Only administrators are authorized to archive or delete clients" });
+      return;
+    }
+
+    const { id } = req.params;
+    if (!id || !Types.ObjectId.isValid(id)) {
+      res.status(400).json({ message: "Invalid client ID format" });
+      return;
+    }
+
+    const client = await Client.findById(id);
+    if (!client) {
+      res.status(404).json({ message: "Client not found" });
+      return;
+    }
+
+    const clientObjId = new Types.ObjectId(id);
+
+    if (isPermanent) {
+      // 1. Find all linked documents to delete physical storage files and DB records
+      const documents = await DocumentModel.find({ clientId: clientObjId }).lean();
+      for (const doc of documents) {
+        if (doc.storagePath) {
+          try {
+            await StorageService.delete(doc.storagePath);
+          } catch (storageErr) {
+            console.warn(`[clients] Failed to delete storage file ${doc.storagePath}:`, storageErr);
+          }
+        }
+      }
+      await DocumentModel.deleteMany({ clientId: clientObjId });
+
+      // 2. Cascade delete tasks & linked reminders
+      const tasks = await Task.find({ clientId: clientObjId }).select("_id").lean();
+      const taskIds = tasks.map((t) => t._id);
+      if (taskIds.length > 0) {
+        await Reminder.deleteMany({ sourceType: "task", sourceId: { $in: taskIds } });
+      }
+      await Task.deleteMany({ clientId: clientObjId });
+
+      // 3. Delete cases linked to this client
+      const deletedCases = await Case.deleteMany({
+        $or: [{ "parties.clientId": clientObjId }, { "parties.name": client.name, "parties.type": "client" }],
+      });
+
+      // 4. Delete the client itself
+      await Client.findByIdAndDelete(clientObjId);
+
+      // 5. Create audit log
+      await AuditLog.create({
+        userId: req.userId,
+        userName: req.user?.name ?? "Unknown",
+        action: "delete",
+        resource: "client",
+        resourceId: client._id.toString(),
+        resourceName: client.name,
+        details: `Administrator permanently deleted client "${client.name}" and cascaded ${deletedCases.deletedCount} cases, ${tasks.length} tasks, ${documents.length} documents.`,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+      });
+
+      const io = req.app.get("io");
+      if (io) {
+        io.emit("client:deleted", {
+          clientId: client._id.toString(),
+        });
+      }
+
+      res.json({
+        message: "Client and all associated cases, tasks, and files permanently deleted",
+        deletedClientId: client._id.toString(),
+      });
+      return;
+    }
+
+    // Default: Soft-delete / Archive
+    client.tag = "Archived";
+    client.updatedBy = new Types.ObjectId(req.userId!);
+    await client.save();
 
     await AuditLog.create({
       userId: req.userId,
@@ -657,9 +846,13 @@ router.delete("/:id", requireResourceAccess("client"), async (req: Request, res:
 
     res.json({ message: "Client archived", client });
   } catch (err) {
-    console.error("[clients] Archive error:", err);
+    console.error("[clients] Delete error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 });
+
+function casesCountCleaned(c: any): number {
+  return typeof c === "number" ? c : 0;
+}
 
 export default router;

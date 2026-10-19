@@ -17,12 +17,15 @@ import {
   FileText,
   Check,
   AlertCircle,
+  Briefcase,
+  CheckSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useCreateClient, type CreateClientPayload, type SubClient } from "@/services/clients";
+import { useCreateCase, type CaseTaskPayload } from "@/services/cases";
 import { useEmployees } from "@/services/admin";
 import { toSafeIso } from "@/lib/dates";
 import {
@@ -122,6 +125,13 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
   const [showProperty, setShowProperty] = useState(false);
   const [showSubClient, setShowSubClient] = useState(false);
 
+  // Optional Onboarding Case & Tasks State
+  const [createInitialCase, setCreateInitialCase] = useState(false);
+  const [caseTitle, setCaseTitle] = useState("");
+  const [casePractice, setCasePractice] = useState("Property");
+  const [initialTasks, setInitialTasks] = useState<Array<{ title: string; priority: "High" | "Medium" | "Low"; assignedTo: string[]; deadline: string }>>([]);
+  const [isCreatingCase, setIsCreatingCase] = useState(false);
+
   const [fieldErrors, setFieldErrors] = useState<FormErrors>({});
   const [subClientErrors, setSubClientErrors] = useState<{
     [idx: number]: { name?: string; relationship?: string; phone?: string; email?: string };
@@ -132,7 +142,8 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
   const employees = empData?.employees ?? [];
 
   const createClient = useCreateClient();
-  const isPending = createClient.isPending;
+  const createCase = useCreateCase();
+  const isPending = createClient.isPending || isCreatingCase;
   const isError = createClient.isError;
 
   if (!open) return null;
@@ -321,15 +332,59 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
     };
 
     createClient.mutate(payload, {
-      onSuccess: () => {
+      onSuccess: async (clientRes) => {
+        const newClient = clientRes.client;
+
+        if (createInitialCase && caseTitle.trim()) {
+          setIsCreatingCase(true);
+          try {
+            const caseTasksPayload: CaseTaskPayload[] = initialTasks
+              .filter((t) => t.title.trim())
+              .map((t) => ({
+                title: t.title.trim(),
+                priority: t.priority,
+                deadline: t.deadline ? toSafeIso(t.deadline) ?? undefined : undefined,
+                assignedTo: t.assignedTo.length > 0 ? t.assignedTo : undefined,
+                assignedUsers: t.assignedTo.length > 0 ? t.assignedTo : undefined,
+              }));
+
+            await createCase.mutateAsync({
+              title: caseTitle.trim(),
+              practice: casePractice,
+              status: "Active",
+              priority: "Medium",
+              parties: [
+                {
+                  clientId: newClient._id,
+                  name: newClient.name,
+                  role: "Client",
+                  type: "client",
+                },
+              ],
+              tasks: caseTasksPayload.length > 0 ? caseTasksPayload : undefined,
+            });
+
+            toast.success(`Client and initial matter "${caseTitle.trim()}" created successfully`);
+          } catch (caseErr: any) {
+            console.error("Failed to create initial case for client:", caseErr);
+            toast.error("Client created, but failed to create initial matter. You can add the case manually.");
+          } finally {
+            setIsCreatingCase(false);
+          }
+        } else {
+          toast.success("Client created successfully");
+        }
+
         setForm(EMPTY_FORM);
         setSubClients([]);
         setShowProperty(false);
         setShowSubClient(false);
+        setCreateInitialCase(false);
+        setCaseTitle("");
+        setInitialTasks([]);
         setFieldErrors({});
         setSubClientErrors({});
         setGeneralError(null);
-        toast.success("Client created successfully");
         onClose();
       },
       onError: (err: any) => {
@@ -771,6 +826,161 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                 >
                   <Plus size={16} /> Add sub-client
                 </button>
+              </div>
+            )}
+          </div>
+
+          {/* ── Optional Initial Matter / Case & Initial Tasks Onboarding ── */}
+          <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 sm:p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Briefcase size={18} className="text-primary" />
+                <div>
+                  <h4 className="text-sm font-semibold text-foreground">Initial Matter / Case (Optional)</h4>
+                  <p className="text-xs text-muted-foreground">Onboard this client directly with an active matter and initial assignments.</p>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant={createInitialCase ? "default" : "outline"}
+                size="sm"
+                className="rounded-md text-xs h-8"
+                onClick={() => setCreateInitialCase(!createInitialCase)}
+              >
+                {createInitialCase ? "Matter Enabled" : "+ Create Matter"}
+              </Button>
+            </div>
+
+            {createInitialCase && (
+              <div className="space-y-4 pt-2 border-t border-primary/10 animate-in fade-in-50">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div className="space-y-1.5">
+                    <Label className="text-helper font-medium">Matter Title *</Label>
+                    <Input
+                      value={caseTitle}
+                      onChange={(e) => setCaseTitle(e.target.value)}
+                      placeholder="e.g. Title Clearance & Search Report"
+                      className="h-9 rounded-md bg-card text-xs"
+                      required={createInitialCase}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-helper font-medium">Practice Area</Label>
+                    <Input
+                      value={casePractice}
+                      onChange={(e) => setCasePractice(e.target.value)}
+                      placeholder="e.g. Property, Litigation, Corporate"
+                      className="h-9 rounded-md bg-card text-xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Initial Tasks Section */}
+                <div className="space-y-2 pt-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                      <CheckSquare size={14} className="text-primary" />
+                      Initial Action Items & Tasks ({initialTasks.length})
+                    </Label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs text-primary h-7 px-2 hover:bg-primary/10"
+                      onClick={() =>
+                        setInitialTasks((prev) => [
+                          ...prev,
+                          { title: "", priority: "Medium", assignedTo: [], deadline: "" },
+                        ])
+                      }
+                    >
+                      <Plus size={13} className="mr-1" /> Add Task
+                    </Button>
+                  </div>
+
+                  {initialTasks.map((t, tIdx) => (
+                    <div key={tIdx} className="rounded-lg border border-border bg-card p-3 space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <Input
+                          value={t.title}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setInitialTasks((prev) =>
+                              prev.map((item, idx) => (idx === tIdx ? { ...item, title: val } : item))
+                            );
+                          }}
+                          placeholder="Task title (e.g. Collect Property Deeds)"
+                          className="h-8 text-xs rounded-md flex-1"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setInitialTasks((prev) => prev.filter((_, idx) => idx !== tIdx))}
+                          className="text-muted-foreground hover:text-destructive p-1"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <div>
+                          <Label className="text-[10px] text-muted-foreground">Priority</Label>
+                          <select
+                            value={t.priority}
+                            onChange={(e) => {
+                              const val = e.target.value as "High" | "Medium" | "Low";
+                              setInitialTasks((prev) =>
+                                prev.map((item, idx) => (idx === tIdx ? { ...item, priority: val } : item))
+                              );
+                            }}
+                            className="h-7 w-full rounded-md border border-border bg-card px-2 text-[11px]"
+                          >
+                            <option value="High">High Priority</option>
+                            <option value="Medium">Medium Priority</option>
+                            <option value="Low">Low Priority</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <Label className="text-[10px] text-muted-foreground">Deadline</Label>
+                          <Input
+                            type="date"
+                            value={t.deadline}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setInitialTasks((prev) =>
+                                prev.map((item, idx) => (idx === tIdx ? { ...item, deadline: val } : item))
+                              );
+                            }}
+                            className="h-7 text-[11px] rounded-md"
+                          />
+                        </div>
+
+                        <div>
+                          <Label className="text-[10px] text-muted-foreground">Assignee</Label>
+                          <select
+                            value={t.assignedTo[0] || ""}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setInitialTasks((prev) =>
+                                prev.map((item, idx) =>
+                                  idx === tIdx ? { ...item, assignedTo: val ? [val] : [] } : item
+                                )
+                              );
+                            }}
+                            className="h-7 w-full rounded-md border border-border bg-card px-2 text-[11px]"
+                          >
+                            <option value="">Unassigned (Defaults to Creator)</option>
+                            {employees.map((emp) => (
+                              <option key={emp._id} value={emp._id}>
+                                {emp.name} ({emp.role})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>

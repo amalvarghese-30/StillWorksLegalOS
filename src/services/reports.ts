@@ -282,3 +282,203 @@ export function useTaskStatusBreakdown() {
     refetchInterval: 60_000,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Client Reports & Drilldown Types & Hooks
+// ---------------------------------------------------------------------------
+
+export interface ClientReportItem {
+  _id: string;
+  name: string;
+  email: string;
+  phone: string;
+  type: "Individual" | "Corporate";
+  tag: string;
+  kyc: string;
+  promisedCompletionDate: string | null;
+  visitCount: number;
+  lastVisitAt: string | null;
+  metrics: {
+    activeCases: number;
+    totalCases: number;
+    pendingTasks: number;
+    completedTasks: number;
+    documentCount: number;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClientReportsResponse {
+  clients: ClientReportItem[];
+}
+
+export interface ClientVisitItem {
+  _id?: string;
+  visitedAt: string;
+  purpose: string;
+  notes?: string;
+  caseId?: string;
+  handledBy?: { _id: string; name: string; email: string };
+  recordedBy?: { _id: string; name: string; email: string };
+}
+
+export interface ClientDetailReportResponse {
+  client: {
+    _id: string;
+    name: string;
+    email?: string;
+    phone?: string;
+    address?: string;
+    type: "Individual" | "Corporate";
+    tag: string;
+    kyc: string;
+    notes?: string;
+    promisedCompletionDate?: string | null;
+    visits?: ClientVisitItem[];
+    subClients?: Array<{ name: string; relationship: string; phone?: string; email?: string }>;
+    propertyDetails?: { address?: string; surveyNo?: string; chsName?: string; sector?: string; plot?: string; area?: string };
+    assignedTo?: Array<{ _id: string; name: string; email: string; role?: string }>;
+    createdAt: string;
+    updatedAt: string;
+  };
+  metrics: {
+    totalCases: number;
+    activeCases: number;
+    closedCases: number;
+    totalTasks: number;
+    completedTasks: number;
+    pendingTasks: number;
+    overdueTasks: number;
+    totalDocuments: number;
+    totalVisits: number;
+  };
+  cases: Array<{
+    _id: string;
+    number: string;
+    courtCaseId?: string;
+    title: string;
+    practice?: string;
+    court?: string;
+    status: string;
+    priority: string;
+    nextHearing?: string | null;
+    assignedTo?: { _id: string; name: string; email: string } | null;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  tasks: Array<{
+    _id: string;
+    title: string;
+    priority: "High" | "Medium" | "Low";
+    status: string;
+    deadline?: string | null;
+    assignedTo?: { _id: string; name: string; email: string } | null;
+    caseId?: { _id: string; title: string; number: string; courtCaseId?: string } | null;
+    createdAt: string;
+  }>;
+  documents: Array<{
+    _id: string;
+    name: string;
+    kind: string;
+    sizeFormatted?: string;
+    state: string;
+    createdAt: string;
+    uploadedBy?: { _id: string; name: string } | null;
+    caseId?: { _id: string; title: string; number: string } | null;
+  }>;
+  auditLogs: Array<{
+    _id: string;
+    action: string;
+    resource: string;
+    details?: string;
+    createdAt: string;
+    userName?: string;
+  }>;
+}
+
+export interface EmployeeDetailReportResponse {
+  employee: {
+    _id: string;
+    name: string;
+    email: string;
+    role: string;
+    title?: string;
+    status: string;
+    createdAt: string;
+  };
+  metrics: {
+    totalTasks: number;
+    completedTasks: number;
+    pendingTasks: number;
+    overdueTasks: number;
+    completionRate: number;
+    totalCases: number;
+    activeCases: number;
+    closedCases: number;
+    totalAuditLogs: number;
+  };
+  tasks: Array<{
+    _id: string;
+    title: string;
+    priority: "High" | "Medium" | "Low";
+    status: string;
+    deadline?: string | null;
+    caseId?: { _id: string; title: string; number: string; courtCaseId?: string } | null;
+    clientId?: { _id: string; name: string; phone?: string } | null;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  cases: Array<{
+    _id: string;
+    number: string;
+    title: string;
+    court?: string;
+    practice?: string;
+    status: string;
+    priority?: string;
+    nextHearing?: string | null;
+    completedAt?: string;
+    updatedAt: string;
+  }>;
+  auditLogs: Array<{
+    _id: string;
+    action: string;
+    resource: string;
+    resourceName?: string;
+    details?: string;
+    createdAt: string;
+  }>;
+}
+
+export function useClientReports(params?: { search?: string; tag?: string; type?: string }) {
+  const query = new URLSearchParams();
+  if (params?.search) query.set("search", params.search);
+  if (params?.tag) query.set("tag", params.tag);
+  if (params?.type) query.set("type", params.type);
+  const qStr = query.toString();
+  return useQuery<ClientReportsResponse>({
+    queryKey: ["reports", "clientReports", qStr],
+    queryFn: () => api.get(`/admin/reports/client-reports${qStr ? `?${qStr}` : ""}`),
+  });
+}
+
+export function useClientDetailReport(clientId: string | undefined) {
+  return useQuery<ClientDetailReportResponse>({
+    queryKey: ["reports", "clientDetail", clientId],
+    queryFn: () => api.get(`/admin/reports/client-detail/${clientId}`),
+    enabled: !!clientId,
+  });
+}
+
+export function useEmployeeDetailReport(employeeId: string | undefined, dateRange?: { startDate?: string; endDate?: string }) {
+  const query = new URLSearchParams();
+  if (dateRange?.startDate) query.set("startDate", dateRange.startDate);
+  if (dateRange?.endDate) query.set("endDate", dateRange.endDate);
+  const qStr = query.toString();
+  return useQuery<EmployeeDetailReportResponse>({
+    queryKey: ["reports", "employeeDetail", employeeId, qStr],
+    queryFn: () => api.get(`/admin/reports/employee-detail/${employeeId}${qStr ? `?${qStr}` : ""}`),
+    enabled: !!employeeId,
+  });
+}
