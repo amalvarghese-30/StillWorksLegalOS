@@ -21,6 +21,7 @@ import {
   CheckSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
@@ -117,6 +118,7 @@ interface FormErrors {
   email?: string;
   aadhar?: string;
   pan?: string;
+  caseTitle?: string;
 }
 
 export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
@@ -287,6 +289,11 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
       }
     });
 
+    // Case Title validation if initial case creation is toggled on
+    if (createInitialCase && !caseTitle.trim()) {
+      errors.caseTitle = "Matter / Case title is required when initial case is enabled";
+    }
+
     if (Object.keys(errors).length > 0 || hasScErrors) {
       setFieldErrors(errors);
       setSubClientErrors(scErrors);
@@ -397,7 +404,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Add new client</DialogTitle>
           <DialogDescription>
@@ -831,42 +838,71 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
           </div>
 
           {/* ── Optional Initial Matter / Case & Initial Tasks Onboarding ── */}
-          <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 sm:p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Briefcase size={18} className="text-primary" />
+          <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 sm:p-5 space-y-4">
+            <div className="flex items-start sm:items-center justify-between gap-3">
+              <div className="flex items-start sm:items-center gap-3">
+                <div className="pt-0.5 sm:pt-0">
+                  <Checkbox
+                    id="toggle-initial-case"
+                    checked={createInitialCase}
+                    onCheckedChange={(checked) => setCreateInitialCase(Boolean(checked))}
+                    className="size-5 border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
+                  />
+                </div>
                 <div>
-                  <h4 className="text-sm font-semibold text-foreground">Initial Matter / Case (Optional)</h4>
-                  <p className="text-xs text-muted-foreground">Onboard this client directly with an active matter and initial assignments.</p>
+                  <Label
+                    htmlFor="toggle-initial-case"
+                    className="text-sm font-semibold text-foreground cursor-pointer flex items-center gap-2"
+                  >
+                    <Briefcase size={16} className="text-primary shrink-0" />
+                    Create an initial case for this client (Optional)
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Onboard this client directly with an active matter and assign initial tasks.
+                  </p>
                 </div>
               </div>
               <Button
                 type="button"
                 variant={createInitialCase ? "default" : "outline"}
                 size="sm"
-                className="rounded-md text-xs h-8"
+                className="rounded-md text-xs h-8 shrink-0"
                 onClick={() => setCreateInitialCase(!createInitialCase)}
               >
-                {createInitialCase ? "Matter Enabled" : "+ Create Matter"}
+                {createInitialCase ? "Enabled" : "+ Enable Case"}
               </Button>
             </div>
 
             {createInitialCase && (
-              <div className="space-y-4 pt-2 border-t border-primary/10 animate-in fade-in-50">
+              <div className="space-y-4 pt-3 border-t border-primary/20 animate-in fade-in-50">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div className="space-y-1.5">
-                    <Label className="text-helper font-medium">Matter Title *</Label>
+                    <Label htmlFor="case-title" className="text-helper font-medium">Matter / Case Title *</Label>
                     <Input
+                      id="case-title"
                       value={caseTitle}
-                      onChange={(e) => setCaseTitle(e.target.value)}
+                      onChange={(e) => {
+                        setCaseTitle(e.target.value);
+                        if (fieldErrors.caseTitle) {
+                          setFieldErrors((prev) => {
+                            const next = { ...prev };
+                            delete next.caseTitle;
+                            return next;
+                          });
+                        }
+                      }}
                       placeholder="e.g. Title Clearance & Search Report"
-                      className="h-9 rounded-md bg-card text-xs"
+                      className={`h-9 rounded-md bg-card text-xs ${fieldErrors.caseTitle ? "border-destructive focus-visible:ring-destructive" : ""}`}
                       required={createInitialCase}
                     />
+                    {fieldErrors.caseTitle && (
+                      <p className="text-caption text-destructive font-medium">{fieldErrors.caseTitle}</p>
+                    )}
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-helper font-medium">Practice Area</Label>
+                    <Label htmlFor="case-practice" className="text-helper font-medium">Practice Area</Label>
                     <Input
+                      id="case-practice"
                       value={casePractice}
                       onChange={(e) => setCasePractice(e.target.value)}
                       placeholder="e.g. Property, Litigation, Corporate"
@@ -880,13 +916,13 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                   <div className="flex items-center justify-between">
                     <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                       <CheckSquare size={14} className="text-primary" />
-                      Initial Action Items & Tasks ({initialTasks.length})
+                      Initial Action Items &amp; Tasks ({initialTasks.length})
                     </Label>
                     <Button
                       type="button"
-                      variant="ghost"
+                      variant="outline"
                       size="sm"
-                      className="text-xs text-primary h-7 px-2 hover:bg-primary/10"
+                      className="text-xs text-primary border-primary/30 h-7 px-2.5 hover:bg-primary/10"
                       onClick={() =>
                         setInitialTasks((prev) => [
                           ...prev,
@@ -894,9 +930,15 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                         ])
                       }
                     >
-                      <Plus size={13} className="mr-1" /> Add Task
+                      <Plus size={13} className="mr-1" /> Add Initial Task
                     </Button>
                   </div>
+
+                  {initialTasks.length === 0 && (
+                    <p className="text-xs text-muted-foreground italic bg-background/50 rounded-md p-2.5 border border-dashed border-border text-center">
+                      No initial tasks added yet. Click &quot;+ Add Initial Task&quot; to assign tasks to your team right away.
+                    </p>
+                  )}
 
                   {initialTasks.map((t, tIdx) => (
                     <div key={tIdx} className="rounded-lg border border-border bg-card p-3 space-y-2.5">
@@ -915,7 +957,8 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                         <button
                           type="button"
                           onClick={() => setInitialTasks((prev) => prev.filter((_, idx) => idx !== tIdx))}
-                          className="text-muted-foreground hover:text-destructive p-1"
+                          className="text-muted-foreground hover:text-destructive p-1 rounded-sm"
+                          title="Remove task"
                         >
                           <Trash2 size={14} />
                         </button>
