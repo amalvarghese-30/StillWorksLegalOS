@@ -11,7 +11,12 @@ export const getRouter = () => {
     defaultOptions: {
       queries: {
         staleTime: 30_000,
-        retry: 1,
+        retry: (failureCount, error: any) => {
+          if (error?.status === 401 || error?.status === 403 || error?.isForbidden) {
+            return false;
+          }
+          return failureCount < 1;
+        },
       },
     },
   });

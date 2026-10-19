@@ -476,7 +476,27 @@ export function useUpdatePreferences() {
   });
 }
 
-export function useApprovals(params?: ApprovalQueryParams, options?: { enabled?: boolean }) {
+export function useApprovals(
+  paramsOrOptions?: ApprovalQueryParams | { enabled?: boolean },
+  options?: { enabled?: boolean }
+) {
+  let params: ApprovalQueryParams | undefined;
+  let opts: { enabled?: boolean } | undefined = options;
+
+  if (paramsOrOptions && typeof paramsOrOptions === "object") {
+    // If the object only provides `{ enabled: ... }` and not standard query params
+    const filterKeys = ["status", "category", "search", "submittedToday", "thisMonth", "sortBy", "page", "limit"];
+    const keys = Object.keys(paramsOrOptions);
+    const isOptionsObject = keys.length > 0 && keys.every((k) => k === "enabled") && !keys.some((k) => filterKeys.includes(k));
+
+    if (isOptionsObject) {
+      opts = paramsOrOptions as { enabled?: boolean };
+      params = undefined;
+    } else {
+      params = paramsOrOptions as ApprovalQueryParams;
+    }
+  }
+
   const queryStr = params
     ? Object.entries(params)
         .filter(([_, v]) => v !== undefined && v !== null && v !== "")
@@ -484,29 +504,60 @@ export function useApprovals(params?: ApprovalQueryParams, options?: { enabled?:
         .join("&")
     : "";
 
+  const isEnabled = opts?.enabled ?? true;
+
   return useQuery<ApprovalsResponse>({
     queryKey: params ? adminKeys.approvalsQuery(params) : adminKeys.approvals,
     queryFn: () => api.get(`/admin/approvals${queryStr ? `?${queryStr}` : ""}`),
-    refetchInterval: 30_000, // refresh every 30s for approvals
-    enabled: options?.enabled ?? true,
+    refetchInterval: (query) => {
+      if (!isEnabled) return false;
+      const error = query.state.error as any;
+      if (error?.status === 401 || error?.status === 403 || error?.isForbidden) return false;
+      return 30_000;
+    },
+    retry: (failureCount, error: any) => {
+      if (error?.status === 401 || error?.status === 403 || error?.isForbidden) return false;
+      return failureCount < 1;
+    },
+    enabled: isEnabled,
   });
 }
 
 export function useApprovalMetrics(options?: { enabled?: boolean }) {
+  const isEnabled = options?.enabled ?? true;
   return useQuery<ApprovalMetrics>({
     queryKey: adminKeys.approvalMetrics,
     queryFn: () => api.get("/admin/approvals/metrics"),
-    refetchInterval: 30_000,
-    enabled: options?.enabled ?? true,
+    refetchInterval: (query) => {
+      if (!isEnabled) return false;
+      const error = query.state.error as any;
+      if (error?.status === 401 || error?.status === 403 || error?.isForbidden) return false;
+      return 30_000;
+    },
+    retry: (failureCount, error: any) => {
+      if (error?.status === 401 || error?.status === 403 || error?.isForbidden) return false;
+      return failureCount < 1;
+    },
+    enabled: isEnabled,
   });
 }
 
 export function useEmployeeApprovals(employeeId?: string, options?: { enabled?: boolean }) {
+  const isEnabled = Boolean(employeeId) && (options?.enabled ?? true);
   return useQuery<ApprovalsResponse>({
     queryKey: ["admin", "employees", employeeId, "approvals"],
     queryFn: () => api.get(`/admin/employees/${employeeId}/approvals`),
-    enabled: Boolean(employeeId) && (options?.enabled ?? true),
-    refetchInterval: 30_000,
+    enabled: isEnabled,
+    refetchInterval: (query) => {
+      if (!isEnabled) return false;
+      const error = query.state.error as any;
+      if (error?.status === 401 || error?.status === 403 || error?.isForbidden) return false;
+      return 30_000;
+    },
+    retry: (failureCount, error: any) => {
+      if (error?.status === 401 || error?.status === 403 || error?.isForbidden) return false;
+      return failureCount < 1;
+    },
   });
 }
 

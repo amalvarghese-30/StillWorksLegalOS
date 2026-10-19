@@ -95,7 +95,7 @@ function Dashboard() {
   const { data: casesData, isLoading: casesLoading, isError: casesError, refetch: refetchCases } = useCases({ page: "1", limit: "4" });
   const { data: docsData, isLoading: docsLoading, isError: docsError, refetch: refetchDocs } = useDocuments({ page: "1", limit: "4" });
   const { data: workloadData, isError: workloadError, refetch: refetchWorkload } = useEmployeeWorkload();
-  const { data: approvalsData, isError: approvalsError, refetch: refetchApprovals } = useApprovals({ enabled: hasApprovalsAccess });
+  const { data: approvalsData, isError: approvalsError, refetch: refetchApprovals } = useApprovals(undefined, { enabled: hasApprovalsAccess });
   const { data: auditData, isLoading: auditLoading, isError: auditError, refetch: refetchAudit } = useAuditLogs({ limit: "8" }, { enabled: hasAuditAccess });
   const { data: tasksData, isLoading: tasksLoading, isError: tasksError, refetch: refetchTasks } = useTasks({ limit: "50" });
 
@@ -111,7 +111,7 @@ function Dashboard() {
         return true;
       });
   const documents = docsData?.documents ?? [];
-  const approvals = approvalsData?.approvals ?? [];
+  const approvals = hasApprovalsAccess ? (approvalsData?.approvals ?? []) : [];
   const activity = auditData?.logs ?? [];
   const team = workloadData?.workloads ?? [];
   const allTasks = tasksData?.tasks ?? [];
@@ -192,12 +192,21 @@ function Dashboard() {
     }
   };
 
+  const attentionSummaryParts = [
+    `${hearings.length} ${hearings.length === 1 ? "hearing" : "hearings"}`,
+    `${attentionTasks.length} urgent ${attentionTasks.length === 1 ? "task" : "tasks"}`,
+  ];
+  if (hasApprovalsAccess) {
+    attentionSummaryParts.push(`${approvals.length} ${approvals.length === 1 ? "approval" : "approvals"} waiting`);
+  }
+  const attentionSubtitle = `${dateStr} · ${attentionSummaryParts.join(", ")}.`;
+
   return (
     <div className="space-y-6">
       <PageHeader
         breadcrumb={[{ label: "S & S", to: "/" }, { label: "Dashboard" }]}
         title="What should I work on today?"
-        subtitle={`${dateStr} · ${hearings.length} hearings, ${attentionTasks.length} urgent tasks, ${approvals.length} approvals waiting.`}
+        subtitle={attentionSubtitle}
         actions={
           <>
             {isAdmin && (
@@ -286,14 +295,20 @@ function Dashboard() {
         <div className="space-y-6">
           {/* Needs attention */}
           <SectionCard title="Needs your attention" description="Priority items that require immediate action." icon={AlertTriangle}>
-            {hearingsError || approvalsError || tasksError ? (
+            {hearingsError || (hasApprovalsAccess && approvalsError) || tasksError ? (
               <ErrorState
                 title="Couldn't load your attention items"
-                onRetry={() => { refetchHearings(); refetchApprovals(); refetchTasks(); }}
+                onRetry={() => {
+                  refetchHearings();
+                  if (hasApprovalsAccess) {
+                    refetchApprovals();
+                  }
+                  refetchTasks();
+                }}
               />
             ) : (
               <ul className="space-y-3">
-                {attentionTasks.length === 0 && hearings.length === 0 && approvals.length === 0 && (
+                {attentionTasks.length === 0 && hearings.length === 0 && (!hasApprovalsAccess || approvals.length === 0) && (
                   <li className="py-8 text-center text-helper text-muted-foreground">All caught up! Nothing needs attention right now.</li>
                 )}
                 {/* Urgent & High-Priority Tasks */}
