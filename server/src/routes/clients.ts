@@ -625,8 +625,8 @@ router.patch("/:id", requireResourceAccess("client"), async (req: Request, res: 
 
 router.post("/:id/visits", requireResourceAccess("client"), async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    if (!id || !Types.ObjectId.isValid(id)) {
+    const id = req.params["id"];
+    if (!id || typeof id !== "string" || !Types.ObjectId.isValid(id)) {
       res.status(400).json({ message: "Invalid client ID format" });
       return;
     }
@@ -699,8 +699,8 @@ router.get("/:id/deletion-preview", async (req: Request, res: Response) => {
       return;
     }
 
-    const { id } = req.params;
-    if (!id || !Types.ObjectId.isValid(id)) {
+    const id = req.params["id"];
+    if (!id || typeof id !== "string" || !Types.ObjectId.isValid(id)) {
       res.status(400).json({ message: "Invalid client ID format" });
       return;
     }
@@ -749,8 +749,8 @@ router.delete("/:id", async (req: Request, res: Response) => {
       return;
     }
 
-    const { id } = req.params;
-    if (!id || !Types.ObjectId.isValid(id)) {
+    const id = req.params["id"];
+    if (!id || typeof id !== "string" || !Types.ObjectId.isValid(id)) {
       res.status(400).json({ message: "Invalid client ID format" });
       return;
     }

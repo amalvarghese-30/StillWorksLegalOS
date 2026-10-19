@@ -2456,8 +2456,8 @@ router.get("/reports/client-reports", requireAdminOrPermission("reports"), async
 
 router.get("/reports/client-detail/:id", requireAdminOrPermission("reports"), async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    if (!id || !Types.ObjectId.isValid(id)) {
+    const id = req.params["id"];
+    if (!id || typeof id !== "string" || !Types.ObjectId.isValid(id)) {
       res.status(400).json({ message: "Invalid client ID format" });
       return;
     }
@@ -2544,8 +2544,8 @@ router.get("/reports/client-detail/:id", requireAdminOrPermission("reports"), as
 
 router.get("/reports/employee-detail/:id", requireAdminOrPermission("reports"), async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    if (!id || !Types.ObjectId.isValid(id)) {
+    const id = req.params["id"];
+    if (!id || typeof id !== "string" || !Types.ObjectId.isValid(id)) {
       res.status(400).json({ message: "Invalid employee ID format" });
       return;
     }
