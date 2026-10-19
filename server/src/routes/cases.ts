@@ -12,6 +12,7 @@ import { ApprovalRequest } from "../models/ApprovalRequest.js";
 import { NotificationService } from "../services/notifications.js";
 import { requireAuth } from "../middleware/auth.js";
 import { canAccessCase, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
+import { normaliseAssignees, buildInitialAssignmentHistory } from "../utils/assigneeNormalization.js";
 
 const router = Router();
 
@@ -633,10 +634,49 @@ router.post("/", async (req: Request, res: Response) => {
           if (!isNaN(d.getTime())) parsedDeadline = d;
         }
 
-        const taskAssignee =
-          userRole === "admin" && t.assignedTo && mongoose.Types.ObjectId.isValid(t.assignedTo)
-            ? t.assignedTo
-            : userId;
+        // ── P0 FIX ──────────────────────────────────────────────────────────
+        // BEFORE (broken):
+        //   const taskAssignee =
+        //     userRole === "admin" && t.assignedTo &&
+        //     mongoose.Types.ObjectId.isValid(t.assignedTo)   // ← always false for arrays
+        //       ? t.assignedTo
+        //       : userId;   // ← silently substituted creator
+        //
+        // isValid() returns false when t.assignedTo is an array (the format
+        // sent by AssigneeMultiSelect via the frontend), so the intended
+        // employee was always replaced by the creator / admin.
+        //
+        // AFTER (correct): use normaliseAssignees() which handles arrays,
+        // single IDs, comma-separated legacy strings, and null/undefined.
+        // Each task keeps its own independent assignee list.
+        // ────────────────────────────────────────────────────────────────────
+        let taskAssignedUsers: mongoose.Types.ObjectId[];
+        let taskAssignedTo: mongoose.Types.ObjectId | null;
+
+        if (userRole === "admin") {
+          // Prefer the explicit assignedUsers field; fall back to assignedTo.
+          const rawTaskAssignees = t.assignedUsers !== undefined ? t.assignedUsers : t.assignedTo;
+          const normResult = await normaliseAssignees(rawTaskAssignees, {
+            // Fall back to the creator only when the field is genuinely absent.
+            fallbackUserId: userId,
+          });
+
+          if (!normResult.ok) {
+            // Malformed ID – log the warning but don't abort case creation.
+            console.warn(
+              `[cases:create] [corrId: ${corrId}] Task "${taskTitle}" assignee error: ${normResult.message}. Falling back to creator.`
+            );
+            taskAssignedUsers = [new mongoose.Types.ObjectId(userId)];
+            taskAssignedTo = new mongoose.Types.ObjectId(userId);
+          } else {
+            taskAssignedUsers = normResult.data.assignedUsers;
+            taskAssignedTo = normResult.data.assignedTo;
+          }
+        } else {
+          // Non-admins can only assign to themselves (existing policy preserved).
+          taskAssignedUsers = [new mongoose.Types.ObjectId(userId)];
+          taskAssignedTo = new mongoose.Types.ObjectId(userId);
+        }
 
         const checklistItems = Array.isArray(t.checklist)
           ? t.checklist
@@ -660,6 +700,13 @@ router.post("/", async (req: Request, res: Response) => {
               .filter(Boolean)
           : [];
 
+        // Build assignment history – one entry per assignee.
+        const taskAssignmentHistory = buildInitialAssignmentHistory(
+          taskAssignedUsers,
+          userId,
+          req.user?.name ?? "Admin"
+        );
+
         try {
           const createdTask = await Task.create({
             title: taskTitle,
@@ -668,12 +715,17 @@ router.post("/", async (req: Request, res: Response) => {
             priority: taskPriority,
             status: "pending",
             deadline: parsedDeadline,
-            assignedTo: taskAssignee,
+            assignedTo: taskAssignedTo,
+            assignedUsers: taskAssignedUsers,
+            assignedBy: taskAssignedTo ? new mongoose.Types.ObjectId(userId) : null,
+            assignedAt: taskAssignedTo ? new Date() : null,
+            assignmentHistory: taskAssignmentHistory,
             caseId: record._id,
             clientId: resolvedClientId,
             checklist: checklistItems,
             agent: typeof t.agent === "string" ? t.agent.trim().slice(0, 100) : "",
             createdBy: userId,
+            updatedBy: new mongoose.Types.ObjectId(userId),
           });
 
           if (io) {
@@ -684,26 +736,30 @@ router.post("/", async (req: Request, res: Response) => {
             });
           }
 
-          if (taskAssignee && taskAssignee.toString() !== userId.toString()) {
-            try {
-              const isUrgent = createdTask.priority === "High";
-              await NotificationService.createNotification({
-                userId: taskAssignee,
-                type: "TASK_ASSIGNED",
-                title: isUrgent ? "🚨 Urgent Task Assigned" : "New Task Assigned",
-                message: `${req.user?.name ?? "Admin"} assigned you ${isUrgent ? "an urgent" : "a"} task: "${createdTask.title}" on case "${record.title}"`,
-                relatedId: createdTask._id as any,
-                relatedModel: "Task",
-                actorId: new mongoose.Types.ObjectId(userId),
-                metadata: {
-                  taskTitle: createdTask.title,
-                  taskId: createdTask._id.toString(),
-                  caseId: record._id.toString(),
-                  priority: createdTask.priority,
-                },
-              }, io);
-            } catch (notifErr) {
-              console.warn(`[cases:create] Task assignment notification error:`, notifErr);
+          // Notify every intended assignee exactly once.
+          // Do NOT notify the creator unless they were explicitly selected.
+          for (const assigneeId of taskAssignedUsers) {
+            if (assigneeId.toString() !== userId.toString()) {
+              try {
+                const isUrgent = createdTask.priority === "High";
+                await NotificationService.createNotification({
+                  userId: assigneeId,
+                  type: "TASK_ASSIGNED",
+                  title: isUrgent ? "🚨 Urgent Task Assigned" : "New Task Assigned",
+                  message: `${req.user?.name ?? "Admin"} assigned you ${isUrgent ? "an urgent" : "a"} task: "${createdTask.title}" on case "${record.title}"`,
+                  relatedId: createdTask._id as any,
+                  relatedModel: "Task",
+                  actorId: new mongoose.Types.ObjectId(userId),
+                  metadata: {
+                    taskTitle: createdTask.title,
+                    taskId: createdTask._id.toString(),
+                    caseId: record._id.toString(),
+                    priority: createdTask.priority,
+                  },
+                }, io);
+              } catch (notifErr) {
+                console.warn(`[cases:create] Task assignment notification error:`, notifErr);
+              }
             }
           }
         } catch (taskErr: any) {
@@ -711,6 +767,7 @@ router.post("/", async (req: Request, res: Response) => {
         }
       }
     }
+
 
     // Notify all assigned staff members for the new case
     for (const assignee of finalAssignedUsers) {

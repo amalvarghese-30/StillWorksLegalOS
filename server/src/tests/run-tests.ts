@@ -3871,6 +3871,424 @@ async function run() {
     );
   }
 
+  // ===========================================================================
+  // Suite P0-ASSIGN: Case-Created Task Assignment Regression Tests
+  //
+  // These tests reproduce the confirmed P0 bug where task.assignedTo received
+  // an array from the frontend and mongoose.Types.ObjectId.isValid(array)
+  // returned false, causing the creator to be silently substituted.
+  //
+  // Every test queries the database directly – not just the HTTP response – to
+  // verify the actual persisted assignedTo, assignedUsers, assignedBy,
+  // assignmentHistory, and notification records.
+  // ===========================================================================
+  console.log("\nSuite: P0 Case-Created Task Assignment (Regression)");
+  {
+    // ─── Setup: admin creator + target employee (Amal) ────────────────────
+    const p0Admin = await createUser({
+      name: "P0 Admin",
+      email: `p0admin-${Date.now()}@test.com`,
+      role: "admin",
+      permissions: {
+        dashboard: true, clients: true, cases: true, tasks: true,
+        documents: true, calendar: true, chat: true, reports: true,
+        employees: true, approvals: true, auditLogs: true, settings: true,
+      },
+    });
+    const p0AdminToken = await createToken(p0Admin);
+
+    const p0Amal = await createUser({
+      name: "Amal",
+      email: `amal-${Date.now()}@test.com`,
+      role: "junior_advocate",
+      permissions: {
+        dashboard: true, clients: true, cases: true, tasks: true,
+        documents: true, calendar: false, chat: true, reports: false,
+        employees: false, approvals: false, auditLogs: false, settings: false,
+      },
+    });
+
+    const p0Bob = await createUser({
+      name: "Bob",
+      email: `bob-${Date.now()}@test.com`,
+      role: "junior_advocate",
+      permissions: {
+        dashboard: true, clients: true, cases: true, tasks: true,
+        documents: true, calendar: false, chat: true, reports: false,
+        employees: false, approvals: false, auditLogs: false, settings: false,
+      },
+    });
+
+    // ── P0-ASSIGN-001 & 002: Admin creates a case with two tasks both
+    //   assigned to Amal via the array format (the format sent by the
+    //   frontend AssigneeMultiSelect).
+    //   BEFORE the fix: both tasks received p0Admin as assignedTo.
+    //   AFTER  the fix: both tasks receive Amal as assignedTo.
+    // ─────────────────────────────────────────────────────────────────────
+    const caseRes = await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${p0AdminToken}`)
+      .send({
+        title: "P0 Regression Case",
+        tasks: [
+          {
+            title: "Task 1 → Amal (array)",
+            priority: "High",
+            // Frontend sends an array from AssigneeMultiSelect
+            assignedTo: [p0Amal._id.toString()],
+            assignedUsers: [p0Amal._id.toString()],
+          },
+          {
+            title: "Task 2 → Amal (array)",
+            priority: "Medium",
+            assignedTo: [p0Amal._id.toString()],
+            assignedUsers: [p0Amal._id.toString()],
+          },
+        ],
+      });
+
+    assert(caseRes.status === 201, "P0-ASSIGN-001: Admin creates case with two initial tasks → 201");
+
+    const caseId = caseRes.body.case._id;
+
+    // Verify in the database directly
+    const dbTask1 = await Task.findOne({ caseId, title: "Task 1 → Amal (array)" }).lean() as any;
+    const dbTask2 = await Task.findOne({ caseId, title: "Task 2 → Amal (array)" }).lean() as any;
+
+    assert(Boolean(dbTask1), "P0-ASSIGN-002: Task 1 persisted in DB");
+    assert(Boolean(dbTask2), "P0-ASSIGN-003: Task 2 persisted in DB");
+
+    // P0 core assertion: assignedTo must be Amal, NOT the admin/creator
+    assert(
+      dbTask1?.assignedTo?.toString() === p0Amal._id.toString(),
+      "P0-ASSIGN-004 [REGRESSION]: Task 1 assignedTo is Amal (not the admin creator)"
+    );
+    assert(
+      dbTask2?.assignedTo?.toString() === p0Amal._id.toString(),
+      "P0-ASSIGN-005 [REGRESSION]: Task 2 assignedTo is Amal (not the admin creator)"
+    );
+
+    // assignedUsers must contain Amal
+    assert(
+      Array.isArray(dbTask1?.assignedUsers) &&
+        dbTask1.assignedUsers.some((id: any) => id.toString() === p0Amal._id.toString()),
+      "P0-ASSIGN-006: Task 1 assignedUsers includes Amal"
+    );
+    assert(
+      Array.isArray(dbTask2?.assignedUsers) &&
+        dbTask2.assignedUsers.some((id: any) => id.toString() === p0Amal._id.toString()),
+      "P0-ASSIGN-007: Task 2 assignedUsers includes Amal"
+    );
+
+    // assignmentHistory must record Amal as toUser
+    assert(
+      Array.isArray(dbTask1?.assignmentHistory) && dbTask1.assignmentHistory.length > 0 &&
+        dbTask1.assignmentHistory[0]?.toUser?.toString() === p0Amal._id.toString(),
+      "P0-ASSIGN-008: Task 1 assignmentHistory[0].toUser is Amal"
+    );
+    assert(
+      dbTask1?.assignmentHistory?.[0]?.assignedBy?.toString() === p0Admin._id.toString(),
+      "P0-ASSIGN-009: Task 1 assignmentHistory[0].assignedBy is the admin (creator/assigner)"
+    );
+
+    // ── P0-ASSIGN-010: Tasks assigned to DIFFERENT employees retain
+    //   independent assignments (no cross-contamination between tasks).
+    // ─────────────────────────────────────────────────────────────────────
+    const caseRes2 = await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${p0AdminToken}`)
+      .send({
+        title: "P0 Independent Assignee Case",
+        tasks: [
+          {
+            title: "Task A → Amal",
+            priority: "High",
+            assignedTo: [p0Amal._id.toString()],
+            assignedUsers: [p0Amal._id.toString()],
+          },
+          {
+            title: "Task B → Bob",
+            priority: "Low",
+            assignedTo: [p0Bob._id.toString()],
+            assignedUsers: [p0Bob._id.toString()],
+          },
+        ],
+      });
+
+    assert(caseRes2.status === 201, "P0-ASSIGN-010: Case with tasks for different employees → 201");
+
+    const caseId2 = caseRes2.body.case._id;
+    const dbTaskA = await Task.findOne({ caseId: caseId2, title: "Task A → Amal" }).lean() as any;
+    const dbTaskB = await Task.findOne({ caseId: caseId2, title: "Task B → Bob" }).lean() as any;
+
+    assert(
+      dbTaskA?.assignedTo?.toString() === p0Amal._id.toString(),
+      "P0-ASSIGN-011: Task A assignedTo is Amal (independent from Task B)"
+    );
+    assert(
+      dbTaskB?.assignedTo?.toString() === p0Bob._id.toString(),
+      "P0-ASSIGN-012: Task B assignedTo is Bob (independent from Task A)"
+    );
+    assert(
+      dbTaskA?.assignedTo?.toString() !== dbTaskB?.assignedTo?.toString(),
+      "P0-ASSIGN-013: Task A and Task B have distinct assignees"
+    );
+
+    // ── P0-ASSIGN-014: Single-ID string format (legacy) still works
+    // ─────────────────────────────────────────────────────────────────────
+    const caseRes3 = await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${p0AdminToken}`)
+      .send({
+        title: "P0 Single-ID String Case",
+        tasks: [
+          {
+            title: "Single-ID task",
+            assignedTo: p0Amal._id.toString(), // single string, not an array
+          },
+        ],
+      });
+
+    assert(caseRes3.status === 201, "P0-ASSIGN-014: Single-string assignedTo → 201");
+    const dbSingle = await Task.findOne({ caseId: caseRes3.body.case._id, title: "Single-ID task" }).lean() as any;
+    assert(
+      dbSingle?.assignedTo?.toString() === p0Amal._id.toString(),
+      "P0-ASSIGN-015: Single-string assignedTo persisted correctly"
+    );
+
+    // ── P0-ASSIGN-016: Multiple assignees in array – first is assignedTo
+    // ─────────────────────────────────────────────────────────────────────
+    const caseRes4 = await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${p0AdminToken}`)
+      .send({
+        title: "P0 Multi-Assignee Case",
+        tasks: [
+          {
+            title: "Multi-assignee task",
+            assignedTo: [p0Amal._id.toString(), p0Bob._id.toString()],
+            assignedUsers: [p0Amal._id.toString(), p0Bob._id.toString()],
+          },
+        ],
+      });
+
+    assert(caseRes4.status === 201, "P0-ASSIGN-016: Multi-assignee array → 201");
+    const dbMulti = await Task.findOne({ caseId: caseRes4.body.case._id, title: "Multi-assignee task" }).lean() as any;
+    assert(
+      dbMulti?.assignedTo?.toString() === p0Amal._id.toString(),
+      "P0-ASSIGN-017: First array element becomes assignedTo"
+    );
+    assert(
+      Array.isArray(dbMulti?.assignedUsers) && dbMulti.assignedUsers.length === 2,
+      "P0-ASSIGN-018: assignedUsers contains both assignees"
+    );
+    assert(
+      dbMulti?.assignedUsers?.some((id: any) => id.toString() === p0Bob._id.toString()),
+      "P0-ASSIGN-019: assignedUsers includes Bob"
+    );
+    // Multi-assignee: history has entry for each assignee
+    assert(
+      Array.isArray(dbMulti?.assignmentHistory) && dbMulti.assignmentHistory.length === 2,
+      "P0-ASSIGN-020: assignmentHistory has one entry per assignee"
+    );
+
+    // ── P0-ASSIGN-021: Empty / null / absent assignee → falls back to creator
+    // ─────────────────────────────────────────────────────────────────────
+    const caseRes5 = await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${p0AdminToken}`)
+      .send({
+        title: "P0 Empty Assignee Case",
+        tasks: [
+          { title: "Unassigned task", assignedTo: [] },
+          { title: "Null assignee task", assignedTo: null },
+          { title: "No assignee field task" },
+        ],
+      });
+
+    assert(caseRes5.status === 201, "P0-ASSIGN-021: Empty/null/absent assignee → 201");
+    const caseId5 = caseRes5.body.case._id;
+    const dbUnassigned = await Task.findOne({ caseId: caseId5, title: "Unassigned task" }).lean() as any;
+    const dbNull = await Task.findOne({ caseId: caseId5, title: "Null assignee task" }).lean() as any;
+    const dbNoField = await Task.findOne({ caseId: caseId5, title: "No assignee field task" }).lean() as any;
+
+    assert(
+      dbUnassigned?.assignedTo?.toString() === p0Admin._id.toString(),
+      "P0-ASSIGN-022: Empty [] assignedTo falls back to creator (admin)"
+    );
+    assert(
+      dbNull?.assignedTo?.toString() === p0Admin._id.toString(),
+      "P0-ASSIGN-023: null assignedTo falls back to creator (admin)"
+    );
+    assert(
+      dbNoField?.assignedTo?.toString() === p0Admin._id.toString(),
+      "P0-ASSIGN-024: Missing assignedTo field falls back to creator (admin)"
+    );
+
+    // ── P0-ASSIGN-025: Duplicate IDs in array are deduplicated
+    // ─────────────────────────────────────────────────────────────────────
+    const caseRes6 = await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${p0AdminToken}`)
+      .send({
+        title: "P0 Duplicate ID Case",
+        tasks: [
+          {
+            title: "Duplicate-ID task",
+            assignedTo: [p0Amal._id.toString(), p0Amal._id.toString()],
+            assignedUsers: [p0Amal._id.toString(), p0Amal._id.toString()],
+          },
+        ],
+      });
+
+    assert(caseRes6.status === 201, "P0-ASSIGN-025: Duplicate assignee IDs → 201");
+    const dbDedup = await Task.findOne({ caseId: caseRes6.body.case._id, title: "Duplicate-ID task" }).lean() as any;
+    assert(
+      Array.isArray(dbDedup?.assignedUsers) && dbDedup.assignedUsers.length === 1,
+      "P0-ASSIGN-026: Duplicate IDs are deduplicated in assignedUsers"
+    );
+
+    // ── P0-ASSIGN-027: Malformed ID string – falls back gracefully (logs warning, uses creator)
+    // ─────────────────────────────────────────────────────────────────────
+    const caseRes7 = await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${p0AdminToken}`)
+      .send({
+        title: "P0 Malformed ID Case",
+        tasks: [
+          {
+            title: "Malformed-ID task",
+            assignedTo: ["not-a-valid-objectid"],
+          },
+        ],
+      });
+
+    // Case creation should still succeed (malformed task ID is non-fatal, falls back to creator)
+    assert(caseRes7.status === 201, "P0-ASSIGN-027: Malformed assignee ID → case still created (201)");
+    const dbMalformed = await Task.findOne({ caseId: caseRes7.body.case._id, title: "Malformed-ID task" }).lean() as any;
+    assert(
+      dbMalformed?.assignedTo?.toString() === p0Admin._id.toString(),
+      "P0-ASSIGN-028: Malformed assignee ID falls back to creator"
+    );
+
+    // ── P0-ASSIGN-029: Non-admin user cannot assign tasks to other employees
+    // ─────────────────────────────────────────────────────────────────────
+    const nonAdminToken = await createToken(p0Amal);
+    const caseResNonAdmin = await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${nonAdminToken}`)
+      .send({
+        title: "P0 Non-Admin Case",
+        tasks: [
+          {
+            title: "Non-admin task to Bob",
+            assignedTo: [p0Bob._id.toString()],
+            assignedUsers: [p0Bob._id.toString()],
+          },
+        ],
+      });
+
+    // The case should be created, but the task must be assigned to the creator (Amal), NOT Bob
+    assert(caseResNonAdmin.status === 201, "P0-ASSIGN-029: Non-admin creates case → 201");
+    const dbNonAdminTask = await Task.findOne({
+      caseId: caseResNonAdmin.body.case._id,
+      title: "Non-admin task to Bob",
+    }).lean() as any;
+    assert(
+      dbNonAdminTask?.assignedTo?.toString() === p0Amal._id.toString(),
+      "P0-ASSIGN-030: Non-admin task assignedTo is enforced as the creator (not Bob)"
+    );
+    assert(
+      dbNonAdminTask?.assignedTo?.toString() !== p0Bob._id.toString(),
+      "P0-ASSIGN-031: Non-admin CANNOT assign task to another employee"
+    );
+
+    // ── P0-ASSIGN-032: Notification sent to Amal (not to creator) for
+    //   a task admin assigns to Amal
+    // ─────────────────────────────────────────────────────────────────────
+    // (Notifications collection was cleared between tests but not between
+    //  assertions within the same suite block – check against a fresh case.)
+    const p0NotifAdmin = await createUser({
+      name: "Notif Admin",
+      email: `notifadmin-${Date.now()}@test.com`,
+      role: "admin",
+    });
+    const p0NotifAdminToken = await createToken(p0NotifAdmin);
+    const p0NotifTarget = await createUser({
+      name: "Notif Target",
+      email: `notiftarget-${Date.now()}@test.com`,
+      role: "junior_advocate",
+    });
+
+    await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${p0NotifAdminToken}`)
+      .send({
+        title: "P0 Notification Regression Case",
+        tasks: [
+          {
+            title: "Notif Task → Target",
+            priority: "High",
+            assignedTo: [p0NotifTarget._id.toString()],
+            assignedUsers: [p0NotifTarget._id.toString()],
+          },
+        ],
+      });
+
+    const { Notification } = await import("../models/Notification.js");
+    const notifForTarget = await Notification.findOne({
+      userId: p0NotifTarget._id,
+      type: "TASK_ASSIGNED",
+    }).lean() as any;
+    assert(Boolean(notifForTarget), "P0-ASSIGN-032: TASK_ASSIGNED notification sent to the intended assignee");
+
+    // Ensure NO notification was sent to the admin for their own task assignment
+    const notifForAdmin = await Notification.findOne({
+      userId: p0NotifAdmin._id,
+      type: "TASK_ASSIGNED",
+    }).lean() as any;
+    assert(!notifForAdmin, "P0-ASSIGN-033: No TASK_ASSIGNED notification sent to the creator (admin)");
+
+    // ── P0-ASSIGN-034: Case creation WITHOUT initial tasks still works
+    // ─────────────────────────────────────────────────────────────────────
+    const caseNoTasks = await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${p0AdminToken}`)
+      .send({ title: "P0 No Tasks Case" });
+
+    assert(caseNoTasks.status === 201, "P0-ASSIGN-034: Case creation without tasks → 201");
+    const taskCount = await Task.countDocuments({ caseId: caseNoTasks.body.case._id });
+    assert(taskCount === 0, "P0-ASSIGN-035: No tasks created for case without tasks");
+
+    // ── P0-ASSIGN-036: Standalone task creation retains existing array-assignee behaviour
+    // ─────────────────────────────────────────────────────────────────────
+    const standaloneRes = await request(app)
+      .post("/api/tasks")
+      .set("Authorization", `Bearer ${p0AdminToken}`)
+      .send({
+        title: "Standalone Task → Amal",
+        priority: "Medium",
+        assignedTo: [p0Amal._id.toString()],
+        assignedUsers: [p0Amal._id.toString()],
+      });
+
+    assert(standaloneRes.status === 201, "P0-ASSIGN-036: Standalone task with array assignedTo → 201");
+    const dbStandalone = await Task.findById(standaloneRes.body.task._id).lean() as any;
+    assert(
+      dbStandalone?.assignedTo?.toString() === p0Amal._id.toString(),
+      "P0-ASSIGN-037: Standalone task assignedTo is Amal"
+    );
+    assert(
+      Array.isArray(dbStandalone?.assignedUsers) &&
+        dbStandalone.assignedUsers.some((id: any) => id.toString() === p0Amal._id.toString()),
+      "P0-ASSIGN-038: Standalone task assignedUsers includes Amal"
+    );
+    assert(
+      !dbStandalone?.caseId,
+      "P0-ASSIGN-039: Standalone task has no caseId"
+    );
+  }
+
   try {
     if (mongoose.connection.readyState === 1) {
       await mongoose.connection.dropDatabase();
