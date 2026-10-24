@@ -38,6 +38,7 @@ export interface WorkloadItem {
   name: string;
   role: string;
   status: string;
+  avatarUrl?: string;
   activeCases: number;
   pendingTasks: number;
   completedTasks: number;

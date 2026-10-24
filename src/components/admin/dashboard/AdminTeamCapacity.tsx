@@ -3,6 +3,7 @@ import { ArrowRight, AlertTriangle, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useEmployeeWorkload } from "@/services/reports";
 import { cn } from "@/lib/utils";
+import { EmployeeAvatar } from "../EmployeeAvatar";
 
 export function AdminTeamCapacity() {
   const navigate = useNavigate();
@@ -113,9 +114,12 @@ export function AdminTeamCapacity() {
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="grid size-6.5 place-items-center rounded-full bg-primary/10 text-primary font-semibold text-[11px] shrink-0">
-                        {initials || "EM"}
-                      </span>
+                      <EmployeeAvatar
+                        name={emp.name}
+                        avatarUrl={emp.avatarUrl}
+                        size="xs"
+                        className="shrink-0"
+                      />
                       <p className="truncate text-xs sm:text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
                         {emp.name}
                       </p>

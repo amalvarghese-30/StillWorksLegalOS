@@ -122,9 +122,17 @@ export function MobileMoreSheet({ open, onOpenChange }: MobileMoreSheetProps) {
         {/* User Card */}
         <div className="mx-4 mt-4 rounded-xl border border-border/70 bg-card/70 p-3.5 shadow-2xs">
           <div className="flex items-center gap-3">
-            <span className="grid size-11 shrink-0 place-items-center rounded-full bg-primary/15 font-display text-sm font-semibold text-primary">
-              {user?.initials ?? "SW"}
-            </span>
+            {user?.avatarUrl ? (
+              <img
+                src={user.avatarUrl}
+                alt={user.name}
+                className="size-11 rounded-full object-cover border border-border/80 shrink-0"
+              />
+            ) : (
+              <span className="grid size-11 shrink-0 place-items-center rounded-full bg-primary/15 font-display text-sm font-semibold text-primary">
+                {user?.initials ?? "SW"}
+              </span>
+            )}
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold text-foreground">{user?.name ?? "Signed In"}</p>
               <p className="truncate text-xs text-muted-foreground capitalize">

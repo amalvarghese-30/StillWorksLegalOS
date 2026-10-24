@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { computeInitials } from "./helpers";
 import type { UserForContact } from "@/services/chat";
 
@@ -95,6 +95,7 @@ export function AddMembersDialog({
                   className="flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-accent"
                 >
                   <Avatar className="size-9 shrink-0">
+                    {u.avatarUrl && <AvatarImage src={u.avatarUrl} alt={u.name} />}
                     <AvatarFallback className="bg-primary/15 text-sm font-medium text-primary">
                       {computeInitials(u.name)}
                     </AvatarFallback>

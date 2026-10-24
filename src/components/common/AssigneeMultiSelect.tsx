@@ -14,6 +14,7 @@ export interface AssigneeOption {
   email?: string;
   role?: string;
   avatar?: string;
+  avatarUrl?: string;
 }
 
 export interface AssigneeMultiSelectProps {
@@ -74,7 +75,8 @@ export function AssigneeMultiSelect({
             name: e.name,
             email: e.email,
             role: e.role,
-            avatar: e.avatar,
+            avatar: e.avatarUrl || (e as any).avatar,
+            avatarUrl: e.avatarUrl || (e as any).avatar,
           });
         }
       }
@@ -355,9 +357,17 @@ export function AssigneeMultiSelect({
                     {selected && <Check size={11} strokeWidth={3} />}
                   </span>
 
-                  <div className="size-6 shrink-0 rounded-full bg-primary/20 text-primary font-bold text-[10px] grid place-items-center">
-                    {initials || "U"}
-                  </div>
+                  {emp.avatarUrl || emp.avatar ? (
+                    <img
+                      src={emp.avatarUrl || emp.avatar}
+                      alt={emp.name}
+                      className="size-6 shrink-0 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="size-6 shrink-0 rounded-full bg-primary/20 text-primary font-bold text-[10px] grid place-items-center">
+                      {initials || "U"}
+                    </div>
+                  )}
 
                   <div className="flex-1 min-w-0">
                     <p className="truncate text-xs leading-tight font-medium text-foreground">{emp.name}</p>

@@ -213,8 +213,8 @@ router.get("/", async (req: Request, res: Response) => {
 
     const [cases, total, statusCounts] = await Promise.all([
       Case.find(filter)
-        .populate("assignedTo", "name email title role avatar")
-        .populate("assignedUsers", "name email title role avatar")
+        .populate("assignedTo", "name email title role avatar avatarUrl")
+        .populate("assignedUsers", "name email title role avatar avatarUrl")
         .populate("assignedBy", "name email")
         .populate("createdBy", "name")
         .sort({ updatedAt: -1 })
@@ -310,8 +310,8 @@ router.get("/requestable", async (req: Request, res: Response) => {
 router.get("/:id", requireResourceAccess("case"), async (req: Request, res: Response) => {
   try {
     const record = await Case.findById(req.params["id"])
-      .populate("assignedTo", "name email title role avatar")
-      .populate("assignedUsers", "name email title role avatar")
+      .populate("assignedTo", "name email title role avatar avatarUrl")
+      .populate("assignedUsers", "name email title role avatar avatarUrl")
       .populate("assignedBy", "name email title")
       .populate("createdBy", "name email title")
       .populate("parties.clientId", "name email phone")
@@ -980,8 +980,8 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
       new: true,
       runValidators: true,
     })
-      .populate("assignedTo", "name email title role avatar")
-      .populate("assignedUsers", "name email title role avatar")
+      .populate("assignedTo", "name email title role avatar avatarUrl")
+      .populate("assignedUsers", "name email title role avatar avatarUrl")
       .populate("assignedBy", "name email title")
       .populate("createdBy", "name email")
       .populate("parties.clientId", "name email phone")

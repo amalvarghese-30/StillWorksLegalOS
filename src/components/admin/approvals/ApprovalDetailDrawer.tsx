@@ -222,16 +222,24 @@ export function ApprovalDetailDrawer({
                     Submitted By
                   </span>
                   <div className="flex items-center gap-2.5 pt-1">
-                    <div className="size-8 rounded-full bg-primary/10 text-primary grid place-items-center text-xs font-bold shrink-0">
-                      {item.submittedBy?.name
-                        ? item.submittedBy.name
-                            .split(" ")
-                            .map((w) => w[0])
-                            .join("")
-                            .slice(0, 2)
-                            .toUpperCase()
-                        : "U"}
-                    </div>
+                    {item.submittedBy?.avatarUrl ? (
+                      <img
+                        src={item.submittedBy.avatarUrl}
+                        alt={item.submittedBy.name}
+                        className="size-8 rounded-full object-cover shrink-0"
+                      />
+                    ) : (
+                      <div className="size-8 rounded-full bg-primary/10 text-primary grid place-items-center text-xs font-bold shrink-0">
+                        {item.submittedBy?.name
+                          ? item.submittedBy.name
+                              .split(" ")
+                              .map((w) => w[0])
+                              .join("")
+                              .slice(0, 2)
+                              .toUpperCase()
+                          : "U"}
+                      </div>
+                    )}
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-foreground truncate">
                         {item.submittedBy?.name || "Employee"}

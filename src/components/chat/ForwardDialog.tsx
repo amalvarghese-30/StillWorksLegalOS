@@ -57,8 +57,14 @@ export function ForwardDialog({
                   onClick={() => onForward(g._id)}
                   className="flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-accent"
                 >
-                  <span className="grid size-9 shrink-0 place-items-center rounded-full bg-primary/12 text-sm font-semibold text-primary">
-                    {isDirect ? computeInitials(g.name) : <UsersIcon size={15} strokeWidth={1.75} />}
+                  <span className="relative grid size-9 shrink-0 place-items-center rounded-full bg-primary/12 text-sm font-semibold text-primary overflow-hidden">
+                    {isDirect && (g.avatarUrl || other?.avatarUrl) ? (
+                      <img src={g.avatarUrl || other?.avatarUrl} alt={g.name} className="size-full object-cover rounded-full" />
+                    ) : isDirect ? (
+                      computeInitials(g.name)
+                    ) : (
+                      <UsersIcon size={15} strokeWidth={1.75} />
+                    )}
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{isDirect && other ? other.name : g.name}</p>

@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Loader2, Save, Trash2, KeyRound, Copy, Check, ShieldAlert, Eye, EyeOff, Sparkles, Lock, AlertCircle } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Loader2, Save, Trash2, KeyRound, Copy, Check, ShieldAlert, Eye, EyeOff, Sparkles, Lock, AlertCircle, Camera } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,9 +10,12 @@ import {
   useUpdateEmployee,
   useDeleteEmployee,
   useResetEmployeePassword,
+  useUploadEmployeeAvatar,
+  useRemoveEmployeeAvatar,
   type EmployeeRecord,
   type UserPermissions,
 } from "@/services/admin";
+import { EmployeeAvatar } from "./EmployeeAvatar";
 import { useAuth } from "@/lib/auth";
 import {
   Dialog,
@@ -111,6 +114,48 @@ function EditEmployeeDialogInner({ employee, onClose }: { employee: EmployeeReco
   const [secondaryPhone, setSecondaryPhone] = useState(employee.secondaryPhone ?? "");
   const [secondaryPhoneError, setSecondaryPhoneError] = useState<string | null>(null);
   const [status, setStatus] = useState(employee.status ?? "offline");
+  const [avatarUrl, setAvatarUrl] = useState(employee.avatarUrl || "");
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const uploadAvatarMutation = useUploadEmployeeAvatar();
+  const removeAvatarMutation = useRemoveEmployeeAvatar();
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error("Invalid file format. Please upload a JPEG, PNG, or WebP image.");
+      e.target.value = "";
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("File size exceeds 2MB limit.");
+      e.target.value = "";
+      return;
+    }
+
+    try {
+      const res = await uploadAvatarMutation.mutateAsync({ id: employee._id, file });
+      setAvatarUrl(res.avatarUrl);
+      toast.success("Profile photo updated");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to upload photo");
+    } finally {
+      if (avatarInputRef.current) avatarInputRef.current.value = "";
+    }
+  };
+
+  const handleAvatarRemove = async () => {
+    try {
+      await removeAvatarMutation.mutateAsync({ id: employee._id });
+      setAvatarUrl("");
+      toast.success("Profile photo removed");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to remove photo");
+    }
+  };
   const [permissions, setPermissions] = useState<UserPermissions>({
     ...DEFAULT_PERMISSIONS,
     ...(employee.permissions ?? {}),
@@ -145,6 +190,7 @@ function EditEmployeeDialogInner({ employee, onClose }: { employee: EmployeeReco
     setSecondaryPhone(employee.secondaryPhone ?? "");
     setSecondaryPhoneError(null);
     setStatus(employee.status ?? "offline");
+    setAvatarUrl(employee.avatarUrl || "");
     setPermissions({
       ...DEFAULT_PERMISSIONS,
       ...(employee.permissions ?? {}),
@@ -298,6 +344,60 @@ function EditEmployeeDialogInner({ employee, onClose }: { employee: EmployeeReco
           </DialogHeader>
 
           <form className="space-y-4" onSubmit={handleSubmit}>
+            {/* Profile Photo Section */}
+            <div className="flex items-center gap-4 pb-3 border-b border-border/60">
+              <EmployeeAvatar
+                name={name || employee.name}
+                avatarUrl={avatarUrl}
+                size="lg"
+                status={status}
+                showStatus={true}
+              />
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-foreground">Employee Profile Photo</p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="file"
+                    ref={avatarInputRef}
+                    onChange={handleAvatarUpload}
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={uploadAvatarMutation.isPending}
+                    onClick={() => avatarInputRef.current?.click()}
+                    className="h-7 text-xs"
+                  >
+                    {uploadAvatarMutation.isPending ? (
+                      <Loader2 size={12} className="animate-spin mr-1" />
+                    ) : (
+                      <Camera size={12} className="mr-1" />
+                    )}
+                    {avatarUrl ? "Change Photo" : "Upload Photo"}
+                  </Button>
+                  {avatarUrl && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={removeAvatarMutation.isPending}
+                      onClick={handleAvatarRemove}
+                      className="h-7 text-xs text-destructive hover:bg-destructive/10"
+                    >
+                      {removeAvatarMutation.isPending ? (
+                        <Loader2 size={12} className="animate-spin mr-1" />
+                      ) : (
+                        <Trash2 size={12} className="mr-1" />
+                      )}
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="edit-name" className="text-helper">Full Name</Label>

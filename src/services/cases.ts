@@ -57,8 +57,8 @@ export interface CaseRecord {
   nextHearing?: string | null;
   localPath?: string;
   parties: CaseParty[];
-  assignedTo?: { _id: string; name: string; email?: string; title?: string; role?: string; avatar?: string };
-  assignedUsers?: Array<{ _id: string; name: string; email?: string; title?: string; role?: string; avatar?: string }>;
+  assignedTo?: { _id: string; name: string; email?: string; title?: string; role?: string; avatar?: string; avatarUrl?: string };
+  assignedUsers?: Array<{ _id: string; name: string; email?: string; title?: string; role?: string; avatar?: string; avatarUrl?: string }>;
   assignedBy?: { _id: string; name: string; email?: string; title?: string };
   assignedAt?: string | null;
   startedAt?: string | null;

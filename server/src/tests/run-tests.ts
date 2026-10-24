@@ -1901,6 +1901,56 @@ async function run() {
     const empAfterDelete = await User.findById(emp20._id);
     assert(empAfterDelete?.avatarUrl === "", "AVATAR-008: user.avatarUrl cleared in database");
 
+    // 6. Admin Avatar Upload & Management tests
+    // Admin uploads own avatar
+    const adminUploadRes = await request(app)
+      .post("/api/auth/avatar")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .attach("file", validJpgBuffer, { filename: "admin_avatar.jpg", contentType: "image/jpeg" });
+    assert(adminUploadRes.status === 200, "AVATAR-ADM-001: Admin uploads own avatar successfully (200)");
+    const adminAvatarUrl = adminUploadRes.body.avatarUrl;
+    assert(Boolean(adminAvatarUrl && adminAvatarUrl.startsWith("/api/auth/avatar/")), "AVATAR-ADM-002: admin avatarUrl returned in response");
+
+    // Admin uploads avatar for an employee
+    const adminEmpAvatarRes = await request(app)
+      .post(`/api/admin/employees/${emp20._id}/avatar`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .attach("file", validJpgBuffer, { filename: "emp_avatar.jpg", contentType: "image/jpeg" });
+    assert(adminEmpAvatarRes.status === 200, "AVATAR-ADM-003: Admin sets avatar for employee via /api/admin/employees/:id/avatar (200)");
+    const empUpdated = await User.findById(emp20._id);
+    assert(Boolean(empUpdated?.avatarUrl && empUpdated.avatarUrl.startsWith("/api/auth/avatar/")), "AVATAR-ADM-004: Employee record has updated avatarUrl");
+    assert(empUpdated?.avatar === empUpdated?.avatarUrl, "AVATAR-ADM-005: Virtual avatar getter returns avatarUrl");
+
+    // Employee cannot manage other employee's avatar without permission
+    const unauthorizedAvatarRes = await request(app)
+      .post(`/api/admin/employees/${emp20._id}/avatar`)
+      .set("Authorization", `Bearer ${newEmpToken}`)
+      .attach("file", validJpgBuffer, { filename: "unauth.jpg", contentType: "image/jpeg" });
+    assert(unauthorizedAvatarRes.status === 403, "AVATAR-ADM-006: Unauthorized non-admin denied managing employee avatar (403)");
+
+    // Admin removes employee avatar
+    const adminDeleteEmpAvatarRes = await request(app)
+      .delete(`/api/admin/employees/${emp20._id}/avatar`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    assert(adminDeleteEmpAvatarRes.status === 200, "AVATAR-ADM-007: Admin removes employee avatar successfully (200)");
+    const empCleared = await User.findById(emp20._id);
+    assert(empCleared?.avatarUrl === "", "AVATAR-ADM-008: Employee avatarUrl cleared after admin removal");
+
+    // Chat users list returns avatarUrl
+    const chatUsersRes = await request(app)
+      .get("/api/chat/users")
+      .set("Authorization", `Bearer ${adminToken}`);
+    assert(chatUsersRes.status === 200, "AVATAR-CHAT-001: GET /api/chat/users succeeds (200)");
+    assert(Array.isArray(chatUsersRes.body.users), "AVATAR-CHAT-002: Chat users returned as array");
+    const adminChatUser = chatUsersRes.body.users.find((u: any) => u.email === admin20.email);
+    assert(adminChatUser?.avatarUrl === adminAvatarUrl, "AVATAR-CHAT-003: Admin user in chat list contains uploaded avatarUrl");
+
+    // Admin cleans up own avatar
+    const adminDeleteSelfRes = await request(app)
+      .delete("/api/auth/avatar")
+      .set("Authorization", `Bearer ${adminToken}`);
+    assert(adminDeleteSelfRes.status === 200, "AVATAR-ADM-009: Admin removes own avatar successfully (200)");
+
     // =========================================================================
     // Suite 21: Forensic Verification — Parties, JSON 404 & Anti-Enumeration
     // =========================================================================

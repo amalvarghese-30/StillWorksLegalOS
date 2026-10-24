@@ -463,8 +463,8 @@ router.get("/", async (req: Request, res: Response) => {
         .sort({ deadline: 1, priority: -1, createdAt: -1 })
         .skip(skip)
         .limit(limitNum)
-        .populate("assignedTo", "name email title role avatar")
-        .populate("assignedUsers", "name email title role avatar")
+        .populate("assignedTo", "name email title role avatar avatarUrl")
+        .populate("assignedUsers", "name email title role avatar avatarUrl")
         .populate("assignedBy", "name email")
         .populate("createdBy", "name email")
         .populate("updatedBy", "name email")
@@ -943,8 +943,8 @@ router.post("/", async (req: Request, res: Response) => {
     }
 
     await task.populate([
-      { path: "assignedTo", select: "name email title role avatar" },
-      { path: "assignedUsers", select: "name email title role avatar" },
+      { path: "assignedTo", select: "name email title role avatar avatarUrl" },
+      { path: "assignedUsers", select: "name email title role avatar avatarUrl" },
     ]);
 
     const taskObj: any = task.toObject();
@@ -1390,8 +1390,8 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
         new: true,
         runValidators: true,
       })
-        .populate("assignedTo", "name email title role avatar")
-        .populate("assignedUsers", "name email title role avatar")
+        .populate("assignedTo", "name email title role avatar avatarUrl")
+        .populate("assignedUsers", "name email title role avatar avatarUrl")
         .populate("assignedBy", "name email title")
         .populate("createdBy", "name email title")
         .populate("updatedBy", "name email title")

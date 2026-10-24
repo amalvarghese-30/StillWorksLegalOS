@@ -68,8 +68,8 @@ export interface TaskRecord {
   priority: "High" | "Medium" | "Low";
   status: "pending" | "in_progress" | "pending_approval" | "completed" | "overdue";
   deadline: string | null;
-  assignedTo?: { _id: string; name: string; email?: string; title?: string; role?: string; avatar?: string };
-  assignedUsers?: Array<{ _id: string; name: string; email?: string; title?: string; role?: string; avatar?: string }>;
+  assignedTo?: { _id: string; name: string; email?: string; title?: string; role?: string; avatar?: string; avatarUrl?: string };
+  assignedUsers?: Array<{ _id: string; name: string; email?: string; title?: string; role?: string; avatar?: string; avatarUrl?: string }>;
   assignedBy?: { _id: string; name: string; email?: string; title?: string };
   assignedAt?: string | null;
   startedAt?: string | null;

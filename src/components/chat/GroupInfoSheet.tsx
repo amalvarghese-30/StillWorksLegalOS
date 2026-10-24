@@ -12,7 +12,7 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -143,6 +143,9 @@ export function GroupInfoSheet({
               <div className="flex flex-col items-center text-center pt-2 pb-4">
                 <div className="relative mb-3">
                   <Avatar className="size-20 shadow-soft border-2 border-primary/20">
+                    {(group?.avatarUrl || otherMember?.avatarUrl) && (
+                      <AvatarImage src={group?.avatarUrl || otherMember?.avatarUrl} alt={group?.name} />
+                    )}
                     <AvatarFallback className="bg-primary/15 text-2xl font-bold text-primary">
                       {computeInitials(group?.name ?? "")}
                     </AvatarFallback>
@@ -180,6 +183,7 @@ export function GroupInfoSheet({
                       <li key={m._id} className="flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-accent">
                         <div className="relative shrink-0">
                           <Avatar className="size-9">
+                            {m.avatarUrl && <AvatarImage src={m.avatarUrl} alt={m.name} />}
                             <AvatarFallback className="bg-primary/15 text-sm font-medium text-primary">
                               {computeInitials(m.name)}
                             </AvatarFallback>

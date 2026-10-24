@@ -49,13 +49,29 @@ export function TaskMetadataView({
               activeTask.assignedUsers.map((u) => (
                 <span
                   key={u._id}
-                  className="inline-flex items-center gap-1 rounded bg-secondary/80 px-2 py-0.5 text-xs font-semibold text-secondary-foreground"
+                  className="inline-flex items-center gap-1.5 rounded bg-secondary/80 px-2 py-0.5 text-xs font-semibold text-secondary-foreground"
                 >
+                  {(u.avatarUrl || (u as any).avatar) && (
+                    <img
+                      src={u.avatarUrl || (u as any).avatar}
+                      alt={u.name}
+                      className="size-4 rounded-full object-cover shrink-0"
+                    />
+                  )}
                   {u.name}
                 </span>
               ))
             ) : (
-              <strong className="text-foreground">{activeTask.assignedTo?.name || "Unassigned"}</strong>
+              <span className="inline-flex items-center gap-1.5">
+                {(activeTask.assignedTo?.avatarUrl || (activeTask.assignedTo as any)?.avatar) && (
+                  <img
+                    src={activeTask.assignedTo?.avatarUrl || (activeTask.assignedTo as any)?.avatar}
+                    alt={activeTask.assignedTo.name}
+                    className="size-4 rounded-full object-cover shrink-0"
+                  />
+                )}
+                <strong className="text-foreground">{activeTask.assignedTo?.name || "Unassigned"}</strong>
+              </span>
             )}
           </div>
         </div>

@@ -231,16 +231,24 @@ export function ApprovalTable({
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2">
-                        <div className="size-6 rounded-full bg-primary/10 text-primary grid place-items-center text-[10px] font-bold shrink-0">
-                          {a.submittedBy?.name
-                            ? a.submittedBy.name
-                                .split(" ")
-                                .map((w) => w[0])
-                                .join("")
-                                .slice(0, 2)
-                                .toUpperCase()
-                            : "U"}
-                        </div>
+                        {a.submittedBy?.avatarUrl ? (
+                          <img
+                            src={a.submittedBy.avatarUrl}
+                            alt={a.submittedBy.name}
+                            className="size-6 rounded-full object-cover shrink-0"
+                          />
+                        ) : (
+                          <div className="size-6 rounded-full bg-primary/10 text-primary grid place-items-center text-[10px] font-bold shrink-0">
+                            {a.submittedBy?.name
+                              ? a.submittedBy.name
+                                  .split(" ")
+                                  .map((w) => w[0])
+                                  .join("")
+                                  .slice(0, 2)
+                                  .toUpperCase()
+                              : "U"}
+                          </div>
+                        )}
                         <div className="min-w-0">
                           <p className="text-xs font-medium text-foreground truncate">
                             {a.submittedBy?.name || "Employee"}

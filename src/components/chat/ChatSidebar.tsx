@@ -21,7 +21,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -294,8 +294,14 @@ function ChatRow({
             }`}
           >
             {/* Avatar with initials or group icon */}
-            <span className="relative grid size-11 shrink-0 place-items-center rounded-full bg-primary/12 text-helper font-semibold text-primary transition-transform group-hover:scale-105">
-              {isDirect ? (
+            <span className="relative grid size-11 shrink-0 place-items-center rounded-full bg-primary/12 text-helper font-semibold text-primary transition-transform group-hover:scale-105 overflow-hidden">
+              {isDirect && (group.avatarUrl || other?.avatarUrl) ? (
+                <img
+                  src={group.avatarUrl || other?.avatarUrl}
+                  alt={group.name}
+                  className="size-full object-cover rounded-full"
+                />
+              ) : isDirect ? (
                 computeInitials(group.name)
               ) : (
                 <UsersIcon size={18} strokeWidth={1.75} />
@@ -706,6 +712,7 @@ export function ChatSidebar({
                     >
                       <span className="relative grid size-10 shrink-0 place-items-center rounded-full bg-primary/15 text-helper font-semibold text-primary">
                         <Avatar className="size-10">
+                          {u.avatarUrl && <AvatarImage src={u.avatarUrl} alt={u.name} />}
                           <AvatarFallback className="bg-primary/15 text-sm font-semibold text-primary">
                             {computeInitials(u.name)}
                           </AvatarFallback>

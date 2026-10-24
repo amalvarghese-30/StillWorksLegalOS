@@ -36,6 +36,7 @@ export interface IUser extends Document {
   phone?: string;
   secondaryPhone?: string;
   avatarUrl?: string;
+  avatar?: string;
   permissions: UserPermissions;
   // Firm details (per-user firm settings)
   firmName?: string;
@@ -173,6 +174,7 @@ const UserSchema = new Schema<IUser>(
   {
     timestamps: true,
     toJSON: {
+      virtuals: true,
       transform(_doc, ret: Record<string, unknown>) {
         delete (ret as any).passwordHash;
         delete (ret as any).resetOtpHash;
@@ -182,8 +184,15 @@ const UserSchema = new Schema<IUser>(
         return ret;
       },
     },
+    toObject: {
+      virtuals: true,
+    },
   },
 );
+
+UserSchema.virtual("avatar").get(function (this: IUser) {
+  return this.avatarUrl || "";
+});
 
 // ---------------------------------------------------------------------------
 // Pre-save hook: set permissions based on role if not explicitly set

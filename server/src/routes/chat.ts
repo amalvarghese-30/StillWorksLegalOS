@@ -93,13 +93,16 @@ async function fillMemberNames(
 /** Normalize a message into the shape the UI expects (populated sender, string ids). */
 function serializeMessage(msg: any): Record<string, unknown> {
   const m = msg;
+  const senderId = m.sender?._id ? m.sender._id.toString() : (m.sender?.toString() ?? "");
+  const senderAvatar = (m.sender && typeof m.sender === "object" && m.sender.avatarUrl) || m.senderAvatar || "";
   return {
     _id: m._id?.toString(),
     groupId: m.groupId?.toString(),
     text: m.text ?? "",
     sender: {
-      _id: m.sender?.toString() ?? "",
+      _id: senderId,
       name: m.senderName ?? "",
+      avatarUrl: senderAvatar,
       initials:
         m.senderInitials && m.senderInitials !== "??"
           ? m.senderInitials
@@ -134,7 +137,7 @@ async function serializeGroup(
 ): Promise<Record<string, unknown>> {
   const memberUserIds = (group.members ?? []).map((m: any) => m.userId?.toString());
   const users = await User.find({ _id: { $in: memberUserIds } })
-    .select("name status lastActiveAt")
+    .select("name status lastActiveAt avatarUrl")
     .lean();
   const userById = new Map(users.map((u: any) => [u._id.toString(), u]));
 
@@ -150,6 +153,7 @@ async function serializeGroup(
       online: u?.status === "online",
       lastActiveAt: toIso(u?.lastActiveAt),
       joinedAt: toIso(m.joinedAt),
+      avatarUrl: u?.avatarUrl || "",
     };
   });
 
@@ -157,15 +161,20 @@ async function serializeGroup(
     (arr ?? []).some((id: any) => id?.toString() === currentUserId);
 
   // Direct chats store the creator's peer name at creation time. Derive the
-  // display name from the OTHER member so it is correct for every viewer.
+  // display name and avatar from the OTHER member so it is correct for every viewer.
   const isDirect = group.type === "direct";
+  const otherMember = isDirect
+    ? members.find((m: any) => m._id !== currentUserId)
+    : undefined;
   const displayName = isDirect
-    ? (members.find((m: any) => m._id !== currentUserId)?.name ?? group.name)
+    ? (otherMember?.name ?? group.name)
     : group.name;
+  const avatarUrl = isDirect ? (otherMember?.avatarUrl || "") : "";
 
   return {
     _id: group._id?.toString(),
     name: displayName,
+    avatarUrl,
     type: group.type,
     members,
     createdBy: group.createdBy?.toString(),
@@ -649,6 +658,7 @@ router.get(
 
       // Fetch one extra to detect whether more older messages remain.
       const docs = await ChatMessage.find(filter)
+        .populate("sender", "avatarUrl")
         .sort({ _id: -1 })
         .limit(limit + 1)
         .lean();
@@ -743,6 +753,7 @@ router.post(
         sender: req.user!._id,
         senderName,
         senderInitials,
+        senderAvatar: req.user?.avatarUrl || "",
         attachments: validAttachments,
         mentions: validMentions,
         replyTo: replyPayload,
@@ -1254,7 +1265,7 @@ router.post(
 router.get("/users", async (req: Request, res: Response) => {
   try {
     const users = await User.find({})
-      .select("_id name email role status lastActiveAt")
+      .select("_id name email role status lastActiveAt avatarUrl")
       .sort({ name: 1 })
       .lean();
 

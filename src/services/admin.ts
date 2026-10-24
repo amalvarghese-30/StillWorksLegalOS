@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "./api";
+import { api, getApiBase, getAccessToken } from "./api";
 import type { TaskOptions } from "./tasks";
 
 // ---------------------------------------------------------------------------
@@ -306,6 +306,7 @@ export interface FileIntegrityResponse {
 }
 
 export interface UpdateEmployeePayload {
+  avatarUrl?: string;
   name?: string;
   email?: string;
   role?: string;
@@ -408,6 +409,57 @@ export function useUpdateEmployee() {
         };
       });
       qc.invalidateQueries({ queryKey: ["chat", "users"] });
+    },
+  });
+}
+
+export function useUploadEmployeeAvatar() {
+  const qc = useQueryClient();
+  return useMutation<{ avatarUrl: string; user: EmployeeRecord }, Error, { id: string; file: File }>({
+    mutationFn: async ({ id, file }) => {
+      const formData = new FormData();
+      formData.append("avatar", file);
+      const token = getAccessToken();
+      const res = await fetch(`${getApiBase()}/admin/employees/${id}/avatar`, {
+        method: "POST",
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to upload avatar");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: adminKeys.all });
+      qc.invalidateQueries({ queryKey: ["chat"] });
+    },
+  });
+}
+
+export function useRemoveEmployeeAvatar() {
+  const qc = useQueryClient();
+  return useMutation<{ user: EmployeeRecord }, Error, { id: string }>({
+    mutationFn: async ({ id }) => {
+      const token = getAccessToken();
+      const res = await fetch(`${getApiBase()}/admin/employees/${id}/avatar`, {
+        method: "DELETE",
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to remove avatar");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: adminKeys.all });
+      qc.invalidateQueries({ queryKey: ["chat"] });
     },
   });
 }

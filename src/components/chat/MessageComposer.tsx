@@ -397,16 +397,24 @@ export function MessageComposer({
                           : "hover:bg-muted/70 text-foreground"
                       }`}
                     >
-                      {/* Avatar initials circle */}
-                      <div
-                        className={`grid size-8 shrink-0 place-items-center rounded-full text-xs font-bold ${
-                          idx === activeSuggestion
-                            ? "bg-primary/20 text-primary"
-                            : "bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        {(member.initials || member.name.slice(0, 2)).toUpperCase()}
-                      </div>
+                      {/* Avatar initials circle or photo */}
+                      {member.avatarUrl ? (
+                        <img
+                          src={member.avatarUrl}
+                          alt={member.name}
+                          className="size-8 rounded-full object-cover shrink-0"
+                        />
+                      ) : (
+                        <div
+                          className={`grid size-8 shrink-0 place-items-center rounded-full text-xs font-bold ${
+                            idx === activeSuggestion
+                              ? "bg-primary/20 text-primary"
+                              : "bg-muted text-muted-foreground"
+                          }`}
+                        >
+                          {(member.initials || member.name.slice(0, 2)).toUpperCase()}
+                        </div>
+                      )}
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold leading-tight">
                           {member.name}

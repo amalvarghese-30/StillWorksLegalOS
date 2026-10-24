@@ -341,9 +341,22 @@ export function MessageBubble({
 
               {/* Sender name for group chats */}
               {!isMine && isGroup && showSender && (
-                <p className={`mb-1 text-[11.5px] font-bold ${senderColor(message.sender._id)}`}>
-                  {message.sender.name}
-                </p>
+                <div className="flex items-center gap-1.5 mb-1">
+                  {message.sender.avatarUrl ? (
+                    <img
+                      src={message.sender.avatarUrl}
+                      alt={message.sender.name}
+                      className="size-4.5 rounded-full object-cover shrink-0"
+                    />
+                  ) : (
+                    <span className="grid size-4.5 place-items-center rounded-full bg-primary/15 text-[9px] font-bold text-primary shrink-0">
+                      {message.sender.initials || message.sender.name.slice(0, 2).toUpperCase()}
+                    </span>
+                  )}
+                  <p className={`text-[11.5px] font-bold ${senderColor(message.sender._id)}`}>
+                    {message.sender.name}
+                  </p>
+                </div>
               )}
 
               {/* Attachments / Voice notes */}

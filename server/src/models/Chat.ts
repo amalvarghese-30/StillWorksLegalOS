@@ -46,6 +46,7 @@ export interface IChatMessage extends Document {
   sender: mongoose.Types.ObjectId;
   senderName: string;
   senderInitials: string;
+  senderAvatar?: string;
   attachments: { name: string; nasPath: string; size: string }[];
   mentions: mongoose.Types.ObjectId[];
   readBy: mongoose.Types.ObjectId[];
@@ -140,6 +141,7 @@ const ChatMessageSchema = new Schema<IChatMessage>(
     sender: { type: Schema.Types.ObjectId, ref: "User", required: true },
     senderName: { type: String, default: "" },
     senderInitials: { type: String, default: "" },
+    senderAvatar: { type: String, default: "" },
     attachments: {
       type: [
         new Schema(

@@ -15,7 +15,8 @@ import { FileIntegrity, computeFileHash, type FileIntegrityStatus } from "../mod
 import { CalendarEvent } from "../models/CalendarEvent.js";
 import { AppSettings } from "../models/AppSettings.js";
 import { ApprovalRequest } from "../models/ApprovalRequest.js";
-import { testConnection, getLocalPath, STORAGE_ROOT } from "../services/storage.js";
+import busboy from "busboy";
+import { testConnection, getLocalPath, STORAGE_ROOT, StorageService } from "../services/storage.js";
 import { requireAuth, requireAdmin, requireAdminOrPermission } from "../middleware/auth.js";
 
 const router = Router();
@@ -812,7 +813,7 @@ router.patch("/employees/:id", requireAdminOrPermission("employees"), async (req
 
     // Build safe update — admins get the full allowed set, non-admins get restricted set.
     const allowedForAll = [
-      "name", "title", "status", "phone", "secondaryPhone",
+      "name", "title", "status", "phone", "secondaryPhone", "avatarUrl",
       "soundPreferences", "whatsappNotifications", "telegramNotifications", "telegramChatId"
     ];
     const allowedForAdmin = [...allowedForAll, "email", "role", "permissions"];
@@ -914,6 +915,157 @@ router.patch("/employees/:id", requireAdminOrPermission("employees"), async (req
 // ---------------------------------------------------------------------------
 // POST /api/admin/employees/:id/reset-password — admin reset password (admin or employees perm)
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/employees/:id/avatar — upload avatar for an employee (admin or employees perm)
+// ---------------------------------------------------------------------------
+
+router.post("/employees/:id/avatar", requireAdminOrPermission("employees"), async (req: Request, res: Response) => {
+  try {
+    const targetId = req.params["id"];
+    if (!targetId || typeof targetId !== "string" || !Types.ObjectId.isValid(targetId)) {
+      res.status(400).json({ message: "Invalid employee ID format" });
+      return;
+    }
+
+    const targetUser = await User.findById(targetId);
+    if (!targetUser) {
+      res.status(404).json({ message: "Employee not found" });
+      return;
+    }
+
+    const contentType = req.headers["content-type"] || "";
+    if (!contentType.includes("multipart/form-data")) {
+      res.status(400).json({ message: "Content-Type must be multipart/form-data" });
+      return;
+    }
+
+    const bb = busboy({
+      headers: req.headers,
+      limits: {
+        fileSize: 2 * 1024 * 1024,
+        files: 1,
+      },
+    });
+
+    let fileFound = false;
+    let uploadPromise: Promise<string> | null = null;
+    let fileError: string | null = null;
+
+    bb.on("file", (_name, fileStream, info) => {
+      fileFound = true;
+      const { mimeType } = info;
+      const allowedMimes: Record<string, string> = {
+        "image/jpeg": "jpg",
+        "image/png": "png",
+        "image/webp": "webp",
+      };
+
+      const ext = allowedMimes[mimeType.toLowerCase()];
+      if (!ext) {
+        fileError = "Invalid file type. Allowed formats: JPEG, PNG, WebP.";
+        fileStream.resume();
+        return;
+      }
+
+      const filename = `avatar_${targetId}_${Date.now()}.${ext}`;
+      const logicalPath = `Avatars/${filename}`;
+
+      uploadPromise = new Promise(async (resolve, reject) => {
+        let sizeLimitExceeded = false;
+        fileStream.on("limit", () => {
+          sizeLimitExceeded = true;
+          fileError = "Avatar file size exceeds the 2MB limit.";
+        });
+
+        try {
+          await StorageService.save(logicalPath, fileStream);
+          if (sizeLimitExceeded) {
+            await StorageService.delete(logicalPath).catch(() => {});
+            reject(new Error("Avatar file size exceeds the 2MB limit."));
+          } else {
+            resolve(filename);
+          }
+        } catch (err) {
+          reject(err);
+        }
+      });
+    });
+
+    bb.on("finish", async () => {
+      if (fileError) {
+        res.status(400).json({ message: fileError });
+        return;
+      }
+      if (!fileFound || !uploadPromise) {
+        res.status(400).json({ message: "No avatar image provided" });
+        return;
+      }
+
+      try {
+        const filename = await uploadPromise;
+        if (targetUser.avatarUrl && targetUser.avatarUrl.startsWith("/api/auth/avatar/")) {
+          const oldFilename = targetUser.avatarUrl.replace("/api/auth/avatar/", "");
+          if (/^avatar_[a-zA-Z0-9_\-\.]+$/.test(oldFilename)) {
+            await StorageService.delete(`Avatars/${oldFilename}`).catch(() => {});
+          }
+        }
+
+        targetUser.avatarUrl = `/api/auth/avatar/${filename}`;
+        await targetUser.save();
+
+        res.json({
+          message: "Avatar uploaded successfully",
+          avatarUrl: targetUser.avatarUrl,
+          user: targetUser.toJSON(),
+        });
+      } catch (err: any) {
+        console.error("[admin] Avatar upload error:", err);
+        res.status(500).json({ message: err?.message || "Failed to save avatar" });
+      }
+    });
+
+    req.pipe(bb);
+  } catch (err: any) {
+    console.error("[admin] Avatar upload error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/admin/employees/:id/avatar — remove avatar for an employee (admin or employees perm)
+// ---------------------------------------------------------------------------
+
+router.delete("/employees/:id/avatar", requireAdminOrPermission("employees"), async (req: Request, res: Response) => {
+  try {
+    const targetId = req.params["id"];
+    if (!targetId || typeof targetId !== "string" || !Types.ObjectId.isValid(targetId)) {
+      res.status(400).json({ message: "Invalid employee ID format" });
+      return;
+    }
+
+    const targetUser = await User.findById(targetId);
+    if (!targetUser) {
+      res.status(404).json({ message: "Employee not found" });
+      return;
+    }
+
+    if (targetUser.avatarUrl && targetUser.avatarUrl.startsWith("/api/auth/avatar/")) {
+      const oldFilename = targetUser.avatarUrl.replace("/api/auth/avatar/", "");
+      if (/^avatar_[a-zA-Z0-9_\-\.]+$/.test(oldFilename)) {
+        await StorageService.delete(`Avatars/${oldFilename}`).catch(() => {});
+      }
+    }
+
+    targetUser.avatarUrl = "";
+    await targetUser.save();
+
+    res.json({ message: "Avatar removed successfully", user: targetUser.toJSON() });
+  } catch (err: any) {
+    console.error("[admin] Delete avatar error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+});
 
 router.post("/employees/:id/reset-password", requireAdminOrPermission("employees"), async (req: Request, res: Response) => {
   try {
@@ -1956,7 +2108,7 @@ router.get("/reports/task-status-breakdown", requireAdminOrPermission("reports")
 
 router.get("/reports/employee-workload", requireAdminOrPermission("reports"), async (_req: Request, res: Response) => {
   try {
-    const employees = await User.find({}).select("name role status").lean();
+    const employees = await User.find({}).select("name role status avatarUrl").lean();
 
     const workloads = await Promise.all(
       employees.map(async (emp) => {
@@ -1979,6 +2131,7 @@ router.get("/reports/employee-workload", requireAdminOrPermission("reports"), as
           name: emp.name,
           role: emp.role,
           status: emp.status,
+          avatarUrl: emp.avatarUrl || "",
           activeCases: cases,
           pendingTasks: pendingTasksCount,
           completedTasks: completedTasks,
@@ -2253,6 +2406,7 @@ router.get("/reports/daily-employee", requireAdminOrPermission("reports"), async
             role: emp.role,
             title: emp.title,
             status: emp.status,
+          avatarUrl: emp.avatarUrl || "",
           },
           metrics: {
             assignedTodayCount: assignedTasks.length,

@@ -14,13 +14,14 @@ export interface ChatMember {
   online: boolean;
   lastActiveAt: string | null;
   joinedAt: string | null;
+  avatarUrl?: string;
 }
 
 export interface ChatMessage {
   _id: string;
   groupId: string;
   text: string;
-  sender: { _id: string; name: string; initials: string };
+  sender: { _id: string; name: string; initials: string; avatarUrl?: string };
   attachments: { name: string; nasPath: string; size: string }[];
   mentions: string[];
   readBy: string[];
@@ -32,6 +33,7 @@ export interface ChatMessage {
 export interface ChatGroup {
   _id: string;
   name: string;
+  avatarUrl?: string;
   type: "direct" | "group";
   members: ChatMember[];
   lastMessage?: {
@@ -72,6 +74,7 @@ export interface UserForContact {
   role: string;
   status: string;
   lastActiveAt: string;
+  avatarUrl?: string;
 }
 
 export interface UsersResponse {
