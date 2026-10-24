@@ -5,6 +5,7 @@ export type ApprovalType =
   | "task_forward"
   | "task_delete"
   | "case_delete"
+  | "case_completion"
   | "task_completion"
   | "attachment_delete";
 
@@ -36,6 +37,7 @@ const ApprovalRequestSchema = new Schema<IApprovalRequest>(
         "task_forward",
         "task_delete",
         "case_delete",
+        "case_completion",
         "task_completion",
         "attachment_delete",
       ],

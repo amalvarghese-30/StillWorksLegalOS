@@ -351,7 +351,7 @@ function AuditLogsPage() {
                   setTodayOnly(undefined);
                   setCurrentPage(1);
                 }}
-                className="rounded-lg border border-border/80 bg-background/50 px-2.5 py-1 text-xs text-foreground outline-none focus:border-primary"
+                className="rounded-lg border border-border/80 bg-background/50 px-2.5 py-1 text-xs text-foreground outline-none focus:border-primary min-w-[140px]"
               />
             </div>
 
@@ -366,7 +366,7 @@ function AuditLogsPage() {
                   setTodayOnly(undefined);
                   setCurrentPage(1);
                 }}
-                className="rounded-lg border border-border/80 bg-background/50 px-2.5 py-1 text-xs text-foreground outline-none focus:border-primary"
+                className="rounded-lg border border-border/80 bg-background/50 px-2.5 py-1 text-xs text-foreground outline-none focus:border-primary min-w-[140px]"
               />
             </div>
 

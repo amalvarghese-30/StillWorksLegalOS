@@ -1127,6 +1127,217 @@ router.post("/:id/request-deletion", requireResourceAccess("case"), async (req: 
 // Legal records must not be destroyed; use archive semantics instead.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// POST /api/cases/:id/complete — mark case completed (or request approval if employee)
+// ---------------------------------------------------------------------------
+router.post("/:id/complete", requireResourceAccess("case"), async (req: Request, res: Response) => {
+  try {
+    const caseId = req.params["id"];
+    const caseRecord = await Case.findById(caseId);
+    if (!caseRecord || caseRecord.isDeleted) {
+      res.status(404).json({ message: "Case not found" });
+      return;
+    }
+
+    const io = req.app.get("io");
+    const now = new Date();
+    const isAdmin = req.user?.role === "admin";
+    const note = typeof req.body.note === "string" ? req.body.note.trim() : "";
+
+    if (!isAdmin) {
+      // Employee flow: Requires admin approval
+      let approvalRequest = await ApprovalRequest.findOne({
+        entityId: caseRecord._id,
+        type: "case_completion",
+        status: "pending",
+      });
+
+      if (!approvalRequest) {
+        approvalRequest = await ApprovalRequest.create({
+          type: "case_completion",
+          entityType: "Case",
+          entityId: caseRecord._id,
+          requesterId: new mongoose.Types.ObjectId(req.userId!),
+          reason: note || "Case completion requested by employee",
+          status: "pending",
+        });
+      }
+
+      caseRecord.submittedForApprovalAt = now;
+      caseRecord.updatedBy = new mongoose.Types.ObjectId(req.userId!);
+      caseRecord.timeline.push({
+        event: `Case completion submitted for approval by ${req.user?.name ?? "Employee"}`,
+        by: req.user?.name ?? "Employee",
+        when: now,
+      });
+      await caseRecord.save();
+
+      // Notify all admins
+      const admins = await User.find({ role: "admin" }).select("_id");
+      for (const admin of admins) {
+        await NotificationService.createNotification(
+          {
+            userId: admin._id,
+            type: "APPROVAL_REQUESTED",
+            title: "Case Completion Requested",
+            message: `${req.user?.name ?? "An employee"} has marked case "${caseRecord.number} - ${caseRecord.title}" as completed (Pending approval).`,
+            relatedId: approvalRequest._id as any,
+            relatedModel: "ApprovalRequest",
+            actorId: new mongoose.Types.ObjectId(req.userId!),
+            metadata: {
+              caseId: caseRecord._id.toString(),
+              approvalRequestId: approvalRequest._id.toString(),
+            },
+          },
+          io
+        );
+      }
+
+      if (io) {
+        io.emit("case:updated", { case: caseRecord });
+      }
+
+      res.json({
+        message: "Case completion submitted for administrator approval",
+        pendingApproval: true,
+        approvalId: approvalRequest._id,
+        case: caseRecord,
+      });
+      return;
+    }
+
+    // Admin flow: Directly completes case and marks all tasks under it completed
+    caseRecord.status = "Closed";
+    caseRecord.completedAt = now;
+    caseRecord.approvedAt = now;
+    caseRecord.submittedForApprovalAt = null;
+    caseRecord.rejectedAt = null;
+    caseRecord.updatedBy = new mongoose.Types.ObjectId(req.userId!);
+    caseRecord.timeline.push({
+      event: `Case marked completed by ${req.user?.name ?? "Administrator"}`,
+      by: req.user?.name ?? "Administrator",
+      when: now,
+    });
+    await caseRecord.save();
+
+    // Mark all tasks under this case as completed
+    await Task.updateMany(
+      { caseId: caseRecord._id, isDeleted: { $ne: true }, status: { $ne: "completed" } },
+      {
+        $set: {
+          status: "completed",
+          completedAt: now,
+          approvedAt: now,
+          approvedBy: new mongoose.Types.ObjectId(req.userId!),
+        },
+      }
+    );
+
+    // If there was any pending approval request for this case, mark it approved
+    await ApprovalRequest.updateMany(
+      { entityId: caseRecord._id, type: "case_completion", status: "pending" },
+      {
+        $set: {
+          status: "approved",
+          reviewedBy: new mongoose.Types.ObjectId(req.userId!),
+          reviewedAt: now,
+          decisionRemark: note || "Directly approved by administrator",
+        },
+      }
+    );
+
+    if (io) {
+      io.emit("case:updated", { case: caseRecord });
+      io.emit("task:updated", { caseId: caseRecord._id.toString() });
+    }
+
+    res.json({
+      message: "Case and all associated tasks marked as completed",
+      pendingApproval: false,
+      case: caseRecord,
+    });
+  } catch (err: any) {
+    console.error("[cases] Complete case error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/cases/:id/reopen — reopen a completed case
+// ---------------------------------------------------------------------------
+router.post("/:id/reopen", requireResourceAccess("case"), async (req: Request, res: Response) => {
+  try {
+    const caseId = req.params["id"];
+    const caseRecord = await Case.findById(caseId);
+    if (!caseRecord || caseRecord.isDeleted) {
+      res.status(404).json({ message: "Case not found" });
+      return;
+    }
+
+    const io = req.app.get("io");
+    const now = new Date();
+    const userName = req.user?.name ?? "User";
+
+    caseRecord.status = "Active";
+    caseRecord.completedAt = null;
+    caseRecord.submittedForApprovalAt = null;
+    caseRecord.rejectedAt = null;
+    caseRecord.updatedBy = new mongoose.Types.ObjectId(req.userId!);
+    caseRecord.timeline.push({
+      event: `Case reopened by ${userName}`,
+      by: userName,
+      when: now,
+    });
+    await caseRecord.save();
+
+    // Cancel any pending completion approval requests
+    await ApprovalRequest.updateMany(
+      { entityId: caseRecord._id, type: "case_completion", status: "pending" },
+      {
+        $set: {
+          status: "cancelled",
+          decisionRemark: `Case reopened by ${userName}`,
+        },
+      }
+    );
+
+    // Notify all admins that user reopened the case
+    const admins = await User.find({ role: "admin" }).select("_id");
+    for (const admin of admins) {
+      if (admin._id.toString() === req.userId) continue;
+      await NotificationService.createNotification(
+        {
+          userId: admin._id,
+          type: "CUSTOM",
+          title: "Case Reopened",
+          message: `${userName} has reopened case "${caseRecord.number} - ${caseRecord.title}".`,
+          relatedId: caseRecord._id as any,
+          relatedModel: "Case",
+          actorId: new mongoose.Types.ObjectId(req.userId!),
+          metadata: {
+            caseId: caseRecord._id.toString(),
+            caseNumber: caseRecord.number,
+            action: "reopen",
+          },
+        },
+        io
+      );
+    }
+
+    if (io) {
+      io.emit("case:updated", { case: caseRecord });
+    }
+
+    res.json({
+      message: "Case reopened successfully",
+      case: caseRecord,
+    });
+  } catch (err: any) {
+    console.error("[cases] Reopen case error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+});
+
 router.delete("/:id", requireResourceAccess("case"), async (req: Request, res: Response) => {
   try {
     if (req.user?.role !== "admin") {

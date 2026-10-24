@@ -4337,6 +4337,200 @@ async function run() {
       !dbStandalone?.caseId,
       "P0-ASSIGN-039: Standalone task has no caseId"
     );
+
+    // ── Suite 35: Case Completion & Reopen Workflow ────────────────────────────
+    console.log("\n--- Suite 35: Case Completion & Reopen Workflow ---");
+
+    // Create an employee and admin for Suite 35
+    const s35Admin = await User.create({
+      name: "S35 Admin",
+      email: `s35admin_${Date.now()}@test.local`,
+      passwordHash: "dummyhash",
+      role: "admin",
+      isActive: true,
+    });
+    const s35AdminToken = jwt.sign(
+      { userId: s35Admin._id.toString(), email: s35Admin.email, role: s35Admin.role },
+      JWT_SECRET
+    );
+    await Session.create({
+      userId: s35Admin._id,
+      token: s35AdminToken,
+      refreshTokenHash: "test_s35_admin_refresh_hash",
+      isRevoked: false,
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+    });
+
+    const s35Employee = await User.create({
+      name: "S35 Employee",
+      email: `s35emp_${Date.now()}@test.local`,
+      passwordHash: "dummyhash",
+      role: "junior_advocate",
+      isActive: true,
+    });
+    const s35EmployeeToken = jwt.sign(
+      { userId: s35Employee._id.toString(), email: s35Employee.email, role: s35Employee.role },
+      JWT_SECRET
+    );
+    await Session.create({
+      userId: s35Employee._id,
+      token: s35EmployeeToken,
+      refreshTokenHash: "test_s35_emp_refresh_hash",
+      isRevoked: false,
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+    });
+
+    // Create a case with 2 tasks for testing Admin completion
+    const s35Case1 = await Case.create({
+      number: `CASE-S35-01-${Date.now()}`,
+      title: "Suite 35 Admin Direct Complete Case",
+      description: "Testing admin direct case completion",
+      practice: "Corporate",
+      court: "High Court",
+      status: "Active",
+      priority: "High",
+      createdBy: s35Admin._id,
+      assignedTo: s35Employee._id,
+      parties: [],
+      notes: [],
+      timeline: [],
+      progress: 0,
+      tags: [],
+    });
+
+    const s35Task1_1 = await Task.create({
+      title: "S35 Task 1.1",
+      caseId: s35Case1._id,
+      status: "in_progress",
+      priority: "High",
+      assignedTo: s35Employee._id,
+      createdBy: s35Admin._id,
+      category: "Drafting",
+      checklist: [],
+      remarks: [],
+      assignmentHistory: [],
+    });
+
+    const s35Task1_2 = await Task.create({
+      title: "S35 Task 1.2",
+      caseId: s35Case1._id,
+      status: "pending_approval",
+      priority: "Medium",
+      assignedTo: s35Employee._id,
+      createdBy: s35Admin._id,
+      category: "Review",
+      checklist: [],
+      remarks: [],
+      assignmentHistory: [],
+    });
+
+    // TEST 1: Admin directly completes case
+    const adminCompRes = await request(app)
+      .post(`/api/cases/${s35Case1._id}/complete`)
+      .set("Authorization", `Bearer ${s35AdminToken}`)
+      .send({ note: "Case settled amicably" });
+
+    assert(adminCompRes.status === 200, "S35-01: Admin direct completion -> 200");
+    assert(adminCompRes.body.pendingApproval === false, "S35-02: Admin completion is NOT pending approval");
+
+    const dbCase1 = await Case.findById(s35Case1._id).lean() as any;
+    assert(dbCase1.status === "Closed", "S35-03: Case status is Closed");
+    assert(Boolean(dbCase1.completedAt), "S35-04: Case completedAt is set");
+
+    const dbTasks1 = await Task.find({ caseId: s35Case1._id }).lean() as any[];
+    assert(dbTasks1.length === 2, "S35-05: Both tasks found");
+    assert(dbTasks1.every((t) => t.status === "completed"), "S35-06: All tasks under completed case are marked completed");
+    assert(dbTasks1.every((t) => Boolean(t.completedAt)), "S35-07: All tasks have completedAt set");
+
+    // TEST 2: Reopen Case
+    const reopenRes = await request(app)
+      .post(`/api/cases/${s35Case1._id}/reopen`)
+      .set("Authorization", `Bearer ${s35EmployeeToken}`)
+      .send({});
+
+    assert(reopenRes.status === 200, "S35-08: Reopening case -> 200");
+    const dbCase1Reopened = await Case.findById(s35Case1._id).lean() as any;
+    assert(dbCase1Reopened.status === "Active", "S35-09: Case status returned to Active");
+    assert(dbCase1Reopened.completedAt === null, "S35-10: Case completedAt cleared on reopen");
+
+    // Verify Admin received notification about reopen
+    const adminNotif = await Notification.findOne({
+      userId: s35Admin._id,
+      title: "Case Reopened",
+    }).lean() as any;
+    assert(Boolean(adminNotif), "S35-11: Admin received notification for case reopen");
+    assert(adminNotif.message.includes("S35 Employee"), "S35-12: Notification mentions the user who reopened");
+
+    // TEST 3: Employee requests case completion
+    const s35Case2 = await Case.create({
+      number: `CASE-S35-02-${Date.now()}`,
+      title: "Suite 35 Employee Request Case",
+      description: "Testing employee case completion approval request",
+      practice: "Property",
+      court: "Civil Court",
+      status: "Active",
+      priority: "Medium",
+      createdBy: s35Admin._id,
+      assignedTo: s35Employee._id,
+      parties: [],
+      notes: [],
+      timeline: [],
+      progress: 0,
+      tags: [],
+    });
+
+    const s35Task2_1 = await Task.create({
+      title: "S35 Task 2.1",
+      caseId: s35Case2._id,
+      status: "in_progress",
+      priority: "Medium",
+      assignedTo: s35Employee._id,
+      createdBy: s35Admin._id,
+      category: "CIDCO",
+      checklist: [],
+      remarks: [],
+      assignmentHistory: [],
+    });
+
+    const empCompRes = await request(app)
+      .post(`/api/cases/${s35Case2._id}/complete`)
+      .set("Authorization", `Bearer ${s35EmployeeToken}`)
+      .send({ note: "All CIDCO orders retrieved" });
+
+    assert(empCompRes.status === 200, "S35-13: Employee completion request -> 200");
+    assert(empCompRes.body.pendingApproval === true, "S35-14: Employee completion requires admin approval");
+
+    const s35ApprovalReq = await ApprovalRequest.findOne({
+      entityId: s35Case2._id,
+      type: "case_completion",
+      status: "pending",
+    }).lean() as any;
+    assert(Boolean(s35ApprovalReq), "S35-15: ApprovalRequest of type case_completion created");
+
+    const empNotif = await Notification.findOne({
+      userId: s35Admin._id,
+      title: "Case Completion Requested",
+    }).lean() as any;
+    assert(Boolean(empNotif), "S35-16: Admin received notification for case completion request");
+
+    // Tasks under case should NOT be completed yet
+    const dbTaskBeforeApprove = await Task.findById(s35Task2_1._id).lean() as any;
+    assert(dbTaskBeforeApprove.status === "in_progress", "S35-17: Task is still in_progress before approval");
+
+    // TEST 4: Admin approves the case completion
+    const approveRes = await request(app)
+      .post(`/api/approvals/${s35ApprovalReq._id}/approve`)
+      .set("Authorization", `Bearer ${s35AdminToken}`)
+      .send({ remark: "Well executed, case verified closed" });
+
+    assert(approveRes.status === 200, "S35-18: Admin approves case completion -> 200");
+
+    const dbCase2Approved = await Case.findById(s35Case2._id).lean() as any;
+    assert(dbCase2Approved.status === "Closed", "S35-19: Case is now Closed");
+    assert(Boolean(dbCase2Approved.completedAt), "S35-20: Case completedAt is set");
+
+    const dbTaskAfterApprove = await Task.findById(s35Task2_1._id).lean() as any;
+    assert(dbTaskAfterApprove.status === "completed", "S35-21: Task under case automatically marked completed on approval");
   }
 
   try {

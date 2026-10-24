@@ -64,7 +64,7 @@ export function ApprovalDetailDrawer({
   const task = item.taskDetails;
   const doc = item.documentDetails;
   const req = item.requestDetails;
-  const caseData = task?.case || doc?.case || item.caseDetails;
+  const caseData = task?.case || doc?.case || item.caseDetails || (item.requestDetails as any)?.case;
   const clientData = task?.client || doc?.client;
 
   // Subtask statistics

@@ -50,6 +50,8 @@ export function iconForKind(kind?: string) {
     case "Task Deletion":
     case "Case Deletion":
       return ShieldAlert;
+    case "Case Completion":
+      return CheckSquare;
     default:
       return Briefcase;
   }

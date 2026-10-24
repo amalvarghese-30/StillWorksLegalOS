@@ -36,6 +36,7 @@ import { MobileSectionNav } from "@/components/layout/MobileSectionNav";
 import {
   useCase, useUpdateCase, useDeleteCase, useAddCaseNote, useAddCaseParty, useRemoveCaseParty,
   useForwardCase, useReassignCase, useRequestCaseDeletion,
+  useCompleteCase, useReopenCase,
   type CaseRecord, type CaseParty,
 } from "@/services/cases";
 import { useAuth } from "@/lib/auth";
@@ -344,6 +345,10 @@ function CaseWorkspace() {
   const [showRequestDeleteDialog, setShowRequestDeleteDialog] = useState(false);
   const [caseDeleteReason, setCaseDeleteReason] = useState("");
   const [showReopenConfirm, setShowReopenConfirm] = useState(false);
+  const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
+  const [completeNote, setCompleteNote] = useState("");
+  const completeCase = useCompleteCase();
+  const reopenCase = useReopenCase();
   const [showForwardDialog, setShowForwardDialog] = useState(false);
   const [showReassignDialog, setShowReassignDialog] = useState(false);
   const [targetUserId, setTargetUserId] = useState("");
@@ -420,12 +425,29 @@ function CaseWorkspace() {
     }
   };
 
-  const handleReopenCase = () => {
-    updateCase.mutate({ id: caseId, data: { status: "Active" } }, {
-      onSuccess: () => {
-        setShowReopenConfirm(false);
-      },
-    });
+  const handleReopenCase = async () => {
+    try {
+      await reopenCase.mutateAsync({ caseId });
+      toast.success("Case reopened successfully and administrators notified.");
+      setShowReopenConfirm(false);
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to reopen case");
+    }
+  };
+
+  const handleCompleteCase = async () => {
+    try {
+      const res = await completeCase.mutateAsync({ caseId, note: completeNote.trim() || undefined });
+      if (res.pendingApproval) {
+        toast.success("Case completion submitted for administrator approval.");
+      } else {
+        toast.success("Case and all associated tasks marked as completed.");
+      }
+      setShowCompleteConfirm(false);
+      setCompleteNote("");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to complete case");
+    }
   };
 
   if (isLoading) {
@@ -518,15 +540,25 @@ function CaseWorkspace() {
               <Button variant="outline" className="rounded-md" asChild>
                 <Link to="/calendar"><CalendarDays size={17} strokeWidth={1.75} /> View calendar</Link>
               </Button>
-              {record.status === "Closed" && (
+              {record.status === "Closed" ? (
                 <Button
                   variant="default"
                   className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-md gap-1.5 shadow-soft"
-                  disabled={updateCase.isPending}
+                  disabled={reopenCase.isPending}
                   onClick={() => setShowReopenConfirm(true)}
                 >
                   <RotateCcw size={15} strokeWidth={1.75} />
                   Reopen Case
+                </Button>
+              ) : (
+                <Button
+                  variant="default"
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-md gap-1.5 shadow-soft"
+                  disabled={completeCase.isPending}
+                  onClick={() => setShowCompleteConfirm(true)}
+                >
+                  <CheckSquare size={15} strokeWidth={1.75} />
+                  Complete Case
                 </Button>
               )}
               {isAdmin ? (
@@ -564,13 +596,21 @@ function CaseWorkspace() {
                       <span>View calendar</span>
                     </Link>
                   </DropdownMenuItem>
-                  {record.status === "Closed" && (
+                  {record.status === "Closed" ? (
                     <DropdownMenuItem
                       className="text-emerald-600 dark:text-emerald-400 font-medium"
                       onClick={() => setShowReopenConfirm(true)}
                     >
                       <RotateCcw size={15} />
                       <span>Reopen Case</span>
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem
+                      className="text-primary font-medium"
+                      onClick={() => setShowCompleteConfirm(true)}
+                    >
+                      <CheckSquare size={15} />
+                      <span>Complete Case</span>
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuSeparator />
@@ -605,12 +645,29 @@ function CaseWorkspace() {
           <Button
             size="sm"
             className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-md gap-1.5 shadow-sm"
-            disabled={updateCase.isPending}
-            onClick={() => updateCase.mutate({ id: caseId, data: { status: "Active" } })}
+            disabled={reopenCase.isPending}
+            onClick={handleReopenCase}
           >
             <RotateCcw size={14} strokeWidth={2} />
             Reopen This Case
           </Button>
+        </div>
+      )}
+
+      {/* Pending completion approval banner */}
+      {record.submittedForApprovalAt && record.status !== "Closed" && (
+        <div className="mb-6 flex items-center justify-between gap-4 rounded-lg border border-primary/30 bg-primary/10 p-4 text-primary">
+          <div className="flex items-center gap-3">
+            <span className="grid size-9 shrink-0 place-items-center rounded-full bg-primary/20 text-primary">
+              <Clock size={18} strokeWidth={2} />
+            </span>
+            <div>
+              <p className="font-semibold">Case Completion Requested</p>
+              <p className="text-caption opacity-90">
+                An employee has marked this case as completed. Pending administrator verification and approval.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1159,6 +1216,54 @@ function CaseWorkspace() {
         </DialogContent>
       </Dialog>
 
+      <AlertDialog open={showCompleteConfirm} onOpenChange={setShowCompleteConfirm}>
+        <AlertDialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-title font-semibold text-foreground flex items-center gap-2">
+              <CheckSquare size={18} className="text-primary" />
+              Complete Case
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-helper text-muted-foreground mt-2 space-y-3">
+              <span>
+                Are you sure you want to mark case <span className="font-semibold text-foreground">"{record.number} — {record.title}"</span> as completed?
+              </span>
+              <div className="rounded-md border border-primary/20 bg-primary/5 p-3 text-xs text-foreground/80 space-y-1 text-left">
+                <p className="font-medium text-foreground">
+                  {isAdmin ? "✓ Automatic Task Completion:" : "✓ Admin Approval Workflow:"}
+                </p>
+                <p>
+                  {isAdmin
+                    ? "All existing tasks associated with this case will also be automatically marked as completed."
+                    : "Your completion request will be submitted to firm administrators for approval. Once approved, the case and all tasks under it will be marked as completed."}
+                </p>
+              </div>
+              <div className="pt-2 text-left">
+                <Label className="text-xs font-medium text-muted-foreground">Completion remarks / notes (optional)</Label>
+                <Input
+                  value={completeNote}
+                  onChange={(e) => setCompleteNote(e.target.value)}
+                  placeholder="e.g. Orders received / registration concluded..."
+                  className="mt-1 h-9 text-xs"
+                />
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-5 flex justify-end gap-2">
+            <AlertDialogCancel className="rounded-md" disabled={completeCase.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
+              onClick={(e) => {
+                e.preventDefault();
+                handleCompleteCase();
+              }}
+              disabled={completeCase.isPending}
+            >
+              {completeCase.isPending ? "Submitting…" : isAdmin ? "Complete Case & Tasks" : "Submit for Approval"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AlertDialog open={showReopenConfirm} onOpenChange={setShowReopenConfirm}>
         <AlertDialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
           <AlertDialogHeader>
@@ -1168,17 +1273,17 @@ function CaseWorkspace() {
             </AlertDialogTitle>
             <AlertDialogDescription className="text-helper text-muted-foreground mt-2">
               Are you sure you want to reopen case <span className="font-semibold text-foreground">"{record.number} — {record.title}"</span>?
-              Its status will be restored to <strong className="text-foreground">Active</strong>, and it will reappear in active court listings and daily case management.
+              Its status will be restored to <strong className="text-foreground">Active</strong>, and firm administrators will be notified.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="mt-5 flex justify-end gap-2">
-            <AlertDialogCancel className="rounded-md" disabled={updateCase.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel className="rounded-md" disabled={reopenCase.isPending}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="rounded-md bg-emerald-600 text-white hover:bg-emerald-700"
               onClick={handleReopenCase}
-              disabled={updateCase.isPending}
+              disabled={reopenCase.isPending}
             >
-              {updateCase.isPending ? "Reopening…" : "Reopen Case"}
+              {reopenCase.isPending ? "Reopening…" : "Reopen Case"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

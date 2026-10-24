@@ -249,6 +249,63 @@ router.post("/:id/approve", requireAdminOrPermission("approvals"), async (req: R
       }
       details = "Approved case deletion (soft delete)";
 
+    } else if (approval.type === "case_completion") {
+      const c = await Case.findById(approval.entityId);
+      if (c) {
+        c.status = "Closed";
+        c.completedAt = now;
+        c.approvedAt = now;
+        c.rejectedAt = null;
+        c.submittedForApprovalAt = null;
+        c.timeline.push({
+          event: `Case completion approved by ${adminUser.name}`,
+          by: adminUser.name,
+          when: now,
+        });
+        await c.save();
+
+        await Task.updateMany(
+          { caseId: c._id, isDeleted: { $ne: true }, status: { $ne: "completed" } },
+          {
+            $set: {
+              status: "completed",
+              completedAt: now,
+              approvedAt: now,
+              approvedBy: new Types.ObjectId(req.userId!),
+            },
+          }
+        );
+
+        const notifyUsers = new Set<string>();
+        if (approval.requesterId) notifyUsers.add(approval.requesterId.toString());
+        if (c.assignedTo) notifyUsers.add(c.assignedTo.toString());
+        if (c.assignedUsers && Array.isArray(c.assignedUsers)) {
+          c.assignedUsers.forEach((u: any) => notifyUsers.add(u.toString()));
+        }
+
+        for (const uid of notifyUsers) {
+          if (uid === req.userId) continue;
+          await NotificationService.createNotification(
+            {
+              userId: new Types.ObjectId(uid),
+              type: "CASE_APPROVED",
+              title: "Case Completion Approved",
+              message: `${adminUser.name} verified and approved completion for case "${c.number} - ${c.title}". Remark: ${cleanRemark}`,
+              relatedId: c._id,
+              relatedModel: "Case",
+              actorId: new Types.ObjectId(req.userId!),
+            },
+            io
+          );
+        }
+
+        if (io) {
+          io.emit("case:updated", { case: c });
+          io.emit("task:updated", { caseId: c._id.toString() });
+        }
+      }
+      details = "Approved case completion";
+
     } else if (approval.type === "task_completion") {
       const task = await Task.findById(approval.entityId);
       if (task) {
@@ -363,6 +420,37 @@ router.post("/:id/reject", requireAdminOrPermission("approvals"), async (req: Re
     let clientName = "General Client";
     let deadlineStr = "No deadline";
     let taskRecord: any = null;
+
+    if (approval.type === "case_completion") {
+      const c = await Case.findById(approval.entityId);
+      if (c) {
+        c.submittedForApprovalAt = null;
+        c.rejectedAt = now;
+        c.timeline.push({
+          event: `Case completion rejected by ${adminUser.name}: "${cleanRemark}"`,
+          by: adminUser.name,
+          when: now,
+        });
+        await c.save();
+
+        if (approval.requesterId && approval.requesterId.toString() !== req.userId) {
+          await NotificationService.createNotification(
+            {
+              userId: approval.requesterId,
+              type: "CUSTOM",
+              title: "Case Completion Rejected",
+              message: `${adminUser.name} requested changes / rejected case completion for "${c.number} - ${c.title}": ${cleanRemark || "No remark provided"}`,
+              relatedId: c._id,
+              relatedModel: "Case",
+              actorId: new Types.ObjectId(req.userId!),
+            },
+            io
+          );
+        }
+
+        if (io) io.emit("case:updated", { case: c });
+      }
+    }
 
     if (approval.type === "task_completion") {
       const task = await Task.findById(approval.entityId).populate("clientId caseId");

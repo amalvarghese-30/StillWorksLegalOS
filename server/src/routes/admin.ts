@@ -622,7 +622,9 @@ router.get("/employees/:id/approvals", async (req: Request, res: Response) => {
           _id: `approval_req_${r._id.toString()}`,
           rawApprovalId: r._id.toString(),
           kind,
-          title: `${kind}${targetName}`,
+          title: r.type === "case_completion" && r.entityId?.title
+          ? `Case Completion: ${r.entityId.title}`
+          : `${kind}${targetName}`,
           context: `Requested by ${requesterName}: "${r.reason || "No remark"}"`,
           when: r.createdAt,
           requestDetails: {
@@ -1530,6 +1532,7 @@ router.get("/approvals", requireAdminOrPermission("approvals"), async (req: Requ
         .populate("targetUserId", "name email role")
         .populate("originalAssigneeId", "name email role")
         .populate("reviewedBy", "name email role")
+        .populate("entityId")
         .sort({ createdAt: -1 })
         .lean(),
     ]);
@@ -1728,6 +1731,7 @@ router.get("/approvals", requireAdminOrPermission("approvals"), async (req: Requ
       else if (r.type === "task_delete") { kind = "Task Deletion"; category = "tasks"; }
       else if (r.type === "case_delete") { kind = "Case Deletion"; category = "cases"; }
       else if (r.type === "case_reassign") { kind = "Case Reassignment"; category = "cases"; }
+      else if (r.type === "case_completion") { kind = "Case Completion"; category = "cases"; }
       else if (r.type === "attachment_retention_purge") { kind = "Attachment Purge"; category = "documents"; }
       else if (r.type === "attachment_delete") { kind = "Attachment Deletion"; category = "documents"; }
 

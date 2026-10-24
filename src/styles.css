@@ -188,12 +188,19 @@
     color-scheme: dark;
   }
 
-  /* Make calendar and time picker indicators pointer and clear */
+  /* Make calendar and time picker indicators pointer and clear with comfortable padding */
+  input[type="date"],
+  input[type="datetime-local"] {
+    min-width: 140px;
+  }
+
   input[type="date"]::-webkit-calendar-picker-indicator,
   input[type="datetime-local"]::-webkit-calendar-picker-indicator,
   input[type="time"]::-webkit-calendar-picker-indicator {
     cursor: pointer;
     opacity: 0.85;
+    padding: 2px;
+    margin-left: 4px;
     transition: opacity 150ms ease;
   }
 

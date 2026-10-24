@@ -324,6 +324,33 @@ export function useRequestCaseDeletion() {
     },
   });
 }
+export function useCompleteCase() {
+  const qc = useQueryClient();
+  return useMutation<{ case: CaseRecord; message: string; pendingApproval?: boolean }, Error, { caseId: string; note?: string }>({
+    mutationFn: ({ caseId, note }) =>
+      api.post(`/cases/${caseId}/complete`, { note }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: caseKeys.detail(vars.caseId) });
+      qc.invalidateQueries({ queryKey: caseKeys.all });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["admin", "approvals"] });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
 
-
+export function useReopenCase() {
+  const qc = useQueryClient();
+  return useMutation<{ case: CaseRecord; message: string }, Error, { caseId: string }>({
+    mutationFn: ({ caseId }) =>
+      api.post(`/cases/${caseId}/reopen`, {}),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: caseKeys.detail(vars.caseId) });
+      qc.invalidateQueries({ queryKey: caseKeys.all });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["admin", "approvals"] });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
 

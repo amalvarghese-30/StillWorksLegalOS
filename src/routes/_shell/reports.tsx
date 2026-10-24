@@ -336,7 +336,7 @@ function ReportsPage() {
                     onChange={(e) => {
                       if (e.target.value) setSelectedDate(e.target.value);
                     }}
-                    className="border-0 bg-transparent px-2 py-0.5 text-xs font-medium text-foreground focus:outline-none focus:ring-0"
+                    className="border-0 bg-transparent px-2 py-0.5 text-xs font-medium text-foreground focus:outline-none focus:ring-0 min-w-[135px]"
                     aria-label="Select report date"
                   />
                   <Button
@@ -1826,22 +1826,33 @@ function EmployeeDetailReportView({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span>Filter:</span>
+        <div className="flex flex-wrap items-center gap-2 no-print">
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 text-xs text-muted-foreground bg-muted/40 px-2.5 py-1 rounded-md border border-border/60">
+            <span className="font-medium text-foreground">Filter:</span>
             <Input
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="h-8 text-xs w-32 rounded-md"
+              className="h-8 text-xs min-w-[140px] w-36 rounded-md bg-background px-2.5"
             />
-            <span>to</span>
+            <span className="px-0.5">to</span>
             <Input
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="h-8 text-xs w-32 rounded-md"
+              className="h-8 text-xs min-w-[140px] w-36 rounded-md bg-background px-2.5"
             />
+            {(startDate || endDate) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { setStartDate(""); setEndDate(""); }}
+                className="h-7 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+                title="Clear dates"
+              >
+                Clear
+              </Button>
+            )}
           </div>
           <Button
             variant="default"
