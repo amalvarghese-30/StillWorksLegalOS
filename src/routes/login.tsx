@@ -140,26 +140,34 @@ function LoginPage() {
         {/* Subtle decorative glow for light mode canvas */}
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/5 via-transparent to-transparent opacity-70" />
 
-        <div className="w-full max-w-[440px] relative z-10 rounded-2xl border border-slate-200/90 dark:border-border/80 bg-card/95 backdrop-blur-xl shadow-xl shadow-slate-900/5 p-7 sm:p-9">
-          <div className="flex items-center gap-3">
-            <span className="gradient-primary grid size-11 place-items-center rounded-xl text-primary-foreground shadow-sm">
-              <Scale size={22} strokeWidth={1.8} />
-            </span>
-            <div>
-              <p className="text-xs font-bold tracking-wider text-primary uppercase font-display">
-                S &amp; S Associates
-              </p>
-              <p className="text-[11px] text-muted-foreground font-medium">Legal-Tech LLP</p>
+        <div className="w-full max-w-[460px] relative z-10 rounded-2xl border border-slate-200/90 dark:border-border/80 bg-card/95 backdrop-blur-xl shadow-xl shadow-slate-900/5 p-7 sm:p-9">
+          {/* Centered, Prominent & Professional Law Firm Branding */}
+          <div className="flex flex-col items-center text-center">
+            <div className="relative mb-3.5">
+              <span className="gradient-primary grid size-16 sm:size-20 place-items-center rounded-2xl text-primary-foreground shadow-lg shadow-primary/20 ring-4 ring-primary/10 transition-transform duration-300 hover:scale-105">
+                <Scale size={36} strokeWidth={1.8} className="drop-shadow-sm" />
+              </span>
             </div>
-          </div>
 
-          <div className="mt-6">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground font-display">
-              Enterprise Practice Portal
-            </h1>
-            <p className="mt-1.5 text-xs text-muted-foreground leading-relaxed">
-              Welcome back. Authenticate your credentials to access court listings, confidential matter records, and client communications.
-            </p>
+            <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground font-display uppercase">
+              S &amp; S Associates
+            </h2>
+            <div className="mt-1.5 flex items-center justify-center gap-2.5">
+              <span className="h-px w-6 bg-border/80" />
+              <p className="text-xs sm:text-sm font-bold tracking-[0.2em] text-primary uppercase font-mono">
+                Legal-Tech LLP
+              </p>
+              <span className="h-px w-6 bg-border/80" />
+            </div>
+
+            <div className="mt-5 pt-4 border-t border-border/60 w-full">
+              <h1 className="text-base sm:text-lg font-bold tracking-tight text-foreground font-display">
+                Enterprise Practice Portal
+              </h1>
+              <p className="mt-1 text-xs text-muted-foreground leading-relaxed max-w-sm mx-auto">
+                Authenticate your credentials to access court listings, confidential matter records, and client communications.
+              </p>
+            </div>
           </div>
 
           <form className="mt-7 space-y-4" onSubmit={submit} noValidate>
