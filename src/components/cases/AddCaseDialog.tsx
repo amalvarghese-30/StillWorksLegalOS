@@ -483,31 +483,36 @@ export function AddCaseDialog({
             e.preventDefault();
             handleAttemptClose();
           }}
-          className="max-h-[90vh] overflow-y-auto sm:max-w-2xl rounded-xl border border-border bg-card p-6 shadow-lift"
+          className="max-h-[90vh] overflow-y-auto sm:max-w-3xl rounded-xl border border-border bg-card shadow-lift"
         >
-          <DialogHeader>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="grid size-10 place-items-center rounded-lg bg-primary/10 text-primary">
-                  <Briefcase size={20} strokeWidth={1.75} />
-                </span>
-                <div>
-                  <DialogTitle className="text-title font-semibold text-foreground">
-                    Create new case
-                  </DialogTitle>
-                  <DialogDescription className="text-helper text-muted-foreground">
-                    Add a new case, define initial details, and assign tasks.
-                  </DialogDescription>
-                </div>
+          <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b border-border">
+            <div className="flex items-center gap-3">
+              <span className="grid size-10 place-items-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+                <Briefcase size={18} strokeWidth={2} />
+              </span>
+              <div>
+                <DialogTitle className="text-base font-semibold text-foreground leading-tight">
+                  Create new case
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                  Case details, parties, and initial tasks on one screen.
+                </DialogDescription>
               </div>
             </div>
-          </DialogHeader>
+          </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5 pt-2">
-            {/* ── Client Name / Title ── */}
+          <form onSubmit={handleSubmit} className="divide-y divide-border">
+            {/* ── CASE SECTION ── */}
+            <div className="px-6 py-5 space-y-4">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Case</span>
+                <div className="flex-1 h-px bg-border/60" />
+              </div>
+
+            {/* Client Name / Title */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <Label htmlFor="case-title" className="text-helper">
+                <Label htmlFor="case-title" className="text-xs font-medium text-foreground">
                   Client Name / Case Title <span className="text-destructive">*</span>
                 </Label>
                 {clientsData?.clients && clientsData.clients.length > 0 && (
@@ -605,6 +610,113 @@ export function AddCaseDialog({
                 />
               </div>
             </div>
+
+
+            {/* ── Status & Priority ── */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-foreground">Case Status</Label>
+                <div className="flex rounded-lg border border-border overflow-hidden bg-muted/30">
+                  {(["Active", "Urgent", "On Hold", "Closed"] as const).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => update("status", s)}
+                      className={`flex-1 px-2 py-2 text-[11px] font-semibold transition-all border-r border-border last:border-r-0 ${form.status === s
+                        ? s === "Urgent" ? "bg-destructive/15 text-destructive"
+                          : s === "On Hold" ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                          : s === "Closed" ? "bg-muted text-muted-foreground"
+                          : "bg-primary/15 text-primary"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-foreground">Priority</Label>
+                <div className="flex rounded-lg border border-border overflow-hidden bg-muted/30">
+                  {(["High", "Medium", "Low"] as const).map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => update("priority", p)}
+                      className={`flex-1 px-2.5 py-2 text-[11px] font-semibold transition-all border-r border-border last:border-r-0 ${form.priority === p
+                          ? p === "High"
+                            ? "bg-destructive/15 text-destructive"
+                            : p === "Medium"
+                              ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                              : "bg-muted text-foreground"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        }`}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* ── Assigned Team / Counsel ── */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-foreground">Assigned Team / Counsel</Label>
+              <AssigneeMultiSelect
+                value={form.assignedTo}
+                onChange={(val) => update("assignedTo", val)}
+                placeholder="Tick employees / counsel to assign..."
+              />
+            </div>
+
+            {/* ── Tags ── */}
+            <div className="space-y-2">
+              <Label htmlFor="case-tags" className="text-xs font-medium text-foreground">Tags</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="case-tags"
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { e.preventDefault(); addTag(); }
+                  }}
+                  placeholder="Type a tag and press Enter"
+                  className="h-11 flex-1 rounded-md"
+                />
+                <Button type="button" variant="outline" className="rounded-md h-11" onClick={addTag}>
+                  <Plus size={15} />
+                </Button>
+              </div>
+              {tags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {tags.map((t) => (
+                    <span
+                      key={t}
+                      className="flex items-center gap-1 rounded-pill bg-muted px-3 py-1 text-caption font-medium"
+                    >
+                      {t}
+                      <button
+                        type="button"
+                        onClick={() => removeTag(t)}
+                        className="ml-0.5 grid size-4 place-items-center rounded-full text-muted-foreground hover:text-destructive"
+                        aria-label={`Remove tag ${t}`}
+                      >
+                        <X size={11} strokeWidth={2.5} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+            </div>{/* end CASE section */}
+
+            {/* ── DETAILS SECTION (Category, Court & Hearing, Description) ── */}
+            <div className="px-6 py-5 space-y-4">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Details &amp; Court</span>
+                <div className="flex-1 h-px bg-border/60" />
+                <span className="text-[10px] text-muted-foreground italic">Optional</span>
+              </div>
 
             {/* ── Category Hierarchy ── */}
             <div className="space-y-4">
@@ -780,8 +892,8 @@ export function AddCaseDialog({
                 value={form.description}
                 onChange={(e) => update("description", e.target.value)}
                 placeholder="Brief summary of the matter, facts, or dispute…"
-                rows={3}
-                className="w-full rounded-md border border-border bg-card px-3 py-2 text-helper outline-none transition-colors focus:border-primary resize-none"
+                rows={2}
+                className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm outline-none transition-colors focus:border-primary resize-none"
               />
             </div>
 
@@ -803,106 +915,11 @@ export function AddCaseDialog({
               </p>
             </div>
 
-            {/* ── Status & Priority ── */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label className="text-helper">Case status</Label>
-                <div className="flex rounded-md border border-border">
-                  {(["Active", "Urgent", "On Hold", "Closed"] as const).map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => update("status", s)}
-                      className={`flex-1 px-2.5 py-2 text-caption font-medium transition-colors first:rounded-l-md last:rounded-r-md border-r border-border last:border-r-0 ${form.status === s
-                        ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:text-foreground"
-                        }`}
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-helper">Priority</Label>
-                <div className="flex rounded-md border border-border">
-                  {(["High", "Medium", "Low"] as const).map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => update("priority", p)}
-                      className={`flex-1 px-2.5 py-2 text-caption font-medium transition-colors ${p === "High" ? "rounded-l-md border-r" : p === "Low" ? "rounded-r-md border-l" : "border-r"
-                        } border-border ${form.priority === p
-                          ? p === "High"
-                            ? "bg-destructive/10 text-destructive"
-                            : p === "Medium"
-                              ? "bg-warning/10 text-warning"
-                              : "bg-muted text-muted-foreground"
-                          : "text-muted-foreground hover:text-foreground"
-                        }`}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* ── Assigned Team / Counsel ── */}
-            <div className="space-y-1.5">
-              <Label className="text-helper">Assigned Team / Counsel</Label>
-              <AssigneeMultiSelect
-                value={form.assignedTo}
-                onChange={(val) => update("assignedTo", val)}
-                placeholder="Tick employees / counsel to assign..."
-              />
-            </div>
-
-            {/* ── Tags ── */}
-            <div className="space-y-2">
-              <Label htmlFor="case-tags" className="text-helper">Tags</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="case-tags"
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") { e.preventDefault(); addTag(); }
-                  }}
-                  placeholder="Type a tag and press Enter"
-                  className="h-11 flex-1 rounded-md"
-                />
-                <Button type="button" variant="outline" className="rounded-md h-11" onClick={addTag}>
-                  <Plus size={15} />
-                </Button>
-              </div>
-              {tags.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {tags.map((t) => (
-                    <span
-                      key={t}
-                      className="flex items-center gap-1 rounded-pill bg-muted px-3 py-1 text-caption font-medium"
-                    >
-                      {t}
-                      <button
-                        type="button"
-                        onClick={() => removeTag(t)}
-                        className="ml-0.5 grid size-4 place-items-center rounded-full text-muted-foreground hover:text-destructive"
-                        aria-label={`Remove tag ${t}`}
-                      >
-                        <X size={11} strokeWidth={2.5} />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
             {/* ── Parties ── */}
             <div className="rounded-lg border border-border">
-              <div className="flex items-center justify-between px-4 py-3">
-                <p className="flex items-center gap-2 text-helper font-medium">
-                  <Users size={16} strokeWidth={1.75} className="text-muted-foreground" />
+              <div className="flex items-center justify-between px-4 py-3 bg-muted/20 rounded-t-lg">
+                <p className="flex items-center gap-2 text-xs font-semibold text-foreground">
+                  <Users size={15} strokeWidth={1.75} className="text-muted-foreground" />
                   Parties
                 </p>
                 <Button
@@ -987,48 +1004,66 @@ export function AddCaseDialog({
               )}
             </div>
 
-            {/* ── Tasks Section ── */}
+            </div>{/* end DETAILS section */}
+
+            {/* ── PARTIES & TASKS SECTION ── */}
+            <div className="px-6 py-5 space-y-4">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Parties &amp; Tasks</span>
+                <div className="flex-1 h-px bg-border/60" />
+              </div>
+
+            {/* ── TASKS (inner section) ── */}
             <div className="rounded-lg border border-border">
-              <div className="flex items-center justify-between px-4 py-3">
-                <p className="flex items-center gap-2 text-helper font-medium">
-                  <CheckSquare size={16} strokeWidth={1.75} className="text-muted-foreground" />
+              <div className="flex items-center justify-between px-4 py-3 bg-muted/20 rounded-t-lg">
+                <p className="flex items-center gap-2 text-xs font-semibold text-foreground">
+                  <CheckSquare size={15} strokeWidth={1.75} className="text-muted-foreground" />
                   Initial Tasks for this Case
                 </p>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="rounded-md"
+                  className="rounded-md h-8 text-xs"
                   onClick={addTask}
                 >
-                  <Plus size={14} /> Add task
+                  <Plus size={13} /> Add task
                 </Button>
               </div>
 
               {tasks.length > 0 && (
                 <div className="border-t border-border p-4 space-y-4">
                   {tasks.map((t, idx) => (
-                    <div key={idx} className="flex flex-col gap-3 rounded-md border border-border bg-card p-3">
+                    <div key={idx} className={`flex flex-col gap-3 rounded-md border border-border bg-card p-3 border-l-4 ${t.priority === "High" ? "border-l-destructive" : t.priority === "Medium" ? "border-l-warning" : "border-l-muted-foreground/30"}`}>
                       <div className="flex items-center justify-between gap-2">
-                        <Input
-                          placeholder="Task title *"
-                          value={t.title}
-                          onChange={(e) => updateTask(idx, "title", e.target.value)}
-                          className="h-10 flex-1 font-medium rounded-md"
-                          required
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-10 px-2 text-muted-foreground hover:text-destructive"
-                          onClick={() => removeTask(idx)}
-                        >
-                          <Trash2 size={15} />
-                        </Button>
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <Input
+                            placeholder="Task title *"
+                            value={t.title}
+                            onChange={(e) => updateTask(idx, "title", e.target.value)}
+                            className="h-9 flex-1 font-medium rounded-md text-sm"
+                            required
+                          />
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {t.checklist.length > 0 && (
+                            <span className="text-[10px] font-medium bg-muted text-muted-foreground px-2 py-0.5 rounded-full border border-border">
+                              {t.checklist.length} step{t.checklist.length !== 1 ? "s" : ""}
+                            </span>
+                          )}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded"
+                            onClick={() => removeTask(idx)}
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                        </div>
                       </div>
 
-                      <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="grid gap-2.5 sm:grid-cols-2">
                         <div className="space-y-1.5">
                           <Label htmlFor={`task-cat-${idx}`} className="text-helper">Category</Label>
                           <select
@@ -1227,7 +1262,10 @@ export function AddCaseDialog({
               )}
             </div>
 
+            </div>{/* end PARTIES+TASKS section */}
+
             {/* ── Actions ── */}
+            <div className="px-6 py-4 bg-muted/20 border-t border-border">
             <DialogFooter>
               <Button type="button" variant="outline" onClick={handleAttemptClose}>
                 Cancel
@@ -1235,10 +1273,10 @@ export function AddCaseDialog({
               <Button
                 type="submit"
                 disabled={isPending || !form.title.trim()}
-                className="gradient-primary rounded-md text-primary-foreground shadow-soft"
+                className="gradient-primary rounded-lg text-primary-foreground shadow-soft px-6"
               >
-                {isPending ? <Loader2 size={17} className="animate-spin" /> : <Briefcase size={17} strokeWidth={2} />}
-                {isPending ? "Saving…" : "Save case"}
+                {isPending ? <Loader2 size={16} className="animate-spin" /> : <Briefcase size={16} strokeWidth={2} />}
+                {isPending ? "Saving…" : "Save Case"}
               </Button>
             </DialogFooter>
 
@@ -1247,6 +1285,7 @@ export function AddCaseDialog({
                 {(createCase.error as any)?.body?.message || (createCase.error as any)?.message || "Failed to create case. Please try again."}
               </p>
             )}
+            </div>{/* end actions wrapper */}
           </form>
         </DialogContent>
       </Dialog>

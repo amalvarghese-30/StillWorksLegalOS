@@ -465,27 +465,32 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
             e.preventDefault();
             handleAttemptClose();
           }}
-          className="max-h-[90vh] overflow-y-auto sm:max-w-2xl rounded-xl border border-border bg-card p-6 shadow-lift"
+          className="max-h-[90vh] overflow-y-auto sm:max-w-3xl rounded-xl border border-border bg-card shadow-lift"
         >
-          <DialogHeader>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="grid size-10 place-items-center rounded-lg bg-primary/10 text-primary">
-                  <CheckSquare size={20} strokeWidth={1.75} />
-                </span>
-                <div>
-                  <DialogTitle className="text-title font-semibold text-foreground">
-                    Create new task
-                  </DialogTitle>
-                  <DialogDescription className="text-helper text-muted-foreground">
-                    Define deliverables, assign staff, subtasks, and deadlines.
-                  </DialogDescription>
-                </div>
+          <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b border-border">
+            <div className="flex items-center gap-3">
+              <span className="grid size-10 place-items-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+                <CheckSquare size={18} strokeWidth={2} />
+              </span>
+              <div>
+                <DialogTitle className="text-base font-semibold text-foreground leading-tight">
+                  Create new task
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                  Define deliverables, assign staff, milestones, and deadlines.
+                </DialogDescription>
               </div>
             </div>
-          </DialogHeader>
+          </div>
 
-          <form onSubmit={(e) => handleSubmit(e, false)} className="space-y-5 pt-2">
+          <form onSubmit={(e) => handleSubmit(e, false)} className="divide-y divide-border">
+            {/* ── TASK DETAILS SECTION ── */}
+            <div className="px-6 py-5 space-y-4">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Task Details</span>
+                <div className="flex-1 h-px bg-border/60" />
+              </div>
+
             {/* ── Title ── */}
             <div className="space-y-1.5">
               <Label htmlFor="task-title" className="text-helper">
@@ -541,6 +546,15 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
                 className="w-full rounded-md border border-border bg-card px-3 py-2 text-helper outline-none transition-colors focus:border-primary resize-none placeholder:text-muted-foreground/70"
               />
             </div>
+
+            </div>{/* end TASK DETAILS section */}
+
+            {/* ── CLASSIFICATION & SCHEDULE SECTION ── */}
+            <div className="px-6 py-5 space-y-4">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Classification &amp; Assignment</span>
+                <div className="flex-1 h-px bg-border/60" />
+              </div>
 
             {/* ── Category Hierarchy (Excel Master) ── */}
             <div className="space-y-4 rounded-lg border border-border/80 bg-muted/20 p-4">
@@ -900,6 +914,15 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
               </div>
             </div>
 
+            </div>{/* end CLASSIFICATION section */}
+
+            {/* ── SUBTASKS & CHECKLIST SECTION ── */}
+            <div className="px-6 py-5 space-y-4">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Milestones &amp; Checklist</span>
+                <div className="flex-1 h-px bg-border/60" />
+              </div>
+
             {/* ── Subcategory Checklist & Action Steps ── */}
             {form.mainCategory && subCategories.length > 0 && (
               <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-3">
@@ -1151,7 +1174,10 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
               )}
             </div>
 
+            </div>{/* end SUBTASKS section */}
+
             {/* ── Actions ── */}
+            <div className="px-6 py-4 bg-muted/20 border-t border-border">
             <DialogFooter className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2">
               <Button type="button" variant="outline" onClick={handleAttemptClose}>
                 Cancel
@@ -1179,6 +1205,7 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
             {isError && (
               <p className="text-caption text-destructive">Failed to create task. Please try again.</p>
             )}
+            </div>{/* end actions wrapper */}
           </form>
         </DialogContent>
 

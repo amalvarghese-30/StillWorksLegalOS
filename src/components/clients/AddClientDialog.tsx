@@ -760,15 +760,24 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Add new client</DialogTitle>
-          <DialogDescription>
-            Fill in the details below. Identification details help establish client records.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-0 rounded-xl border border-border bg-card shadow-lift">
+        <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b border-border">
+          <div className="flex items-center gap-3">
+            <span className="grid size-10 place-items-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+              <UserPlus size={18} strokeWidth={2} />
+            </span>
+            <div>
+              <DialogTitle className="text-base font-semibold text-foreground leading-tight">
+                Add new client
+              </DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                Client identification, contact details, optional case and initial tasks.
+              </DialogDescription>
+            </div>
+          </div>
+        </div>
 
-        <form className="space-y-6" onSubmit={handleSubmit}>
+        <form className="space-y-6 p-6" onSubmit={handleSubmit}>
           {/* General Banner Error */}
           {generalError && (
             <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive flex items-center gap-2 animate-in fade-in-50">
