@@ -414,6 +414,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
     [idx: number]: { name?: string; relationship?: string; phone?: string; email?: string };
   }>({});
   const [generalError, setGeneralError] = useState<string | null>(null);
+  const [createdClientId, setCreatedClientId] = useState<string | null>(null);
 
   const { data: empData } = useEmployees();
   const employees = empData?.employees ?? [];
@@ -483,8 +484,133 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // If client was already created in previous attempt, retry only the case creation
+    if (createdClientId) {
+      if (!caseForm.title.trim()) {
+        setFieldErrors({ caseTitle: "Case title is required" });
+        return;
+      }
+      setIsCreatingCase(true);
+      setGeneralError(null);
+      try {
+        const validParties: CaseParty[] = [
+          {
+            clientId: createdClientId,
+            name: form.name.trim() || "Primary Client",
+            role: "Primary Client",
+            type: "client",
+          },
+          ...parties
+            .filter((p) => p.name.trim())
+            .map((p) => ({
+              name: p.name.trim(),
+              role: p.role.trim() || "Party",
+              type: p.type,
+            })),
+        ];
+
+        const caseTasksPayload: CaseTaskPayload[] = initialTasks
+          .filter((t) => t.title.trim())
+          .map((t) => ({
+            title: t.title.trim(),
+            description: t.description?.trim() || undefined,
+            category: t.category || "Other Work",
+            priority: t.priority,
+            deadline: t.deadline ? toSafeIso(t.deadline) ?? undefined : undefined,
+            assignedTo: t.assignedTo.length > 0 ? t.assignedTo : undefined,
+            assignedUsers: t.assignedTo.length > 0 ? t.assignedTo : undefined,
+            checklist: t.checklist
+              .filter((item) => item.text && item.text.trim())
+              .map((item) => ({
+                text: item.text.trim(),
+                done: Boolean(item.done),
+                subItems: (item.subItems || [])
+                  .filter((sub) => sub.text && sub.text.trim())
+                  .map((sub) => ({
+                    text: sub.text.trim(),
+                    done: Boolean(sub.done),
+                  })),
+              })),
+          }));
+
+        const subCatJoined =
+          caseForm.selectedSubCategories.length > 0
+            ? caseForm.selectedSubCategories.join(", ")
+            : caseForm.subCategory;
+
+        const chosenCategory =
+          (subCatJoined === "__other__" || caseForm.mainCategory === "__other__"
+            ? caseForm.customCategory.trim()
+            : subCatJoined) ||
+          (caseForm.mainCategory === "__other__"
+            ? caseForm.customCategory.trim()
+            : caseForm.mainCategory) ||
+          caseForm.category ||
+          "Other Work";
+
+        const casePayload = {
+          title: caseForm.title.trim(),
+          description: caseForm.description.trim() || undefined,
+          category: chosenCategory,
+          mainCategory:
+            caseForm.mainCategory === "__other__"
+              ? caseForm.customCategory.trim() || "Other Work"
+              : caseForm.mainCategory || undefined,
+          subCategory:
+            subCatJoined === "__other__"
+              ? caseForm.customCategory.trim() || undefined
+              : subCatJoined || undefined,
+          categoryPath:
+            caseForm.selectedSubCategories.length > 0
+              ? caseForm.selectedSubCategories
+              : undefined,
+          courtCaseId: caseForm.courtCaseId.trim() || undefined,
+          countCaseNumber:
+            caseForm.countCaseNumber.trim() ||
+            caseForm.courtCaseId.trim() ||
+            undefined,
+          nextHearing: caseForm.nextHearing
+            ? new Date(caseForm.nextHearing).toISOString()
+            : undefined,
+          localPath: caseForm.localPath.trim() || undefined,
+          status: caseForm.status,
+          priority: caseForm.priority,
+          assignedTo:
+            caseForm.assignedTo && caseForm.assignedTo.length > 0
+              ? caseForm.assignedTo
+              : undefined,
+          assignedUsers:
+            caseForm.assignedTo && caseForm.assignedTo.length > 0
+              ? caseForm.assignedTo
+              : undefined,
+          parties: validParties,
+          tags: caseForm.tags.length > 0 ? caseForm.tags : undefined,
+          tasks: caseTasksPayload.length > 0 ? caseTasksPayload : undefined,
+        };
+
+        await createCase.mutateAsync(casePayload);
+        toast.success(`Matter "${caseForm.title.trim()}" created successfully!`);
+        setCreatedClientId(null);
+        setForm(EMPTY_FORM);
+        setSubClients([]);
+        setCreateInitialCase(false);
+        setCaseForm(EMPTY_CASE_FORM);
+        setParties([]);
+        setInitialTasks([]);
+        onClose();
+        return;
+      } catch (retryErr: any) {
+        console.error("Failed to retry case creation:", retryErr);
+        const errDetail = retryErr?.message || retryErr?.body?.message || "Unknown error";
+        setGeneralError(`Case creation failed: ${errDetail}. Please check fields and try again.`);
+        toast.error(`Case creation failed: ${errDetail}`);
+        setIsCreatingCase(false);
+        return;
+      }
+    }
     setGeneralError(null);
     const errors: FormErrors = {};
 
@@ -722,9 +848,15 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
             );
           } catch (caseErr: any) {
             console.error("Failed to create initial case for client:", caseErr);
-            toast.error(
-              "Client created, but failed to create initial matter. You can add the case manually."
+            setCreatedClientId(newClient._id);
+            const errDetail = caseErr?.message || caseErr?.body?.message || "Unknown error";
+            setGeneralError(
+              `Client "${newClient.name}" created successfully, but creating initial case failed: ${errDetail}. You can adjust case details and click "Retry Saving Case" below without recreating the client.`
             );
+            toast.warning(
+              `Client "${newClient.name}" created, but initial case failed. You can retry creating the case.`
+            );
+            return; // Keep modal open for safe recovery without duplicate client creation
           } finally {
             setIsCreatingCase(false);
           }
@@ -732,6 +864,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
           toast.success("Client created successfully");
         }
 
+        setCreatedClientId(null);
         setForm(EMPTY_FORM);
         setSubClients([]);
         setShowProperty(false);
@@ -1314,33 +1447,72 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                         <span className="text-[11px] text-destructive">Failed to load categories</span>
                       )}
                     </div>
-                    <select
-                      id="case-main-category"
-                      value={caseForm.mainCategory}
-                      disabled={isCategoriesLoading}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        updateCase("mainCategory", val);
-                        updateCase("subCategory", "");
-                        updateCase("selectedSubCategories", []);
-                        if (val !== "__other__") updateCase("customCategory", "");
-                      }}
-                      className="h-10 w-full rounded-md border border-border bg-card px-3 text-xs sm:text-sm outline-none transition-colors focus:border-primary disabled:opacity-50"
-                    >
-                      <option value="">
-                        {isCategoriesLoading
-                          ? "Loading categories…"
-                          : isCategoriesError
-                          ? "Error loading categories"
-                          : categoryTree.length === 0
-                          ? "No categories configured"
-                          : "Select main category…"}
-                      </option>
-                      {categoryTree.map((c) => (
-                        <option key={c.name} value={c.name}>{c.name}</option>
-                      ))}
-                      <option value="__other__">+ Other Work / Custom Category...</option>
-                    </select>
+                    {categoryTree.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {categoryTree.map((c) => {
+                          const isSelected = caseForm.mainCategory === c.name;
+                          return (
+                            <button
+                              key={c.name}
+                              type="button"
+                              onClick={() => {
+                                const val = isSelected ? "" : c.name;
+                                updateCase("mainCategory", val);
+                                updateCase("subCategory", "");
+                                updateCase("selectedSubCategories", []);
+                                if (val !== "__other__") updateCase("customCategory", "");
+                              }}
+                              className={`rounded-lg border px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-all ${
+                                isSelected
+                                  ? "border-primary bg-primary/10 text-primary shadow-xs ring-1 ring-primary/40 font-bold"
+                                  : "border-border/80 bg-background text-foreground/80 hover:border-primary/50 hover:bg-muted/50"
+                              }`}
+                            >
+                              {c.name}
+                            </button>
+                          );
+                        })}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const val = caseForm.mainCategory === "__other__" ? "" : "__other__";
+                            updateCase("mainCategory", val);
+                            updateCase("subCategory", "");
+                            updateCase("selectedSubCategories", []);
+                          }}
+                          className={`rounded-lg border px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-all ${
+                            caseForm.mainCategory === "__other__"
+                              ? "border-primary bg-primary/10 text-primary shadow-xs ring-1 ring-primary/40 font-bold"
+                              : "border-dashed border-border/80 bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                          }`}
+                        >
+                          + Custom
+                        </button>
+                      </div>
+                    ) : (
+                      <select
+                        id="case-main-category"
+                        value={caseForm.mainCategory}
+                        disabled={isCategoriesLoading}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          updateCase("mainCategory", val);
+                          updateCase("subCategory", "");
+                          updateCase("selectedSubCategories", []);
+                          if (val !== "__other__") updateCase("customCategory", "");
+                        }}
+                        className="h-10 w-full rounded-md border border-border bg-card px-3 text-xs sm:text-sm outline-none transition-colors focus:border-primary disabled:opacity-50"
+                      >
+                        <option value="">
+                          {isCategoriesLoading
+                            ? "Loading categories…"
+                            : isCategoriesError
+                            ? "Error loading categories"
+                            : "Select main category…"}
+                        </option>
+                        <option value="__other__">+ Other Work / Custom Category...</option>
+                      </select>
+                    )}
                   </div>
 
                   {/* Subcategories Checklist */}
@@ -1490,17 +1662,23 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                 {/* ── Status & Priority ── */}
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-1.5">
-                    <Label className="text-helper">Case Status</Label>
-                    <div className="flex rounded-md border border-border">
+                    <Label className="text-xs font-semibold text-foreground">Case Status</Label>
+                    <div className="flex rounded-lg border border-border overflow-hidden bg-muted/30">
                       {(["Active", "Urgent", "On Hold", "Closed"] as const).map((s) => (
                         <button
                           key={s}
                           type="button"
                           onClick={() => updateCase("status", s)}
-                          className={`flex-1 px-2 py-1.5 text-caption font-medium transition-colors first:rounded-l-md last:rounded-r-md border-r border-border last:border-r-0 ${
+                          className={`flex-1 px-2 py-2 text-[11px] font-semibold transition-all border-r border-border last:border-r-0 ${
                             caseForm.status === s
-                              ? "bg-primary/10 text-primary font-semibold"
-                              : "text-muted-foreground hover:text-foreground bg-card"
+                              ? s === "Urgent"
+                                ? "bg-destructive/15 text-destructive font-bold"
+                                : s === "On Hold"
+                                ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 font-bold"
+                                : s === "Closed"
+                                ? "bg-muted text-muted-foreground font-bold"
+                                : "bg-primary/15 text-primary font-bold"
+                              : "text-muted-foreground hover:bg-muted hover:text-foreground"
                           }`}
                         >
                           {s}
@@ -1510,23 +1688,21 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-helper">Priority</Label>
-                    <div className="flex rounded-md border border-border">
+                    <Label className="text-xs font-semibold text-foreground">Priority</Label>
+                    <div className="flex rounded-lg border border-border overflow-hidden bg-muted/30">
                       {(["High", "Medium", "Low"] as const).map((p) => (
                         <button
                           key={p}
                           type="button"
                           onClick={() => updateCase("priority", p)}
-                          className={`flex-1 px-2 py-1.5 text-caption font-medium transition-colors ${
-                            p === "High" ? "rounded-l-md border-r" : p === "Low" ? "rounded-r-md border-l" : "border-r"
-                          } border-border ${
+                          className={`flex-1 px-2.5 py-2 text-[11px] font-semibold transition-all border-r border-border last:border-r-0 ${
                             caseForm.priority === p
                               ? p === "High"
-                                ? "bg-destructive/10 text-destructive font-semibold"
+                                ? "bg-destructive/15 text-destructive font-bold"
                                 : p === "Medium"
-                                ? "bg-warning/10 text-warning font-semibold"
-                                : "bg-muted text-foreground font-semibold"
-                              : "text-muted-foreground hover:text-foreground bg-card"
+                                ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 font-bold"
+                                : "bg-muted text-foreground font-bold"
+                              : "text-muted-foreground hover:bg-muted hover:text-foreground"
                           }`}
                         >
                           {p}
@@ -1679,7 +1855,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                   )}
 
                   {initialTasks.map((t, tIdx) => (
-                    <div key={tIdx} className="rounded-lg border border-border bg-muted/10 p-3 space-y-3">
+                    <div key={tIdx} className={`rounded-lg border border-border bg-card p-3 space-y-3 border-l-4 ${t.priority === "High" ? "border-l-destructive" : t.priority === "Medium" ? "border-l-warning" : "border-l-muted-foreground/30"}`}>
                       <div className="flex items-center justify-between gap-2">
                         <Input
                           value={t.title}

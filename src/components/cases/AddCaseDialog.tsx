@@ -734,33 +734,72 @@ export function AddCaseDialog({
                     </span>
                   )}
                 </div>
-                <select
-                  id="case-main-category"
-                  value={form.mainCategory}
-                  disabled={isCategoriesLoading}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    update("mainCategory", val);
-                    update("subCategory", "");
-                    update("selectedSubCategories", []);
-                    if (val !== "__other__") update("customCategory", "");
-                  }}
-                  className="h-11 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary disabled:opacity-50"
-                >
-                  <option value="">
-                    {isCategoriesLoading
-                      ? "Loading categories…"
-                      : isCategoriesError
-                      ? "Error loading categories (Select manual below)"
-                      : categoryTree.length === 0
-                      ? "No categories configured"
-                      : "Select main category…"}
-                  </option>
-                  {categoryTree.map((c) => (
-                    <option key={c.name} value={c.name}>{c.name}</option>
-                  ))}
-                  <option value="__other__">+ Other Work / Custom Category...</option>
-                </select>
+                {categoryTree.length > 0 ? (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {categoryTree.map((c) => {
+                      const isSelected = form.mainCategory === c.name;
+                      return (
+                        <button
+                          key={c.name}
+                          type="button"
+                          onClick={() => {
+                            const val = isSelected ? "" : c.name;
+                            update("mainCategory", val);
+                            update("subCategory", "");
+                            update("selectedSubCategories", []);
+                            if (val !== "__other__") update("customCategory", "");
+                          }}
+                          className={`rounded-lg border px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-all ${
+                            isSelected
+                              ? "border-primary bg-primary/10 text-primary shadow-xs ring-1 ring-primary/40 font-bold"
+                              : "border-border/80 bg-background text-foreground/80 hover:border-primary/50 hover:bg-muted/50"
+                          }`}
+                        >
+                          {c.name}
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const val = form.mainCategory === "__other__" ? "" : "__other__";
+                        update("mainCategory", val);
+                        update("subCategory", "");
+                        update("selectedSubCategories", []);
+                      }}
+                      className={`rounded-lg border px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-all ${
+                        form.mainCategory === "__other__"
+                          ? "border-primary bg-primary/10 text-primary shadow-xs ring-1 ring-primary/40 font-bold"
+                          : "border-dashed border-border/80 bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                      }`}
+                    >
+                      + Custom
+                    </button>
+                  </div>
+                ) : (
+                  <select
+                    id="case-main-category"
+                    value={form.mainCategory}
+                    disabled={isCategoriesLoading}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      update("mainCategory", val);
+                      update("subCategory", "");
+                      update("selectedSubCategories", []);
+                      if (val !== "__other__") update("customCategory", "");
+                    }}
+                    className="h-11 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary disabled:opacity-50"
+                  >
+                    <option value="">
+                      {isCategoriesLoading
+                        ? "Loading categories…"
+                        : isCategoriesError
+                        ? "Error loading categories (Select manual below)"
+                        : "Select main category…"}
+                    </option>
+                    <option value="__other__">+ Other Work / Custom Category...</option>
+                  </select>
+                )}
               </div>
 
               {/* ── Subcategories Checklist (Select 1 or more) ── */}
@@ -1079,17 +1118,27 @@ export function AddCaseDialog({
                         </div>
 
                         <div className="space-y-1.5">
-                          <Label htmlFor={`task-prio-${idx}`} className="text-helper">Priority</Label>
-                          <select
-                            id={`task-prio-${idx}`}
-                            value={t.priority}
-                            onChange={(e) => updateTask(idx, "priority", e.target.value as any)}
-                            className="h-10 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary"
-                          >
-                            <option value="High">High</option>
-                            <option value="Medium">Medium</option>
-                            <option value="Low">Low</option>
-                          </select>
+                          <Label className="text-helper">Priority</Label>
+                          <div className="flex h-10 rounded-md border border-border overflow-hidden bg-muted/20">
+                            {(["High", "Medium", "Low"] as const).map((p) => (
+                              <button
+                                key={p}
+                                type="button"
+                                onClick={() => updateTask(idx, "priority", p)}
+                                className={`flex-1 text-caption font-semibold transition-all border-r border-border last:border-r-0 ${
+                                  t.priority === p
+                                    ? p === "High"
+                                      ? "bg-destructive/15 text-destructive"
+                                      : p === "Medium"
+                                      ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                                      : "bg-muted text-foreground"
+                                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                                }`}
+                              >
+                                {p}
+                              </button>
+                            ))}
+                          </div>
                         </div>
 
                         <div className="space-y-1.5">

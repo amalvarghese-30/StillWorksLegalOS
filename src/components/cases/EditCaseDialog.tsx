@@ -170,202 +170,268 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
             e.preventDefault();
             handleAttemptClose();
           }}
-          className="max-h-[90vh] overflow-y-auto sm:max-w-2xl rounded-xl border border-border bg-card p-6 shadow-lift"
+          className="max-h-[90vh] overflow-y-auto sm:max-w-3xl rounded-xl border border-border bg-card shadow-lift"
         >
-          <DialogHeader className="border-b border-border/60 pb-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="grid size-9 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
-                  <Briefcase size={18} strokeWidth={1.75} />
-                </span>
-                <div>
-                  <DialogTitle className="text-title font-semibold text-foreground">
-                    Edit Case Details
-                  </DialogTitle>
-                  <DialogDescription className="text-helper text-muted-foreground">
-                    Matter {record.number} — update case information, status, priority, and counsel.
-                  </DialogDescription>
-                </div>
+          <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b border-border">
+            <div className="flex items-center gap-3">
+              <span className="grid size-10 place-items-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+                <Briefcase size={18} strokeWidth={2} />
+              </span>
+              <div>
+                <DialogTitle className="text-base font-semibold text-foreground leading-tight">
+                  Edit Case Details
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                  Matter {record.number} — update case information, status, priority, and counsel.
+                </DialogDescription>
               </div>
             </div>
-          </DialogHeader>
+          </div>
 
           {errorMsg && (
-            <div className="mt-4 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-helper text-destructive">
+            <div className="m-6 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-helper text-destructive">
               {errorMsg}
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-            {/* Title */}
-            <div className="space-y-1.5">
-              <Label htmlFor="case-title" className="text-helper font-medium">
-                Case Title <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="case-title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. Apex Enterprises vs City Corp"
-                className="h-10 rounded-md"
-                required
-              />
-            </div>
+          <form onSubmit={handleSubmit} className="divide-y divide-border">
+            {/* ── SECTION 1: CASE OVERVIEW ── */}
+            <div className="px-6 py-5 space-y-4">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Case Overview</span>
+                <div className="flex-1 h-px bg-border/60" />
+              </div>
 
-            {/* Description */}
-            <div className="space-y-1.5">
-              <Label htmlFor="case-desc" className="text-helper font-medium">
-                Description / Summary
-              </Label>
-              <textarea
-                id="case-desc"
-                rows={3}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Brief summary of matter, facts, or disputes…"
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-helper text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none"
-              />
-            </div>
-
-            {/* Category */}
-            <div className="space-y-1.5">
-              <Label htmlFor="case-category" className="text-helper font-medium">
-                Category
-              </Label>
-              <select
-                id="case-category"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              >
-                {categories.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Local Folder / Document Path */}
-            <div className="space-y-1.5">
-              <Label htmlFor="case-localpath" className="text-helper font-medium flex items-center gap-1.5">
-                <FolderOpen size={14} className="text-muted-foreground" />
-                Local Folder / Document Path (Optional)
-              </Label>
-              <Input
-                id="case-localpath"
-                value={localPath}
-                onChange={(e) => setLocalPath(e.target.value)}
-                placeholder="e.g. C:\LegalFiles\Cases\Apex-2026 or /Users/shared/case-files"
-                className="h-10 rounded-md"
-              />
-              <p className="text-xs text-muted-foreground">
-                In desktop mode, clicking this path will directly open the folder in File Explorer / Finder.
-              </p>
-            </div>
-
-            {/* Counsel Assignment */}
-            <div className="space-y-1.5">
-              <Label className="text-helper font-medium flex items-center gap-1.5">
-                <Briefcase size={14} className="text-muted-foreground" />
-                Assigned Counsel / Team
-              </Label>
-              <AssigneeMultiSelect
-                value={assignedTo}
-                onChange={setAssignedTo}
-                placeholder="Tick counsel to assign..."
-              />
-            </div>
-
-            {/* Status & Priority */}
-            <div className="grid gap-4 sm:grid-cols-2">
+              {/* Title */}
               <div className="space-y-1.5">
-                <Label htmlFor="case-status" className="text-helper font-medium">
-                  Case Status
+                <Label htmlFor="case-title" className="text-xs font-semibold text-foreground">
+                  Case Title <span className="text-destructive">*</span>
                 </Label>
-                <select
-                  id="case-status"
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value as any)}
-                  className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                >
-                  <option value="Active">Active</option>
-                  <option value="Urgent">Urgent</option>
-                  <option value="On Hold">On Hold</option>
-                  <option value="Closed">Closed</option>
-                </select>
+                <Input
+                  id="case-title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="e.g. Apex Enterprises vs City Corp"
+                  className="h-11 rounded-md"
+                  required
+                />
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="case-priority" className="text-helper font-medium">
-                  Priority
-                </Label>
-                <select
-                  id="case-priority"
-                  value={priority}
-                  onChange={(e) => setPriority(e.target.value as any)}
-                  className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                >
-                  <option value="High">High</option>
-                  <option value="Medium">Medium</option>
-                  <option value="Low">Low</option>
-                </select>
+              {/* Status & Priority Segmented Controls */}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-foreground">Case Status</Label>
+                  <div className="flex rounded-lg border border-border overflow-hidden bg-muted/30">
+                    {(["Active", "Urgent", "On Hold", "Closed"] as const).map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setStatus(s)}
+                        className={`flex-1 px-2 py-2 text-[11px] font-semibold transition-all border-r border-border last:border-r-0 ${
+                          status === s
+                            ? s === "Urgent"
+                              ? "bg-destructive/15 text-destructive font-bold"
+                              : s === "On Hold"
+                              ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 font-bold"
+                              : s === "Closed"
+                              ? "bg-muted text-muted-foreground font-bold"
+                              : "bg-primary/15 text-primary font-bold"
+                            : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-foreground">Priority</Label>
+                  <div className="flex rounded-lg border border-border overflow-hidden bg-muted/30">
+                    {(["High", "Medium", "Low"] as const).map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setPriority(p)}
+                        className={`flex-1 px-2.5 py-2 text-[11px] font-semibold transition-all border-r border-border last:border-r-0 ${
+                          priority === p
+                            ? p === "High"
+                              ? "bg-destructive/15 text-destructive font-bold"
+                              : p === "Medium"
+                              ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 font-bold"
+                              : "bg-muted text-foreground font-bold"
+                            : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* Progress Slider */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="case-progress" className="text-helper font-medium flex items-center gap-1.5">
-                  <Sliders size={14} className="text-muted-foreground" />
-                  Matter Progress
-                </Label>
-                <span className="text-caption font-semibold text-primary">{progress}%</span>
+            {/* ── SECTION 2: DETAILS & DOCUMENTS ── */}
+            <div className="px-6 py-5 space-y-4">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Details &amp; Documents</span>
+                <div className="flex-1 h-px bg-border/60" />
               </div>
-              <input
-                id="case-progress"
-                type="range"
-                min="0"
-                max="100"
-                step="5"
-                value={progress}
-                onChange={(e) => setProgress(Number(e.target.value))}
-                className="w-full accent-primary cursor-pointer mt-2"
-              />
-            </div>
 
-            {/* Tags */}
-            <div className="space-y-1.5">
-              <Label htmlFor="case-tags" className="text-helper font-medium flex items-center gap-1.5">
-                <Tag size={14} className="text-muted-foreground" />
-                Tags (comma-separated)
-              </Label>
-              <Input
-                id="case-tags"
-                value={tags}
-                onChange={(e) => setTags(e.target.value)}
-                placeholder="Civil, Urgent, Injunction"
-                className="h-10 rounded-md"
-              />
-            </div>
-
-            <DialogFooter className="mt-6 border-t border-border/60 pt-4 flex gap-2">
-              <Button type="button" variant="outline" onClick={handleAttemptClose}>
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={updateCase.isPending || !title.trim()}
-                className="gradient-primary text-primary-foreground"
-              >
-                {updateCase.isPending ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin mr-1.5" />
-                    Saving…
-                  </>
+              {/* Category */}
+              <div className="space-y-2">
+                <Label htmlFor="case-category" className="text-xs font-semibold text-foreground">
+                  Category
+                </Label>
+                {categories.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {categories.map((c) => {
+                      const isSelected = category === c;
+                      return (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => setCategory(c)}
+                          className={`rounded-lg border px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-all ${
+                            isSelected
+                              ? "border-primary bg-primary/10 text-primary shadow-xs ring-1 ring-primary/40 font-bold"
+                              : "border-border/80 bg-background text-foreground/80 hover:border-primary/50 hover:bg-muted/50"
+                          }`}
+                        >
+                          {c}
+                        </button>
+                      );
+                    })}
+                  </div>
                 ) : (
-                  "Save Changes"
+                  <select
+                    id="case-category"
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="h-11 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    {categories.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
                 )}
-              </Button>
-            </DialogFooter>
+              </div>
+
+              {/* Description */}
+              <div className="space-y-1.5">
+                <Label htmlFor="case-desc" className="text-xs font-semibold text-foreground">
+                  Description / Summary
+                </Label>
+                <textarea
+                  id="case-desc"
+                  rows={2}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Brief summary of matter, facts, or disputes…"
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                />
+              </div>
+
+              {/* Local Folder / Document Path */}
+              <div className="space-y-1.5">
+                <Label htmlFor="case-localpath" className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                  <FolderOpen size={14} className="text-muted-foreground" />
+                  Local Folder / Document Path (Optional)
+                </Label>
+                <Input
+                  id="case-localpath"
+                  value={localPath}
+                  onChange={(e) => setLocalPath(e.target.value)}
+                  placeholder="e.g. C:\LegalFiles\Cases\Apex-2026 or /Users/shared/case-files"
+                  className="h-11 rounded-md"
+                />
+                <p className="text-xs text-muted-foreground">
+                  In desktop mode, clicking this path will directly open the folder in File Explorer / Finder.
+                </p>
+              </div>
+            </div>
+
+            {/* ── SECTION 3: ASSIGNMENT & PROGRESS ── */}
+            <div className="px-6 py-5 space-y-4">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Assignment &amp; Progress</span>
+                <div className="flex-1 h-px bg-border/60" />
+              </div>
+
+              {/* Counsel Assignment */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                  <Briefcase size={14} className="text-muted-foreground" />
+                  Assigned Counsel / Team
+                </Label>
+                <AssigneeMultiSelect
+                  value={assignedTo}
+                  onChange={setAssignedTo}
+                  placeholder="Tick counsel to assign..."
+                />
+              </div>
+
+              {/* Progress Slider */}
+              <div className="space-y-1.5 rounded-lg border border-border bg-muted/20 p-3.5">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="case-progress" className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                    <Sliders size={14} className="text-primary" />
+                    Matter Progress
+                  </Label>
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary border border-primary/20">
+                    {progress}%
+                  </span>
+                </div>
+                <input
+                  id="case-progress"
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="5"
+                  value={progress}
+                  onChange={(e) => setProgress(Number(e.target.value))}
+                  className="w-full accent-primary cursor-pointer mt-2"
+                />
+              </div>
+
+              {/* Tags */}
+              <div className="space-y-1.5">
+                <Label htmlFor="case-tags" className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                  <Tag size={14} className="text-muted-foreground" />
+                  Tags (comma-separated)
+                </Label>
+                <Input
+                  id="case-tags"
+                  value={tags}
+                  onChange={(e) => setTags(e.target.value)}
+                  placeholder="Civil, Urgent, Injunction"
+                  className="h-11 rounded-md"
+                />
+              </div>
+            </div>
+
+            {/* ── ACTIONS FOOTER ── */}
+            <div className="px-6 py-4 bg-muted/20 border-t border-border">
+              <DialogFooter className="flex gap-2">
+                <Button type="button" variant="outline" onClick={handleAttemptClose}>
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={updateCase.isPending || !title.trim()}
+                  className="gradient-primary text-primary-foreground px-6"
+                >
+                  {updateCase.isPending ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin mr-1.5" />
+                      Saving…
+                    </>
+                  ) : (
+                    "Save Changes"
+                  )}
+                </Button>
+              </DialogFooter>
+            </div>
           </form>
         </DialogContent>
       </Dialog>

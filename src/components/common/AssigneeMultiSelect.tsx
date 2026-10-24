@@ -216,7 +216,8 @@ export function AssigneeMultiSelect({
 
   // Default Popover Variant
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <div className="space-y-1.5 w-full">
+      <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <div
           role="combobox"
@@ -398,5 +399,42 @@ export function AssigneeMultiSelect({
         </div>
       </PopoverContent>
     </Popover>
+    {selectedStaffMembers.length > 0 && (
+      <div className="flex flex-wrap gap-1.5 pt-0.5">
+        {selectedStaffMembers.map((member) => {
+          const initials = member.name
+            .split(" ")
+            .map((n) => n[0])
+            .slice(0, 2)
+            .join("")
+            .toUpperCase();
+          return (
+            <span
+              key={member._id}
+              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground shadow-xs animate-in fade-in-50"
+            >
+              <span className="grid size-5 place-items-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
+                {initials}
+              </span>
+              <span className="truncate max-w-[150px]">{member.name}</span>
+              {!disabled && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleEmployee(member._id);
+                  }}
+                  className="grid size-4 place-items-center rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                  title={`Remove ${member.name}`}
+                >
+                  <X size={11} strokeWidth={2.5} />
+                </button>
+              )}
+            </span>
+          );
+        })}
+      </div>
+    )}
+    </div>
   );
 }

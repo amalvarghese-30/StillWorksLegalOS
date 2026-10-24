@@ -184,17 +184,27 @@ export function TaskEditForm({
       )}
 
       <div className="space-y-1.5">
-        <Label htmlFor="task-prio" className="text-helper font-medium">Priority</Label>
-        <select
-          id="task-prio"
-          value={priority}
-          onChange={(e) => setPriority(e.target.value as "High" | "Medium" | "Low")}
-          className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-        >
-          <option value="High">High</option>
-          <option value="Medium">Medium</option>
-          <option value="Low">Low</option>
-        </select>
+        <Label className="text-xs font-semibold text-foreground">Priority</Label>
+        <div className="flex h-10 rounded-lg border border-border overflow-hidden bg-muted/30">
+          {(["High", "Medium", "Low"] as const).map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => setPriority(p)}
+              className={`flex-1 text-[11px] font-semibold transition-all border-r border-border last:border-r-0 ${
+                priority === p
+                  ? p === "High"
+                    ? "bg-destructive/15 text-destructive font-bold"
+                    : p === "Medium"
+                    ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 font-bold"
+                    : "bg-muted text-foreground font-bold"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Agent / Broker Selector in Edit Mode */}

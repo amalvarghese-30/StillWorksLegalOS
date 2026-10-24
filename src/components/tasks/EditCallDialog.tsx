@@ -245,18 +245,18 @@ function EditCallDialogInner({ open, onClose, task }: { open: boolean; onClose: 
   return (
     <>
       <Dialog open={open} onOpenChange={(val) => !val && onClose()}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto rounded-xl p-6">
-          <DialogHeader>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto rounded-xl p-0 border border-border bg-card shadow-lift">
+          <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent px-6 py-4 border-b border-border">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <span className="grid size-10 place-items-center rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400">
-                  <PhoneCall size={20} strokeWidth={2} />
+              <div className="flex items-center gap-3">
+                <span className="grid size-10 place-items-center rounded-lg bg-amber-500 text-white shadow-sm">
+                  <PhoneCall size={18} strokeWidth={2} />
                 </span>
                 <div>
-                  <DialogTitle className="text-lg font-semibold tracking-tight">
+                  <DialogTitle className="text-base font-semibold text-foreground leading-tight">
                     Edit Call Reminder
                   </DialogTitle>
-                  <DialogDescription className="text-xs text-muted-foreground">
+                  <DialogDescription className="text-xs text-muted-foreground mt-0.5">
                     Update scheduled time, client details, notes, or mark as done.
                   </DialogDescription>
                 </div>
@@ -276,11 +276,16 @@ function EditCallDialogInner({ open, onClose, task }: { open: boolean; onClose: 
                 {completed ? "Completed" : "Pending"}
               </button>
             </div>
-          </DialogHeader>
+          </div>
 
-          <form className="mt-4 space-y-4" onSubmit={handleSubmit}>
-            {/* Contact Name & Phone */}
-            <div className="grid gap-3 sm:grid-cols-2">
+          <form className="divide-y divide-border" onSubmit={handleSubmit}>
+            {/* ── SECTION 1: CONTACT DETAILS ── */}
+            <div className="px-6 py-5 space-y-4">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Client Contact</span>
+                <div className="flex-1 h-px bg-border/60" />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="edit-call-name" className="text-xs font-medium text-foreground">
                   Contact / Client Name *
@@ -343,6 +348,15 @@ function EditCallDialogInner({ open, onClose, task }: { open: boolean; onClose: 
                 )}
               </div>
             </div>
+
+            </div>{/* end contact section */}
+
+            {/* ── SECTION 2: SCHEDULE & AGENDA ── */}
+            <div className="px-6 py-5 space-y-4">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Schedule &amp; Discussion</span>
+                <div className="flex-1 h-px bg-border/60" />
+              </div>
 
             {/* Scheduled Date & Time */}
             <div className="space-y-2 rounded-lg border border-border/70 bg-muted/20 p-3.5">
@@ -417,6 +431,15 @@ function EditCallDialogInner({ open, onClose, task }: { open: boolean; onClose: 
               />
             </div>
 
+            </div>{/* end schedule section */}
+
+            {/* ── SECTION 3: MATTER & COMPLETION ── */}
+            <div className="px-6 py-5 space-y-4">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Matter Linkage</span>
+                <div className="flex-1 h-px bg-border/60" />
+              </div>
+
             {/* Linked Case (optional) */}
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
@@ -478,41 +501,46 @@ function EditCallDialogInner({ open, onClose, task }: { open: boolean; onClose: 
               </Label>
             </div>
 
-            <DialogFooter className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
-              {isAdmin ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowDeleteConfirm(true)}
-                  className="text-destructive hover:bg-destructive/10 border-destructive/30"
-                >
-                  <Trash2 size={14} className="mr-1.5" /> Delete
-                </Button>
-              ) : <div />}
+            </div>{/* end matter section */}
 
-              <div className="flex items-center gap-2">
-                <Button type="button" variant="ghost" size="sm" onClick={onClose}>
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={updateTask.isPending}
-                  className="gradient-primary text-primary-foreground min-w-24 shadow-soft"
-                >
-                  {updateTask.isPending ? (
-                    <>
-                      <Loader2 size={14} className="mr-1.5 animate-spin" /> Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Check size={14} className="mr-1.5" /> Save Changes
-                    </>
-                  )}
-                </Button>
-              </div>
-            </DialogFooter>
+            {/* ── ACTIONS FOOTER ── */}
+            <div className="px-6 py-4 bg-muted/20 border-t border-border">
+              <DialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+                {isAdmin ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="text-destructive hover:bg-destructive/10 border-destructive/30"
+                  >
+                    <Trash2 size={14} className="mr-1.5" /> Delete
+                  </Button>
+                ) : <div />}
+
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={updateTask.isPending}
+                    className="gradient-primary text-primary-foreground min-w-24 shadow-soft"
+                  >
+                    {updateTask.isPending ? (
+                      <>
+                        <Loader2 size={14} className="mr-1.5 animate-spin" /> Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Check size={14} className="mr-1.5" /> Save Changes
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </DialogFooter>
+            </div>
           </form>
         </DialogContent>
       </Dialog>

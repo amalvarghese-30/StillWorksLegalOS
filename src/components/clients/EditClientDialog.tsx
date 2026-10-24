@@ -331,97 +331,107 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
 
   return (
     <Dialog open={open} onOpenChange={(val) => !val && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl rounded-xl border border-border bg-card p-6 shadow-lift">
-        <DialogHeader className="border-b border-border/60 pb-4">
-          <div className="flex items-center gap-2">
-            <span className="grid size-9 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
-              <Users size={18} strokeWidth={1.75} />
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl rounded-xl border border-border bg-card shadow-lift">
+        <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b border-border">
+          <div className="flex items-center gap-3">
+            <span className="grid size-10 place-items-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+              <Users size={18} strokeWidth={2} />
             </span>
             <div>
-              <DialogTitle className="text-title font-semibold text-foreground">
+              <DialogTitle className="text-base font-semibold text-foreground leading-tight">
                 Edit Client Profile
               </DialogTitle>
-              <DialogDescription className="text-helper text-muted-foreground">
+              <DialogDescription className="text-xs text-muted-foreground mt-0.5">
                 Update client contact, classification, assigned counsel, and property details.
               </DialogDescription>
             </div>
           </div>
-        </DialogHeader>
+        </div>
 
         {errorMsg && (
-          <div className="mt-4 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-helper text-destructive">
+          <div className="m-6 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-helper text-destructive">
             {errorMsg}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="mt-4 space-y-5">
-          {/* Classification */}
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="space-y-1.5">
-              <Label className="text-helper font-medium">Client Type</Label>
-              <div className="flex gap-1">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={type === "Individual" ? "default" : "outline"}
-                  className="flex-1 rounded-md px-2 text-caption"
-                  onClick={() => setType("Individual")}
-                >
-                  <Users size={13} className="mr-1" />
-                  Individual
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={type === "Corporate" ? "default" : "outline"}
-                  className="flex-1 rounded-md px-2 text-caption"
-                  onClick={() => setType("Corporate")}
-                >
-                  <Building2 size={13} className="mr-1" />
-                  Corporate
-                </Button>
+        <form onSubmit={handleSubmit} className="divide-y divide-border">
+          {/* ── CLIENT CLASSIFICATION ── */}
+          <div className="px-6 py-5 space-y-4">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Classification</span>
+              <div className="flex-1 h-px bg-border/60" />
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-foreground">Client Type</Label>
+                <div className="flex rounded-lg border border-border overflow-hidden bg-muted/30">
+                  <button
+                    type="button"
+                    className={`flex-1 px-3 py-2 text-xs font-semibold transition-all border-r border-border ${
+                      type === "Individual"
+                        ? "bg-primary/15 text-primary font-bold"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    }`}
+                    onClick={() => setType("Individual")}
+                  >
+                    Individual
+                  </button>
+                  <button
+                    type="button"
+                    className={`flex-1 px-3 py-2 text-xs font-semibold transition-all ${
+                      type === "Corporate"
+                        ? "bg-primary/15 text-primary font-bold"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    }`}
+                    onClick={() => setType("Corporate")}
+                  >
+                    Corporate
+                  </button>
+                </div>
               </div>
-            </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="client-tag" className="text-helper font-medium">Status Tag</Label>
-              <select
-                id="client-tag"
-                value={tag}
-                onChange={(e) => setTag(e.target.value as any)}
-                className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              >
-                <option value="Active">Active</option>
-                <option value="VIP">VIP</option>
-                <option value="Corporate">Corporate</option>
-                <option value="Individual">Individual</option>
-                <option value="Archived">Archived</option>
-              </select>
-            </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="client-tag" className="text-xs font-semibold text-foreground">Status Tag</Label>
+                <select
+                  id="client-tag"
+                  value={tag}
+                  onChange={(e) => setTag(e.target.value as any)}
+                  className="h-10 w-full rounded-md border border-border bg-background px-3 text-xs font-medium text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="Active">Active</option>
+                  <option value="VIP">VIP</option>
+                  <option value="Corporate">Corporate</option>
+                  <option value="Individual">Individual</option>
+                  <option value="Archived">Archived</option>
+                </select>
+              </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="client-kyc" className="text-helper font-medium flex items-center gap-1">
-                <ShieldCheck size={14} className="text-muted-foreground" />
-                Identity Verification
-              </Label>
-              <select
-                id="client-kyc"
-                value={kyc}
-                onChange={(e) => setKyc(e.target.value as any)}
-                className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              >
-                <option value="Verified">Verified</option>
-                <option value="Pending">Pending</option>
-                <option value="Rejected">Rejected</option>
-              </select>
+              <div className="space-y-1.5">
+                <Label htmlFor="client-kyc" className="text-xs font-semibold text-foreground flex items-center gap-1">
+                  <ShieldCheck size={13} className="text-primary" />
+                  KYC Verification
+                </Label>
+                <select
+                  id="client-kyc"
+                  value={kyc}
+                  onChange={(e) => setKyc(e.target.value as any)}
+                  className="h-10 w-full rounded-md border border-border bg-background px-3 text-xs font-medium text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="Verified">Verified</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Rejected">Rejected</option>
+                </select>
+              </div>
             </div>
           </div>
 
-          {/* Primary Info */}
-          <div className="space-y-3 border-t border-border/50 pt-3">
-            <h4 className="text-caption font-semibold uppercase tracking-wider text-muted-foreground">
-              Contact Information
-            </h4>
+          {/* ── CONTACT INFORMATION ── */}
+          <div className="px-6 py-5 space-y-4">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Contact Information</span>
+              <div className="flex-1 h-px bg-border/60" />
+            </div>
             <div className="space-y-1.5">
               <Label htmlFor="client-name" className="text-helper font-medium">
                 Full Legal Name <span className="text-destructive">*</span>
@@ -494,12 +504,14 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
             </div>
           </div>
 
-          {/* Identity Verification Documents */}
-          <div className="space-y-3 border-t border-border/50 pt-3">
-            <h4 className="text-caption font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-              <FileBadge size={14} />
-              Identity Verification Details
-            </h4>
+          
+
+          {/* ── IDENTITY VERIFICATION DETAILS ── */}
+          <div className="px-6 py-5 space-y-4">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Identity Documents</span>
+              <div className="flex-1 h-px bg-border/60" />
+            </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="client-aadhar" className="text-helper font-medium">Aadhaar Number (12 digits)</Label>
@@ -538,12 +550,14 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
             </div>
           </div>
 
-          {/* Staff Assignment & Promised Delivery */}
-          <div className="space-y-3 border-t border-border/50 pt-3">
-            <h4 className="text-caption font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-              <UserCheck size={14} className="text-primary" />
-              Staff Assignment &amp; Promised Delivery
-            </h4>
+          
+
+          {/* ── STAFF ASSIGNMENT & PROMISED DELIVERY ── */}
+          <div className="px-6 py-5 space-y-4">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Staff Assignment &amp; Delivery</span>
+              <div className="flex-1 h-px bg-border/60" />
+            </div>
 
             {/* Multi-staff Assignment */}
             <div className="space-y-1.5">
@@ -604,12 +618,15 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
             </div>
           </div>
 
-          {/* Property Details */}
-          <div className="space-y-3 border-t border-border/50 pt-3">
-            <h4 className="text-caption font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-              <Home size={14} />
-              Property Details (Optional)
-            </h4>
+          
+
+          {/* ── PROPERTY DETAILS (OPTIONAL) ── */}
+          <div className="px-6 py-5 space-y-4">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Property Details</span>
+              <div className="flex-1 h-px bg-border/60" />
+              <span className="text-[10px] text-muted-foreground italic">Optional</span>
+            </div>
             <div className="space-y-1.5">
               <Label htmlFor="client-prop-addr" className="text-helper font-medium">Property Address</Label>
               <Input
@@ -812,25 +829,30 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
             )}
           </div>
 
-          <DialogFooter className="mt-6 flex justify-end gap-2 border-t border-border/60 pt-4">
-            <Button type="button" variant="outline" onClick={onClose} className="rounded-md">
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={updateClient.isPending}
-              className="gradient-primary rounded-md text-primary-foreground"
-            >
-              {updateClient.isPending ? (
-                <>
-                  <Loader2 size={16} className="mr-2 animate-spin" />
-                  Saving…
-                </>
-              ) : (
-                "Save Changes"
-              )}
-            </Button>
-          </DialogFooter>
+          
+
+          {/* ── ACTIONS FOOTER ── */}
+          <div className="px-6 py-4 bg-muted/20 border-t border-border">
+            <DialogFooter className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={onClose} className="rounded-md">
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={updateClient.isPending}
+                className="gradient-primary rounded-md text-primary-foreground px-6"
+              >
+                {updateClient.isPending ? (
+                  <>
+                    <Loader2 size={16} className="mr-2 animate-spin" />
+                    Saving…
+                  </>
+                ) : (
+                  "Save Changes"
+                )}
+              </Button>
+            </DialogFooter>
+          </div>
         </form>
       </DialogContent>
     </Dialog>

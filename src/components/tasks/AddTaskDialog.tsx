@@ -578,35 +578,72 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
                     <span className="text-[11px] text-destructive">Failed to load categories</span>
                   )}
                 </div>
-                <select
-                  id="task-main-cat"
-                  value={form.mainCategory}
-                  disabled={isCategoriesLoading}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    update("mainCategory", val);
-                    update("subCategory", "");
-                    update("selectedSubCategories", []);
-                    if (val !== "__other__") update("customCategory", "");
-                  }}
-                  className="h-11 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary disabled:opacity-50"
-                >
-                  <option value="">
-                    {isCategoriesLoading
-                      ? "Loading categories…"
-                      : isCategoriesError
-                      ? "Error loading categories (Select manual below)"
-                      : categoryTree.length === 0
-                      ? "No categories configured"
-                      : "Select main category…"}
-                  </option>
-                  {categoryTree.map((cat) => (
-                    <option key={cat._id || cat.name} value={cat.name}>
-                      {cat.name}
+                {categoryTree.length > 0 ? (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {categoryTree.map((cat) => {
+                      const isSelected = form.mainCategory === cat.name;
+                      return (
+                        <button
+                          key={cat._id || cat.name}
+                          type="button"
+                          onClick={() => {
+                            const val = isSelected ? "" : cat.name;
+                            update("mainCategory", val);
+                            update("subCategory", "");
+                            update("selectedSubCategories", []);
+                            if (val !== "__other__") update("customCategory", "");
+                          }}
+                          className={`rounded-lg border px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-all ${
+                            isSelected
+                              ? "border-primary bg-primary/10 text-primary shadow-xs ring-1 ring-primary/40 font-bold"
+                              : "border-border/80 bg-background text-foreground/80 hover:border-primary/50 hover:bg-muted/50"
+                          }`}
+                        >
+                          {cat.name}
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const val = form.mainCategory === "__other__" ? "" : "__other__";
+                        update("mainCategory", val);
+                        update("subCategory", "");
+                        update("selectedSubCategories", []);
+                      }}
+                      className={`rounded-lg border px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-all ${
+                        form.mainCategory === "__other__"
+                          ? "border-primary bg-primary/10 text-primary shadow-xs ring-1 ring-primary/40 font-bold"
+                          : "border-dashed border-border/80 bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                      }`}
+                    >
+                      + Custom
+                    </button>
+                  </div>
+                ) : (
+                  <select
+                    id="task-main-cat"
+                    value={form.mainCategory}
+                    disabled={isCategoriesLoading}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      update("mainCategory", val);
+                      update("subCategory", "");
+                      update("selectedSubCategories", []);
+                      if (val !== "__other__") update("customCategory", "");
+                    }}
+                    className="h-11 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary disabled:opacity-50"
+                  >
+                    <option value="">
+                      {isCategoriesLoading
+                        ? "Loading categories…"
+                        : isCategoriesError
+                        ? "Error loading categories (Select manual below)"
+                        : "Select main category…"}
                     </option>
-                  ))}
-                  <option value="__other__">+ Other Work / Custom Category...</option>
-                </select>
+                    <option value="__other__">+ Other Work / Custom Category...</option>
+                  </select>
+                )}
               </div>
 
               {/* Clean Single Subcategory Selector */}
