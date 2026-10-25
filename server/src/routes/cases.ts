@@ -2138,7 +2138,16 @@ router.post("/:id/request-access", async (req: Request, res: Response) => {
       (ar) => ar.userId?.toString() === req.userId && ar.status === "pending"
     );
     if (existingReq) {
-      res.json({ message: "Access request is already pending review", case: caseRecord });
+      res.json({
+        message: "Access request is already pending review",
+        case: {
+          _id: caseRecord._id,
+          number: caseRecord.number,
+          title: caseRecord.title,
+          status: caseRecord.status,
+          accessRequests: [{ status: existingReq.status, reason: existingReq.reason, createdAt: existingReq.createdAt }],
+        },
+      });
       return;
     }
 
@@ -2190,7 +2199,21 @@ router.post("/:id/request-access", async (req: Request, res: Response) => {
       req.app.get("io")
     );
 
-    res.json({ message: "Access requested successfully", case: caseRecord });
+    const requesterAccessRequest = caseRecord.accessRequests.find(
+      (ar) => ar.userId?.toString() === req.userId && ar.status === "pending",
+    );
+    res.json({
+      message: "Access requested successfully",
+      case: {
+        _id: caseRecord._id,
+        number: caseRecord.number,
+        title: caseRecord.title,
+        status: caseRecord.status,
+        accessRequests: requesterAccessRequest
+          ? [{ status: requesterAccessRequest.status, reason: requesterAccessRequest.reason, createdAt: requesterAccessRequest.createdAt }]
+          : [],
+      },
+    });
   } catch (err) {
     console.error("[cases] Access request error:", err);
     res.status(500).json({ message: "Internal server error" });
