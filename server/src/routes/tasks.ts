@@ -790,17 +790,30 @@ router.post("/", async (req: Request, res: Response) => {
       return;
     }
     let cleanClientId = clientResolution.id;
-    if (!cleanClientId && cleanCaseId) {
-      const parentCase = await Case.findById(cleanCaseId).select("parties clientId").lean();
-      if (parentCase) {
-        if ((parentCase as any).clientId) {
-          cleanClientId = (parentCase as any).clientId.toString();
-        } else if (parentCase.parties?.length) {
-          const clientParty = parentCase.parties.find((p: any) => (p.type === "client" || p.type === "sub_client") && p.clientId);
-          if (clientParty?.clientId) {
-            cleanClientId = clientParty.clientId.toString();
-          }
-        }
+    if (cleanCaseId) {
+      const parentCase = await Case.findById(cleanCaseId).select("parties").lean();
+      if (!parentCase) {
+        res.status(404).json({ message: "Linked case not found" });
+        return;
+      }
+
+      const caseClientIds = new Set<string>(
+        (parentCase.parties ?? [])
+          .filter((party: any) => (party.type === "client" || party.type === "sub_client") && party.clientId)
+          .map((party: any) => String(party.clientId?._id ?? party.clientId)),
+      );
+      const primaryClientParty = parentCase.parties?.find(
+        (party: any) => (party.type === "client" || party.type === "sub_client") && party.clientId,
+      );
+      const primaryClientId = primaryClientParty?.clientId
+        ? String(primaryClientParty.clientId?._id ?? primaryClientParty.clientId)
+        : null;
+
+      if (!cleanClientId && primaryClientId) {
+        cleanClientId = primaryClientId;
+      } else if (cleanClientId && caseClientIds.size > 0 && !caseClientIds.has(cleanClientId)) {
+        res.status(400).json({ message: "The selected client is not linked to the selected case" });
+        return;
       }
     }
 
