@@ -1017,7 +1017,7 @@ router.post("/", async (req: Request, res: Response) => {
     // a concurrent reassignment cannot silently move an unrelated file.
     try {
       for (const snapshot of taskDocumentsToAttach) {
-        const attachFilter: Record<string, unknown> = {
+        const attachFilter: any = {
           _id: snapshot._id,
           taskId: null,
           caseId: snapshot.caseId,
