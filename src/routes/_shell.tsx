@@ -104,6 +104,45 @@ function ShellLayout() {
     queryClient.invalidateQueries({ queryKey: ["notifications"] });
   });
 
+  // Real-time sync for clients
+  useSocketEvent("client:created", () => {
+    queryClient.invalidateQueries({ queryKey: ["clients"] });
+    queryClient.invalidateQueries({ queryKey: ["reports"] });
+  });
+
+  useSocketEvent("client:updated", () => {
+    queryClient.invalidateQueries({ queryKey: ["clients"] });
+    queryClient.invalidateQueries({ queryKey: ["reports"] });
+  });
+
+  useSocketEvent<{ clientId: string }>("client:deleted", (payload) => {
+    if (payload?.clientId) {
+      queryClient.removeQueries({ queryKey: ["clients", payload.clientId] });
+      queryClient.removeQueries({ queryKey: ["client", payload.clientId] });
+    }
+    queryClient.invalidateQueries({ queryKey: ["clients"] });
+    queryClient.invalidateQueries({ queryKey: ["reports"] });
+  });
+
+  // Real-time sync for documents
+  useSocketEvent("document:created", () => {
+    queryClient.invalidateQueries({ queryKey: ["documents"] });
+    queryClient.invalidateQueries({ queryKey: ["reports"] });
+  });
+
+  useSocketEvent("document:updated", () => {
+    queryClient.invalidateQueries({ queryKey: ["documents"] });
+    queryClient.invalidateQueries({ queryKey: ["reports"] });
+  });
+
+  useSocketEvent<{ documentId: string }>("document:deleted", (payload) => {
+    if (payload?.documentId) {
+      queryClient.removeQueries({ queryKey: ["documents", payload.documentId] });
+    }
+    queryClient.invalidateQueries({ queryKey: ["documents"] });
+    queryClient.invalidateQueries({ queryKey: ["reports"] });
+  });
+
   if (!ready || !user) {
     return (
       <div className="app-canvas grid min-h-screen place-items-center">

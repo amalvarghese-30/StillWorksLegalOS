@@ -9,6 +9,8 @@
     "build:exe": "pkg dist/index.js --targets node18-win-x64 --output ../electron/server.exe",
     "seed": "tsx src/seed.ts",
     "setup:production": "tsx src/scripts/production-setup.ts",
+    "backfill:hearings": "tsx src/scripts/backfill-hearings.ts",
+    "backfill:hearings:apply": "tsx src/scripts/backfill-hearings.ts --apply",
     "start": "node dist/index.js",
     "test": "tsx src/tests/run-tests.ts",
     "inject:env": "node -e \"const fs=require('fs'); const env=fs.readFileSync('.env.production','utf8'); const out=env.replace('REPLACE_MONGODB_URI',process.env.MONGODB_URI||'').replace('REPLACE_JWT_SECRET',process.env.JWT_SECRET||'')+'\\nPORT=3001\\nNODE_ENV=production'; fs.writeFileSync('.env.production',out); console.log('Injected env vars into .env.production');\""

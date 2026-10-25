@@ -893,6 +893,36 @@ function CaseWorkspace() {
               </p>
             )}
           </div>
+          {/* Next Hearing Date tile — always visible in hero card */}
+          <div className="min-w-0 col-span-2 sm:col-span-1">
+            <p className="text-[11px] sm:text-caption opacity-85">Next Hearing</p>
+            {record.nextHearing ? (
+              <button
+                type="button"
+                onClick={openHearingDialog}
+                className="mt-0.5 sm:mt-1 flex items-center gap-1 text-left group"
+                title="Click to update hearing date"
+              >
+                <CalendarDays size={13} className="shrink-0 opacity-75 group-hover:opacity-100 transition-opacity" />
+                <span className="text-sm sm:text-body font-semibold underline underline-offset-2 opacity-95 group-hover:opacity-100 transition-opacity">
+                  {formatDate(record.nextHearing)}
+                </span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={openHearingDialog}
+                className="mt-0.5 sm:mt-1 flex items-center gap-1 text-left group"
+                title="Set next hearing date"
+              >
+                <CalendarDays size={13} className="shrink-0 opacity-60 group-hover:opacity-90 transition-opacity" />
+                <span className="text-sm sm:text-body font-medium opacity-60 group-hover:opacity-90 transition-opacity">
+                  Not scheduled
+                </span>
+              </button>
+            )}
+          </div>
+
           {record.localPath && (
             <div className="min-w-0 col-span-2 sm:col-span-2 flex items-center justify-between rounded-lg bg-white/10 px-3 py-2 mt-1">
               <div className="min-w-0">
