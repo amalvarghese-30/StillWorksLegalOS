@@ -856,7 +856,6 @@ router.post("/upload", async (req: Request, res: Response) => {
       if (io) {
         io.emit("document:created", {
           documentId: doc._id.toString(),
-          name: meta.displayName,
           caseId: meta.caseId?.toString(),
           taskId: meta.taskId?.toString(),
           clientId: (linkedClientId || meta.clientId)?.toString(),
@@ -864,7 +863,8 @@ router.post("/upload", async (req: Request, res: Response) => {
         if (meta.taskId) {
           io.emit("task:updated", {
             taskId: meta.taskId.toString(),
-            task: { _id: meta.taskId.toString() },
+            caseId: meta.caseId?.toString(),
+            clientId: (linkedClientId || meta.clientId)?.toString(),
           });
         }
       }
@@ -1005,14 +1005,15 @@ router.patch("/:id", requireResourceAccess("document"), async (req: Request, res
     if (io) {
       io.emit("document:updated", {
         documentId: document._id.toString(),
-        name: document.name,
-        state: document.state,
         taskId: document.taskId ? document.taskId.toString() : undefined,
+        caseId: document.caseId ? document.caseId.toString() : undefined,
+        clientId: document.clientId ? document.clientId.toString() : undefined,
       });
       if (document.taskId) {
         io.emit("task:updated", {
           taskId: document.taskId.toString(),
-          task: { _id: document.taskId.toString() },
+          caseId: document.caseId ? document.caseId.toString() : undefined,
+          clientId: document.clientId ? document.clientId.toString() : undefined,
         });
       }
     }
@@ -1191,7 +1192,9 @@ router.patch("/:docId/access-requests/:requestId", requireAuth, async (req: Requ
     if (io) {
       io.emit("document:updated", {
         documentId: document._id.toString(),
-        name: document.name,
+        taskId: document.taskId ? document.taskId.toString() : undefined,
+        caseId: document.caseId ? document.caseId.toString() : undefined,
+        clientId: document.clientId ? document.clientId.toString() : undefined,
       });
     }
 
@@ -1280,7 +1283,9 @@ router.post("/:docId/revoke-user", requireAuth, async (req: Request, res: Respon
     if (io) {
       io.emit("document:updated", {
         documentId: document._id.toString(),
-        name: document.name,
+        taskId: document.taskId ? document.taskId.toString() : undefined,
+        caseId: document.caseId ? document.caseId.toString() : undefined,
+        clientId: document.clientId ? document.clientId.toString() : undefined,
       });
     }
 
