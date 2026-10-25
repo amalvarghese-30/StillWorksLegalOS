@@ -1348,10 +1348,10 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       if (caseChanged && !explicitClientChange) {
         targetClientId = primaryClientId;
         updates["clientId"] = targetClientId;
-      } else if (targetCaseClientIds.size > 0 && targetClientId && !targetCaseClientIds.has(targetClientId)) {
+      } else if ((caseChanged || explicitClientChange) && targetCaseClientIds.size > 0 && targetClientId && !targetCaseClientIds.has(targetClientId)) {
         res.status(400).json({ message: "The selected client is not linked to the selected case" });
         return;
-      } else if (targetCaseClientIds.size > 0 && !targetClientId) {
+      } else if ((caseChanged || explicitClientChange) && targetCaseClientIds.size > 0 && !targetClientId) {
         res.status(400).json({ message: "Tasks linked to this case must retain a client linked to the case" });
         return;
       }
