@@ -120,9 +120,23 @@ router.post("/", async (req: Request, res: Response) => {
       ancestors = [...(parentDoc.ancestors || []), parentDoc._id];
     }
 
-    // Non-admins can only create under "Other Works" as custom categories
+    // Non-admins may create custom categories only beneath the canonical "Other Works"
+    // parent. Do not trust the submitted categoryType or parentId alone.
     const isAdmin = req.user?.role === "admin";
     const isCustom = !isAdmin;
+    if (!isAdmin) {
+      const isOtherWorksParent =
+        Boolean(parentDoc) &&
+        (String(parentDoc.name ?? "").trim().toLowerCase() === "other works" ||
+          String(parentDoc.slug ?? "").trim().toLowerCase() === "other-works");
+      if (!isOtherWorksParent) {
+        res.status(403).json({
+          message: 'Custom categories can only be created under "Other Works".',
+          field: "parentId",
+        });
+        return;
+      }
+    }
 
     const existing = await Category.findOne({
       parentId: parentDoc ? parentDoc._id : null,
