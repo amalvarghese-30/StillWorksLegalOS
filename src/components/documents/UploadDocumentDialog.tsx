@@ -26,11 +26,17 @@ interface UploadDocumentDialogProps {
   open: boolean;
   onClose: () => void;
   preSelectedCaseId?: string;
+  preSelectedClientId?: string;
 }
 
-export function UploadDocumentDialog({ open, onClose, preSelectedCaseId }: UploadDocumentDialogProps) {
+export function UploadDocumentDialog({
+  open,
+  onClose,
+  preSelectedCaseId,
+  preSelectedClientId,
+}: UploadDocumentDialogProps) {
   const [file, setFile] = useState<File | null>(null);
-  const [caseId, setCaseId] = useState(preSelectedCaseId ?? "");
+  const [caseId, setCaseId] = useState(preSelectedCaseId ?? (preSelectedClientId ? "none" : ""));
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "complete" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -39,13 +45,27 @@ export function UploadDocumentDialog({ open, onClose, preSelectedCaseId }: Uploa
   const qc = useQueryClient();
 
   useEffect(() => {
-    if (open && preSelectedCaseId) {
-      setCaseId(preSelectedCaseId);
+    if (open) {
+      if (preSelectedCaseId) {
+        setCaseId(preSelectedCaseId);
+      } else if (preSelectedClientId) {
+        setCaseId("none");
+      }
     }
-  }, [open, preSelectedCaseId]);
+  }, [open, preSelectedCaseId, preSelectedClientId]);
 
   const { data: casesData } = useCases({ limit: "200" });
-  const cases = casesData?.cases ?? [];
+  const allCases = casesData?.cases ?? [];
+
+  const displayedCases = preSelectedClientId
+    ? allCases.filter((c: any) => {
+        const pMatch = c.parties?.some((p: any) => String(p.clientId) === String(preSelectedClientId));
+        const cMatch = String(c.clientId) === String(preSelectedClientId);
+        return pMatch || cMatch;
+      })
+    : allCases;
+
+  const cases = displayedCases.length > 0 ? displayedCases : allCases;
 
   const locked = uploadStatus === "uploading" || uploadStatus === "complete";
 
@@ -86,10 +106,17 @@ export function UploadDocumentDialog({ open, onClose, preSelectedCaseId }: Uploa
   };
 
   const handleUpload = async () => {
-    if (!file || !caseId) {
-      setErrorMessage("Please select a file and a case");
+    if (!file) {
+      setErrorMessage("Please select a file to upload");
       return;
     }
+
+    if (!caseId && !preSelectedClientId) {
+      setErrorMessage("Please select a case or client");
+      return;
+    }
+
+    const cleanCaseId = caseId && caseId !== "none" ? caseId : undefined;
 
     setUploadStatus("uploading");
     setUploadProgress(0);
@@ -97,8 +124,9 @@ export function UploadDocumentDialog({ open, onClose, preSelectedCaseId }: Uploa
 
     try {
       const formData = new FormData();
-      formData.append("caseId", caseId);
       formData.append("name", file.name);
+      if (cleanCaseId) formData.append("caseId", cleanCaseId);
+      if (preSelectedClientId) formData.append("clientId", preSelectedClientId);
       formData.append("file", file);
 
       const { document } = await uploadDocumentStream(formData, (percent) => setUploadProgress(percent));
@@ -108,6 +136,10 @@ export function UploadDocumentDialog({ open, onClose, preSelectedCaseId }: Uploa
       setUploadProgress(100);
       qc.invalidateQueries({ queryKey: docKeys.all });
       qc.invalidateQueries({ queryKey: ["clients"] });
+      if (preSelectedClientId) {
+        qc.invalidateQueries({ queryKey: ["clients", preSelectedClientId] });
+        qc.invalidateQueries({ queryKey: ["clients", preSelectedClientId, "documents"] });
+      }
 
       setTimeout(() => {
         onClose();
@@ -121,7 +153,7 @@ export function UploadDocumentDialog({ open, onClose, preSelectedCaseId }: Uploa
 
   const resetForm = () => {
     setFile(null);
-    setCaseId("");
+    setCaseId(preSelectedCaseId ?? (preSelectedClientId ? "none" : ""));
     setUploadProgress(0);
     setUploadStatus("idle");
     setErrorMessage(null);
@@ -170,7 +202,7 @@ export function UploadDocumentDialog({ open, onClose, preSelectedCaseId }: Uploa
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-lg w-full max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Upload document</DialogTitle>
           <DialogDescription>
@@ -181,28 +213,35 @@ export function UploadDocumentDialog({ open, onClose, preSelectedCaseId }: Uploa
         <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
           {/* ── Case Selector ── */}
           <div className="space-y-1.5">
-            <Label htmlFor="upload-case" className="text-helper">Case *</Label>
+            <Label htmlFor="upload-case" className="text-helper">
+              {preSelectedClientId ? "Case / Matter (Optional)" : "Case *"}
+            </Label>
             <Select value={caseId} onValueChange={setCaseId}>
-              <SelectTrigger id="upload-case" className="h-11 rounded-md" disabled={locked}>
-                <SelectValue placeholder="Select a case" />
+              <SelectTrigger id="upload-case" className="h-11 rounded-md min-w-0 w-full" disabled={locked}>
+                <SelectValue placeholder={preSelectedClientId ? "Direct to Client Profile or Select Case" : "Select a case"} />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="max-w-[calc(100vw-2rem)] sm:max-w-md">
+                {preSelectedClientId && (
+                  <SelectItem value="none">
+                    <span className="font-semibold text-primary">Direct to Client Profile (No matter)</span>
+                  </SelectItem>
+                )}
                 {cases?.map((c) => (
                   <SelectItem key={c._id} value={c._id}>
-                    <div className="flex flex-col">
-                      <span className="font-medium">{c.number} — {c.title}</span>
-                      <span className="text-caption text-muted-foreground">{c.category || c.practice || "General Legal"}</span>
+                    <div className="flex flex-col min-w-0 max-w-[340px] truncate text-left">
+                      <span className="font-medium truncate">{c.number} — {c.title}</span>
+                      <span className="text-caption text-muted-foreground truncate">{c.category || c.practice || "General Legal"}</span>
                     </div>
                   </SelectItem>
                 ))}
-                {(!cases?.length) && (
+                {(!cases?.length && !preSelectedClientId) && (
                   <div className="px-3 py-2 text-center text-helper text-muted-foreground">
                     No accessible cases found
                   </div>
                 )}
               </SelectContent>
             </Select>
-            {uploadStatus === "error" && !caseId && (
+            {uploadStatus === "error" && !caseId && !preSelectedClientId && (
               <p className="text-caption text-destructive">Please select a case</p>
             )}
           </div>
@@ -212,7 +251,7 @@ export function UploadDocumentDialog({ open, onClose, preSelectedCaseId }: Uploa
             className={`relative rounded-lg border-2 border-dashed transition-colors ${uploadStatus === "idle" || uploadStatus === "error"
               ? "border-border hover:border-primary/50"
               : "border-primary/50"
-              } p-8 ${locked ? "opacity-60 pointer-events-none" : ""}`}
+              } p-6 sm:p-8 ${locked ? "opacity-60 pointer-events-none" : ""}`}
             onDragOver={handleDragOver}
             onDrop={handleDrop}
           >
@@ -226,7 +265,7 @@ export function UploadDocumentDialog({ open, onClose, preSelectedCaseId }: Uploa
             />
             {file ? (
               <div className="space-y-3">
-                <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border">
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border min-w-0">
                   <File size={24} strokeWidth={1.75} className="text-primary flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-helper font-medium truncate">{file.name}</p>
@@ -301,7 +340,7 @@ export function UploadDocumentDialog({ open, onClose, preSelectedCaseId }: Uploa
             <Button
               type="button"
               onClick={handleUpload}
-              disabled={!file || !caseId || uploadStatus !== "idle"}
+              disabled={!file || (!caseId && !preSelectedClientId) || uploadStatus !== "idle"}
               className="gradient-primary rounded-md text-primary-foreground shadow-soft"
             >
               {uploadStatus === "uploading" ? (

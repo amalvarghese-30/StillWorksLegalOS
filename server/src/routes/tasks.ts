@@ -311,7 +311,6 @@ router.get("/", async (req: Request, res: Response) => {
     }
     if (category && category !== "all") filter["category"] = category;
     if (caseId) filter["caseId"] = caseId;
-    if (clientId) filter["clientId"] = clientId;
     if (agent && agent !== "all") {
       filter["agent"] = agent;
     }
@@ -321,6 +320,28 @@ router.get("/", async (req: Request, res: Response) => {
     }
 
     const andConditions: Record<string, unknown>[] = [];
+
+    if (clientId) {
+      if (Types.ObjectId.isValid(clientId)) {
+        const clientObjId = new Types.ObjectId(clientId);
+        const clientCases = await Case.find({
+          $or: [
+            { clientId: clientObjId },
+            { "parties.clientId": clientObjId },
+          ],
+        }).select("_id").lean();
+        const clientCaseIds = clientCases.map((c) => c._id);
+        andConditions.push({
+          $or: [
+            { clientId: clientObjId },
+            { clientId: clientId },
+            ...(clientCaseIds.length > 0 ? [{ caseId: { $in: clientCaseIds } }] : []),
+          ],
+        });
+      } else {
+        filter["clientId"] = clientId;
+      }
+    }
 
     if (assignedTo && assignedTo !== "all") {
       if (assignedTo.includes(",")) {
@@ -747,7 +768,20 @@ router.post("/", async (req: Request, res: Response) => {
       res.status(400).json({ message: clientResolution.error });
       return;
     }
-    const cleanClientId = clientResolution.id;
+    let cleanClientId = clientResolution.id;
+    if (!cleanClientId && cleanCaseId) {
+      const parentCase = await Case.findById(cleanCaseId).select("parties clientId").lean();
+      if (parentCase) {
+        if ((parentCase as any).clientId) {
+          cleanClientId = (parentCase as any).clientId.toString();
+        } else if (parentCase.parties?.length) {
+          const clientParty = parentCase.parties.find((p: any) => (p.type === "client" || p.type === "sub_client") && p.clientId);
+          if (clientParty?.clientId) {
+            cleanClientId = clientParty.clientId.toString();
+          }
+        }
+      }
+    }
 
     // Validate case access if caseId provided
     if (cleanCaseId && req.user!.role !== "admin") {

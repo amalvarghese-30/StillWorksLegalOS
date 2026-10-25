@@ -254,14 +254,24 @@ router.get("/:clientId/documents", requireResourceAccess("client", "clientId"), 
 
     const caseIds = linkedCases.map((c) => c._id);
 
-    // Find candidate documents linked directly to this client OR to client's cases
-    const candidateDocs = await DocumentModel.find({
+    // Find candidate documents linked directly to this client OR to client's cases OR to tasks under this client/cases
+    const linkedTasks = await Task.find({
       $or: [
         { clientId: clientObjId },
         ...(caseIds.length > 0 ? [{ caseId: { $in: caseIds } }] : []),
       ],
+    }).select("_id").lean();
+    const taskIds = linkedTasks.map((t) => t._id);
+
+    const candidateDocs = await DocumentModel.find({
+      $or: [
+        { clientId: clientObjId },
+        ...(caseIds.length > 0 ? [{ caseId: { $in: caseIds } }] : []),
+        ...(taskIds.length > 0 ? [{ taskId: { $in: taskIds } }] : []),
+      ],
     })
       .populate("caseId", "title number")
+      .populate("taskId", "title")
       .populate("uploadedBy", "name")
       .sort({ createdAt: -1 })
       .lean();
@@ -288,6 +298,10 @@ router.get("/:clientId/documents", requireResourceAccess("client", "clientId"), 
             _id: (d.caseId as any)._id?.toString(),
             number: (d.caseId as any).number,
             title: (d.caseId as any).title,
+          } : null,
+          taskId: d.taskId ? {
+            _id: (d.taskId as any)._id?.toString() || d.taskId.toString(),
+            title: (d.taskId as any).title,
           } : null,
           uploadedBy: d.uploadedBy ? {
             _id: (d.uploadedBy as any)._id?.toString(),

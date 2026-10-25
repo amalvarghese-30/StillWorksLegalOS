@@ -1,6 +1,11 @@
 import { Router, type Request, type Response } from "express";
 import type { Readable } from "node:stream";
-import { createHash } from "node:crypto";
+import { pipeline } from "node:stream/promises";
+import { createReadStream, createWriteStream } from "node:fs";
+import { unlink } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { createHash, randomUUID } from "node:crypto";
 import busboy from "busboy";
 import { DocumentModel, type IDocument } from "../models/Document.js";
 import { Case } from "../models/Case.js";
@@ -12,7 +17,7 @@ import { FileIntegrity } from "../models/FileIntegrity.js";
 import { NotificationService } from "../services/notifications.js";
 import { Types } from "mongoose";
 import { requireAuth } from "../middleware/auth.js";
-import { requireResourceAccess, getAccessibleCaseIds, canAccessCase, canAccessClient } from "../middleware/authorization.js";
+import { requireResourceAccess, getAccessibleCaseIds, canAccessCase, canAccessClient, canAccessTask } from "../middleware/authorization.js";
 import {
   buildAccessibleNasTree,
   validateMimeType,
@@ -43,6 +48,7 @@ router.get("/", async (req: Request, res: Response) => {
       search,
       state,
       caseId,
+      clientId,
       taskId,
       page = "1",
       limit = "24",
@@ -51,14 +57,45 @@ router.get("/", async (req: Request, res: Response) => {
     let filter: Record<string, unknown> = {};
 
     if (state && state !== "all") filter["state"] = state;
-    if (caseId && caseId !== "all" && caseId !== "undefined" && caseId !== "null") {
-      if (Types.ObjectId.isValid(caseId)) {
-        filter["caseId"] = new Types.ObjectId(caseId);
-      }
-    }
     if (taskId && taskId !== "all" && taskId !== "undefined" && taskId !== "null") {
       if (Types.ObjectId.isValid(taskId)) {
         filter["taskId"] = new Types.ObjectId(taskId);
+      }
+    }
+
+    if (caseId && caseId !== "all" && caseId !== "undefined" && caseId !== "null") {
+      if (Types.ObjectId.isValid(caseId)) {
+        const caseObjId = new Types.ObjectId(caseId);
+        const caseTasks = await Task.find({ caseId: caseObjId }).select("_id").lean();
+        const caseTaskIds = caseTasks.map((t) => t._id);
+        filter["$or"] = [
+          { caseId: caseObjId },
+          ...(caseTaskIds.length > 0 ? [{ taskId: { $in: caseTaskIds } }] : []),
+        ];
+      }
+    } else if (clientId && clientId !== "all" && clientId !== "undefined" && clientId !== "null") {
+      if (Types.ObjectId.isValid(clientId)) {
+        const clientObjId = new Types.ObjectId(clientId);
+        const clientCases = await Case.find({
+          $or: [
+            { clientId: clientObjId },
+            { "parties.clientId": clientObjId },
+          ],
+        }).select("_id").lean();
+        const clientCaseIds = clientCases.map((c) => c._id);
+        const clientTasks = await Task.find({
+          $or: [
+            { clientId: clientObjId },
+            ...(clientCaseIds.length > 0 ? [{ caseId: { $in: clientCaseIds } }] : []),
+          ],
+        }).select("_id").lean();
+        const clientTaskIds = clientTasks.map((t) => t._id);
+
+        filter["$or"] = [
+          { clientId: clientObjId },
+          ...(clientCaseIds.length > 0 ? [{ caseId: { $in: clientCaseIds } }] : []),
+          ...(clientTaskIds.length > 0 ? [{ taskId: { $in: clientTaskIds } }] : []),
+        ];
       }
     }
 
@@ -516,8 +553,13 @@ router.post("/upload", async (req: Request, res: Response) => {
   const fields: Record<string, string> = {};
   let fileSeen = false;
   let settled = false;
-  let uploadError: { status: number; message: string } | null = null;
   let fileTask: Promise<void> = Promise.resolve();
+  let fileMeta: {
+    originalName: string;
+    mimeType: string;
+    tmpPath: string;
+    truncated: boolean;
+  } | null = null;
 
   const respond = (status: number, body: unknown) => {
     if (settled) return;
@@ -547,34 +589,71 @@ router.post("/upload", async (req: Request, res: Response) => {
 
     const originalName = info.filename || "document";
     const mimeType = info.mimeType || "application/octet-stream";
-    const displayName = fields["name"]?.trim() || originalName;
-    const caseId = fields["caseId"]?.trim() || undefined;
-    const clientId = fields["clientId"]?.trim() || undefined;
-    const taskId = fields["taskId"]?.trim() || undefined;
+    const safeTmpName = `upload_${Date.now()}_${randomUUID()}_${path.basename(originalName).replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+    const tmpPath = path.join(os.tmpdir(), safeTmpName);
+    const outStream = createWriteStream(tmpPath);
 
-    fileTask = processFile(fileStream, { originalName, displayName, mimeType, caseId, clientId, taskId });
+    fileMeta = {
+      originalName,
+      mimeType,
+      tmpPath,
+      truncated: false,
+    };
+
+    fileStream.on("limit", () => {
+      if (fileMeta) fileMeta.truncated = true;
+    });
+
+    fileTask = pipeline(fileStream, outStream);
   });
 
   bb.on("error", (err) => {
     console.error("[documents] Multipart parse error:", err);
+    if (fileMeta?.tmpPath) {
+      unlink(fileMeta.tmpPath).catch(() => {});
+    }
     respond(400, { message: "Malformed upload request" });
   });
 
   bb.on("close", async () => {
-    await fileTask;
-    if (uploadError) {
-      respond(uploadError.status, { message: uploadError.message });
-      return;
-    }
-    if (!settled) {
-      respond(fileSeen ? 500 : 400, { message: fileSeen ? "Upload failed" : "No file uploaded" });
+    try {
+      await fileTask;
+      if (!fileSeen || !fileMeta) {
+        respond(400, { message: "No file uploaded" });
+        return;
+      }
+      if (fileMeta.truncated) {
+        await unlink(fileMeta.tmpPath).catch(() => {});
+        respond(413, { message: `File exceeds the ${MAX_UPLOAD_BYTES / 1048576}MB limit` });
+        return;
+      }
+
+      const displayName = fields["name"]?.trim() || fileMeta.originalName;
+      const caseId = fields["caseId"]?.trim() || undefined;
+      const clientId = fields["clientId"]?.trim() || undefined;
+      const taskId = fields["taskId"]?.trim() || undefined;
+
+      await processFile(fileMeta.tmpPath, {
+        originalName: fileMeta.originalName,
+        displayName,
+        mimeType: fileMeta.mimeType,
+        caseId,
+        clientId,
+        taskId,
+      });
+    } catch (err: any) {
+      if (fileMeta?.tmpPath) {
+        await unlink(fileMeta.tmpPath).catch(() => {});
+      }
+      const status = err.status || 500;
+      respond(status, { message: err.message || "Upload failed" });
     }
   });
 
   req.pipe(bb);
 
   async function processFile(
-    fileStream: Readable & { truncated?: boolean },
+    tmpPath: string,
     meta: { originalName: string; displayName: string; mimeType: string; caseId?: string; clientId?: string; taskId?: string },
   ): Promise<void> {
     let doc: IDocument | null = null;
@@ -583,12 +662,6 @@ router.post("/upload", async (req: Request, res: Response) => {
     try {
       const mimeCheck = validateMimeType(meta.mimeType);
       if (!mimeCheck.valid) {
-        await new Promise<void>((resolve) => {
-          fileStream.on("data", () => {});
-          fileStream.on("end", () => resolve());
-          fileStream.on("error", () => resolve());
-          fileStream.resume();
-        });
         throw httpError(415, mimeCheck.error ?? "File type not allowed");
       }
 
@@ -610,7 +683,13 @@ router.post("/upload", async (req: Request, res: Response) => {
       if (meta.caseId) {
         const caseDoc = await Case.findById(meta.caseId).select("number _id parties").lean();
         if (!caseDoc) throw httpError(404, "Case not found");
-        const allowed = await canAccessCase(req.userId!, req.user!.role, meta.caseId);
+        let allowed = await canAccessCase(req.userId!, req.user!.role, meta.caseId, req.user?.permissions);
+        if (!allowed && meta.taskId) {
+          const hasTaskAccess = await canAccessTask(req.userId!, req.user!.role, meta.taskId, req.user?.permissions);
+          if (hasTaskAccess) {
+            allowed = true;
+          }
+        }
         if (!allowed) throw httpError(403, "Cannot upload to a case you don't have access to");
         caseNumber = caseDoc.number;
         nasFolder = getCaseFolderPath(caseNumber, meta.caseId);
@@ -626,7 +705,13 @@ router.post("/upload", async (req: Request, res: Response) => {
         if (!Types.ObjectId.isValid(meta.clientId)) throw httpError(400, "Invalid client ID format");
         const clientDoc = await Client.findById(meta.clientId).select("_id").lean();
         if (!clientDoc) throw httpError(404, "Client not found");
-        const canClient = await canAccessClient(req.userId!, req.user!.role, meta.clientId, req.user?.permissions);
+        let canClient = await canAccessClient(req.userId!, req.user!.role, meta.clientId, req.user?.permissions);
+        if (!canClient && meta.taskId) {
+          const hasTaskAccess = await canAccessTask(req.userId!, req.user!.role, meta.taskId, req.user?.permissions);
+          if (hasTaskAccess) {
+            canClient = true;
+          }
+        }
         if (!canClient) throw httpError(403, "Cannot upload to a client you don't have access to");
         linkedClientId = clientDoc._id as Types.ObjectId;
       }
@@ -661,10 +746,10 @@ router.post("/upload", async (req: Request, res: Response) => {
         size: 0,
         sizeFormatted: "0 Bytes",
         caseId: meta.caseId ?? null,
-        clientId: linkedClientId ?? null,
+        clientId: linkedClientId ?? (meta.clientId ? new Types.ObjectId(meta.clientId) : null),
         taskId: meta.taskId ? new Types.ObjectId(meta.taskId) : null,
         uploadedBy: req.userId,
-        state: "Draft",
+        state: "Pending",
         nasPath: "",
         nasFolder: nasFolder,
         version: version,
@@ -684,11 +769,8 @@ router.post("/upload", async (req: Request, res: Response) => {
         nasPath = sanitizeNasPath(`/General/${documentIdStr}-${safeBase}${ext}`);
       }
 
+      const fileStream = createReadStream(tmpPath);
       const { size, sha256 } = await uploadStream(nasPath, fileStream);
-
-      if (fileStream.truncated) {
-        throw httpError(413, `File exceeds the ${MAX_UPLOAD_BYTES / 1048576}MB limit`);
-      }
 
       doc.size = size;
       doc.sizeFormatted = formatBytes(size);
@@ -736,9 +818,12 @@ router.post("/upload", async (req: Request, res: Response) => {
             relatedId: doc._id,
             relatedModel: "Document",
             actorId: new Types.ObjectId(req.userId),
+            dedupeKey: `doc-approval:${doc._id.toString()}:${adminUser._id.toString()}`,
             metadata: {
               documentId: doc._id.toString(),
               documentName: meta.displayName,
+              taskId: meta.taskId,
+              caseId: meta.caseId,
             },
           }, io);
         }
@@ -749,7 +834,15 @@ router.post("/upload", async (req: Request, res: Response) => {
           documentId: doc._id.toString(),
           name: meta.displayName,
           caseId: meta.caseId?.toString(),
+          taskId: meta.taskId?.toString(),
+          clientId: (linkedClientId || meta.clientId)?.toString(),
         });
+        if (meta.taskId) {
+          io.emit("task:updated", {
+            taskId: meta.taskId.toString(),
+            task: { _id: meta.taskId.toString() },
+          });
+        }
       }
 
       const sanitizedDoc: any = doc.toObject ? doc.toObject() : { ...doc };
@@ -768,11 +861,12 @@ router.post("/upload", async (req: Request, res: Response) => {
       if (nasPath) {
         await deletePath(nasPath).catch(() => { });
       }
-      fileStream.resume();
       const status = (err as { status?: number }).status ?? 502;
       const message = err instanceof Error ? err.message : "Failed to upload file to storage";
       console.error("[documents] Upload stream error:", err);
-      uploadError = { status, message };
+      respond(status, { message });
+    } finally {
+      await unlink(tmpPath).catch(() => {});
     }
   }
 });

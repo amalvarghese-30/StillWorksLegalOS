@@ -131,8 +131,7 @@ export class NotificationService {
       // Emit to the user's personal room
       io.to(`user:${notification.userId}`).emit("notification:new", payload);
 
-      // If the notification is of a type that should appear in the admin live-feed, emit there too
-      // For example, system alerts, approval requests, etc.
+      // If the notification is of a type that should appear in the admin live-feed, emit an activity event
       if (
         notification.type === "SYSTEM_ALERT" ||
         notification.type === "APPROVAL_REQUEST" ||
@@ -141,8 +140,16 @@ export class NotificationService {
         notification.type === "DOCUMENT_SHARED" ||
         notification.type === "CASE_UPDATE"
       ) {
-        // Emit to admin live-feed room (only admins are in this room)
-        io.to("admin:live-feed").emit("notification:new", payload);
+        // Emit to admin live-feed room as an activity event (avoiding duplicating user's notification:new)
+        io.to("admin:live-feed").emit("activity:event", {
+          id: payload.id,
+          type: "notification",
+          action: notification.type,
+          title: notification.title,
+          description: notification.message,
+          userId: notification.userId,
+          timestamp: payload.createdAt,
+        });
       }
     } catch (err) {
       console.error("[NotificationService] Failed to emit notification:", err);

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSocketEvent } from "@/lib/socket";
 import { apiFetch } from "@/services/api";
 import { useAuth } from "@/lib/auth";
@@ -70,10 +70,29 @@ export function useNotifications() {
     }
   }, [user]);
 
+  const processedIdsRef = useRef<Set<string>>(new Set());
+
   // Listen for new notifications via socket
   useSocketEvent("notification:new", (notification: any) => {
     if (!notification) return;
+
+    // Ignore notifications intended for a different user
+    if (notification.userId && user?._id && String(notification.userId) !== String(user._id)) {
+      return;
+    }
+
     const normId = notification._id || notification.id || String(Date.now());
+    if (processedIdsRef.current.has(normId)) {
+      return;
+    }
+    processedIdsRef.current.add(normId);
+
+    // Keep set bounded
+    if (processedIdsRef.current.size > 200) {
+      const firstItems = Array.from(processedIdsRef.current).slice(0, 50);
+      firstItems.forEach((id) => processedIdsRef.current.delete(id));
+    }
+
     const norm: Notification = {
       ...notification,
       _id: normId,

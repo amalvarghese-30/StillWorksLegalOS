@@ -82,11 +82,11 @@ export function TaskCompletionDialog({
       // Upload any attached supporting documents
       for (const file of selectedFiles) {
         const formData = new FormData();
-        formData.append("file", file);
         formData.append("name", file.name);
         formData.append("taskId", task._id);
         if (caseId) formData.append("caseId", caseId);
         if (clientId) formData.append("clientId", clientId);
+        formData.append("file", file);
 
         try {
           const res = await uploadDocumentStream(formData);

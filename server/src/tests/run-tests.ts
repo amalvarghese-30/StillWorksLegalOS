@@ -20,6 +20,7 @@ const { Client } = await import("../models/Client.js");
 const { Counter } = await import("../models/Counter.js");
 const { Task } = await import("../models/Task.js");
 const { Notification } = await import("../models/Notification.js");
+const { NotificationService } = await import("../services/notifications.js");
 const { Reminder } = await import("../models/Reminder.js");
 const { CalendarEvent } = await import("../models/CalendarEvent.js");
 const { default: adminRoutes } = await import("../routes/admin.js");
@@ -4286,6 +4287,7 @@ async function run() {
       });
 
     const { Notification } = await import("../models/Notification.js");
+const { NotificationService } = await import("../services/notifications.js");
     const notifForTarget = await Notification.findOne({
       userId: p0NotifTarget._id,
       type: "TASK_ASSIGNED",
@@ -4633,6 +4635,172 @@ async function run() {
     const dbDocAfterApprove = await DocumentModel.findById(s36Doc._id).lean() as any;
     assert(dbDocAfterApprove.state === "Approved", "S36-19: Document attached to task auto-transitioned to Approved state");
     assert(Boolean(dbDocAfterApprove.approvedAt), "S36-20: Document approvedAt timestamp recorded");
+  }
+
+  // --- Suite 37: Cross-Project Integration: Client Onboarding, Case Association, Task Linking & Document Visibility ---
+  console.log("\n--- Suite 37: Cross-Project Integration: Client Onboarding, Case Association, Task Linking & Document Visibility ---");
+  {
+    const s37Admin = await User.create({
+      name: "S37 Partner Admin",
+      email: `s37admin_${Date.now()}@stillworks.legal`,
+      passwordHash: "hash",
+      role: "admin",
+      permissions: { all: true },
+    });
+    const s37AdminToken = await createToken(s37Admin);
+
+    const s37Emp = await User.create({
+      name: "S37 Advocate",
+      email: `s37emp_${Date.now()}@stillworks.legal`,
+      passwordHash: "hash",
+      role: "employee",
+      permissions: { cases: true, tasks: true, documents: true, clients: true },
+    });
+    const s37EmpToken = await createToken(s37Emp);
+
+    // 1. Create Client
+    const clientRes = await request(app)
+      .post("/api/clients")
+      .set("Authorization", `Bearer ${s37AdminToken}`)
+      .send({
+        name: "Acme Infra Ltd",
+        type: "Corporate",
+        phone: "9876543210",
+        email: "contact@acmeinfra.com",
+        address: "Plot 88, Financial District, Mumbai",
+        tag: "Corporate",
+        kyc: "Pending",
+      });
+    assert(clientRes.status === 201, "S37-01: Client created successfully -> 201");
+    const s37Client = clientRes.body.client;
+    assert(Boolean(s37Client._id), "S37-02: Created client has valid _id");
+
+    // 2. Create Case linked to Client
+    const caseRes = await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${s37AdminToken}`)
+      .send({
+        title: "Acme Infra Land Dispute Proceedings",
+        practice: "Real Estate & Land",
+        category: "Litigation",
+        court: "High Court of Bombay",
+        status: "Active",
+        priority: "High",
+        parties: [
+          {
+            name: s37Client.name,
+            role: "Petitioner",
+            type: "client",
+            clientId: s37Client._id,
+          },
+        ],
+      });
+    assert(caseRes.status === 201, "S37-03: Case created linked to client -> 201");
+    const s37Case = caseRes.body.case;
+    assert(Boolean(s37Case._id), "S37-04: Created case has valid _id");
+
+    // 3. Create Task under Case WITHOUT explicitly providing clientId
+    const taskUnderCaseRes = await request(app)
+      .post("/api/tasks")
+      .set("Authorization", `Bearer ${s37AdminToken}`)
+      .send({
+        title: "Survey Land Boundaries & File Mutation Report",
+        description: "Obtain government survey records for Acme Infra dispute",
+        priority: "High",
+        category: "Documentation",
+        caseId: s37Case._id,
+        assignedTo: s37Emp._id.toString(),
+      });
+    assert(taskUnderCaseRes.status === 201, "S37-05: Task created under case -> 201");
+    const taskUnderCase = taskUnderCaseRes.body.task;
+    assert(Boolean(taskUnderCase._id), "S37-06: Task has valid _id");
+    assert(taskUnderCase.caseId?.toString() === s37Case._id.toString(), "S37-07: Task caseId matches parent case");
+    // Verify auto-inheritance of clientId from parent case
+    assert(taskUnderCase.clientId?.toString() === s37Client._id.toString(), "S37-08: Task clientId auto-inherited from parent case");
+
+    // 4. Create Direct Task under Client (without case)
+    const directClientTaskRes = await request(app)
+      .post("/api/tasks")
+      .set("Authorization", `Bearer ${s37AdminToken}`)
+      .send({
+        title: "Annual Corporate Retainer Compliance Review",
+        description: "Review board resolutions and identity documentation for Acme Infra",
+        priority: "Medium",
+        category: "Advisory",
+        clientId: s37Client._id,
+        assignedTo: s37Emp._id.toString(),
+      });
+    assert(directClientTaskRes.status === 201, "S37-09: Direct task under client created -> 201");
+    const directClientTask = directClientTaskRes.body.task;
+    assert(Boolean(directClientTask._id), "S37-10: Direct client task has valid _id");
+
+    // 5. Query GET /api/tasks?clientId=...
+    const clientTasksRes = await request(app)
+      .get(`/api/tasks?clientId=${s37Client._id}`)
+      .set("Authorization", `Bearer ${s37AdminToken}`);
+    assert(clientTasksRes.status === 200, "S37-11: GET /api/tasks?clientId=... returns 200");
+    const returnedTaskIds = clientTasksRes.body.tasks.map((t: any) => t._id.toString());
+    assert(returnedTaskIds.includes(directClientTask._id.toString()), "S37-12: Client tasks query includes direct client task");
+    assert(returnedTaskIds.includes(taskUnderCase._id.toString()), "S37-13: Client tasks query includes task linked via client's case");
+
+    // 6. Test multipart file upload where fields arrive AFTER the file
+    // Using supertest .attach() then .field() puts fields after file
+    const uploadRes = await request(app)
+      .post("/api/documents/upload")
+      .set("Authorization", `Bearer ${s37EmpToken}`)
+      .attach("file", Buffer.from("PDF DUMMY DOCUMENT CONTENT FOR MULTIPART TEST"), "Boundary_Survey_Map.pdf")
+      .field("name", "Boundary_Survey_Map_Final.pdf")
+      .field("taskId", taskUnderCase._id.toString())
+      .field("caseId", s37Case._id.toString())
+      .field("clientId", s37Client._id.toString());
+
+    assert(uploadRes.status === 201, "S37-14: Upload stream accepts file before fields -> 201");
+    const uploadedDoc = uploadRes.body.document;
+    assert(Boolean(uploadedDoc._id), "S37-15: Uploaded document returned with valid _id");
+    assert(uploadedDoc.taskId?.toString() === taskUnderCase._id.toString(), "S37-16: Uploaded document preserved taskId despite fields arriving after file");
+    assert(uploadedDoc.caseId?.toString() === s37Case._id.toString(), "S37-17: Uploaded document preserved caseId");
+    assert(uploadedDoc.clientId?.toString() === s37Client._id.toString(), "S37-18: Uploaded document preserved clientId");
+    assert(uploadedDoc.state === "Pending", "S37-19: Uploaded document starts in Pending state");
+
+    // 7. Query GET /api/clients/:clientId/documents
+    const clientDocsRes = await request(app)
+      .get(`/api/clients/${s37Client._id}/documents`)
+      .set("Authorization", `Bearer ${s37AdminToken}`);
+    assert(clientDocsRes.status === 200, "S37-20: GET /api/clients/:id/documents returns 200");
+    const clientDocIds = clientDocsRes.body.documents.map((d: any) => d._id.toString());
+    assert(clientDocIds.includes(uploadedDoc._id.toString()), "S37-21: Client documents list includes task-uploaded document");
+
+    // 8. Query GET /api/documents?clientId=...
+    const docQueryRes = await request(app)
+      .get(`/api/documents?clientId=${s37Client._id}`)
+      .set("Authorization", `Bearer ${s37AdminToken}`);
+    assert(docQueryRes.status === 200, "S37-22: GET /api/documents?clientId=... returns 200");
+    const generalDocIds = docQueryRes.body.documents.map((d: any) => d._id.toString());
+    assert(generalDocIds.includes(uploadedDoc._id.toString()), "S37-23: General documents query includes document linked to client's case/task");
+
+    // 9. Notification Deduplication Test:
+    // Create notification with dedupeKey twice -> second creation returns existing without duplicating
+    const dedupeKey = `test-dedupe-${Date.now()}`;
+    const n1 = await NotificationService.createNotification({
+      userId: s37Admin._id,
+      type: "APPROVAL_REQUEST",
+      title: "Deduplication Test Notification",
+      message: "Testing single delivery",
+      dedupeKey,
+    });
+    const n2 = await NotificationService.createNotification({
+      userId: s37Admin._id,
+      type: "APPROVAL_REQUEST",
+      title: "Deduplication Test Notification Duplicate",
+      message: "Testing single delivery second call",
+      dedupeKey,
+    });
+    assert(Boolean(n1?._id), "S37-24: First notification created");
+    assert(n1?._id?.toString() === n2?._id?.toString(), "S37-25: Second notification with same dedupeKey returned existing without duplicate entry");
+
+    // Verify only 1 notification exists in DB
+    const notifCount = await Notification.countDocuments({ dedupeKey });
+    assert(notifCount === 1, "S37-26: Database holds exactly 1 notification for unique dedupeKey");
   }
 
 

@@ -1,9 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState, useRef, useMemo, type ComponentType } from "react";
+import { useState, useMemo, useEffect, type ComponentType, type ReactNode } from "react";
 import {
   LayoutDashboard, FileBadge, Home, Users, Briefcase, Plus,
   Phone, Mail, MapPin, Loader2, Edit3, ChevronDown,
-  Send, Check, X, UserPlus, Building2, FileText, Trash2, Archive,
+  Building2, FileText, Trash2, Archive,
   Download, Eye, RefreshCw, ExternalLink, CheckSquare, AlertTriangle,
   Activity,
 } from "lucide-react";
@@ -23,6 +23,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { MobileSectionNav } from "@/components/layout/MobileSectionNav";
 import {
   useClient, useUpdateClient, useDeleteClient,
@@ -32,12 +40,15 @@ import {
 import { useAuth } from "@/lib/auth";
 import { EditClientDialog } from "@/components/clients/EditClientDialog";
 import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
+import { AddTaskDialog } from "@/components/tasks/AddTaskDialog";
+import { UploadDocumentDialog } from "@/components/documents/UploadDocumentDialog";
+import { DocumentInlinePreview } from "@/components/documents/DocumentInlinePreview";
 import { downloadDocument } from "@/services/documents";
 import { DocumentPreviewModal } from "@/components/documents/DocumentPreviewModal";
 import { formatSafeDate, formatSafeDateTime } from "@/lib/dates";
 import { useTasks, type TaskRecord } from "@/services/tasks";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
-
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_shell/clients/$clientId")({
   head: () => ({
@@ -51,18 +62,6 @@ export const Route = createFileRoute("/_shell/clients/$clientId")({
   component: ClientProfile,
 });
 
-const sections = [
-  { id: "overview", label: "Overview", icon: LayoutDashboard },
-  { id: "cases", label: "Cases", icon: Briefcase },
-  { id: "tasks", label: "Tasks", icon: CheckSquare },
-  { id: "documents", label: "Documents", icon: FileText },
-  { id: "kyc", label: "Identity Verification", icon: FileBadge },
-  { id: "property", label: "Property", icon: Home },
-  { id: "subclients", label: "Sub-clients", icon: Users },
-  { id: "activity", label: "Activity", icon: Activity },
-] as const;
-
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -73,73 +72,319 @@ function formatDate(iso: string | null | undefined): string {
 
 const kycTone: Record<string, string> = { Verified: "success", Pending: "warning", Rejected: "destructive" };
 
-const tagTone: Record<string, string> = { Active: "success", VIP: "primary", Corporate: "indigo", Individual: "muted", Archived: "muted" };
-
 // ---------------------------------------------------------------------------
-// Sub-components
+// Sub-components: Quick Property Modal
 // ---------------------------------------------------------------------------
 
-/** Inline editor for client tag and type */
-function QuickEditDropdown({ record }: { record: ClientRecord }) {
-  const [open, setOpen] = useState(false);
+function PropertyModal({
+  open,
+  onClose,
+  record,
+}: {
+  open: boolean;
+  onClose: () => void;
+  record: ClientRecord;
+}) {
   const updateClient = useUpdateClient();
+  const [address, setAddress] = useState(record.propertyDetails?.address || "");
+  const [surveyNo, setSurveyNo] = useState(record.propertyDetails?.surveyNo || "");
+  const [chsName, setChsName] = useState(record.propertyDetails?.chsName || "");
+  const [sector, setSector] = useState(record.propertyDetails?.sector || "");
+  const [plot, setPlot] = useState(record.propertyDetails?.plot || "");
+  const [area, setArea] = useState(record.propertyDetails?.area || "");
+  const [saving, setSaving] = useState(false);
 
-  const tags = ["Active", "VIP", "Corporate", "Individual", "Archived"] as const;
-  const types = ["Individual", "Corporate"] as const;
+  useEffect(() => {
+    if (open) {
+      setAddress(record.propertyDetails?.address || "");
+      setSurveyNo(record.propertyDetails?.surveyNo || "");
+      setChsName(record.propertyDetails?.chsName || "");
+      setSector(record.propertyDetails?.sector || "");
+      setPlot(record.propertyDetails?.plot || "");
+      setArea(record.propertyDetails?.area || "");
+    }
+  }, [open, record.propertyDetails]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await updateClient.mutateAsync({
+        id: record._id,
+        data: {
+          propertyDetails: {
+            address: address.trim(),
+            surveyNo: surveyNo.trim(),
+            chsName: chsName.trim(),
+            sector: sector.trim(),
+            plot: plot.trim(),
+            area: area.trim(),
+          },
+        },
+      });
+      toast.success("Property details updated successfully");
+      onClose();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.message || "Failed to save property details");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
-    <div className="relative">
-      <Button variant="outline" size="sm" className="rounded-md" onClick={() => setOpen(!open)}>
-        <Edit3 size={14} strokeWidth={1.75} />
-        Edit
-        <ChevronDown size={14} strokeWidth={1.75} />
-      </Button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-20 mt-2 w-64 rounded-lg border border-border bg-card p-3 shadow-lift">
-            {/* Tag */}
-            <p className="mb-2 text-caption font-semibold text-muted-foreground">Tag</p>
-            <div className="mb-3 flex gap-1 flex-wrap">
-              {tags.map((t) => (
-                <button
-                  key={t}
-                  onClick={() => { updateClient.mutate({ id: record._id, data: { tag: t } }); setOpen(false); }}
-                  disabled={updateClient.isPending}
-                  className={`rounded-sm px-2 py-1.5 text-caption font-medium transition-colors ${
-                    record.tag === t ? "bg-primary/15 text-primary ring-1 ring-primary/30" : "bg-muted text-muted-foreground hover:bg-accent"
-                  }`}
-                >
-                  {t}
-                </button>
-              ))}
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Property Details</DialogTitle>
+          <DialogDescription>
+            Specify real estate, land survey, or society building information for {record.name}.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <Label htmlFor="prop-address">Property Address</Label>
+            <Input
+              id="prop-address"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="e.g. Flat 402, Royal Residency"
+              className="mt-1"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="prop-survey">Survey No.</Label>
+              <Input
+                id="prop-survey"
+                value={surveyNo}
+                onChange={(e) => setSurveyNo(e.target.value)}
+                placeholder="e.g. 124/2A"
+                className="mt-1"
+              />
             </div>
-
-            {/* Type */}
-            <p className="mb-2 text-caption font-semibold text-muted-foreground">Type</p>
-            <div className="flex gap-1">
-              {types.map((t) => (
-                <button
-                  key={t}
-                  onClick={() => { updateClient.mutate({ id: record._id, data: { type: t } }); setOpen(false); }}
-                  disabled={updateClient.isPending}
-                  className={`flex-1 rounded-sm px-2 py-1.5 text-caption font-medium transition-colors ${
-                    record.type === t ? "bg-primary/15 text-primary ring-1 ring-primary/30" : "bg-muted text-muted-foreground hover:bg-accent"
-                  }`}
-                >
-                  {t}
-                </button>
-              ))}
+            <div>
+              <Label htmlFor="prop-chs">CHS / Building Name</Label>
+              <Input
+                id="prop-chs"
+                value={chsName}
+                onChange={(e) => setChsName(e.target.value)}
+                placeholder="e.g. Greenfield CHS"
+                className="mt-1"
+              />
             </div>
           </div>
-        </>
-      )}
-    </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <Label htmlFor="prop-sector">Sector / Area</Label>
+              <Input
+                id="prop-sector"
+                value={sector}
+                onChange={(e) => setSector(e.target.value)}
+                placeholder="Sector 19"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="prop-plot">Plot No.</Label>
+              <Input
+                id="prop-plot"
+                value={plot}
+                onChange={(e) => setPlot(e.target.value)}
+                placeholder="Plot 45"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="prop-area">Area (sq.ft.)</Label>
+              <Input
+                id="prop-area"
+                value={area}
+                onChange={(e) => setArea(e.target.value)}
+                placeholder="950"
+                className="mt-1"
+              />
+            </div>
+          </div>
+          <DialogFooter className="pt-2">
+            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={saving} className="gradient-primary text-primary-foreground">
+              {saving ? <Loader2 size={16} className="animate-spin" /> : "Save Property"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Main page
+// Sub-components: Quick Sub-Client Modal
+// ---------------------------------------------------------------------------
+
+function SubClientModal({
+  open,
+  onClose,
+  record,
+}: {
+  open: boolean;
+  onClose: () => void;
+  record: ClientRecord;
+}) {
+  const updateClient = useUpdateClient();
+  const [name, setName] = useState("");
+  const [relationship, setRelationship] = useState("Co-owner");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [aadhar, setAadhar] = useState("");
+  const [pan, setPan] = useState("");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) {
+      toast.error("Please enter sub-client name");
+      return;
+    }
+    setSaving(true);
+    try {
+      const newEntry = {
+        name: name.trim(),
+        relationship: relationship.trim(),
+        phone: phone.trim() || undefined,
+        email: email.trim() || undefined,
+        aadhar: aadhar.trim() || undefined,
+        pan: pan.trim() || undefined,
+        notes: notes.trim() || undefined,
+      };
+      const existing = Array.isArray(record.subClients) ? record.subClients : [];
+      await updateClient.mutateAsync({
+        id: record._id,
+        data: {
+          subClients: [...existing, newEntry] as any,
+        },
+      });
+      toast.success("Sub-client added successfully");
+      setName("");
+      setPhone("");
+      setEmail("");
+      setAadhar("");
+      setPan("");
+      setNotes("");
+      onClose();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.message || "Failed to add sub-client");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Add Sub-Client / Related Party</DialogTitle>
+          <DialogDescription>
+            Attach a co-party, family member, guarantor, or authorized representative to {record.name}.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <Label htmlFor="sc-name">Full Name *</Label>
+            <Input
+              id="sc-name"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Priya Sharma"
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <Label htmlFor="sc-rel">Relationship</Label>
+            <Input
+              id="sc-rel"
+              value={relationship}
+              onChange={(e) => setRelationship(e.target.value)}
+              placeholder="e.g. Co-owner, Spouse, Guarantor, Partner"
+              className="mt-1"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="sc-phone">Phone</Label>
+              <Input
+                id="sc-phone"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="10-digit mobile"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="sc-email">Email</Label>
+              <Input
+                id="sc-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="priya@example.com"
+                className="mt-1"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="sc-aadhar">Aadhaar (12 digits)</Label>
+              <Input
+                id="sc-aadhar"
+                value={aadhar}
+                onChange={(e) => setAadhar(e.target.value)}
+                placeholder="123456789012"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="sc-pan">PAN (10 characters)</Label>
+              <Input
+                id="sc-pan"
+                value={pan}
+                onChange={(e) => setPan(e.target.value.toUpperCase())}
+                placeholder="ABCDE1234F"
+                className="mt-1"
+              />
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="sc-notes">Notes</Label>
+            <Input
+              id="sc-notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Additional remarks or authorization details"
+              className="mt-1"
+            />
+          </div>
+          <DialogFooter className="pt-2">
+            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={saving} className="gradient-primary text-primary-foreground">
+              {saving ? <Loader2 size={16} className="animate-spin" /> : "Add Sub-client"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main Component
 // ---------------------------------------------------------------------------
 
 function ClientProfile() {
@@ -158,6 +403,10 @@ function ClientProfile() {
   const [confirmDeleteInput, setConfirmDeleteInput] = useState("");
   const { data: deletionPreview, isLoading: isPreviewLoading } = useClientDeletionPreview(clientId, showPermanentDeleteConfirm);
   const [showAddCaseDialog, setShowAddCaseDialog] = useState(false);
+  const [showAddTaskDialog, setShowAddTaskDialog] = useState(false);
+  const [showUploadDocDialog, setShowUploadDocDialog] = useState(false);
+  const [showAddPropertyDialog, setShowAddPropertyDialog] = useState(false);
+  const [showAddSubClientDialog, setShowAddSubClientDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<ClientDocument | null>(null);
 
@@ -180,11 +429,11 @@ function ClientProfile() {
     isLoading: isTasksLoading,
     isError: isTasksError,
     refetch: refetchTasks,
-  } = useTasks({ clientId }, { enabled: active === "tasks" });
+  } = useTasks({ clientId });
 
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
 
-  // Derive activity feed from already-fetched client data (cases, tasks, docs)
+  // Derive activity feed from client data (cases, tasks, docs)
   const activityItems = useMemo(() => {
     const items: Array<{
       id: string;
@@ -299,7 +548,31 @@ function ClientProfile() {
         title={record.name}
         subtitle={`${record.type} · ${record.tag} · Verification: ${record.kyc}`}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              variant="default"
+              className="gradient-primary text-primary-foreground shadow-soft rounded-md"
+              onClick={() => setShowAddCaseDialog(true)}
+            >
+              <Briefcase size={15} strokeWidth={1.75} />
+              Add Case
+            </Button>
+            <Button
+              variant="outline"
+              className="rounded-md"
+              onClick={() => setShowAddTaskDialog(true)}
+            >
+              <CheckSquare size={15} strokeWidth={1.75} />
+              Add Task
+            </Button>
+            <Button
+              variant="outline"
+              className="rounded-md"
+              onClick={() => setShowUploadDocDialog(true)}
+            >
+              <FileText size={15} strokeWidth={1.75} />
+              Upload Document
+            </Button>
             <Button variant="outline" className="rounded-md" onClick={() => setShowEditDialog(true)}>
               <Edit3 size={15} strokeWidth={1.75} />
               Edit Client
@@ -506,6 +779,15 @@ function ClientProfile() {
               title="Linked Tasks"
               description="Tasks associated with this client or their linked matters."
               icon={CheckSquare}
+              action={
+                <Button
+                  size="sm"
+                  className="rounded-md gap-1.5"
+                  onClick={() => setShowAddTaskDialog(true)}
+                >
+                  <Plus size={14} /> Add Task
+                </Button>
+              }
             >
               {isTasksLoading ? (
                 <div className="flex justify-center py-12">
@@ -523,8 +805,16 @@ function ClientProfile() {
                   <CheckSquare size={32} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
                   <p className="mt-4 font-medium">No tasks linked to this client</p>
                   <p className="mt-1 text-helper text-muted-foreground">
-                    Tasks assigned against this client's cases will appear here.
+                    Tasks assigned directly to this client or to their linked matters will appear here.
                   </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-4 gap-1.5 rounded-md"
+                    onClick={() => setShowAddTaskDialog(true)}
+                  >
+                    <Plus size={14} /> Add first task
+                  </Button>
                 </div>
               ) : (
                 <ul className="divide-y divide-border/60">
@@ -589,8 +879,17 @@ function ClientProfile() {
           {active === "documents" && (
             <SectionCard
               title="Client Documents"
-              description="Legal briefs, evidence, filings, and contracts associated with this client."
+              description="Legal briefs, evidence, filings, and contracts associated with this client or their tasks."
               icon={FileText}
+              action={
+                <Button
+                  size="sm"
+                  className="rounded-md gap-1.5"
+                  onClick={() => setShowUploadDocDialog(true)}
+                >
+                  <Plus size={14} /> Upload Document
+                </Button>
+              }
             >
               {isDocsLoading ? (
                 <div className="flex justify-center py-12">
@@ -613,22 +912,46 @@ function ClientProfile() {
                   <FileText size={32} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
                   <p className="mt-4 font-medium">No documents linked to this client</p>
                   <p className="mt-1 text-helper text-muted-foreground">
-                    Upload documents to matters linked to this client or via the document repository.
+                    Upload documents directly to this client, or attach files to matters and tasks.
                   </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-4 gap-1.5 rounded-md"
+                    onClick={() => setShowUploadDocDialog(true)}
+                  >
+                    <Plus size={14} /> Upload first document
+                  </Button>
                 </div>
               ) : (
                 <ul className="divide-y divide-border/60">
                   {docsData.documents.map((d) => {
                     const caseInfo = typeof d.caseId === "object" && d.caseId !== null ? d.caseId : null;
+                    const taskInfo = typeof (d as any).taskId === "object" && (d as any).taskId !== null ? (d as any).taskId : null;
                     return (
                       <li key={d._id} className="flex flex-wrap items-center justify-between gap-4 py-3.5">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <span className="num grid size-10 shrink-0 place-items-center rounded-md bg-muted text-caption font-semibold text-muted-foreground">
-                            {(d.kind ?? "DOC").slice(0, 3).toUpperCase()}
-                          </span>
+                        <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                          <div
+                            className="size-12 shrink-0 rounded-md border border-border/80 overflow-hidden bg-muted/40 cursor-pointer flex items-center justify-center hover:opacity-90"
+                            onClick={() => setPreviewDoc(d)}
+                            title="Click to preview"
+                          >
+                            <DocumentInlinePreview
+                              documentId={d._id}
+                              documentName={d.name}
+                              mimeType={d.mimeType}
+                              className="size-12"
+                              onExpand={() => setPreviewDoc(d)}
+                            />
+                          </div>
                           <div className="min-w-0">
-                            <p className="truncate text-helper font-medium text-foreground">{d.name}</p>
-                            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
+                            <p
+                              className="truncate text-helper font-semibold text-foreground hover:text-primary cursor-pointer transition-colors"
+                              onClick={() => setPreviewDoc(d)}
+                            >
+                              {d.name}
+                            </p>
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
                               <span>{d.sizeFormatted || `${(d.size / 1024).toFixed(1)} KB`}</span>
                               <span>•</span>
                               <span>v{d.version || 1}</span>
@@ -645,6 +968,15 @@ function ClientProfile() {
                                     <Briefcase size={12} />
                                     <span>{caseInfo.number || caseInfo.title}</span>
                                   </Link>
+                                </>
+                              )}
+                              {taskInfo && (
+                                <>
+                                  <span>•</span>
+                                  <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
+                                    <CheckSquare size={12} />
+                                    <span>{taskInfo.title || "Task Document"}</span>
+                                  </span>
                                 </>
                               )}
                             </div>
@@ -722,14 +1054,36 @@ function ClientProfile() {
 
           {/* ── Property ── */}
           {active === "property" && (
-            <SectionCard title="Property Details" description="Property information associated with this client." icon={Home}>
+            <SectionCard
+              title="Property Details"
+              description="Property information associated with this client."
+              icon={Home}
+              action={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="rounded-md gap-1.5"
+                  onClick={() => setShowAddPropertyDialog(true)}
+                >
+                  <Edit3 size={14} /> {hasProperty ? "Edit Property" : "Add Property"}
+                </Button>
+              }
+            >
               {!hasProperty ? (
                 <div className="rounded-lg border border-dashed p-12 text-center">
                   <Home size={32} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
                   <p className="mt-4 font-medium">No property on record</p>
                   <p className="mt-1 text-helper text-muted-foreground">
-                    Add property details for this client from the client edit form.
+                    Add property, land survey, or CHS building details for this client.
                   </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-4 gap-1.5 rounded-md"
+                    onClick={() => setShowAddPropertyDialog(true)}
+                  >
+                    <Plus size={14} /> Add Property Details
+                  </Button>
                 </div>
               ) : (
                 <div className="grid gap-5 sm:grid-cols-2">
@@ -757,14 +1111,31 @@ function ClientProfile() {
               title="Sub-clients"
               description={`${record.subClients?.length ?? 0} associated parties.`}
               icon={Users}
+              action={
+                <Button
+                  size="sm"
+                  className="rounded-md gap-1.5"
+                  onClick={() => setShowAddSubClientDialog(true)}
+                >
+                  <Plus size={14} /> Add Sub-client
+                </Button>
+              }
             >
               {!record.subClients?.length ? (
                 <div className="rounded-lg border border-dashed p-12 text-center">
                   <Users size={32} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
                   <p className="mt-4 font-medium">No sub-clients yet</p>
                   <p className="mt-1 text-helper text-muted-foreground">
-                    Sub-clients can be added through the client edit form.
+                    Attach associated co-parties, family members, or guarantors to this client.
                   </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-4 gap-1.5 rounded-md"
+                    onClick={() => setShowAddSubClientDialog(true)}
+                  >
+                    <Plus size={14} /> Add Sub-client
+                  </Button>
                 </div>
               ) : (
                 <ul className="space-y-4">
@@ -870,6 +1241,30 @@ function ClientProfile() {
         onClose={() => setShowAddCaseDialog(false)}
         preselectedClientId={record._id}
         preselectedClientName={record.name}
+      />
+
+      <AddTaskDialog
+        open={showAddTaskDialog}
+        onClose={() => setShowAddTaskDialog(false)}
+        initialClientId={record._id}
+      />
+
+      <UploadDocumentDialog
+        open={showUploadDocDialog}
+        onClose={() => setShowUploadDocDialog(false)}
+        preSelectedClientId={record._id}
+      />
+
+      <PropertyModal
+        open={showAddPropertyDialog}
+        onClose={() => setShowAddPropertyDialog(false)}
+        record={record}
+      />
+
+      <SubClientModal
+        open={showAddSubClientDialog}
+        onClose={() => setShowAddSubClientDialog(false)}
+        record={record}
       />
 
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>

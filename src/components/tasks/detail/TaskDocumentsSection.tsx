@@ -83,11 +83,11 @@ export function TaskDocumentsSection({
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const formData = new FormData();
-        formData.append("file", file);
         formData.append("name", file.name);
         formData.append("taskId", taskId);
         if (caseId) formData.append("caseId", caseId);
         if (clientId) formData.append("clientId", clientId);
+        formData.append("file", file);
 
         try {
           await uploadDocumentStream(formData);
