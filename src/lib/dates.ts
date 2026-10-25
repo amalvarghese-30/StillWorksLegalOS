@@ -79,3 +79,6 @@ export function formatSafeRelative(val: unknown, fallback = "—"): string {
   if (diffDays < 7) return `${diffDays}d ago`;
   return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 }
+
+export const formatReadableDate = formatSafeDate;
+

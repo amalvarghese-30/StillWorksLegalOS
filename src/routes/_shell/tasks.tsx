@@ -10,6 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useSocketEvent } from "@/lib/socket";
 import { useTasks, useTask, useUpdateTask, useToggleChecklistItem, taskKeys, type TaskRecord } from "@/services/tasks";
 import { useEmployees } from "@/services/admin";
+import { extractCategoryName } from "@/services/categories";
 import { AddTaskDialog } from "@/components/tasks/AddTaskDialog";
 import { QuickCallDialog } from "@/components/tasks/QuickCallDialog";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
@@ -341,7 +342,10 @@ function TasksPage() {
   const categories = useMemo(() => {
     const set = new Set<string>(["Court Case", "Agreement", "CIDCO", "Property / RERA", "Due Diligence", "Other Work"]);
     for (const t of allTasks) {
-      if (t.category) set.add(t.category);
+      if (t.category) {
+        const catStr = extractCategoryName(t.category);
+        if (catStr) set.add(catStr);
+      }
     }
     return Array.from(set);
   }, [allTasks]);

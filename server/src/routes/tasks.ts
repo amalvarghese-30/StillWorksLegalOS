@@ -5,6 +5,7 @@ import { Reminder } from "../models/Reminder.js";
 import { syncCallReminders, deleteCallReminders } from "../services/reminders.js";
 import { Case } from "../models/Case.js";
 import { Client } from "../models/Client.js";
+import { DocumentModel } from "../models/Document.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { User } from "../models/User.js";
 import { AppSettings } from "../models/AppSettings.js";
@@ -674,6 +675,12 @@ router.get("/:id", requireResourceAccess("task"), async (req: Request, res: Resp
     if (!taskObj.assignedTo && assignedUsers.length > 0) {
       taskObj.assignedTo = assignedUsers[0];
     }
+    const documents = await DocumentModel.find({ taskId: task._id })
+      .select("name originalName size sizeFormatted mimeType state createdAt uploadedBy version")
+      .populate("uploadedBy", "name email")
+      .sort({ createdAt: -1 })
+      .lean();
+    taskObj.documents = documents;
     res.json({ task: taskObj });
   } catch (err) {
     console.error("[tasks] Get error:", err);
@@ -858,6 +865,7 @@ router.post("/", async (req: Request, res: Response) => {
     const task = await Task.create({
       title: title.trim(),
       description: description ?? "",
+      notes: typeof req.body.notes === "string" ? req.body.notes.trim() : (typeof req.body.internalNotes === "string" ? req.body.internalNotes.trim() : ""),
       category: category ?? "Other Work",
       mainCategory: typeof req.body.mainCategory === "string" ? req.body.mainCategory.trim() : undefined,
       subCategory: typeof req.body.subCategory === "string" ? req.body.subCategory.trim() : undefined,
@@ -956,6 +964,16 @@ router.post("/", async (req: Request, res: Response) => {
     }
 
     const io = req.app.get("io");
+    if (Array.isArray(req.body.documentIds) && req.body.documentIds.length > 0) {
+      const validDocIds = req.body.documentIds.filter((id: any) => Types.ObjectId.isValid(id));
+      if (validDocIds.length > 0) {
+        await DocumentModel.updateMany(
+          { _id: { $in: validDocIds } },
+          { taskId: task._id, caseId: cleanCaseId, clientId: cleanClientId }
+        );
+      }
+    }
+
     if (io) {
       io.emit("task:created", {
         task: taskObj,
@@ -1005,6 +1023,8 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       "isCall",
       "checklist",
       "localPath",
+      "notes",
+      "internalNotes",
     ];
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];

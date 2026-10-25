@@ -37,11 +37,16 @@ export interface WorkloadItem {
   _id: string;
   name: string;
   role: string;
+  title?: string;
   status: string;
   avatarUrl?: string;
+  email?: string;
+  phone?: string;
   activeCases: number;
+  totalTasks?: number;
   pendingTasks: number;
   completedTasks: number;
+  overdueTasks?: number;
   currentTask?: {
     _id: string;
     title: string;

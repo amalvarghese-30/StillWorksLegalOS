@@ -21,6 +21,7 @@ import {
   CheckSquare,
   FolderOpen,
   CornerDownRight,
+  Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -31,7 +32,7 @@ import { useCreateClient, type CreateClientPayload, type SubClient } from "@/ser
 import { useCreateCase, type CaseTaskPayload, type CaseParty } from "@/services/cases";
 import { useEmployees } from "@/services/admin";
 import { useTaskOptions, type ChecklistItem } from "@/services/tasks";
-import { useCategoryTree, useCategories } from "@/services/categories";
+import { useCategoryTree, useCategories, extractCategoryName } from "@/services/categories";
 import { AssigneeMultiSelect } from "@/components/common/AssigneeMultiSelect";
 import { toSafeIso } from "@/lib/dates";
 import {
@@ -152,6 +153,9 @@ const EMPTY_CASE_FORM: CaseFormState = {
 export interface OnboardingTaskEntry {
   title: string;
   description?: string;
+  notes?: string;
+  mainCategory?: string;
+  subCategory?: string;
   category: string;
   priority: "High" | "Medium" | "Low";
   deadline: string;
@@ -179,12 +183,26 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
   const [caseForm, setCaseForm] = useState<CaseFormState>(EMPTY_CASE_FORM);
   const [parties, setParties] = useState<Array<{ name: string; role: string; type: "client" | "sub_client" | "opposing_party" | "counsel" | "other" }>>([]);
   const [initialTasks, setInitialTasks] = useState<OnboardingTaskEntry[]>([]);
+  const [checkedSubCategoriesForTasks, setCheckedSubCategoriesForTasks] = useState<string[]>([]);
+  const [expandedTaskIndexes, setExpandedTaskIndexes] = useState<Record<number, boolean>>({});
   const [tagInput, setTagInput] = useState("");
   const [subtaskInput, setSubtaskInput] = useState<Record<number, string>>({});
   const [isCreatingCase, setIsCreatingCase] = useState(false);
 
-  const { data: categories = [] } = useCategories();
+  const { data: rawCategories = [] } = useCategories();
   const { data: categoryTree = [], isLoading: isCategoriesLoading, isError: isCategoriesError } = useCategoryTree();
+
+  const categories = useMemo(() => {
+    const rawObj = rawCategories && typeof rawCategories === "object" ? (rawCategories as Record<string, unknown>) : null;
+    const list = Array.isArray(rawCategories)
+      ? rawCategories
+      : Array.isArray(rawObj?.categories)
+      ? (rawObj?.categories as unknown[])
+      : [];
+    return list
+      .map(extractCategoryName)
+      .filter(Boolean);
+  }, [rawCategories]);
 
   const selectedParent = categoryTree.find((c) => c.name === caseForm.mainCategory);
   const availableSubCategories = selectedParent?.children ?? [];
@@ -233,18 +251,71 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
     setParties((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const toggleTaskExpand = (index: number) => {
+    setExpandedTaskIndexes((prev) => ({
+      ...prev,
+      [index]: !prev[index],
+    }));
+  };
+
+  const handleAddSelectedSubCategoriesAsTasks = () => {
+    if (checkedSubCategoriesForTasks.length === 0) return;
+    const newTasks: OnboardingTaskEntry[] = [];
+    const existingTitles = new Set(initialTasks.map((t) => t.title.toLowerCase()));
+
+    for (const scName of checkedSubCategoriesForTasks) {
+      if (!existingTitles.has(scName.toLowerCase())) {
+        newTasks.push({
+          title: scName,
+          category: scName,
+          mainCategory: caseForm.mainCategory,
+          subCategory: scName,
+          priority: "Medium",
+          deadline: "",
+          assignedTo: caseForm.assignedTo || [],
+          notes: "",
+          description: "",
+          checklist: [],
+        });
+        existingTitles.add(scName.toLowerCase());
+      }
+    }
+
+    if (newTasks.length > 0) {
+      const startIdx = initialTasks.length;
+      setInitialTasks((prev) => [...prev, ...newTasks]);
+      toast.success(`Added ${newTasks.length} task(s) from selected subcategories`);
+      setExpandedTaskIndexes((prev) => {
+        const next = { ...prev };
+        for (let i = 0; i < newTasks.length; i++) {
+          next[startIdx + i] = true;
+        }
+        return next;
+      });
+      setCheckedSubCategoriesForTasks([]);
+    } else {
+      toast.info("Selected subcategories are already added as tasks");
+    }
+  };
+
   const addTask = () => {
+    const newIdx = initialTasks.length;
     setInitialTasks((prev) => [
       ...prev,
       {
         title: "",
         category: caseForm.category || "Other Work",
+        mainCategory: caseForm.mainCategory,
+        subCategory: "",
         priority: "Medium",
         deadline: "",
-        assignedTo: [],
+        assignedTo: caseForm.assignedTo || [],
+        notes: "",
+        description: "",
         checklist: [],
       },
     ]);
+    setExpandedTaskIndexes((prev) => ({ ...prev, [newIdx]: true }));
   };
 
   const updateTask = (
@@ -517,7 +588,10 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
           .map((t) => ({
             title: t.title.trim(),
             description: t.description?.trim() || undefined,
-            category: t.category || "Other Work",
+            notes: t.notes?.trim() || undefined,
+            mainCategory: t.mainCategory || caseForm.mainCategory || undefined,
+            subCategory: t.subCategory || undefined,
+            category: t.category || t.subCategory || "Other Work",
             priority: t.priority,
             deadline: t.deadline ? toSafeIso(t.deadline) ?? undefined : undefined,
             assignedTo: t.assignedTo.length > 0 ? t.assignedTo : undefined,
@@ -767,7 +841,10 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
               .map((t) => ({
                 title: t.title.trim(),
                 description: t.description?.trim() || undefined,
-                category: t.category || "Other Work",
+                notes: t.notes?.trim() || undefined,
+                mainCategory: t.mainCategory || caseForm.mainCategory || undefined,
+                subCategory: t.subCategory || undefined,
+                category: t.category || t.subCategory || "Other Work",
                 priority: t.priority,
                 deadline: t.deadline ? toSafeIso(t.deadline) ?? undefined : undefined,
                 assignedTo: t.assignedTo.length > 0 ? t.assignedTo : undefined,
@@ -1515,87 +1592,24 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                     )}
                   </div>
 
-                  {/* Subcategories Checklist */}
+                  {/* Primary Subcategory (Optional) */}
                   {caseForm.mainCategory && caseForm.mainCategory !== "__other__" && availableSubCategories.length > 0 && (
-                    <div className="space-y-2 rounded-lg border border-border bg-muted/20 p-3">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-helper font-medium flex items-center gap-1.5">
-                          <CheckSquare size={14} className="text-primary" />
-                          Subcategories / Work Types (Check all that apply)
-                        </Label>
-                        <span className="text-[11px] text-muted-foreground">
-                          {caseForm.selectedSubCategories.length} selected
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-1">
-                        {availableSubCategories.map((sc) => {
-                          const isChecked = caseForm.selectedSubCategories.includes(sc.name);
-                          return (
-                            <label
-                              key={sc._id || sc.name}
-                              className={`flex items-start gap-2.5 rounded-md border p-2 text-xs cursor-pointer transition-colors ${
-                                isChecked
-                                  ? "border-primary bg-primary/10 text-foreground font-medium"
-                                  : "border-border/60 bg-card hover:bg-muted text-muted-foreground hover:text-foreground"
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={(e) => {
-                                  const checked = e.target.checked;
-                                  const updated = checked
-                                    ? [...caseForm.selectedSubCategories, sc.name]
-                                    : caseForm.selectedSubCategories.filter((name) => name !== sc.name);
-                                  updateCase("selectedSubCategories", updated);
-                                  updateCase("subCategory", updated[0] || "");
-                                }}
-                                className="mt-0.5 size-3.5 rounded border-border text-primary focus:ring-primary"
-                              />
-                              <span className="leading-tight select-none">{sc.name}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-
-                      <div className="flex items-center justify-between pt-1 text-[11px]">
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const allNames = availableSubCategories.map((s) => s.name);
-                              updateCase("selectedSubCategories", allNames);
-                              updateCase("subCategory", allNames[0] || "");
-                            }}
-                            className="text-primary hover:underline"
-                          >
-                            Select all
-                          </button>
-                          <span className="text-muted-foreground">|</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              updateCase("selectedSubCategories", []);
-                              updateCase("subCategory", "");
-                            }}
-                            className="text-muted-foreground hover:underline"
-                          >
-                            Clear
-                          </button>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const val = caseForm.subCategory === "__other__" ? "" : "__other__";
-                            updateCase("subCategory", val);
-                          }}
-                          className="text-primary hover:underline font-medium"
-                        >
-                          + Custom subcategory
-                        </button>
-                      </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="case-sub-category" className="text-helper">Primary Case Subcategory (Optional)</Label>
+                      <select
+                        id="case-sub-category"
+                        value={caseForm.subCategory}
+                        onChange={(e) => updateCase("subCategory", e.target.value)}
+                        className="h-10 w-full rounded-md border border-border bg-card px-3 text-xs sm:text-sm outline-none transition-colors focus:border-primary"
+                      >
+                        <option value="">Select primary subcategory (or configure individual tasks below)…</option>
+                        {availableSubCategories.map((sc) => (
+                          <option key={sc._id || sc.name} value={sc.name}>
+                            {sc.name}
+                          </option>
+                        ))}
+                        <option value="__other__">+ Custom subcategory...</option>
+                      </select>
                     </div>
                   )}
 
@@ -1826,249 +1840,414 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                 </div>
 
                 {/* ── Initial Tasks Section ── */}
-                <div className="rounded-lg border border-border bg-card p-3.5 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                        <CheckSquare size={15} className="text-primary" />
-                        Initial Action Items &amp; Tasks ({initialTasks.length})
-                      </Label>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">
-                        Define tasks with independent assignees, priorities, deadlines, and multi-step checklists.
+                <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+                  {/* Top Info Banner */}
+                  <div className="rounded-lg border border-blue-200 bg-blue-50/70 dark:border-blue-900/60 dark:bg-blue-950/40 p-3.5 flex items-start gap-3">
+                    <Info className="h-5 w-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                    <div className="text-xs text-blue-900 dark:text-blue-200 space-y-0.5">
+                      <p className="font-semibold text-blue-950 dark:text-blue-100">
+                        Create Independent Tasks from Subcategories
+                      </p>
+                      <p className="text-[11px] leading-relaxed opacity-90">
+                        Select subcategories to create separate tasks for this client. Each selected subcategory will be added as an independent task with its own assignees, deadline, instructions, and checklist steps.
                       </p>
                     </div>
+                  </div>
+
+                  {/* Selected Main Category Badge */}
+                  <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-b border-border/50 pb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-muted-foreground">Selected Main Category:</span>
+                      <span className="text-xs font-bold text-primary bg-primary/10 px-2.5 py-1 rounded-md border border-primary/20">
+                        {caseForm.mainCategory || "None selected (choose in Case Details above)"}
+                      </span>
+                    </div>
+
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="text-xs text-primary border-primary/30 h-7 px-2.5 hover:bg-primary/10 shrink-0"
+                      className="text-xs text-primary border-primary/30 h-8 px-3 hover:bg-primary/10 font-semibold rounded-lg"
                       onClick={addTask}
                     >
-                      <Plus size={13} className="mr-1" /> Add Task
+                      <Plus size={13} className="mr-1.5" /> Add Custom Task
                     </Button>
                   </div>
 
-                  {initialTasks.length === 0 && (
-                    <div className="text-xs text-muted-foreground italic bg-muted/20 rounded-md p-3 border border-dashed border-border text-center">
-                      No initial tasks added yet. Click &quot;+ Add Task&quot; to assign tasks to your team right away.
+                  {/* Available Subcategories Selector */}
+                  {caseForm.mainCategory && availableSubCategories.length > 0 && (
+                    <div className="rounded-lg border border-border/80 bg-muted/20 p-3.5 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                            <CheckSquare size={14} className="text-primary" />
+                            Available Subcategories
+                          </Label>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            Check subcategories below to create independent tasks
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const allNames = availableSubCategories.map((s) => s.name);
+                              setCheckedSubCategoriesForTasks(allNames);
+                            }}
+                            className="text-[11px] text-primary hover:underline font-medium"
+                          >
+                            Select all
+                          </button>
+                          <span className="text-muted-foreground text-xs">|</span>
+                          <button
+                            type="button"
+                            onClick={() => setCheckedSubCategoriesForTasks([])}
+                            className="text-[11px] text-muted-foreground hover:underline"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
+                        {availableSubCategories.map((sc) => {
+                          const isChecked = checkedSubCategoriesForTasks.includes(sc.name);
+                          const isAlreadyCreated = initialTasks.some(
+                            (t) => t.title.toLowerCase() === sc.name.toLowerCase()
+                          );
+                          return (
+                            <label
+                              key={sc._id || sc.name}
+                              className={`flex items-start gap-2.5 rounded-lg border p-2 text-xs cursor-pointer transition-all ${
+                                isAlreadyCreated
+                                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 opacity-80"
+                                  : isChecked
+                                  ? "border-primary bg-primary/10 text-foreground font-semibold shadow-xs"
+                                  : "border-border/70 bg-card hover:bg-muted text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked || isAlreadyCreated}
+                                disabled={isAlreadyCreated}
+                                onChange={(e) => {
+                                  if (isAlreadyCreated) return;
+                                  const c = e.target.checked;
+                                  setCheckedSubCategoriesForTasks((prev) =>
+                                    c ? [...prev, sc.name] : prev.filter((name) => name !== sc.name)
+                                  );
+                                }}
+                                className="mt-0.5 size-3.5 rounded border-border text-primary focus:ring-primary shrink-0"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <span className="leading-tight block truncate select-none">
+                                  {sc.name}
+                                </span>
+                                {isAlreadyCreated && (
+                                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-normal block mt-0.5">
+                                    ✓ Added as task
+                                  </span>
+                                )}
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+
+                      <div className="flex items-center justify-end pt-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={checkedSubCategoriesForTasks.length === 0}
+                          onClick={handleAddSelectedSubCategoriesAsTasks}
+                          className="h-8 text-xs font-semibold px-4 bg-primary text-primary-foreground rounded-lg shadow-xs hover:bg-primary/95"
+                        >
+                          <Plus size={13} className="mr-1.5" />
+                          Add Selected as Tasks ({checkedSubCategoriesForTasks.length})
+                        </Button>
+                      </div>
                     </div>
                   )}
 
-                  {initialTasks.map((t, tIdx) => (
-                    <div key={tIdx} className={`rounded-lg border border-border bg-card p-3 space-y-3 border-l-4 ${t.priority === "High" ? "border-l-destructive" : t.priority === "Medium" ? "border-l-warning" : "border-l-muted-foreground/30"}`}>
-                      <div className="flex items-center justify-between gap-2">
-                        <Input
-                          value={t.title}
-                          onChange={(e) => updateTask(tIdx, "title", e.target.value)}
-                          placeholder="Task title (e.g. Title Search at Sub-Registrar Office) *"
-                          className="h-8 text-xs rounded-md flex-1 font-medium bg-card"
-                          required
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removeTask(tIdx)}
-                          className="text-muted-foreground hover:text-destructive p-1 rounded-sm"
-                          title="Remove task"
-                        >
-                          <Trash2 size={15} />
-                        </button>
+                  {/* Created Tasks List */}
+                  <div className="space-y-3 pt-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                        Created Tasks ({initialTasks.length})
+                      </Label>
+                      {initialTasks.length > 0 && (
+                        <span className="text-[11px] text-muted-foreground">
+                          Click any task card to expand and edit full details
+                        </span>
+                      )}
+                    </div>
+
+                    {initialTasks.length === 0 ? (
+                      <div className="text-xs text-muted-foreground italic bg-muted/20 rounded-xl p-5 border border-dashed border-border text-center space-y-1">
+                        <p className="font-medium text-foreground/80">No initial tasks created yet</p>
+                        <p className="text-[11px]">
+                          Select subcategories above or click &quot;+ Add Custom Task&quot; to assign tasks to your team.
+                        </p>
                       </div>
-
-                      {/* Task Description */}
-                      <Input
-                        value={t.description || ""}
-                        onChange={(e) => updateTask(tIdx, "description", e.target.value)}
-                        placeholder="Task instructions or notes (optional)"
-                        className="h-8 text-xs rounded-md bg-card"
-                      />
-
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                        <div>
-                          <Label className="text-[10px] text-muted-foreground font-medium">Category</Label>
-                          <select
-                            value={t.category}
-                            onChange={(e) => updateTask(tIdx, "category", e.target.value)}
-                            className="h-8 w-full rounded-md border border-border bg-card px-2 text-xs"
+                    ) : (
+                      initialTasks.map((t, tIdx) => {
+                        const isExpanded = expandedTaskIndexes[tIdx] ?? true;
+                        return (
+                          <div
+                            key={tIdx}
+                            className={`rounded-xl border bg-card shadow-xs transition-all border-l-4 ${
+                              t.priority === "High"
+                                ? "border-l-destructive border-border"
+                                : t.priority === "Medium"
+                                ? "border-l-amber-500 border-border"
+                                : "border-l-emerald-500 border-border"
+                            }`}
                           >
-                            {categories.map((c) => (
-                              <option key={c} value={c}>{c}</option>
-                            ))}
-                            <option value="Other Work">Other Work</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <Label className="text-[10px] text-muted-foreground font-medium">Priority</Label>
-                          <select
-                            value={t.priority}
-                            onChange={(e) => updateTask(tIdx, "priority", e.target.value as any)}
-                            className="h-8 w-full rounded-md border border-border bg-card px-2 text-xs"
-                          >
-                            <option value="High">High Priority</option>
-                            <option value="Medium">Medium Priority</option>
-                            <option value="Low">Low Priority</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <Label className="text-[10px] text-muted-foreground font-medium">Deadline</Label>
-                          <Input
-                            type="datetime-local"
-                            value={t.deadline}
-                            onChange={(e) => updateTask(tIdx, "deadline", e.target.value)}
-                            className="h-8 text-xs rounded-md bg-card"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Independent Assignee Selector */}
-                      <div className="space-y-1">
-                        <Label className="text-[10px] text-muted-foreground font-medium">Assign To Staff / Counsel</Label>
-                        <AssigneeMultiSelect
-                          value={t.assignedTo}
-                          onChange={(val) => updateTask(tIdx, "assignedTo", val)}
-                          placeholder="Select one or more assignees (defaults to creator)..."
-                        />
-                      </div>
-
-                      {/* Subtasks / Checklist Items */}
-                      <div className="space-y-2 pt-2 border-t border-border/50">
-                        <div className="flex items-center justify-between">
-                          <Label className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1.5">
-                            <CheckSquare size={13} className="text-primary" />
-                            Sub-tasks &amp; Checklist Steps ({t.checklist.length})
-                          </Label>
-                        </div>
-
-                        {/* Subcategory steps chips if mainCategory configured */}
-                        {caseForm.mainCategory && availableSubCategories.length > 0 && (
-                          <div className="rounded border border-primary/20 bg-primary/5 p-2 space-y-1.5">
-                            <div className="flex items-center justify-between text-[11px]">
-                              <span className="font-semibold text-foreground">
-                                Subcategory Steps ({caseForm.mainCategory}):
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => addAllSubCategoriesToTaskChecklist(tIdx)}
-                                className="text-primary hover:underline font-medium text-[10px]"
-                              >
-                                + Add all subcategories
-                              </button>
-                            </div>
-                            <div className="flex flex-wrap gap-1">
-                              {availableSubCategories.map((sc) => {
-                                const alreadyAdded = t.checklist.some(
-                                  (item) => item.text.toLowerCase() === sc.name.toLowerCase()
-                                );
-                                return (
-                                  <button
-                                    key={sc._id || sc.name}
-                                    type="button"
-                                    onClick={() => addSubCategoryToTaskChecklist(tIdx, sc.name)}
-                                    className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
-                                      alreadyAdded
-                                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-medium"
-                                        : "border-border/80 bg-background text-foreground/80 hover:border-primary hover:text-primary"
-                                    }`}
-                                    title={alreadyAdded ? "Already in checklist" : `Add "${sc.name}"`}
-                                  >
-                                    <Plus size={9} />
-                                    {sc.name}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="flex gap-2">
-                          <Input
-                            value={subtaskInput[tIdx] || ""}
-                            onChange={(e) => setSubtaskInput((prev) => ({ ...prev, [tIdx]: e.target.value }))}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.preventDefault();
-                                addChecklistItemToTask(tIdx);
-                              }
-                            }}
-                            placeholder="Add custom checklist step and press Enter..."
-                            className="h-8 text-xs rounded-md bg-card"
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-8 px-2.5 text-xs rounded-md"
-                            onClick={() => addChecklistItemToTask(tIdx)}
-                          >
-                            <Plus size={12} className="mr-1" /> Add Step
-                          </Button>
-                        </div>
-
-                        {t.checklist.length > 0 && (
-                          <div className="space-y-1.5 mt-1.5">
-                            {t.checklist.map((item, cIdx) => (
+                            {/* Card Header */}
+                            <div className="flex items-center justify-between p-3.5 bg-muted/10 rounded-t-xl gap-2">
                               <div
-                                key={item.id || cIdx}
-                                className="space-y-1.5 rounded-md border border-border/70 bg-card p-2 text-xs"
+                                onClick={() => toggleTaskExpand(tIdx)}
+                                className="flex items-center gap-2.5 flex-1 min-w-0 cursor-pointer"
                               >
-                                <div className="flex items-center gap-2">
+                                {isExpanded ? (
+                                  <ChevronUp size={16} className="text-muted-foreground shrink-0" />
+                                ) : (
+                                  <ChevronDown size={16} className="text-muted-foreground shrink-0" />
+                                )}
+                                <span className="font-semibold text-xs text-foreground truncate">
+                                  {t.title || `Task #${tIdx + 1}`}
+                                </span>
+                                {t.subCategory && (
+                                  <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded font-medium truncate hidden sm:inline-block">
+                                    {t.subCategory}
+                                  </span>
+                                )}
+                                <span
+                                  className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                                    t.priority === "High"
+                                      ? "bg-destructive/15 text-destructive"
+                                      : t.priority === "Medium"
+                                      ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                                      : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                                  }`}
+                                >
+                                  {t.priority}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {t.checklist.length > 0 && (
+                                  <span className="text-[10px] font-medium bg-muted text-muted-foreground px-2 py-0.5 rounded-full border border-border">
+                                    {t.checklist.length} step{t.checklist.length !== 1 ? "s" : ""}
+                                  </span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => removeTask(tIdx)}
+                                  className="text-muted-foreground hover:text-destructive p-1 rounded hover:bg-destructive/10"
+                                  title="Remove task"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Card Body (Expanded) */}
+                            {isExpanded && (
+                              <div className="p-4 space-y-4 border-t border-border/50">
+                                {/* Task Title */}
+                                <div className="space-y-1.5">
+                                  <Label className="text-xs font-semibold text-foreground">
+                                    Task Title <span className="text-destructive">*</span>
+                                  </Label>
                                   <Input
-                                    value={item.text}
-                                    onChange={(e) => updateChecklistItemText(tIdx, cIdx, e.target.value)}
-                                    placeholder="Step description..."
-                                    className="h-7 flex-1 text-xs font-medium rounded-md"
+                                    value={t.title}
+                                    onChange={(e) => updateTask(tIdx, "title", e.target.value)}
+                                    placeholder="Task title (e.g. CIDCO FINAL NOC) *"
+                                    className="h-9 text-xs rounded-lg font-medium bg-background"
+                                    required
                                   />
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => addSubItemToTaskChecklist(tIdx, cIdx)}
-                                    className="h-7 text-xs text-primary hover:bg-primary/10 px-1.5"
-                                  >
-                                    <Plus size={11} className="mr-1" /> Sub-item
-                                  </Button>
-                                  <button
-                                    type="button"
-                                    onClick={() => removeChecklistItemFromTask(tIdx, cIdx)}
-                                    className="grid size-6 shrink-0 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                                    aria-label="Remove checklist item"
-                                  >
-                                    <Trash2 size={13} />
-                                  </button>
                                 </div>
 
-                                {/* Nested sub-items */}
-                                {Array.isArray(item.subItems) && item.subItems.length > 0 && (
-                                  <div className="pl-3 space-y-1 border-l-2 border-primary/20 ml-2 mt-1">
-                                    {item.subItems.map((sub, sIdx) => (
-                                      <div key={sub.id || sIdx} className="flex items-center gap-1.5">
-                                        <CornerDownRight size={11} className="text-muted-foreground shrink-0" />
-                                        <Input
-                                          value={sub.text}
-                                          onChange={(e) => updateSubItemText(tIdx, cIdx, sIdx, e.target.value)}
-                                          placeholder="Sub-step detail…"
-                                          className="h-6 text-[11px] rounded-md"
-                                        />
-                                        <button
-                                          type="button"
-                                          onClick={() => removeSubItemFromTaskChecklist(tIdx, cIdx, sIdx)}
-                                          className="grid size-5 shrink-0 place-items-center text-muted-foreground hover:text-destructive"
-                                          aria-label="Remove sub-item"
-                                        >
-                                          <Trash2 size={11} />
-                                        </button>
-                                      </div>
-                                    ))}
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                  <div>
+                                    <Label className="text-[11px] text-muted-foreground font-medium">Category</Label>
+                                    <select
+                                      value={extractCategoryName(t.category)}
+                                      onChange={(e) => updateTask(tIdx, "category", e.target.value)}
+                                      className="h-9 w-full rounded-lg border border-border bg-background px-2 text-xs"
+                                    >
+                                      {categories.map((c) => (
+                                        <option key={c} value={c}>{c}</option>
+                                      ))}
+                                      <option value="Other Work">Other Work</option>
+                                    </select>
                                   </div>
-                                )}
+
+                                  <div>
+                                    <Label className="text-[11px] text-muted-foreground font-medium">Priority</Label>
+                                    <select
+                                      value={t.priority}
+                                      onChange={(e) => updateTask(tIdx, "priority", e.target.value as any)}
+                                      className="h-9 w-full rounded-lg border border-border bg-background px-2 text-xs font-medium"
+                                    >
+                                      <option value="High">High Priority</option>
+                                      <option value="Medium">Medium Priority</option>
+                                      <option value="Low">Low Priority</option>
+                                    </select>
+                                  </div>
+
+                                  <div>
+                                    <Label className="text-[11px] text-muted-foreground font-medium">Deadline</Label>
+                                    <Input
+                                      type="datetime-local"
+                                      value={t.deadline}
+                                      onChange={(e) => updateTask(tIdx, "deadline", e.target.value)}
+                                      className="h-9 text-xs rounded-lg bg-background"
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* Assignee Selector */}
+                                <div className="space-y-1.5">
+                                  <Label className="text-[11px] font-semibold text-foreground">
+                                    Assigned Staff &amp; Counsel
+                                  </Label>
+                                  <AssigneeMultiSelect
+                                    value={t.assignedTo}
+                                    onChange={(val) => updateTask(tIdx, "assignedTo", val)}
+                                    placeholder="Select one or more assignees..."
+                                  />
+                                </div>
+
+                                {/* Task Description */}
+                                <div className="space-y-1.5">
+                                  <Label className="text-[11px] font-semibold text-foreground">
+                                    Task Description &amp; Instructions
+                                  </Label>
+                                  <Input
+                                    value={t.description || ""}
+                                    onChange={(e) => updateTask(tIdx, "description", e.target.value)}
+                                    placeholder="Provide detailed instructions for this task..."
+                                    className="h-9 text-xs rounded-lg bg-background"
+                                  />
+                                </div>
+
+                                {/* Internal Notes */}
+                                <div className="space-y-1.5">
+                                  <Label className="text-[11px] font-semibold text-foreground">
+                                    Additional Internal Notes
+                                  </Label>
+                                  <Input
+                                    value={t.notes || ""}
+                                    onChange={(e) => updateTask(tIdx, "notes", e.target.value)}
+                                    placeholder="Notes visible only to internal team members..."
+                                    className="h-9 text-xs rounded-lg bg-background"
+                                  />
+                                </div>
+
+                                {/* Subtasks / Checklist Items */}
+                                <div className="space-y-2.5 pt-2 border-t border-border/50">
+                                  <div className="flex items-center justify-between">
+                                    <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                                      <CheckSquare size={13} className="text-primary" />
+                                      Sub-tasks &amp; Checklist Steps ({t.checklist.length})
+                                    </Label>
+                                  </div>
+
+                                  <div className="flex gap-2">
+                                    <Input
+                                      value={subtaskInput[tIdx] || ""}
+                                      onChange={(e) => setSubtaskInput((prev) => ({ ...prev, [tIdx]: e.target.value }))}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                          e.preventDefault();
+                                          addChecklistItemToTask(tIdx);
+                                        }
+                                      }}
+                                      placeholder="Add custom checklist step and press Enter..."
+                                      className="h-8 text-xs rounded-lg bg-background"
+                                    />
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-8 px-3 text-xs rounded-lg font-medium"
+                                      onClick={() => addChecklistItemToTask(tIdx)}
+                                    >
+                                      <Plus size={12} className="mr-1" /> Add Step
+                                    </Button>
+                                  </div>
+
+                                  {t.checklist.length > 0 && (
+                                    <div className="space-y-1.5 mt-2">
+                                      {t.checklist.map((item, cIdx) => (
+                                        <div
+                                          key={item.id || cIdx}
+                                          className="space-y-1.5 rounded-lg border border-border/70 bg-muted/10 p-2.5 text-xs"
+                                        >
+                                          <div className="flex items-center gap-2">
+                                            <Input
+                                              value={item.text}
+                                              onChange={(e) => updateChecklistItemText(tIdx, cIdx, e.target.value)}
+                                              placeholder="Step description..."
+                                              className="h-7 flex-1 text-xs font-medium rounded-md bg-background"
+                                            />
+                                            <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={() => addSubItemToTaskChecklist(tIdx, cIdx)}
+                                              className="h-7 text-xs text-primary hover:bg-primary/10 px-2"
+                                            >
+                                              <Plus size={11} className="mr-1" /> Sub-item
+                                            </Button>
+                                            <button
+                                              type="button"
+                                              onClick={() => removeChecklistItemFromTask(tIdx, cIdx)}
+                                              className="grid size-6 shrink-0 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                              aria-label="Remove checklist item"
+                                            >
+                                              <Trash2 size={13} />
+                                            </button>
+                                          </div>
+
+                                          {/* Nested sub-items */}
+                                          {Array.isArray(item.subItems) && item.subItems.length > 0 && (
+                                            <div className="pl-3 space-y-1 border-l-2 border-primary/20 ml-2 mt-1">
+                                              {item.subItems.map((sub, sIdx) => (
+                                                <div key={sub.id || sIdx} className="flex items-center gap-1.5">
+                                                  <CornerDownRight size={11} className="text-muted-foreground shrink-0" />
+                                                  <Input
+                                                    value={sub.text}
+                                                    onChange={(e) => updateSubItemText(tIdx, cIdx, sIdx, e.target.value)}
+                                                    placeholder="Sub-step detail…"
+                                                    className="h-6 text-[11px] rounded-md bg-background"
+                                                  />
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => removeSubItemFromTaskChecklist(tIdx, cIdx, sIdx)}
+                                                    className="grid size-5 shrink-0 place-items-center text-muted-foreground hover:text-destructive"
+                                                    aria-label="Remove sub-item"
+                                                  >
+                                                    <Trash2 size={11} />
+                                                  </button>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                            ))}
+                            )}
                           </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
               </div>
             )}

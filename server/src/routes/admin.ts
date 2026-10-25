@@ -2110,35 +2110,50 @@ router.get("/reports/task-status-breakdown", requireAdminOrPermission("reports")
 // GET /api/reports/employee-workload — workload stats with current task
 // ---------------------------------------------------------------------------
 
-router.get("/reports/employee-workload", requireAdminOrPermission("reports"), async (_req: Request, res: Response) => {
+router.get("/reports/employee-workload", requireAdminOrPermission("reports", "employees"), async (_req: Request, res: Response) => {
   try {
-    const employees = await User.find({}).select("name role status avatarUrl").lean();
+    const employees = await User.find({}).select("name role title status avatarUrl email phone").lean();
 
     const workloads = await Promise.all(
       employees.map(async (emp) => {
-        const [cases, pendingTasksCount, topTasks, completedTasks] = await Promise.all([
+        const [cases, pendingTasksCount, topTasks, completedTasks, overdueTasksCount, totalTasksCount] = await Promise.all([
           Case.countDocuments({ $or: [{ assignedTo: emp._id }, { assignedUsers: emp._id }], status: { $ne: "Closed" } }),
-          Task.countDocuments({ $or: [{ assignedTo: emp._id }, { assignedUsers: emp._id }], status: { $ne: "completed" } }),
-          Task.find({ $or: [{ assignedTo: emp._id }, { assignedUsers: emp._id }], status: { $ne: "completed" } })
+          Task.countDocuments({ $or: [{ assignedTo: emp._id }, { assignedUsers: emp._id }], status: { $nin: ["completed"] }, isDeleted: { $ne: true } }),
+          Task.find({ $or: [{ assignedTo: emp._id }, { assignedUsers: emp._id }], status: { $ne: "completed" }, isDeleted: { $ne: true } })
             .sort({ priority: -1, deadline: 1 })
             .limit(1)
             .select("_id title priority deadline")
             .lean(),
-          Task.countDocuments({ $or: [{ assignedTo: emp._id }, { assignedUsers: emp._id }], status: "completed" }),
+          Task.countDocuments({ $or: [{ assignedTo: emp._id }, { assignedUsers: emp._id }], status: "completed", isDeleted: { $ne: true } }),
+          Task.countDocuments({
+            $or: [{ assignedTo: emp._id }, { assignedUsers: emp._id }],
+            status: { $nin: ["completed"] },
+            deadline: { $lt: new Date() },
+            isDeleted: { $ne: true },
+          }),
+          Task.countDocuments({ $or: [{ assignedTo: emp._id }, { assignedUsers: emp._id }], isDeleted: { $ne: true } }),
         ]);
         const currentTask = topTasks[0] ?? null;
 
-        const workloadScore = Math.min(100, (cases * 12) + (pendingTasksCount * 8));
+        const total = totalTasksCount || (pendingTasksCount + completedTasks);
+        const workloadScore = total > 0
+          ? Math.min(100, Math.round((pendingTasksCount / total) * 100))
+          : Math.min(100, (cases * 12) + (pendingTasksCount * 8));
 
         return {
           _id: emp._id,
           name: emp.name,
           role: emp.role,
+          title: emp.title || "",
           status: emp.status,
           avatarUrl: emp.avatarUrl || "",
+          email: emp.email || "",
+          phone: emp.phone || "",
           activeCases: cases,
+          totalTasks: total,
           pendingTasks: pendingTasksCount,
           completedTasks: completedTasks,
+          overdueTasks: overdueTasksCount,
           currentTask: currentTask ? {
             _id: currentTask._id,
             title: currentTask.title,

@@ -58,6 +58,7 @@ export interface CallReminder {
 export interface ITask extends Document {
   title: string;
   description: string;
+  notes?: string;
   category: TaskCategory;
   mainCategory?: string;
   subCategory?: string;
@@ -175,6 +176,7 @@ const TaskSchema = new Schema<ITask>(
   {
     title: { type: String, required: true, trim: true, index: true },
     description: { type: String, default: "" },
+    notes: { type: String, default: "" },
     category: {
       type: String,
       default: "Other Work",

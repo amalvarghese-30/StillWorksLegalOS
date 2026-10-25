@@ -15,6 +15,7 @@ export interface IDocument extends Document {
   sizeFormatted: string; // human-readable: "3.2 MB"
   caseId: mongoose.Types.ObjectId | null;
   clientId?: mongoose.Types.ObjectId | null;
+  taskId?: mongoose.Types.ObjectId | null;
   uploadedBy: mongoose.Types.ObjectId;
   state: DocumentState;
   storagePath: string; // full path in application filesystem storage
@@ -65,6 +66,7 @@ const DocumentSchema = new Schema<IDocument>(
     sizeFormatted: { type: String, default: "0 KB" },
     caseId: { type: Schema.Types.ObjectId, ref: "Case", index: true },
     clientId: { type: Schema.Types.ObjectId, ref: "Client", index: true, default: null },
+    taskId: { type: Schema.Types.ObjectId, ref: "Task", index: true, default: null },
     uploadedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     state: {
       type: String,

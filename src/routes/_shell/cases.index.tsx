@@ -147,7 +147,7 @@ const PRACTICE_OPTIONS = [
   "Other",
 ];
 
-import { useCategories } from "@/services/categories";
+import { useCategories, extractCategoryName } from "@/services/categories";
 import { useAuth } from "@/lib/auth";
 
 function CasesPage() {
@@ -166,7 +166,18 @@ function CasesPage() {
   const [reopenTargetCase, setReopenTargetCase] = useState<CaseRecord | null>(null);
 
   const { data: catData } = useCategories();
-  const availableCategories = useMemo(() => ["All", ...(catData?.categories ?? [])], [catData?.categories]);
+  const availableCategories = useMemo(() => {
+    const rawObj = catData && typeof catData === "object" ? (catData as Record<string, unknown>) : null;
+    const list = Array.isArray(catData)
+      ? catData
+      : Array.isArray(rawObj?.categories)
+      ? (rawObj?.categories as unknown[])
+      : [];
+    const strings = list
+      .map(extractCategoryName)
+      .filter(Boolean);
+    return ["All", ...Array.from(new Set(strings))];
+  }, [catData]);
 
   // Construct server-side query filters to filter across full MongoDB database
   const apiFilters = useMemo(() => {

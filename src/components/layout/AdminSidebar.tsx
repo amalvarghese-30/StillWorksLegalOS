@@ -13,6 +13,7 @@ import {
   FolderClosed,
   CalendarDays,
   LogOut,
+  BarChart3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -54,8 +55,10 @@ const firmNav: NavItem[] = [
   { to: "/cases", label: "Cases", icon: Briefcase, permission: "cases" },
   { to: "/clients", label: "Clients", icon: Users, permission: "clients" },
   { to: "/tasks", label: "Tasks", icon: CheckSquare, permission: "tasks" },
-  { to: "/documents", label: "Documents", icon: FolderClosed, permission: "documents" },
   { to: "/calendar", label: "Calendar", icon: CalendarDays, permission: "calendar" },
+  { to: "/documents", label: "Documents", icon: FolderClosed, permission: "documents" },
+  { to: "/reports", label: "Reports", icon: BarChart3, permission: "reports" },
+  { to: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {

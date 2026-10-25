@@ -100,13 +100,17 @@ export interface CaseResponse {
 export interface CaseTaskPayload {
   title: string;
   description?: string;
+  notes?: string;
   category?: string;
+  mainCategory?: string;
+  subCategory?: string;
   priority?: "High" | "Medium" | "Low";
   deadline?: string;
   assignedTo?: string | string[];
   assignedUsers?: string[];
-  checklist?: { text: string; done?: boolean }[];
+  checklist?: { text: string; done?: boolean; subItems?: { text: string; done?: boolean }[] }[];
   agent?: string;
+  documentIds?: string[];
 }
 
 export interface CreateCasePayload {

@@ -26,29 +26,72 @@ export const BASELINE_CATEGORIES: string[] = [
   "Other Work",
 ];
 
+export function extractCategoryName(c: unknown): string {
+  if (typeof c === "string") return c.trim();
+  if (c && typeof c === "object") {
+    const obj = c as Record<string, unknown>;
+    if (typeof obj.name === "string" && obj.name.trim()) return obj.name.trim();
+    if (typeof obj.title === "string" && obj.title.trim()) return obj.title.trim();
+    if (typeof obj.slug === "string" && obj.slug.trim()) return obj.slug.trim();
+    if (typeof obj.label === "string" && obj.label.trim()) return obj.label.trim();
+  }
+  return "";
+}
+
+export function normalizeCategoryList(list: unknown): string[] {
+  if (!Array.isArray(list)) return [];
+  const result: string[] = [];
+  for (const item of list) {
+    const name = extractCategoryName(item);
+    if (name) result.push(name);
+  }
+  return result;
+}
+
 export async function fetchCategories(): Promise<string[]> {
+  const extractedList: string[] = [];
+
   try {
-    const res = await api.get<{ categories: string[] }>("/categories");
-    const catList = res?.categories;
-    if (Array.isArray(catList) && catList.length > 0) {
-      // Merge baseline with fetched categories, deduplicating
-      const set = new Set([...BASELINE_CATEGORIES, ...catList]);
-      return Array.from(set);
-    }
+    const res = await api.get<unknown>("/categories");
+    const rawObj = res && typeof res === "object" ? (res as Record<string, unknown>) : null;
+    const catList = Array.isArray(res)
+      ? res
+      : Array.isArray(rawObj?.categories)
+      ? (rawObj?.categories as unknown[])
+      : Array.isArray(rawObj?.data)
+      ? (rawObj?.data as unknown[])
+      : [];
+
+    extractedList.push(...normalizeCategoryList(catList));
   } catch {
     // If dedicated /categories fails, try /tasks/options
     try {
-      const taskOptRes = await api.get<{ categories: string[] }>("/tasks/options");
-      const catList = taskOptRes?.categories;
-      if (Array.isArray(catList) && catList.length > 0) {
-        const set = new Set([...BASELINE_CATEGORIES, ...catList]);
-        return Array.from(set);
-      }
+      const taskOptRes = await api.get<unknown>("/tasks/options");
+      const rawObj = taskOptRes && typeof taskOptRes === "object" ? (taskOptRes as Record<string, unknown>) : null;
+      const catList = Array.isArray(taskOptRes)
+        ? taskOptRes
+        : Array.isArray(rawObj?.categories)
+        ? (rawObj?.categories as unknown[])
+        : Array.isArray(rawObj?.data)
+        ? (rawObj?.data as unknown[])
+        : [];
+
+      extractedList.push(...normalizeCategoryList(catList));
     } catch {
       // Fallback to baseline
     }
   }
-  return BASELINE_CATEGORIES;
+
+  // Merge with baseline categories, ensuring deduplication and clean string array
+  const set = new Set<string>();
+  for (const cat of extractedList) {
+    if (cat) set.add(cat);
+  }
+  for (const cat of BASELINE_CATEGORIES) {
+    if (cat) set.add(cat);
+  }
+
+  return Array.from(set);
 }
 
 export interface CategoryNode {
@@ -220,9 +263,17 @@ export const BASELINE_CATEGORY_TREE: CategoryNode[] = [
 
 export async function fetchCategoryTree(): Promise<CategoryNode[]> {
   try {
-    const res = await api.get<{ tree: CategoryNode[] }>("/categories/tree");
-    if (Array.isArray(res?.tree) && res.tree.length > 0) {
-      return res.tree;
+    const res = await api.get<unknown>("/categories/tree");
+    const rawObj = res && typeof res === "object" ? (res as Record<string, unknown>) : null;
+    const list = Array.isArray(res)
+      ? res
+      : Array.isArray(rawObj?.tree)
+      ? rawObj?.tree
+      : Array.isArray(rawObj?.data)
+      ? rawObj?.data
+      : [];
+    if (list.length > 0) {
+      return list as CategoryNode[];
     }
   } catch (err) {
     console.error("Failed to fetch category tree, falling back to master baseline:", err);

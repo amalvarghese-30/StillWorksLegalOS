@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { useUpdateCase, type CaseRecord, type CreateCasePayload } from "@/services/cases";
 import { useEmployees } from "@/services/admin";
-import { useCategories } from "@/services/categories";
+import { useCategories, extractCategoryName } from "@/services/categories";
 import { useAuth } from "@/lib/auth";
 import { DiscardConfirmationDialog } from "@/components/ui/discard-confirmation-dialog";
 import { AssigneeMultiSelect } from "@/components/common/AssigneeMultiSelect";
@@ -59,7 +59,18 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const { data: empData } = useEmployees(undefined, { enabled: isAdmin });
-  const { data: categories = [] } = useCategories();
+  const { data: rawCategories = [] } = useCategories();
+  const categories = useMemo(() => {
+    const rawObj = rawCategories && typeof rawCategories === "object" ? (rawCategories as Record<string, unknown>) : null;
+    const list = Array.isArray(rawCategories)
+      ? rawCategories
+      : Array.isArray(rawObj?.categories)
+      ? (rawObj?.categories as unknown[])
+      : [];
+    return list
+      .map(extractCategoryName)
+      .filter(Boolean);
+  }, [rawCategories]);
   const employees = empData?.employees ?? [];
 
   const updateCase = useUpdateCase();

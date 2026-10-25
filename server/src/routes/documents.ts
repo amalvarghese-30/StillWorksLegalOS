@@ -5,6 +5,7 @@ import busboy from "busboy";
 import { DocumentModel, type IDocument } from "../models/Document.js";
 import { Case } from "../models/Case.js";
 import { Client } from "../models/Client.js";
+import { Task } from "../models/Task.js";
 import { User } from "../models/User.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { FileIntegrity } from "../models/FileIntegrity.js";
@@ -42,6 +43,7 @@ router.get("/", async (req: Request, res: Response) => {
       search,
       state,
       caseId,
+      taskId,
       page = "1",
       limit = "24",
     } = req.query as Record<string, string>;
@@ -52,6 +54,11 @@ router.get("/", async (req: Request, res: Response) => {
     if (caseId && caseId !== "all" && caseId !== "undefined" && caseId !== "null") {
       if (Types.ObjectId.isValid(caseId)) {
         filter["caseId"] = new Types.ObjectId(caseId);
+      }
+    }
+    if (taskId && taskId !== "all" && taskId !== "undefined" && taskId !== "null") {
+      if (Types.ObjectId.isValid(taskId)) {
+        filter["taskId"] = new Types.ObjectId(taskId);
       }
     }
 
@@ -524,8 +531,9 @@ router.post("/upload", async (req: Request, res: Response) => {
     const displayName = fields["name"]?.trim() || originalName;
     const caseId = fields["caseId"]?.trim() || undefined;
     const clientId = fields["clientId"]?.trim() || undefined;
+    const taskId = fields["taskId"]?.trim() || undefined;
 
-    fileTask = processFile(fileStream, { originalName, displayName, mimeType, caseId, clientId });
+    fileTask = processFile(fileStream, { originalName, displayName, mimeType, caseId, clientId, taskId });
   });
 
   bb.on("error", (err) => {
@@ -548,7 +556,7 @@ router.post("/upload", async (req: Request, res: Response) => {
 
   async function processFile(
     fileStream: Readable & { truncated?: boolean },
-    meta: { originalName: string; displayName: string; mimeType: string; caseId?: string; clientId?: string },
+    meta: { originalName: string; displayName: string; mimeType: string; caseId?: string; clientId?: string; taskId?: string },
   ): Promise<void> {
     let doc: IDocument | null = null;
     let nasPath = "";
@@ -567,6 +575,18 @@ router.post("/upload", async (req: Request, res: Response) => {
 
       let caseNumber = "";
       let linkedClientId: Types.ObjectId | null = null;
+
+      if (meta.taskId) {
+        if (!Types.ObjectId.isValid(meta.taskId)) throw httpError(400, "Invalid task ID format");
+        const taskDoc = await Task.findById(meta.taskId).select("_id caseId clientId").lean();
+        if (!taskDoc) throw httpError(404, "Task not found");
+        if (!meta.caseId && taskDoc.caseId) {
+          meta.caseId = taskDoc.caseId.toString();
+        }
+        if (!linkedClientId && taskDoc.clientId) {
+          linkedClientId = taskDoc.clientId as any;
+        }
+      }
 
       if (meta.caseId) {
         const caseDoc = await Case.findById(meta.caseId).select("number _id parties").lean();
@@ -623,6 +643,7 @@ router.post("/upload", async (req: Request, res: Response) => {
         sizeFormatted: "0 Bytes",
         caseId: meta.caseId ?? null,
         clientId: linkedClientId ?? null,
+        taskId: meta.taskId ? new Types.ObjectId(meta.taskId) : null,
         uploadedBy: req.userId,
         state: "Draft",
         nasPath: "",

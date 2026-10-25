@@ -28,14 +28,15 @@ const STATUS_SIZE_MAP = {
   "2xl": "size-5 bottom-1 right-1 ring-2",
 };
 
-// Refined, accessible background palettes for initials fallback
+// Refined, accessible background palettes for initials fallback matching reference design
 const PALETTES = [
-  "bg-blue-950/80 text-blue-300 border-blue-800/60",
-  "bg-indigo-950/80 text-indigo-300 border-indigo-800/60",
-  "bg-violet-950/80 text-violet-300 border-violet-800/60",
-  "bg-purple-950/80 text-purple-300 border-purple-800/60",
-  "bg-teal-950/80 text-teal-300 border-teal-800/60",
-  "bg-slate-900/90 text-slate-300 border-slate-700/60",
+  "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950/80 dark:text-blue-300 dark:border-blue-800/60",
+  "bg-slate-200 text-slate-700 border-slate-300 dark:bg-slate-800/90 dark:text-slate-300 dark:border-slate-700/60",
+  "bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-950/80 dark:text-indigo-300 dark:border-indigo-800/60",
+  "bg-slate-900 text-white border-slate-950 dark:bg-slate-900/90 dark:text-slate-200 dark:border-slate-700/60",
+  "bg-purple-600 text-white border-purple-700 dark:bg-purple-950/80 dark:text-purple-300 dark:border-purple-800/60",
+  "bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-950/80 dark:text-violet-300 dark:border-violet-800/60",
+  "bg-teal-100 text-teal-700 border-teal-200 dark:bg-teal-950/80 dark:text-teal-300 dark:border-teal-800/60",
 ];
 
 function getPalette(name: string): string {

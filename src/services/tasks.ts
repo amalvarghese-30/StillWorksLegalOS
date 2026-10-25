@@ -64,6 +64,7 @@ export interface TaskRecord {
   _id: string;
   title: string;
   description: string;
+  notes?: string;
   category: string;
   priority: "High" | "Medium" | "Low";
   status: "pending" | "in_progress" | "pending_approval" | "completed" | "overdue";
@@ -87,6 +88,18 @@ export interface TaskRecord {
   clientId?: string | { _id: string; name: string; phone?: string } | null;
   clientName?: string;
   checklist: ChecklistItem[];
+  documents?: Array<{
+    _id: string;
+    name: string;
+    originalName?: string;
+    size?: number;
+    sizeFormatted?: string;
+    mimeType?: string;
+    state?: string;
+    createdAt?: string;
+    uploadedBy?: any;
+    version?: number;
+  }>;
   callReminder?: CallReminder;
   agent?: string;
   isCall?: boolean;
@@ -156,6 +169,9 @@ export interface CreateTaskPayload {
   customCategory?: string | undefined;
   remark?: string | undefined;
   note?: string | undefined;
+  notes?: string | undefined;
+  documentIds?: string[] | undefined;
+  completionNote?: string | undefined;
 }
 
 export type UpdateTaskPayload = Partial<CreateTaskPayload>;
