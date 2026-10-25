@@ -87,95 +87,173 @@ async function syncCaseNextHearingToCalendar({
   userId: string;
   io?: any;
 }) {
-  if (!caseRecord || !caseRecord._id) return;
+  if (!caseRecord?._id) return;
   const caseId = caseRecord._id;
 
-  // If nextHearingDate was cleared (null)
+  // Only delete the explicitly marked canonical next-hearing event. For legacy
+  // records without that marker, delete an unmarked upcoming event only when
+  // exactly one candidate exists; multiple hearings are ambiguous and must be
+  // preserved rather than deleting a historical hearing by accident.
   if (!nextHearingDate) {
-    const upcomingHearing = await CalendarEvent.findOne({
+    let event = await CalendarEvent.findOne({
       caseId,
       type: "hearing",
-      start: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      isNextHearing: true,
     });
-    if (upcomingHearing) {
-      await CalendarEvent.findByIdAndDelete(upcomingHearing._id);
-      if (io) {
-        io.emit("calendar:event:deleted", {
-          eventId: upcomingHearing._id.toString(),
-          caseId: caseId.toString(),
-        });
+    if (!event) {
+      const candidates = await CalendarEvent.find({
+        caseId,
+        type: "hearing",
+        isNextHearing: { $ne: true },
+        start: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      }).sort({ start: 1 }).limit(2);
+      if (candidates.length === 1) event = candidates[0];
+      else if (candidates.length > 1) {
+        console.warn(`[cases:hearing-sync] Cannot safely clear hearing for case ${caseId}: multiple unmarked future hearings exist.`);
       }
+    }
+
+    if (event) {
+      await CalendarEvent.findByIdAndDelete(event._id);
+      if (io) io.emit("calendar:event:deleted", { eventId: event._id.toString(), caseId: caseId.toString() });
     }
     return;
   }
 
   const hearingDate = parseFlexibleDate(nextHearingDate);
-  if (!hearingDate) return;
+  if (!hearingDate) throw new Error("Invalid next hearing date; calendar event was not synchronized.");
 
-  // Resolve assigned users: include assigned counsel as well as creator so it is visible in My Calendar
   const assignedUserIds = new Set<string>();
-  if (Array.isArray(caseRecord.assignedUsers) && caseRecord.assignedUsers.length > 0) {
-    for (const u of caseRecord.assignedUsers) {
-      const id = String(u?._id ?? u);
-      if (id && mongoose.Types.ObjectId.isValid(id)) assignedUserIds.add(id);
+  if (Array.isArray(caseRecord.assignedUsers)) {
+    for (const user of caseRecord.assignedUsers) {
+      const id = String(user?._id ?? user);
+      if (mongoose.Types.ObjectId.isValid(id)) assignedUserIds.add(id);
     }
   }
   if (caseRecord.assignedTo) {
     const id = String((caseRecord.assignedTo as any)._id ?? caseRecord.assignedTo);
-    if (id && mongoose.Types.ObjectId.isValid(id)) assignedUserIds.add(id);
+    if (mongoose.Types.ObjectId.isValid(id)) assignedUserIds.add(id);
   }
-  if (userId && mongoose.Types.ObjectId.isValid(userId)) {
-    assignedUserIds.add(String(userId));
-  }
+  if (userId && mongoose.Types.ObjectId.isValid(userId)) assignedUserIds.add(userId);
   const assignedUsers = Array.from(assignedUserIds).map((id) => new mongoose.Types.ObjectId(id));
 
-  // Resolve primary client ID
   const primaryClientParty = (caseRecord.parties || []).find(
-    (p: any) => (p.type === "client" || p.type === "sub_client") && p.clientId
+    (party: any) => (party.type === "client" || party.type === "sub_client") && party.clientId,
   );
-  const clientId = primaryClientParty ? (primaryClientParty.clientId._id ?? primaryClientParty.clientId) : null;
+  const rawClientId = primaryClientParty
+    ? ((primaryClientParty.clientId as any)?._id ?? primaryClientParty.clientId)
+    : null;
+  const clientId = rawClientId ? new mongoose.Types.ObjectId(String(rawClientId)) : null;
 
   const eventTitle = `Hearing: ${caseRecord.number || "Case"} — ${caseRecord.title}`;
   const eventDesc = `Court hearing for matter ${caseRecord.number || ""}. Court: ${caseRecord.court || "Court"}${caseRecord.judge ? `, Judge: ${caseRecord.judge}` : ""}.`;
 
-  // Look for an existing hearing event linked to this case
-  const existingHearing = await CalendarEvent.findOne({
+  let nextEvent = await CalendarEvent.findOne({
     caseId,
     type: "hearing",
-  }).sort({ start: -1 });
+    isNextHearing: true,
+  });
 
-  if (existingHearing) {
-    existingHearing.title = eventTitle;
-    existingHearing.description = eventDesc;
-    existingHearing.start = hearingDate;
-    existingHearing.assignedTo = assignedUsers;
-    if (clientId) existingHearing.clientId = clientId;
-    await existingHearing.save();
+  // Adopt an old event only if its date makes the relationship unambiguous.
+  // If a case has several historical hearings and none match nextHearing, create
+  // a distinct canonical event and preserve all historical entries.
+  if (!nextEvent) {
+    const unmarked = await CalendarEvent.find({
+      caseId,
+      type: "hearing",
+      isNextHearing: { $ne: true },
+    }).sort({ start: -1 }).lean();
+
+    const sameLocalDate = (left: Date, right: Date) =>
+      left.getFullYear() === right.getFullYear() &&
+      left.getMonth() === right.getMonth() &&
+      left.getDate() === right.getDate();
+
+    const sameDate = unmarked.filter((event) => sameLocalDate(new Date(event.start), hearingDate));
+    const legacyCandidate = sameDate.length === 1
+      ? sameDate[0]
+      : (sameDate.length === 0 && unmarked.length === 1 ? unmarked[0] : null);
+
+    if (sameDate.length > 1) {
+      console.warn(`[cases:hearing-sync] Multiple hearings share the next-hearing date for case ${caseId}; preserving them and creating a designated next-hearing event.`);
+    } else if (!legacyCandidate && unmarked.length > 1) {
+      console.warn(`[cases:hearing-sync] Multiple historical hearings for case ${caseId}; preserving them and creating a designated next-hearing event.`);
+    }
+
+    if (legacyCandidate) {
+      nextEvent = await CalendarEvent.findById(legacyCandidate._id);
+    }
+  }
+
+  if (nextEvent) {
+    const isNewMarker = nextEvent.isNextHearing !== true;
+    nextEvent.title = eventTitle;
+    nextEvent.description = eventDesc;
+    nextEvent.type = "hearing";
+    nextEvent.start = hearingDate;
+    nextEvent.end = hearingDate;
+    nextEvent.allDay = false;
+    nextEvent.caseId = caseId;
+    nextEvent.clientId = clientId;
+    nextEvent.assignedTo = assignedUsers;
+    nextEvent.isNextHearing = true;
+    nextEvent.color = nextEvent.color || "#7C3AED";
+    await nextEvent.save();
 
     if (io) {
       io.emit("calendar:event:updated", {
-        eventId: existingHearing._id.toString(),
+        eventId: nextEvent._id.toString(),
         caseId: caseId.toString(),
         start: hearingDate.toISOString(),
       });
     }
-  } else {
+    return;
+  }
+
+  try {
     const newEvent = await CalendarEvent.create({
       title: eventTitle,
       description: eventDesc,
       type: "hearing",
       start: hearingDate,
+      end: hearingDate,
       allDay: false,
       caseId,
-      clientId: clientId || null,
+      clientId,
       createdBy: new mongoose.Types.ObjectId(userId),
       assignedTo: assignedUsers,
+      isNextHearing: true,
       color: "#7C3AED",
     });
 
     if (io) {
       io.emit("calendar:event:created", {
         eventId: newEvent._id.toString(),
+        caseId: caseId.toString(),
+        start: hearingDate.toISOString(),
+      });
+    }
+  } catch (err: any) {
+    // The partial unique index prevents concurrent requests creating two
+    // canonical next-hearing events for the same case.
+    if (err?.code !== 11000) throw err;
+    const concurrentlyCreated = await CalendarEvent.findOne({
+      caseId,
+      type: "hearing",
+      isNextHearing: true,
+    });
+    if (!concurrentlyCreated) throw err;
+
+    concurrentlyCreated.title = eventTitle;
+    concurrentlyCreated.description = eventDesc;
+    concurrentlyCreated.start = hearingDate;
+    concurrentlyCreated.end = hearingDate;
+    concurrentlyCreated.clientId = clientId;
+    concurrentlyCreated.assignedTo = assignedUsers;
+    await concurrentlyCreated.save();
+    if (io) {
+      io.emit("calendar:event:updated", {
+        eventId: concurrentlyCreated._id.toString(),
         caseId: caseId.toString(),
         start: hearingDate.toISOString(),
       });
