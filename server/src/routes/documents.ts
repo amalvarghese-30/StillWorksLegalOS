@@ -1056,7 +1056,15 @@ router.post("/:docId/request-access", async (req: Request, res: Response) => {
       (ar: any) => ar.userId?.toString() === req.userId && ar.status === "pending"
     );
     if (existingReq) {
-      res.json({ message: "Access request is already pending review", document });
+      res.json({
+        message: "Access request is already pending review",
+        document: {
+          _id: document._id,
+          name: document.name,
+          state: document.state,
+          accessRequests: [{ status: existingReq.status, reason: existingReq.reason, createdAt: existingReq.createdAt }],
+        },
+      });
       return;
     }
 
@@ -1099,7 +1107,20 @@ router.post("/:docId/request-access", async (req: Request, res: Response) => {
       reason
     ));
 
-    res.json({ message: "Access requested", document });
+    const requesterAccessRequest = document.accessRequests.find(
+      (ar: any) => ar.userId?.toString() === req.userId && ar.status === "pending",
+    );
+    res.json({
+      message: "Access requested",
+      document: {
+        _id: document._id,
+        name: document.name,
+        state: document.state,
+        accessRequests: requesterAccessRequest
+          ? [{ status: requesterAccessRequest.status, reason: requesterAccessRequest.reason, createdAt: requesterAccessRequest.createdAt }]
+          : [],
+      },
+    });
   } catch (err) {
     console.error("[documents] Access request error:", err);
     res.status(500).json({ message: "Internal server error" });
