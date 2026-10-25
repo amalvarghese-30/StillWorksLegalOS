@@ -13,7 +13,7 @@ import { NotificationService } from "../services/notifications.js";
 import { Types } from "mongoose";
 import { ApprovalRequest } from "../models/ApprovalRequest.js";
 import { requireAuth } from "../middleware/auth.js";
-import { canAccessCase, canAccessClient, canAccessTask, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
+import { canAccessCase, canAccessClient, canAccessTask, canAccessDocument, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
 import { resolveTaskClientName, resolveTaskAssigneeName } from "../utils/taskHelpers.js";
 import { validateSnoozePayload } from "../utils/snoozeValidation.js";
 import { dispatchRejectionNotifications } from "../services/rejectionNotifications.js";
@@ -917,6 +917,72 @@ router.post("/", async (req: Request, res: Response) => {
       });
     }
 
+    // Validate optional document associations before creating the task. Never
+    // let documentIds re-link a document that is unauthorized, rejected, or
+    // already attached to another task/case/client.
+    const taskDocumentsToAttach: Array<{
+      _id: Types.ObjectId;
+      caseId: Types.ObjectId | null;
+      clientId: Types.ObjectId | null;
+    }> = [];
+    if (req.body.documentIds !== undefined) {
+      if (!Array.isArray(req.body.documentIds)) {
+        res.status(400).json({ message: "documentIds must be an array" });
+        return;
+      }
+      const rawDocumentIds = [...new Set(req.body.documentIds.map((id: unknown) => String(id)))];
+      if (rawDocumentIds.some((id: string) => !Types.ObjectId.isValid(id))) {
+        res.status(400).json({ message: "One or more document IDs are invalid" });
+        return;
+      }
+      if (rawDocumentIds.length > 0) {
+        const objectIds = rawDocumentIds.map((id: string) => new Types.ObjectId(id));
+        const existingDocuments = await DocumentModel.find({ _id: { $in: objectIds } })
+          .select("_id uploadedBy state taskId caseId clientId")
+          .lean();
+        if (existingDocuments.length !== objectIds.length) {
+          res.status(400).json({ message: "One or more documents no longer exist" });
+          return;
+        }
+
+        for (const document of existingDocuments) {
+          const docCaseId = document.caseId ? document.caseId.toString() : null;
+          const docClientId = document.clientId ? document.clientId.toString() : null;
+          if (document.taskId) {
+            res.status(409).json({ message: "A selected document is already attached to another task" });
+            return;
+          }
+          if (document.state === "Rejected") {
+            res.status(409).json({ message: "Rejected documents cannot be attached to a task" });
+            return;
+          }
+          if (docCaseId && (!cleanCaseId || docCaseId !== cleanCaseId)) {
+            res.status(409).json({ message: "A selected document belongs to a different case" });
+            return;
+          }
+          if (docClientId && (!cleanClientId || docClientId !== cleanClientId)) {
+            res.status(409).json({ message: "A selected document belongs to a different client" });
+            return;
+          }
+          const canAttachDocument = await canAccessDocument(
+            req.userId!,
+            req.user!.role,
+            document._id.toString(),
+            req.user?.permissions,
+          );
+          if (!canAttachDocument) {
+            res.status(403).json({ message: "You do not have permission to attach one of the selected documents" });
+            return;
+          }
+          taskDocumentsToAttach.push({
+            _id: document._id as Types.ObjectId,
+            caseId: (document.caseId as Types.ObjectId | null) ?? null,
+            clientId: (document.clientId as Types.ObjectId | null) ?? null,
+          });
+        }
+      }
+    }
+
     const task = await Task.create({
       title: title.trim(),
       description: description ?? "",
@@ -946,6 +1012,54 @@ router.post("/", async (req: Request, res: Response) => {
       createdBy: req.userId,
       updatedBy: req.userId,
     });
+
+    // Attach only the prevalidated documents using a compare-and-set filter so
+    // a concurrent reassignment cannot silently move an unrelated file.
+    const attachedDocumentIds: Types.ObjectId[] = [];
+    try {
+      for (const snapshot of taskDocumentsToAttach) {
+        const attachFilter: Record<string, unknown> = {
+          _id: snapshot._id,
+          taskId: null,
+          caseId: snapshot.caseId,
+          clientId: snapshot.clientId,
+          state: { $ne: "Rejected" },
+        };
+        const attached = await DocumentModel.findOneAndUpdate(
+          attachFilter,
+          {
+            $set: {
+              taskId: task._id,
+              caseId: cleanCaseId ? new Types.ObjectId(cleanCaseId) : null,
+              clientId: cleanClientId ? new Types.ObjectId(cleanClientId) : null,
+            },
+          },
+          { new: true, runValidators: true },
+        ).select("_id").lean();
+        if (!attached) {
+          throw new Error("A selected document changed while the task was being created");
+        }
+        attachedDocumentIds.push(snapshot._id);
+      }
+    } catch (associationError) {
+      // Roll back only associations made by this request. Do not overwrite a
+      // document that another request has moved after our update.
+      for (const snapshot of taskDocumentsToAttach) {
+        await DocumentModel.updateOne(
+          { _id: snapshot._id, taskId: task._id },
+          {
+            $unset: { taskId: 1 },
+            $set: { caseId: snapshot.caseId, clientId: snapshot.clientId },
+          },
+        ).catch(() => undefined);
+      }
+      await Task.findByIdAndDelete(task._id).catch(() => undefined);
+      console.warn("[tasks] Document association failed; rolled back task creation:", associationError);
+      res.status(409).json({
+        message: "A selected document changed during task creation. No task was created; refresh the documents and retry.",
+      });
+      return;
+    }
 
     // Notify all assigned staff if assigned to someone else
     for (const assigneeId of finalAssignedUsers) {
@@ -1019,16 +1133,6 @@ router.post("/", async (req: Request, res: Response) => {
     }
 
     const io = req.app.get("io");
-    if (Array.isArray(req.body.documentIds) && req.body.documentIds.length > 0) {
-      const validDocIds = req.body.documentIds.filter((id: any) => Types.ObjectId.isValid(id));
-      if (validDocIds.length > 0) {
-        await DocumentModel.updateMany(
-          { _id: { $in: validDocIds } },
-          { taskId: task._id, caseId: cleanCaseId, clientId: cleanClientId }
-        );
-      }
-    }
-
     if (io) {
       io.emit("task:created", taskRealtimePayload(task));
     }
