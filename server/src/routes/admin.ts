@@ -312,7 +312,7 @@ router.get("/audit-logs", requireAdminOrPermission("auditLogs"), async (req: Req
 // GET /api/admin/employees — list all employees (all authenticated staff)
 // ---------------------------------------------------------------------------
 
-router.get("/employees", async (req: Request, res: Response) => {
+router.get("/employees", requireAdminOrPermission("employees"), async (req: Request, res: Response) => {
   try {
     const { status, role } = req.query as Record<string, string>;
     const filter: Record<string, unknown> = {};
@@ -321,7 +321,9 @@ router.get("/employees", async (req: Request, res: Response) => {
     if (role) filter["role"] = role;
 
     const employees = await User.find(filter)
-      .select("-passwordHash")
+      // Return only directory-safe fields; never expose credentials, reset tokens,
+      // or private integration identifiers through the employee listing endpoint.
+      .select("-passwordHash -resetOtpHash -resetOtpExpires -resetOtpAttempts -telegramChatId")
       .sort({ name: 1 })
       .lean();
 
