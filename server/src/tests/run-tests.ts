@@ -4631,10 +4631,20 @@ const { NotificationService } = await import("../services/notifications.js");
     assert(adminApproveRes.body.task?.status === "completed", "S36-17: Task status is now completed");
     assert(Boolean(adminApproveRes.body.task?.approvedAt), "S36-18: Task approvedAt timestamp recorded");
 
-    // 7. Verify attached document is automatically approved
-    const dbDocAfterApprove = await DocumentModel.findById(s36Doc._id).lean() as any;
-    assert(dbDocAfterApprove.state === "Approved", "S36-19: Document attached to task auto-transitioned to Approved state");
-    assert(Boolean(dbDocAfterApprove.approvedAt), "S36-20: Document approvedAt timestamp recorded");
+    // 7. Task completion approval must not implicitly approve its documents.
+    const dbDocAfterTaskApprove = await DocumentModel.findById(s36Doc._id).lean() as any;
+    assert(dbDocAfterTaskApprove.state === "Pending", "S36-19: Task completion approval leaves document approval pending");
+    assert(!dbDocAfterTaskApprove.approvedAt, "S36-20: Task approval does not set the document approvedAt timestamp");
+
+    // 8. A reviewer approves the document through its own workflow.
+    const documentApproveRes = await request(app)
+      .patch(`/api/documents/${s36Doc._id}`)
+      .set("Authorization", `Bearer ${s36AdminToken}`)
+      .send({ state: "Approved" });
+    assert(documentApproveRes.status === 200, "S36-21: Admin can approve the document independently");
+    const dbDocAfterDocumentApprove = await DocumentModel.findById(s36Doc._id).lean() as any;
+    assert(dbDocAfterDocumentApprove.state === "Approved", "S36-22: Document approval changes its own status to Approved");
+    assert(Boolean(dbDocAfterDocumentApprove.approvedAt), "S36-23: Explicit document approval records approvedAt");
   }
 
   // --- Suite 37: Cross-Project Integration: Client Onboarding, Case Association, Task Linking & Document Visibility ---
