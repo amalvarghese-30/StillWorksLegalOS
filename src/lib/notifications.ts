@@ -30,6 +30,14 @@ export interface Notification {
  * Hook to manage notifications state.
  * Provides notifications, unread count, sound controls, and socket-driven live alerts.
  */
+function rememberBoundedId(set: Set<string>, id: string): void {
+  set.add(id);
+  if (set.size > 500) {
+    const toRemove = Array.from(set).slice(0, 100);
+    toRemove.forEach((item) => set.delete(item));
+  }
+}
+
 export function useNotifications() {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -46,23 +54,35 @@ export function useNotifications() {
   }, [soundEnabled]);
 
   // Fetch notifications on mount and whenever we want to refetch
+  const notificationsRef = useRef<Notification[]>([]);
+  const processedIdsRef = useRef<Set<string>>(new Set());
+  const processedReadIdsRef = useRef<Set<string>>(new Set());
+
   const fetchNotifications = useCallback(async () => {
     if (!user) {
+      notificationsRef.current = [];
       setNotifications([]);
       setUnreadCount(0);
+      processedIdsRef.current.clear();
+      processedReadIdsRef.current.clear();
       return;
     }
     try {
       const data = await apiFetch<{ notifications: Notification[]; total?: number; unreadCount?: number }>(
         "/notifications"
       );
-      const list = (data.notifications ?? []).map((n) => ({
-        ...n,
-        _id: n._id || n.id || "",
-      }));
+      const list = (data.notifications ?? [])
+        .map((n) => ({ ...n, _id: n._id || n.id || "" }))
+        .filter((n) => Boolean(n._id));
+      notificationsRef.current = list;
+      for (const item of list) {
+        rememberBoundedId(processedIdsRef.current, item._id);
+        if (item.read) rememberBoundedId(processedReadIdsRef.current, item._id);
+      }
       setNotifications(list);
 
-      // Calculate unread count
+      // Derive the count from the server when available; otherwise count only
+      // the fetched unread items. Socket events must not decrement twice.
       const count = data.unreadCount ?? list.filter((n) => !n.read).length;
       setUnreadCount(count);
     } catch (err) {
@@ -70,40 +90,28 @@ export function useNotifications() {
     }
   }, [user]);
 
-  const processedIdsRef = useRef<Set<string>>(new Set());
-
   // Listen for new notifications via socket
   useSocketEvent("notification:new", (notification: any) => {
     if (!notification) return;
 
-    // Ignore notifications intended for a different user
-    if (notification.userId && user?._id && String(notification.userId) !== String(user._id)) {
+    // Personal notification events must identify their intended recipient and
+    // carry a stable persisted ID. Never fan out unidentified alerts locally.
+    if (!user?._id || !notification.userId || String(notification.userId) !== String(user._id)) {
       return;
     }
 
-    const normId = notification._id || notification.id || String(Date.now());
-    if (processedIdsRef.current.has(normId)) {
+    const normId = String(notification._id || notification.id || "");
+    if (!normId || processedIdsRef.current.has(normId)) {
       return;
     }
-    processedIdsRef.current.add(normId);
+    rememberBoundedId(processedIdsRef.current, normId);
 
-    // Keep set bounded
-    if (processedIdsRef.current.size > 200) {
-      const firstItems = Array.from(processedIdsRef.current).slice(0, 50);
-      firstItems.forEach((id) => processedIdsRef.current.delete(id));
+    const norm: Notification = { ...notification, _id: normId, read: Boolean(notification.read) };
+    if (!notificationsRef.current.some((item) => item._id === normId)) {
+      notificationsRef.current = [norm, ...notificationsRef.current];
+      setNotifications(notificationsRef.current);
+      if (!norm.read) setUnreadCount((prev) => prev + 1);
     }
-
-    const norm: Notification = {
-      ...notification,
-      _id: normId,
-      read: false,
-    };
-
-    setNotifications((prev) => {
-      if (prev.some((n) => n._id === normId)) return prev;
-      return [norm, ...prev];
-    });
-    setUnreadCount((prev) => prev + 1);
 
     // 1. Play auditory chime pop
     playNotificationSound();
@@ -136,21 +144,29 @@ export function useNotifications() {
     });
   });
 
-  // Listen for notification updates (e.g., marked as read)
+  // Apply read transitions once per notification ID. The server event and the
+  // local mutation response can represent the same transition.
   useSocketEvent("notification:updated", (updated: any) => {
     if (!updated) return;
-    const normId = updated._id || updated.id;
-    setNotifications((prev) =>
-      prev.map((n) => (n._id === normId ? { ...n, ...updated, _id: normId } : n))
-    );
-    if (updated.read) {
+    const normId = String(updated._id || updated.id || "");
+    if (!normId) return;
+
+    const current = notificationsRef.current.find((item) => item._id === normId);
+    if (updated.read && current && !current.read && !processedReadIdsRef.current.has(normId)) {
+      rememberBoundedId(processedReadIdsRef.current, normId);
       setUnreadCount((prev) => Math.max(0, prev - 1));
     }
+
+    notificationsRef.current = notificationsRef.current.map((item) =>
+      item._id === normId ? { ...item, ...updated, _id: normId } : item
+    );
+    setNotifications(notificationsRef.current);
   });
 
   // Listen for notification deletion
   useSocketEvent("notification:deleted", (deletedId: string) => {
-    setNotifications((prev) => prev.filter((n) => n._id !== deletedId));
+    notificationsRef.current = notificationsRef.current.filter((item) => item._id !== deletedId);
+    setNotifications(notificationsRef.current);
     fetchNotifications();
   });
 
@@ -160,10 +176,15 @@ export function useNotifications() {
       await apiFetch(`/notifications/${notificationId}/read`, {
         method: "PATCH",
       });
-      setNotifications((prev) =>
-        prev.map((n) => (n._id === notificationId ? { ...n, read: true } : n))
+      const current = notificationsRef.current.find((item) => item._id === notificationId);
+      if (current && !current.read && !processedReadIdsRef.current.has(notificationId)) {
+        rememberBoundedId(processedReadIdsRef.current, notificationId);
+        setUnreadCount((prev) => Math.max(0, prev - 1));
+      }
+      notificationsRef.current = notificationsRef.current.map((item) =>
+        item._id === notificationId ? { ...item, read: true } : item
       );
-      setUnreadCount((prev) => Math.max(0, prev - 1));
+      setNotifications(notificationsRef.current);
     } catch (err) {
       console.error("[useNotifications] Failed to mark notification as read:", err);
     }
@@ -175,7 +196,11 @@ export function useNotifications() {
       await apiFetch("/notifications/read-all", {
         method: "PATCH",
       });
-      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      for (const item of notificationsRef.current) {
+        if (!item.read) rememberBoundedId(processedReadIdsRef.current, item._id);
+      }
+      notificationsRef.current = notificationsRef.current.map((item) => ({ ...item, read: true }));
+      setNotifications(notificationsRef.current);
       setUnreadCount(0);
     } catch (err) {
       console.error("[useNotifications] Failed to mark all notifications as read:", err);
@@ -189,16 +214,15 @@ export function useNotifications() {
         await apiFetch(`/notifications/${notificationId}`, {
           method: "DELETE",
         });
-        setNotifications((prev) => prev.filter((n) => n._id !== notificationId));
-        setUnreadCount((prev) => {
-          const target = notifications.find((n) => n._id === notificationId);
-          return target && !target.read ? Math.max(0, prev - 1) : prev;
-        });
+        const target = notificationsRef.current.find((item) => item._id === notificationId);
+        notificationsRef.current = notificationsRef.current.filter((item) => item._id !== notificationId);
+        setNotifications(notificationsRef.current);
+        if (target && !target.read) setUnreadCount((prev) => Math.max(0, prev - 1));
       } catch (err) {
         console.error("[useNotifications] Failed to delete notification:", err);
       }
     },
-    [notifications]
+    []
   );
 
   // Initial fetch when user is authenticated
@@ -206,6 +230,9 @@ export function useNotifications() {
     if (user) {
       fetchNotifications();
     } else {
+      notificationsRef.current = [];
+      processedIdsRef.current.clear();
+      processedReadIdsRef.current.clear();
       setNotifications([]);
       setUnreadCount(0);
     }

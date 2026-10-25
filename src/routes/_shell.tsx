@@ -125,9 +125,12 @@ function ShellLayout() {
     queryClient.invalidateQueries({ queryKey: ["reports"] });
   });
 
-  // Real-time sync for documents
+  // Real-time sync for documents. Client profile document queries are nested
+  // under ["clients", clientId, "documents"], so invalidate the client query
+  // family as well as the central document/task/case views.
   useSocketEvent("document:created", () => {
     queryClient.invalidateQueries({ queryKey: ["documents"] });
+    queryClient.invalidateQueries({ queryKey: ["clients"] });
     queryClient.invalidateQueries({ queryKey: ["reports"] });
     queryClient.invalidateQueries({ queryKey: taskKeys.all });
     queryClient.invalidateQueries({ queryKey: ["cases"] });
@@ -135,6 +138,7 @@ function ShellLayout() {
 
   useSocketEvent("document:updated", () => {
     queryClient.invalidateQueries({ queryKey: ["documents"] });
+    queryClient.invalidateQueries({ queryKey: ["clients"] });
     queryClient.invalidateQueries({ queryKey: ["reports"] });
     queryClient.invalidateQueries({ queryKey: taskKeys.all });
     queryClient.invalidateQueries({ queryKey: ["cases"] });
@@ -145,6 +149,7 @@ function ShellLayout() {
       queryClient.removeQueries({ queryKey: ["documents", payload.documentId] });
     }
     queryClient.invalidateQueries({ queryKey: ["documents"] });
+    queryClient.invalidateQueries({ queryKey: ["clients"] });
     queryClient.invalidateQueries({ queryKey: ["reports"] });
     queryClient.invalidateQueries({ queryKey: taskKeys.all });
     queryClient.invalidateQueries({ queryKey: ["cases"] });

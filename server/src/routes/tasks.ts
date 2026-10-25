@@ -13,11 +13,32 @@ import { NotificationService } from "../services/notifications.js";
 import { Types } from "mongoose";
 import { ApprovalRequest } from "../models/ApprovalRequest.js";
 import { requireAuth } from "../middleware/auth.js";
-import { canAccessCase, canAccessClient, canAccessTask, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
+import { canAccessCase, canAccessClient, canAccessTask, canAccessDocument, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
 import { resolveTaskClientName, resolveTaskAssigneeName } from "../utils/taskHelpers.js";
 import { validateSnoozePayload } from "../utils/snoozeValidation.js";
 import { dispatchRejectionNotifications } from "../services/rejectionNotifications.js";
 import { recordTaskAuditAndAdminNotification } from "../utils/auditNotificationHelper.js";
+
+function relationId(value: any): string | null {
+  if (!value) return null;
+  const candidate = value._id ?? value;
+  if (candidate === null || candidate === undefined) return null;
+  const id = typeof candidate.toString === "function" ? candidate.toString() : String(candidate);
+  return id && id !== "[object Object]" ? id : null;
+}
+
+/**
+ * Realtime events are broadcast to connected sockets. Send only opaque IDs so
+ * the event can invalidate authorized queries without disclosing task content,
+ * notes, descriptions, assignees, or assignment history to unrelated clients.
+ */
+function taskRealtimePayload(task: any): { taskId: string | null; caseId: string | null; clientId: string | null } {
+  return {
+    taskId: relationId(task?._id),
+    caseId: relationId(task?.caseId),
+    clientId: relationId(task?.clientId),
+  };
+}
 
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -769,17 +790,30 @@ router.post("/", async (req: Request, res: Response) => {
       return;
     }
     let cleanClientId = clientResolution.id;
-    if (!cleanClientId && cleanCaseId) {
-      const parentCase = await Case.findById(cleanCaseId).select("parties clientId").lean();
-      if (parentCase) {
-        if ((parentCase as any).clientId) {
-          cleanClientId = (parentCase as any).clientId.toString();
-        } else if (parentCase.parties?.length) {
-          const clientParty = parentCase.parties.find((p: any) => (p.type === "client" || p.type === "sub_client") && p.clientId);
-          if (clientParty?.clientId) {
-            cleanClientId = clientParty.clientId.toString();
-          }
-        }
+    if (cleanCaseId) {
+      const parentCase = await Case.findById(cleanCaseId).select("parties").lean();
+      if (!parentCase) {
+        res.status(404).json({ message: "Linked case not found" });
+        return;
+      }
+
+      const caseClientIds = new Set<string>(
+        (parentCase.parties ?? [])
+          .filter((party: any) => (party.type === "client" || party.type === "sub_client") && party.clientId)
+          .map((party: any) => String(party.clientId?._id ?? party.clientId)),
+      );
+      const primaryClientParty = parentCase.parties?.find(
+        (party: any) => (party.type === "client" || party.type === "sub_client") && party.clientId,
+      );
+      const primaryClientId = primaryClientParty?.clientId
+        ? String(primaryClientParty.clientId?._id ?? primaryClientParty.clientId)
+        : null;
+
+      if (!cleanClientId && primaryClientId) {
+        cleanClientId = primaryClientId;
+      } else if (cleanClientId && caseClientIds.size > 0 && !caseClientIds.has(cleanClientId)) {
+        res.status(400).json({ message: "The selected client is not linked to the selected case" });
+        return;
       }
     }
 
@@ -896,6 +930,72 @@ router.post("/", async (req: Request, res: Response) => {
       });
     }
 
+    // Validate optional document associations before creating the task. Never
+    // let documentIds re-link a document that is unauthorized, rejected, or
+    // already attached to another task/case/client.
+    const taskDocumentsToAttach: Array<{
+      _id: Types.ObjectId;
+      caseId: Types.ObjectId | null;
+      clientId: Types.ObjectId | null;
+    }> = [];
+    if (req.body.documentIds !== undefined) {
+      if (!Array.isArray(req.body.documentIds)) {
+        res.status(400).json({ message: "documentIds must be an array" });
+        return;
+      }
+      const rawDocumentIds = [...new Set(req.body.documentIds.map((id: unknown) => String(id)))];
+      if (rawDocumentIds.some((id: string) => !Types.ObjectId.isValid(id))) {
+        res.status(400).json({ message: "One or more document IDs are invalid" });
+        return;
+      }
+      if (rawDocumentIds.length > 0) {
+        const objectIds = rawDocumentIds.map((id: string) => new Types.ObjectId(id));
+        const existingDocuments = await DocumentModel.find({ _id: { $in: objectIds } })
+          .select("_id uploadedBy state taskId caseId clientId")
+          .lean();
+        if (existingDocuments.length !== objectIds.length) {
+          res.status(400).json({ message: "One or more documents no longer exist" });
+          return;
+        }
+
+        for (const document of existingDocuments) {
+          const docCaseId = document.caseId ? document.caseId.toString() : null;
+          const docClientId = document.clientId ? document.clientId.toString() : null;
+          if (document.taskId) {
+            res.status(409).json({ message: "A selected document is already attached to another task" });
+            return;
+          }
+          if (document.state === "Rejected") {
+            res.status(409).json({ message: "Rejected documents cannot be attached to a task" });
+            return;
+          }
+          if (docCaseId && (!cleanCaseId || docCaseId !== cleanCaseId)) {
+            res.status(409).json({ message: "A selected document belongs to a different case" });
+            return;
+          }
+          if (docClientId && (!cleanClientId || docClientId !== cleanClientId)) {
+            res.status(409).json({ message: "A selected document belongs to a different client" });
+            return;
+          }
+          const canAttachDocument = await canAccessDocument(
+            req.userId!,
+            req.user!.role,
+            document._id.toString(),
+            req.user?.permissions,
+          );
+          if (!canAttachDocument) {
+            res.status(403).json({ message: "You do not have permission to attach one of the selected documents" });
+            return;
+          }
+          taskDocumentsToAttach.push({
+            _id: document._id as Types.ObjectId,
+            caseId: (document.caseId as Types.ObjectId | null) ?? null,
+            clientId: (document.clientId as Types.ObjectId | null) ?? null,
+          });
+        }
+      }
+    }
+
     const task = await Task.create({
       title: title.trim(),
       description: description ?? "",
@@ -925,6 +1025,52 @@ router.post("/", async (req: Request, res: Response) => {
       createdBy: req.userId,
       updatedBy: req.userId,
     });
+
+    // Attach only the prevalidated documents using a compare-and-set filter so
+    // a concurrent reassignment cannot silently move an unrelated file.
+    try {
+      for (const snapshot of taskDocumentsToAttach) {
+        const attachFilter: any = {
+          _id: snapshot._id,
+          taskId: null,
+          caseId: snapshot.caseId,
+          clientId: snapshot.clientId,
+          state: { $ne: "Rejected" },
+        };
+        const attached = await DocumentModel.findOneAndUpdate(
+          attachFilter,
+          {
+            $set: {
+              taskId: task._id,
+              caseId: cleanCaseId ? new Types.ObjectId(cleanCaseId) : null,
+              clientId: cleanClientId ? new Types.ObjectId(cleanClientId) : null,
+            },
+          },
+          { new: true, runValidators: true },
+        ).select("_id").lean();
+        if (!attached) {
+          throw new Error("A selected document changed while the task was being created");
+        }
+      }
+    } catch (associationError) {
+      // Roll back only associations made by this request. Do not overwrite a
+      // document that another request has moved after our update.
+      for (const snapshot of taskDocumentsToAttach) {
+        await DocumentModel.updateOne(
+          { _id: snapshot._id, taskId: task._id },
+          {
+            $unset: { taskId: 1 },
+            $set: { caseId: snapshot.caseId, clientId: snapshot.clientId },
+          },
+        ).catch(() => undefined);
+      }
+      await Task.findByIdAndDelete(task._id).catch(() => undefined);
+      console.warn("[tasks] Document association failed; rolled back task creation:", associationError);
+      res.status(409).json({
+        message: "A selected document changed during task creation. No task was created; refresh the documents and retry.",
+      });
+      return;
+    }
 
     // Notify all assigned staff if assigned to someone else
     for (const assigneeId of finalAssignedUsers) {
@@ -998,22 +1144,8 @@ router.post("/", async (req: Request, res: Response) => {
     }
 
     const io = req.app.get("io");
-    if (Array.isArray(req.body.documentIds) && req.body.documentIds.length > 0) {
-      const validDocIds = req.body.documentIds.filter((id: any) => Types.ObjectId.isValid(id));
-      if (validDocIds.length > 0) {
-        await DocumentModel.updateMany(
-          { _id: { $in: validDocIds } },
-          { taskId: task._id, caseId: cleanCaseId, clientId: cleanClientId }
-        );
-      }
-    }
-
     if (io) {
-      io.emit("task:created", {
-        task: taskObj,
-        assignedTo: task.assignedTo ? task.assignedTo.toString() : null,
-        createdBy: task.createdBy ? task.createdBy.toString() : null,
-      });
+      io.emit("task:created", taskRealtimePayload(task));
     }
 
     res.status(201).json({ task: taskObj });
@@ -1159,6 +1291,14 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       }
     }
 
+    // Load the persisted task before resolving linked relationships so partial
+    // updates can preserve or derive the correct case/client pair.
+    const originalTask = await Task.findById(req.params["id"]);
+    if (!originalTask) {
+      res.status(404).json({ message: "Task not found" });
+      return;
+    }
+
     if (updates["caseId"] !== undefined) {
       const resolved = await resolveCaseId(updates["caseId"]);
       if (resolved.error) {
@@ -1174,6 +1314,47 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
         return;
       }
       updates["clientId"] = resolved.id;
+    }
+
+    const originalCaseId = originalTask.caseId ? originalTask.caseId.toString() : null;
+    const originalClientId = originalTask.clientId ? originalTask.clientId.toString() : null;
+    const targetCaseId = updates["caseId"] !== undefined
+      ? (updates["caseId"] ? String(updates["caseId"]) : null)
+      : originalCaseId;
+    let targetClientId = updates["clientId"] !== undefined
+      ? (updates["clientId"] ? String(updates["clientId"]) : null)
+      : originalClientId;
+
+    if (targetCaseId) {
+      const targetCase = await Case.findById(targetCaseId).select("parties").lean();
+      if (!targetCase) {
+        res.status(404).json({ message: "Linked case not found" });
+        return;
+      }
+      const targetCaseClientIds = new Set<string>(
+        (targetCase.parties ?? [])
+          .filter((party: any) => (party.type === "client" || party.type === "sub_client") && party.clientId)
+          .map((party: any) => String(party.clientId?._id ?? party.clientId)),
+      );
+      const primaryParty = targetCase.parties?.find(
+        (party: any) => (party.type === "client" || party.type === "sub_client") && party.clientId,
+      );
+      const primaryClientId = primaryParty?.clientId
+        ? String(primaryParty.clientId?._id ?? primaryParty.clientId)
+        : null;
+
+      const caseChanged = targetCaseId !== originalCaseId;
+      const explicitClientChange = updates["clientId"] !== undefined;
+      if (caseChanged && !explicitClientChange) {
+        targetClientId = primaryClientId;
+        updates["clientId"] = targetClientId;
+      } else if ((caseChanged || explicitClientChange) && targetCaseClientIds.size > 0 && targetClientId && !targetCaseClientIds.has(targetClientId)) {
+        res.status(400).json({ message: "The selected client is not linked to the selected case" });
+        return;
+      } else if ((caseChanged || explicitClientChange) && targetCaseClientIds.size > 0 && !targetClientId) {
+        res.status(400).json({ message: "Tasks linked to this case must retain a client linked to the case" });
+        return;
+      }
     }
 
     updates["updatedBy"] = req.userId;
@@ -1194,13 +1375,6 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
         res.status(403).json({ message: "Cannot link task to a client you don't have access to" });
         return;
       }
-    }
-
-    // Fetch the original task to detect changes
-    const originalTask = await Task.findById(req.params["id"]);
-    if (!originalTask) {
-      res.status(404).json({ message: "Task not found" });
-      return;
     }
 
     // Build human-readable audit diffs of modified fields
@@ -1461,14 +1635,10 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       }
     }
 
-    // Synchronize Reminder documents if task has callReminder or status/assignee changed
+    // Synchronize reminders when task fields change. Task completion and
+    // document approval are separate review decisions: never approve pending
+    // documents as a side effect of changing a task's status or other fields.
     if (task) {
-      if (task.status === "completed" || updates["status"] === "completed") {
-        await DocumentModel.updateMany(
-          { taskId: task._id, state: "Pending" },
-          { $set: { state: "Approved", approvedAt: now, approvedBy: req.userId } }
-        );
-      }
       if (req.body["callReminder"] === null || req.body["callReminder"] === false) {
         try {
           await deleteCallReminders("task", task._id);
@@ -1680,11 +1850,7 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("task:updated", {
-        task,
-        assignedTo: (task.assignedTo as any)?._id?.toString?.() ?? (task.assignedTo ? task.assignedTo.toString() : null),
-        createdBy: (task.createdBy as any)?._id?.toString?.() ?? (task.createdBy ? task.createdBy.toString() : null),
-      });
+      io.emit("task:updated", taskRealtimePayload(task));
     }
 
     const taskObj: any = task.toObject ? task.toObject() : task;
@@ -1760,7 +1926,7 @@ router.post("/:taskId/checklist", requireResourceAccess("task", "taskId"), async
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("task:updated", { task: populated });
+      io.emit("task:updated", taskRealtimePayload(populated));
     }
 
     res.status(201).json({ task: populated });
@@ -1812,7 +1978,7 @@ router.delete("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskI
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("task:updated", { task: populated });
+      io.emit("task:updated", taskRealtimePayload(populated));
     }
 
     res.json({ task: populated });
@@ -2023,11 +2189,7 @@ router.patch("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskId
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("task:updated", {
-        task: populated,
-        assignedTo: task.assignedTo ? task.assignedTo.toString() : null,
-        createdBy: task.createdBy ? task.createdBy.toString() : null,
-      });
+      io.emit("task:updated", taskRealtimePayload(populated));
     }
 
     res.json({ task: populated });
@@ -2094,7 +2256,7 @@ router.post("/:taskId/checklist/:itemId/subitems", requireResourceAccess("task",
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("task:updated", { task: populated });
+      io.emit("task:updated", taskRealtimePayload(populated));
     }
 
     res.status(201).json({ task: populated });
@@ -2153,7 +2315,7 @@ router.delete("/:taskId/checklist/:itemId/subitems/:subId", requireResourceAcces
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("task:updated", { task: populated });
+      io.emit("task:updated", taskRealtimePayload(populated));
     }
 
     res.json({ task: populated });
@@ -2187,12 +2349,6 @@ router.post("/:id/approve", requireResourceAccess("task"), async (req: Request, 
     task.rejectedAt = null;
     await task.save();
 
-    // Auto-approve any attached documents that were in Pending state
-    await DocumentModel.updateMany(
-      { taskId: task._id, state: "Pending" },
-      { $set: { state: "Approved", approvedAt: now, approvedBy: req.userId } }
-    );
-
     const populated = await Task.findById(task._id)
       .populate("assignedTo", "name email title")
       .populate("assignedBy", "name email title")
@@ -2205,7 +2361,7 @@ router.post("/:id/approve", requireResourceAccess("task"), async (req: Request, 
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("task:updated", { task: populated });
+      io.emit("task:updated", taskRealtimePayload(populated));
     }
 
     // Notify assignee
@@ -2307,7 +2463,7 @@ router.post("/:id/reject", requireResourceAccess("task"), async (req: Request, r
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("task:updated", { task: populated });
+      io.emit("task:updated", taskRealtimePayload(populated));
     }
 
     // Notify assignee
@@ -2405,7 +2561,7 @@ router.post("/:id/forward", requireResourceAccess("task"), async (req: Request, 
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("task:updated", { task: effectiveTask });
+      io.emit("task:updated", taskRealtimePayload(effectiveTask));
     }
 
     if (String(toUserId) !== String(req.userId)) {
@@ -2515,7 +2671,7 @@ router.post("/:id/reassign", requireResourceAccess("task"), async (req: Request,
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("task:updated", { task: effectiveTask });
+      io.emit("task:updated", taskRealtimePayload(effectiveTask));
     }
 
     if (String(toUserId) !== String(req.userId)) {
@@ -2658,7 +2814,7 @@ router.post("/:id/request-assignment", requireResourceAccess("task"), async (req
     }
 
     if (io) {
-      io.emit("task:updated", { task });
+      io.emit("task:updated", taskRealtimePayload(task));
     }
 
     res.status(201).json({
@@ -2749,7 +2905,7 @@ router.post("/:id/request-deletion", requireResourceAccess("task"), async (req: 
     }
 
     if (io) {
-      io.emit("task:updated", { task });
+      io.emit("task:updated", taskRealtimePayload(task));
     }
 
     await AuditLog.create({
@@ -2832,7 +2988,7 @@ router.post("/:id/remarks", requireResourceAccess("task"), async (req: Request, 
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("task:updated", { task: populated });
+      io.emit("task:updated", taskRealtimePayload(populated));
     }
 
     // Notify assignee if someone else added a remark/note

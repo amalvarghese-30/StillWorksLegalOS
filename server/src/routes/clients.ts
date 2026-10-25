@@ -460,7 +460,6 @@ router.post("/", async (req: Request, res: Response) => {
     if (io) {
       io.emit("client:created", {
         clientId: client._id.toString(),
-        name: client.name,
       });
     }
 
@@ -622,7 +621,6 @@ router.patch("/:id", requireResourceAccess("client"), async (req: Request, res: 
     if (io) {
       io.emit("client:updated", {
         clientId: client._id.toString(),
-        name: client.name,
       });
     }
 
@@ -726,19 +724,34 @@ router.get("/:id/deletion-preview", async (req: Request, res: Response) => {
     }
 
     const clientObjId = new Types.ObjectId(id);
-    const [caseCount, taskCount, docCount] = await Promise.all([
-      Case.countDocuments({
-        $or: [{ "parties.clientId": clientObjId }, { "parties.name": client.name, "parties.type": "client" }],
-      }),
-      Task.countDocuments({ clientId: clientObjId }),
-      DocumentModel.countDocuments({ clientId: clientObjId }),
-    ]);
+    const linkedCaseFilter = {
+      $or: [
+        { "parties.clientId": clientObjId },
+        { "parties.name": client.name, "parties.type": "client" },
+      ],
+    };
+    const linkedCases = await Case.find(linkedCaseFilter).select("_id").lean();
+    const caseIds = linkedCases.map((item) => item._id);
+    const linkedTasks = await Task.find({
+      $or: [
+        { clientId: clientObjId },
+        ...(caseIds.length > 0 ? [{ caseId: { $in: caseIds } }] : []),
+      ],
+    }).select("_id").lean();
+    const taskIds = linkedTasks.map((item) => item._id);
+    const linkedDocuments = await DocumentModel.find({
+      $or: [
+        { clientId: clientObjId },
+        ...(caseIds.length > 0 ? [{ caseId: { $in: caseIds } }] : []),
+        ...(taskIds.length > 0 ? [{ taskId: { $in: taskIds } }] : []),
+      ],
+    }).select("_id").lean();
 
     res.json({
       client,
-      caseCount,
-      taskCount,
-      documentCount: docCount,
+      caseCount: caseIds.length,
+      taskCount: taskIds.length,
+      documentCount: linkedDocuments.length,
     });
   } catch (err) {
     console.error("[clients] Deletion preview error:", err);
@@ -778,8 +791,34 @@ router.delete("/:id", async (req: Request, res: Response) => {
     const clientObjId = new Types.ObjectId(id);
 
     if (isPermanent) {
-      // 1. Find all linked documents to delete physical storage files and DB records
-      const documents = await DocumentModel.find({ clientId: clientObjId }).lean();
+      // Resolve the complete relationship graph before deleting anything. This
+      // keeps the deletion preview and permanent-delete cascade aligned for
+      // tasks/documents linked through a case rather than directly to clientId.
+      const linkedCaseFilter = {
+        $or: [
+          { "parties.clientId": clientObjId },
+          { "parties.name": client.name, "parties.type": "client" },
+        ],
+      };
+      const linkedCases = await Case.find(linkedCaseFilter).select("_id").lean();
+      const caseIds = linkedCases.map((item) => item._id);
+      const tasks = await Task.find({
+        $or: [
+          { clientId: clientObjId },
+          ...(caseIds.length > 0 ? [{ caseId: { $in: caseIds } }] : []),
+        ],
+      }).select("_id").lean();
+      const taskIds = tasks.map((item) => item._id);
+      const documents = await DocumentModel.find({
+        $or: [
+          { clientId: clientObjId },
+          ...(caseIds.length > 0 ? [{ caseId: { $in: caseIds } }] : []),
+          ...(taskIds.length > 0 ? [{ taskId: { $in: taskIds } }] : []),
+        ],
+      }).lean();
+
+      // Remove physical files first. Preserve the existing behavior of logging
+      // storage failures; the database cascade below is limited to these IDs.
       for (const doc of documents) {
         if (doc.storagePath) {
           try {
@@ -789,20 +828,19 @@ router.delete("/:id", async (req: Request, res: Response) => {
           }
         }
       }
-      await DocumentModel.deleteMany({ clientId: clientObjId });
+      const documentIds = documents.map((item) => item._id);
+      if (documentIds.length > 0) {
+        await DocumentModel.deleteMany({ _id: { $in: documentIds } });
+      }
 
-      // 2. Cascade delete tasks & linked reminders
-      const tasks = await Task.find({ clientId: clientObjId }).select("_id").lean();
-      const taskIds = tasks.map((t) => t._id);
+      // Delete reminders and tasks from both direct-client and linked-case paths.
       if (taskIds.length > 0) {
         await Reminder.deleteMany({ sourceType: "task", sourceId: { $in: taskIds } });
+        await Task.deleteMany({ _id: { $in: taskIds } });
       }
-      await Task.deleteMany({ clientId: clientObjId });
 
-      // 3. Delete cases linked to this client
-      const deletedCases = await Case.deleteMany({
-        $or: [{ "parties.clientId": clientObjId }, { "parties.name": client.name, "parties.type": "client" }],
-      });
+      // Delete the cases already included in the graph above.
+      const deletedCases = await Case.deleteMany(linkedCaseFilter);
 
       // 4. Delete the client itself
       await Client.findByIdAndDelete(clientObjId);

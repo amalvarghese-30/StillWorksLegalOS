@@ -189,7 +189,11 @@ router.post("/:id/approve", requireAdminOrPermission("approvals"), async (req: R
       }
 
       details = `Reassigned task to ${targetUser.name}`;
-      if (io) io.emit("task:updated", { task });
+      if (io) io.emit("task:updated", {
+          taskId: task._id.toString(),
+          caseId: task.caseId ? task.caseId.toString() : null,
+          clientId: task.clientId ? task.clientId.toString() : null,
+        });
 
     } else if (approval.type === "task_delete") {
       const task = await Task.findById(approval.entityId);
@@ -300,7 +304,7 @@ router.post("/:id/approve", requireAdminOrPermission("approvals"), async (req: R
         }
 
         if (io) {
-          io.emit("case:updated", { case: c });
+          io.emit("case:updated", { caseId: c._id.toString() });
           io.emit("task:updated", { caseId: c._id.toString() });
         }
       }
@@ -329,7 +333,11 @@ router.post("/:id/approve", requireAdminOrPermission("approvals"), async (req: R
             io
           );
         }
-        if (io) io.emit("task:updated", { task });
+        if (io) io.emit("task:updated", {
+          taskId: task._id.toString(),
+          caseId: task.caseId ? task.caseId.toString() : null,
+          clientId: task.clientId ? task.clientId.toString() : null,
+        });
       }
       details = "Approved task completion";
 
@@ -448,7 +456,7 @@ router.post("/:id/reject", requireAdminOrPermission("approvals"), async (req: Re
           );
         }
 
-        if (io) io.emit("case:updated", { case: c });
+        if (io) io.emit("case:updated", { caseId: c._id.toString() });
       }
     }
 
@@ -477,7 +485,11 @@ router.post("/:id/reject", requireAdminOrPermission("approvals"), async (req: Re
           });
         }
         await task.save();
-        if (io) io.emit("task:updated", { task });
+        if (io) io.emit("task:updated", {
+          taskId: task._id.toString(),
+          caseId: task.caseId ? task.caseId.toString() : null,
+          clientId: task.clientId ? task.clientId.toString() : null,
+        });
       }
     }
 

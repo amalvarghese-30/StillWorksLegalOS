@@ -4631,10 +4631,20 @@ const { NotificationService } = await import("../services/notifications.js");
     assert(adminApproveRes.body.task?.status === "completed", "S36-17: Task status is now completed");
     assert(Boolean(adminApproveRes.body.task?.approvedAt), "S36-18: Task approvedAt timestamp recorded");
 
-    // 7. Verify attached document is automatically approved
-    const dbDocAfterApprove = await DocumentModel.findById(s36Doc._id).lean() as any;
-    assert(dbDocAfterApprove.state === "Approved", "S36-19: Document attached to task auto-transitioned to Approved state");
-    assert(Boolean(dbDocAfterApprove.approvedAt), "S36-20: Document approvedAt timestamp recorded");
+    // 7. Task completion approval must not implicitly approve its documents.
+    const dbDocAfterTaskApprove = await DocumentModel.findById(s36Doc._id).lean() as any;
+    assert(dbDocAfterTaskApprove.state === "Pending", "S36-19: Task completion approval leaves document approval pending");
+    assert(!dbDocAfterTaskApprove.approvedAt, "S36-20: Task approval does not set the document approvedAt timestamp");
+
+    // 8. A reviewer approves the document through its own workflow.
+    const documentApproveRes = await request(app)
+      .patch(`/api/documents/${s36Doc._id}`)
+      .set("Authorization", `Bearer ${s36AdminToken}`)
+      .send({ state: "Approved" });
+    assert(documentApproveRes.status === 200, "S36-21: Admin can approve the document independently");
+    const dbDocAfterDocumentApprove = await DocumentModel.findById(s36Doc._id).lean() as any;
+    assert(dbDocAfterDocumentApprove.state === "Approved", "S36-22: Document approval changes its own status to Approved");
+    assert(Boolean(dbDocAfterDocumentApprove.approvedAt), "S36-23: Explicit document approval records approvedAt");
   }
 
   // --- Suite 37: Cross-Project Integration: Client Onboarding, Case Association, Task Linking & Document Visibility ---
@@ -4675,7 +4685,11 @@ const { NotificationService } = await import("../services/notifications.js");
     const s37Client = clientRes.body.client;
     assert(Boolean(s37Client._id), "S37-02: Created client has valid _id");
 
-    // 2. Create Case linked to Client
+    // 2. Create a case with an initial subcategory task containing its own
+    // deadline, assignment, notes, category path and checklist. These fields
+    // must survive the onboarding/case-creation path just like standalone tasks.
+    const s37InitialTaskDeadline = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const s37InitialHearingDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     const caseRes = await request(app)
       .post("/api/cases")
       .set("Authorization", `Bearer ${s37AdminToken}`)
@@ -4683,6 +4697,8 @@ const { NotificationService } = await import("../services/notifications.js");
         title: "Acme Infra Land Dispute Proceedings",
         practice: "Real Estate & Land",
         category: "Litigation",
+        mainCategory: "CIDCO Work",
+        nextHearing: s37InitialHearingDate.toISOString(),
         court: "High Court of Bombay",
         status: "Active",
         priority: "High",
@@ -4694,10 +4710,78 @@ const { NotificationService } = await import("../services/notifications.js");
             clientId: s37Client._id,
           },
         ],
+        tasks: [
+          {
+            title: "CIDCO Application",
+            description: "Prepare and file the CIDCO application.",
+            notes: "Confirm the survey records before filing.",
+            mainCategory: "CIDCO Work",
+            subCategory: "CIDCO Application",
+            category: "CIDCO Application",
+            priority: "High",
+            deadline: s37InitialTaskDeadline.toISOString(),
+            assignedTo: [s37Emp._id.toString()],
+            assignedUsers: [s37Emp._id.toString()],
+            checklist: [
+              { text: "Verify survey records", done: false, subItems: [{ text: "Check survey number", done: false }] },
+            ],
+          },
+        ],
       });
     assert(caseRes.status === 201, "S37-03: Case created linked to client -> 201");
     const s37Case = caseRes.body.case;
     assert(Boolean(s37Case._id), "S37-04: Created case has valid _id");
+    const s37InitialTask = await Task.findOne({ caseId: s37Case._id, title: "CIDCO Application" }).lean() as any;
+    assert(Boolean(s37InitialTask), "S37-04a: Case creation creates selected subcategory as an independent task");
+    assert(s37InitialTask.clientId?.toString() === s37Client._id.toString(), "S37-04b: Initial task inherits canonical clientId");
+    assert(s37InitialTask.mainCategory === "CIDCO Work" && s37InitialTask.subCategory === "CIDCO Application", "S37-04c: Initial task preserves main/subcategory fields");
+    assert(s37InitialTask.notes === "Confirm the survey records before filing.", "S37-04d: Initial task preserves internal notes");
+    assert(new Date(s37InitialTask.deadline).getTime() === s37InitialTaskDeadline.getTime(), "S37-04e: Initial task preserves its own deadline");
+    assert(String(s37InitialTask.assignedTo) === s37Emp._id.toString(), "S37-04f: Initial task preserves its selected assignee");
+    assert(s37InitialTask.checklist?.[0]?.subItems?.[0]?.text === "Check survey number", "S37-04g: Initial task preserves nested checklist items");
+
+    // Hearing synchronization must update the designated next-hearing event,
+    // not overwrite a separate historical hearing belonging to this case.
+    let canonicalHearing = await CalendarEvent.findOne({
+      caseId: s37Case._id,
+      type: "hearing",
+      isNextHearing: true,
+    });
+    assert(Boolean(canonicalHearing), "S37-04h: Case creation creates a marked next-hearing event");
+    const historicalHearingDate = new Date(s37InitialHearingDate.getTime() + 15 * 24 * 60 * 60 * 1000);
+    const historicalHearing = await CalendarEvent.create({
+      title: "Historical hearing — preserve this record",
+      description: "Historical hearing used by the regression test",
+      type: "hearing",
+      start: historicalHearingDate,
+      end: historicalHearingDate,
+      allDay: false,
+      caseId: s37Case._id,
+      clientId: s37Client._id,
+      createdBy: s37Admin._id,
+      assignedTo: [s37Emp._id],
+      isNextHearing: false,
+    });
+    const updatedHearingDate = new Date(s37InitialHearingDate.getTime() + 5 * 24 * 60 * 60 * 1000);
+    const hearingUpdateRes = await request(app)
+      .patch(`/api/cases/${s37Case._id}`)
+      .set("Authorization", `Bearer ${s37AdminToken}`)
+      .send({ nextHearing: updatedHearingDate.toISOString() });
+    assert(hearingUpdateRes.status === 200, "S37-04i: Updating next hearing date succeeds");
+    canonicalHearing = await CalendarEvent.findOne({ caseId: s37Case._id, type: "hearing", isNextHearing: true });
+    const preservedHistoricalHearing = await CalendarEvent.findById(historicalHearing._id);
+    assert(
+      Boolean(canonicalHearing && canonicalHearing.start.getTime() === updatedHearingDate.getTime()),
+      "S37-04j: Next-hearing event is updated to the new date",
+    );
+    assert(
+      Boolean(preservedHistoricalHearing && preservedHistoricalHearing.start.getTime() === historicalHearingDate.getTime()),
+      "S37-04k: Updating next hearing does not alter historical hearing events",
+    );
+    assert(
+      (await CalendarEvent.countDocuments({ caseId: s37Case._id, type: "hearing", isNextHearing: true })) === 1,
+      "S37-04l: A case has exactly one canonical next-hearing event",
+    );
 
     // 3. Create Task under Case WITHOUT explicitly providing clientId
     const taskUnderCaseRes = await request(app)
@@ -4761,6 +4845,76 @@ const { NotificationService } = await import("../services/notifications.js");
     assert(uploadedDoc.caseId?.toString() === s37Case._id.toString(), "S37-17: Uploaded document preserved caseId");
     assert(uploadedDoc.clientId?.toString() === s37Client._id.toString(), "S37-18: Uploaded document preserved clientId");
     assert(uploadedDoc.state === "Pending", "S37-19: Uploaded document starts in Pending state");
+
+    // 6a. A task upload must reject a different case even if the caller is
+    // authorized for both records; task/case/client links are canonical.
+    const mismatchCaseRes = await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${s37AdminToken}`)
+      .send({
+        title: "Separate Acme Matter for Association Security Test",
+        practice: "Real Estate & Land",
+        category: "Litigation",
+        status: "Active",
+        priority: "Medium",
+        assignedTo: s37Emp._id.toString(),
+        assignedUsers: [s37Emp._id.toString()],
+        parties: [{ name: s37Client.name, role: "Client", type: "client", clientId: s37Client._id }],
+      });
+    assert(mismatchCaseRes.status === 201, "S37-19a: Secondary case created for relationship mismatch test");
+    const mismatchedUploadRes = await request(app)
+      .post("/api/documents/upload")
+      .set("Authorization", `Bearer ${s37EmpToken}`)
+      .attach("file", Buffer.from("MISMATCH SHOULD NOT BE STORED"), "Mismatched_Case_File.pdf")
+      .field("name", "Mismatched_Case_File.pdf")
+      .field("taskId", taskUnderCase._id.toString())
+      .field("caseId", mismatchCaseRes.body.case._id.toString())
+      .field("clientId", s37Client._id.toString());
+    assert(mismatchedUploadRes.status === 400, "S37-19b: Upload rejects a caseId unrelated to the supplied taskId");
+    const mismatchDocCount = await DocumentModel.countDocuments({ name: "Mismatched_Case_File.pdf" });
+    assert(mismatchDocCount === 0, "S37-19c: Rejected relationship does not persist a document");
+
+    // 6b. Task creation must not reattach a document already linked to another task.
+    const taskCountBeforeReattach = await Task.countDocuments({ caseId: s37Case._id });
+    const reattachRes = await request(app)
+      .post("/api/tasks")
+      .set("Authorization", `Bearer ${s37AdminToken}`)
+      .send({
+        title: "Attempted Document Reassignment",
+        description: "Must fail because the document already belongs to another task",
+        caseId: s37Case._id.toString(),
+        clientId: s37Client._id.toString(),
+        assignedTo: s37Emp._id.toString(),
+        documentIds: [uploadedDoc._id.toString()],
+      });
+    assert(reattachRes.status === 409, "S37-19d: Task creation rejects an already-linked document");
+    assert(
+      (await Task.countDocuments({ caseId: s37Case._id })) === taskCountBeforeReattach,
+      "S37-19e: Rejected attachment does not create a duplicate task",
+    );
+    const originalAssociation = await DocumentModel.findById(uploadedDoc._id).lean() as any;
+    assert(
+      originalAssociation.taskId?.toString() === taskUnderCase._id.toString(),
+      "S37-19f: Rejected attachment preserves the original document-to-task link",
+    );
+
+    // 6c. Standalone client task uploads are also authorized and associated.
+    const standaloneUploadRes = await request(app)
+      .post("/api/documents/upload")
+      .set("Authorization", `Bearer ${s37EmpToken}`)
+      .attach("file", Buffer.from("STANDALONE TASK SUPPORTING FILE"), "Standalone_Task_File.pdf")
+      .field("name", "Standalone_Task_File.pdf")
+      .field("taskId", directClientTask._id.toString())
+      .field("clientId", s37Client._id.toString());
+    assert(standaloneUploadRes.status === 201, "S37-19g: Standalone client task upload succeeds");
+    assert(
+      standaloneUploadRes.body.document.taskId?.toString() === directClientTask._id.toString(),
+      "S37-19h: Standalone upload retains taskId",
+    );
+    assert(
+      standaloneUploadRes.body.document.clientId?.toString() === s37Client._id.toString(),
+      "S37-19i: Standalone upload retains clientId",
+    );
 
     // 7. Query GET /api/clients/:clientId/documents
     const clientDocsRes = await request(app)
