@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   X,
   Download,
@@ -40,6 +40,7 @@ export function DocumentPreviewModal({
   const [textContent, setTextContent] = useState<string | null>(null);
   const [resolvedFileName, setResolvedFileName] = useState<string>(documentName || "Document");
   const [resolvedMime, setResolvedMime] = useState<string>(documentMimeType || "");
+  const previewRequestRef = useRef(0);
 
   const cleanupUrl = useCallback((url: string | null) => {
     if (url && url.startsWith("blob:")) {
@@ -51,14 +52,24 @@ export function DocumentPreviewModal({
     }
   }, []);
 
+  // Blob URLs must be revoked when replaced or when the modal unmounts.
+  useEffect(() => {
+    const currentUrl = objectUrl;
+    return () => cleanupUrl(currentUrl);
+  }, [objectUrl, cleanupUrl]);
+
   const loadPreview = useCallback(async () => {
     if (!documentId) return;
 
+    const requestId = ++previewRequestRef.current;
     setStatus("loading");
     setErrorMessage(null);
+    setTextContent(null);
+    setObjectUrl(null);
 
     try {
       const { blob, fileName } = await downloadBlob(`/documents/${documentId}/view`);
+      if (requestId !== previewRequestRef.current) return;
       setResolvedFileName(fileName || documentName || "Document");
 
       const mime = (blob.type || documentMimeType || "").toLowerCase();
@@ -89,6 +100,7 @@ export function DocumentPreviewModal({
         nameLower.endsWith(".json")
       ) {
         const text = await blob.text();
+        if (requestId !== previewRequestRef.current) return;
         setTextContent(text);
         setPreviewType("text");
       } else {
@@ -97,6 +109,7 @@ export function DocumentPreviewModal({
 
       setStatus("ready");
     } catch (err: any) {
+      if (requestId !== previewRequestRef.current) return;
       console.error("[DocumentPreview] Failed to load preview:", err);
       setStatus("error");
       const msg = err?.data?.message || err?.message || "Failed to load document preview.";
@@ -105,27 +118,20 @@ export function DocumentPreviewModal({
   }, [documentId, documentName, documentMimeType]);
 
   useEffect(() => {
-    let active = true;
-
     if (open && documentId) {
       loadPreview();
     } else {
+      previewRequestRef.current += 1;
       setStatus("loading");
       setTextContent(null);
-      setObjectUrl((prev) => {
-        cleanupUrl(prev);
-        return null;
-      });
+      setObjectUrl(null);
     }
 
     return () => {
-      active = false;
-      setObjectUrl((prev) => {
-        cleanupUrl(prev);
-        return null;
-      });
+      // Ignore an in-flight response if the modal closes or switches files.
+      previewRequestRef.current += 1;
     };
-  }, [open, documentId, loadPreview, cleanupUrl]);
+  }, [open, documentId, loadPreview]);
 
   // Handle escape key
   useEffect(() => {
