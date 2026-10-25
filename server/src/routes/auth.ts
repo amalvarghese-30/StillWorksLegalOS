@@ -99,6 +99,9 @@ function clearRefreshCookie(res: Response, req?: Request): void {
       parts.push("Secure");
     }
   }
+  // Expire the same cookie using the same scope/domain attributes as setRefreshCookie.
+  // Without this header the browser keeps its refresh cookie after logout.
+  res.setHeader("Set-Cookie", parts.join("; "));
 }
 
 async function hashRefreshToken(token: string): Promise<string> {
