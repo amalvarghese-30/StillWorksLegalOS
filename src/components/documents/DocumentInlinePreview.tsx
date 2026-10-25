@@ -41,6 +41,12 @@ export function DocumentInlinePreview({
     }
   }, []);
 
+  // Revoke blob URLs when they are replaced or the component unmounts.
+  useEffect(() => {
+    const currentUrl = objectUrl;
+    return () => cleanupUrl(currentUrl);
+  }, [objectUrl, cleanupUrl]);
+
   useEffect(() => {
     let active = true;
 
@@ -48,6 +54,7 @@ export function DocumentInlinePreview({
       if (!documentId) return;
       setStatus("loading");
       setTextSnippet(null);
+      setObjectUrl(null);
 
       try {
         const { blob, fileName } = await downloadBlob(`/documents/${documentId}/view`);
@@ -61,10 +68,7 @@ export function DocumentInlinePreview({
           !effectiveMime.includes("svg")
         ) {
           const url = URL.createObjectURL(blob);
-          setObjectUrl((prev) => {
-            cleanupUrl(prev);
-            return url;
-          });
+          setObjectUrl(url);
           setPreviewType("image");
           setStatus("ready");
         } else if (
@@ -105,10 +109,6 @@ export function DocumentInlinePreview({
 
     return () => {
       active = false;
-      setObjectUrl((prev) => {
-        cleanupUrl(prev);
-        return null;
-      });
     };
   }, [documentId, documentName, mimeType, cleanupUrl]);
 
