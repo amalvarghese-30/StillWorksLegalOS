@@ -460,7 +460,6 @@ router.post("/", async (req: Request, res: Response) => {
     if (io) {
       io.emit("client:created", {
         clientId: client._id.toString(),
-        name: client.name,
       });
     }
 
@@ -622,7 +621,6 @@ router.patch("/:id", requireResourceAccess("client"), async (req: Request, res: 
     if (io) {
       io.emit("client:updated", {
         clientId: client._id.toString(),
-        name: client.name,
       });
     }
 
