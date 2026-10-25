@@ -667,17 +667,32 @@ router.post("/upload", async (req: Request, res: Response) => {
 
       let caseNumber = "";
       let linkedClientId: Types.ObjectId | null = null;
+      let linkedTask: any = null;
+      let taskAllowsUpload = false;
 
       if (meta.taskId) {
         if (!Types.ObjectId.isValid(meta.taskId)) throw httpError(400, "Invalid task ID format");
-        const taskDoc = await Task.findById(meta.taskId).select("_id caseId clientId").lean();
-        if (!taskDoc) throw httpError(404, "Task not found");
-        if (!meta.caseId && taskDoc.caseId) {
-          meta.caseId = taskDoc.caseId.toString();
+        linkedTask = await Task.findById(meta.taskId).select("_id caseId clientId").lean();
+        if (!linkedTask) throw httpError(404, "Task not found");
+
+        // A task-linked upload must be authorized against the task itself,
+        // including standalone tasks that have no caseId/clientId.
+        taskAllowsUpload = await canAccessTask(
+          req.userId!,
+          req.user!.role,
+          meta.taskId,
+          req.user?.permissions,
+        );
+        if (!taskAllowsUpload) throw httpError(403, "Cannot upload to a task you don't have access to");
+
+        const canonicalTaskCaseId = linkedTask.caseId?.toString() ?? "";
+        if (meta.caseId && meta.caseId !== canonicalTaskCaseId) {
+          throw httpError(400, "The selected case does not match this task");
         }
-        if (!linkedClientId && taskDoc.clientId) {
-          linkedClientId = taskDoc.clientId as any;
-        }
+        if (canonicalTaskCaseId) meta.caseId = canonicalTaskCaseId;
+        if (linkedTask.clientId) linkedClientId = linkedTask.clientId as any;
+      } else if (meta.caseId && !Types.ObjectId.isValid(meta.caseId)) {
+        throw httpError(400, "Invalid case ID format");
       }
 
       if (meta.caseId) {
@@ -696,7 +711,7 @@ router.post("/upload", async (req: Request, res: Response) => {
 
         // Derive client relationship from case parties if available
         const clientParty = caseDoc.parties?.find((p: any) => (p.type === "client" || p.type === "sub_client") && p.clientId);
-        if (clientParty && clientParty.clientId) {
+        if (clientParty && clientParty.clientId && !linkedClientId) {
           linkedClientId = clientParty.clientId as any;
         }
       }
@@ -705,12 +720,21 @@ router.post("/upload", async (req: Request, res: Response) => {
         if (!Types.ObjectId.isValid(meta.clientId)) throw httpError(400, "Invalid client ID format");
         const clientDoc = await Client.findById(meta.clientId).select("_id").lean();
         if (!clientDoc) throw httpError(404, "Client not found");
-        let canClient = await canAccessClient(req.userId!, req.user!.role, meta.clientId, req.user?.permissions);
-        if (!canClient && meta.taskId) {
-          const hasTaskAccess = await canAccessTask(req.userId!, req.user!.role, meta.taskId, req.user?.permissions);
-          if (hasTaskAccess) {
-            canClient = true;
+
+        // Never let a task upload silently link to an unrelated client.
+        // Task-linked uploads must use the canonical client relationship from
+        // the task or its case; standalone unlinked tasks must be linked first.
+        if (linkedTask) {
+          if (!linkedClientId || linkedClientId.toString() !== clientDoc._id.toString()) {
+            throw httpError(400, "This task is not linked to the selected client. Link the task to the client first.");
           }
+        }
+
+        let canClient = await canAccessClient(req.userId!, req.user!.role, meta.clientId, req.user?.permissions);
+        if (!canClient && linkedTask && taskAllowsUpload && linkedClientId?.toString() === clientDoc._id.toString()) {
+          // Task assignment authorizes work on this task's canonical client,
+          // but does not authorize choosing an unrelated client.
+          canClient = true;
         }
         if (!canClient) throw httpError(403, "Cannot upload to a client you don't have access to");
         linkedClientId = clientDoc._id as Types.ObjectId;
