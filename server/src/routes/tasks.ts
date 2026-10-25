@@ -1773,7 +1773,7 @@ router.post("/:taskId/checklist", requireResourceAccess("task", "taskId"), async
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("task:updated", { task: populated });
+      io.emit("task:updated", taskRealtimePayload(populated));
     }
 
     res.status(201).json({ task: populated });
@@ -1825,7 +1825,7 @@ router.delete("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskI
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("task:updated", { task: populated });
+      io.emit("task:updated", taskRealtimePayload(populated));
     }
 
     res.json({ task: populated });
@@ -2036,11 +2036,7 @@ router.patch("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskId
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("task:updated", {
-        task: populated,
-        assignedTo: task.assignedTo ? task.assignedTo.toString() : null,
-        createdBy: task.createdBy ? task.createdBy.toString() : null,
-      });
+      io.emit("task:updated", taskRealtimePayload(populated));
     }
 
     res.json({ task: populated });
@@ -2107,7 +2103,7 @@ router.post("/:taskId/checklist/:itemId/subitems", requireResourceAccess("task",
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("task:updated", { task: populated });
+      io.emit("task:updated", taskRealtimePayload(populated));
     }
 
     res.status(201).json({ task: populated });
@@ -2166,7 +2162,7 @@ router.delete("/:taskId/checklist/:itemId/subitems/:subId", requireResourceAcces
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("task:updated", { task: populated });
+      io.emit("task:updated", taskRealtimePayload(populated));
     }
 
     res.json({ task: populated });
@@ -2218,7 +2214,7 @@ router.post("/:id/approve", requireResourceAccess("task"), async (req: Request, 
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("task:updated", { task: populated });
+      io.emit("task:updated", taskRealtimePayload(populated));
     }
 
     // Notify assignee
@@ -2320,7 +2316,7 @@ router.post("/:id/reject", requireResourceAccess("task"), async (req: Request, r
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("task:updated", { task: populated });
+      io.emit("task:updated", taskRealtimePayload(populated));
     }
 
     // Notify assignee
@@ -2418,7 +2414,7 @@ router.post("/:id/forward", requireResourceAccess("task"), async (req: Request, 
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("task:updated", { task: effectiveTask });
+      io.emit("task:updated", taskRealtimePayload(effectiveTask));
     }
 
     if (String(toUserId) !== String(req.userId)) {
@@ -2528,7 +2524,7 @@ router.post("/:id/reassign", requireResourceAccess("task"), async (req: Request,
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("task:updated", { task: effectiveTask });
+      io.emit("task:updated", taskRealtimePayload(effectiveTask));
     }
 
     if (String(toUserId) !== String(req.userId)) {
@@ -2671,7 +2667,7 @@ router.post("/:id/request-assignment", requireResourceAccess("task"), async (req
     }
 
     if (io) {
-      io.emit("task:updated", { task });
+      io.emit("task:updated", taskRealtimePayload(task));
     }
 
     res.status(201).json({
@@ -2762,7 +2758,7 @@ router.post("/:id/request-deletion", requireResourceAccess("task"), async (req: 
     }
 
     if (io) {
-      io.emit("task:updated", { task });
+      io.emit("task:updated", taskRealtimePayload(task));
     }
 
     await AuditLog.create({
@@ -2845,7 +2841,7 @@ router.post("/:id/remarks", requireResourceAccess("task"), async (req: Request, 
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("task:updated", { task: populated });
+      io.emit("task:updated", taskRealtimePayload(populated));
     }
 
     // Notify assignee if someone else added a remark/note
