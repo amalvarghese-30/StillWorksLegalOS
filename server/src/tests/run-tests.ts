@@ -174,6 +174,26 @@ async function run() {
     });
     const token = await createToken(manager);
 
+    // Employee directory is permission-gated and never returns credential/reset/integration secrets.
+    const directoryRes = await request(app)
+      .get("/api/admin/employees")
+      .set("Authorization", `Bearer ${token}`);
+    assert(directoryRes.status === 200, "AUTHZ-EMP-LIST-001: Employee permission allows directory access");
+    assert(
+      directoryRes.body.employees.every((u: Record<string, unknown>) =>
+        !("passwordHash" in u) && !("resetOtpHash" in u) && !("resetOtpExpires" in u) && !("resetOtpAttempts" in u) && !("telegramChatId" in u)),
+      "AUTHZ-EMP-LIST-002: Directory omits sensitive account fields",
+    );
+    const restrictedUser = await createUser({
+      email: `restricted-directory-${Date.now()}@test.com`,
+      permissions: { dashboard: true, clients: true, cases: true, tasks: true, documents: true, calendar: true, chat: true, reports: true, employees: false, approvals: false, auditLogs: false, settings: false },
+    });
+    const restrictedToken = await createToken(restrictedUser);
+    const deniedDirectoryRes = await request(app)
+      .get("/api/admin/employees")
+      .set("Authorization", `Bearer ${restrictedToken}`);
+    assert(deniedDirectoryRes.status === 403, "AUTHZ-EMP-LIST-003: Directory denied without employee permission");
+
     // AUTHZ-EMP-001
     const res1 = await request(app)
       .post("/api/admin/employees")
