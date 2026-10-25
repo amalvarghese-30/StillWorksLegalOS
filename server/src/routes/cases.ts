@@ -774,11 +774,7 @@ router.post("/", async (req: Request, res: Response) => {
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("case:created", {
-        caseId: record._id.toString(),
-        number: record.number,
-        title: record.title,
-      });
+      io.emit("case:created", { caseId: record._id.toString() });
     }
 
     // 5b. Synchronize nextHearing with Calendar
@@ -911,7 +907,6 @@ router.post("/", async (req: Request, res: Response) => {
           if (io) {
             io.emit("task:created", {
               taskId: createdTask._id.toString(),
-              title: createdTask.title,
               caseId: record._id.toString(),
             });
           }
@@ -1198,11 +1193,7 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("case:updated", {
-        caseId: record._id.toString(),
-        number: record.number,
-        title: record.title,
-      });
+      io.emit("case:updated", { caseId: record._id.toString() });
     }
 
     // Synchronize nextHearing with Calendar
@@ -1304,7 +1295,7 @@ router.post("/:id/request-deletion", requireResourceAccess("case"), async (req: 
     }
 
     if (io) {
-      io.emit("case:updated", { case: caseRecord });
+      io.emit("case:updated", { caseId: caseRecord._id.toString() });
     }
 
     res.status(201).json({
@@ -1390,7 +1381,7 @@ router.post("/:id/complete", requireResourceAccess("case"), async (req: Request,
       }
 
       if (io) {
-        io.emit("case:updated", { case: caseRecord });
+        io.emit("case:updated", { caseId: caseRecord._id.toString() });
       }
 
       res.json({
@@ -1443,7 +1434,7 @@ router.post("/:id/complete", requireResourceAccess("case"), async (req: Request,
     );
 
     if (io) {
-      io.emit("case:updated", { case: caseRecord });
+      io.emit("case:updated", { caseId: caseRecord._id.toString() });
       io.emit("task:updated", { caseId: caseRecord._id.toString() });
     }
 
@@ -1521,7 +1512,7 @@ router.post("/:id/reopen", requireResourceAccess("case"), async (req: Request, r
     }
 
     if (io) {
-      io.emit("case:updated", { case: caseRecord });
+      io.emit("case:updated", { caseId: caseRecord._id.toString() });
     }
 
     res.json({
