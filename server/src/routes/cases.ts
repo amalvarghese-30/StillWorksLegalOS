@@ -884,10 +884,23 @@ router.post("/", async (req: Request, res: Response) => {
         );
 
         try {
+          const taskMainCategory = typeof t.mainCategory === "string" && t.mainCategory.trim()
+            ? t.mainCategory.trim()
+            : (typeof req.body.mainCategory === "string" ? req.body.mainCategory.trim() : "");
+          const taskSubCategory = typeof t.subCategory === "string" ? t.subCategory.trim() : "";
+          const taskCategoryPath = Array.isArray(t.categoryPath)
+            ? t.categoryPath.map((part: unknown) => String(part).trim()).filter(Boolean)
+            : [taskMainCategory, taskSubCategory].filter(Boolean);
+
           const createdTask = await Task.create({
             title: taskTitle,
             description: taskDesc,
+            notes: typeof t.notes === "string" ? sanitizeInputText(t.notes.trim(), 5000) : "",
             category: taskCategory,
+            mainCategory: taskMainCategory,
+            subCategory: taskSubCategory,
+            categoryPath: taskCategoryPath,
+            customCategory: typeof t.customCategory === "string" ? sanitizeInputText(t.customCategory.trim(), 200) : "",
             priority: taskPriority,
             status: "pending",
             deadline: parsedDeadline,
@@ -899,6 +912,7 @@ router.post("/", async (req: Request, res: Response) => {
             caseId: record._id,
             clientId: resolvedClientId,
             checklist: checklistItems,
+            localPath: typeof t.localPath === "string" ? sanitizeInputText(t.localPath.trim(), 1000) : "",
             agent: typeof t.agent === "string" ? t.agent.trim().slice(0, 100) : "",
             createdBy: userId,
             updatedBy: new mongoose.Types.ObjectId(userId),
