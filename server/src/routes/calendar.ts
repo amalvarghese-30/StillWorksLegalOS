@@ -267,13 +267,19 @@ router.patch("/events/:id", requireResourceAccess("calendarEvent"), async (req: 
       }
       updates["start"] = parsedStart;
     }
-    if (req.body["end"]) {
-      const parsedEnd = new Date(req.body["end"]);
-      if (isNaN(parsedEnd.getTime())) {
-        res.status(400).json({ message: "Invalid end date format" });
-        return;
+    // Use property presence rather than truthiness so callers can clear an end date
+    // by sending null or an empty string when rescheduling an event.
+    if (Object.prototype.hasOwnProperty.call(req.body, "end")) {
+      if (req.body["end"] === null || req.body["end"] === "") {
+        updates["end"] = null;
+      } else {
+        const parsedEnd = new Date(req.body["end"]);
+        if (isNaN(parsedEnd.getTime())) {
+          res.status(400).json({ message: "Invalid end date format" });
+          return;
+        }
+        updates["end"] = parsedEnd;
       }
-      updates["end"] = parsedEnd;
     }
 
     // Non-admins cannot reassign to others
