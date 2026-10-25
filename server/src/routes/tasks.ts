@@ -19,6 +19,27 @@ import { validateSnoozePayload } from "../utils/snoozeValidation.js";
 import { dispatchRejectionNotifications } from "../services/rejectionNotifications.js";
 import { recordTaskAuditAndAdminNotification } from "../utils/auditNotificationHelper.js";
 
+function relationId(value: any): string | null {
+  if (!value) return null;
+  const candidate = value._id ?? value;
+  if (candidate === null || candidate === undefined) return null;
+  const id = typeof candidate.toString === "function" ? candidate.toString() : String(candidate);
+  return id && id !== "[object Object]" ? id : null;
+}
+
+/**
+ * Realtime events are broadcast to connected sockets. Send only opaque IDs so
+ * the event can invalidate authorized queries without disclosing task content,
+ * notes, descriptions, assignees, or assignment history to unrelated clients.
+ */
+function taskRealtimePayload(task: any): { taskId: string | null; caseId: string | null; clientId: string | null } {
+  return {
+    taskId: relationId(task?._id),
+    caseId: relationId(task?.caseId),
+    clientId: relationId(task?.clientId),
+  };
+}
+
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -1009,11 +1030,7 @@ router.post("/", async (req: Request, res: Response) => {
     }
 
     if (io) {
-      io.emit("task:created", {
-        task: taskObj,
-        assignedTo: task.assignedTo ? task.assignedTo.toString() : null,
-        createdBy: task.createdBy ? task.createdBy.toString() : null,
-      });
+      io.emit("task:created", taskRealtimePayload(task));
     }
 
     res.status(201).json({ task: taskObj });
@@ -1680,11 +1697,7 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("task:updated", {
-        task,
-        assignedTo: (task.assignedTo as any)?._id?.toString?.() ?? (task.assignedTo ? task.assignedTo.toString() : null),
-        createdBy: (task.createdBy as any)?._id?.toString?.() ?? (task.createdBy ? task.createdBy.toString() : null),
-      });
+      io.emit("task:updated", taskRealtimePayload(task));
     }
 
     const taskObj: any = task.toObject ? task.toObject() : task;
