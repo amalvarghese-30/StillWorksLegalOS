@@ -4801,6 +4801,76 @@ const { NotificationService } = await import("../services/notifications.js");
     assert(uploadedDoc.clientId?.toString() === s37Client._id.toString(), "S37-18: Uploaded document preserved clientId");
     assert(uploadedDoc.state === "Pending", "S37-19: Uploaded document starts in Pending state");
 
+    // 6a. A task upload must reject a different case even if the caller is
+    // authorized for both records; task/case/client links are canonical.
+    const mismatchCaseRes = await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${s37AdminToken}`)
+      .send({
+        title: "Separate Acme Matter for Association Security Test",
+        practice: "Real Estate & Land",
+        category: "Litigation",
+        status: "Active",
+        priority: "Medium",
+        assignedTo: s37Emp._id.toString(),
+        assignedUsers: [s37Emp._id.toString()],
+        parties: [{ name: s37Client.name, role: "Client", type: "client", clientId: s37Client._id }],
+      });
+    assert(mismatchCaseRes.status === 201, "S37-19a: Secondary case created for relationship mismatch test");
+    const mismatchedUploadRes = await request(app)
+      .post("/api/documents/upload")
+      .set("Authorization", `Bearer ${s37EmpToken}`)
+      .attach("file", Buffer.from("MISMATCH SHOULD NOT BE STORED"), "Mismatched_Case_File.pdf")
+      .field("name", "Mismatched_Case_File.pdf")
+      .field("taskId", taskUnderCase._id.toString())
+      .field("caseId", mismatchCaseRes.body.case._id.toString())
+      .field("clientId", s37Client._id.toString());
+    assert(mismatchedUploadRes.status === 400, "S37-19b: Upload rejects a caseId unrelated to the supplied taskId");
+    const mismatchDocCount = await DocumentModel.countDocuments({ name: "Mismatched_Case_File.pdf" });
+    assert(mismatchDocCount === 0, "S37-19c: Rejected relationship does not persist a document");
+
+    // 6b. Task creation must not reattach a document already linked to another task.
+    const taskCountBeforeReattach = await Task.countDocuments({ caseId: s37Case._id });
+    const reattachRes = await request(app)
+      .post("/api/tasks")
+      .set("Authorization", `Bearer ${s37AdminToken}`)
+      .send({
+        title: "Attempted Document Reassignment",
+        description: "Must fail because the document already belongs to another task",
+        caseId: s37Case._id.toString(),
+        clientId: s37Client._id.toString(),
+        assignedTo: s37Emp._id.toString(),
+        documentIds: [uploadedDoc._id.toString()],
+      });
+    assert(reattachRes.status === 409, "S37-19d: Task creation rejects an already-linked document");
+    assert(
+      (await Task.countDocuments({ caseId: s37Case._id })) === taskCountBeforeReattach,
+      "S37-19e: Rejected attachment does not create a duplicate task",
+    );
+    const originalAssociation = await DocumentModel.findById(uploadedDoc._id).lean() as any;
+    assert(
+      originalAssociation.taskId?.toString() === taskUnderCase._id.toString(),
+      "S37-19f: Rejected attachment preserves the original document-to-task link",
+    );
+
+    // 6c. Standalone client task uploads are also authorized and associated.
+    const standaloneUploadRes = await request(app)
+      .post("/api/documents/upload")
+      .set("Authorization", `Bearer ${s37EmpToken}`)
+      .attach("file", Buffer.from("STANDALONE TASK SUPPORTING FILE"), "Standalone_Task_File.pdf")
+      .field("name", "Standalone_Task_File.pdf")
+      .field("taskId", directClientTask._id.toString())
+      .field("clientId", s37Client._id.toString());
+    assert(standaloneUploadRes.status === 201, "S37-19g: Standalone client task upload succeeds");
+    assert(
+      standaloneUploadRes.body.document.taskId?.toString() === directClientTask._id.toString(),
+      "S37-19h: Standalone upload retains taskId",
+    );
+    assert(
+      standaloneUploadRes.body.document.clientId?.toString() === s37Client._id.toString(),
+      "S37-19i: Standalone upload retains clientId",
+    );
+
     // 7. Query GET /api/clients/:clientId/documents
     const clientDocsRes = await request(app)
       .get(`/api/clients/${s37Client._id}/documents`)
