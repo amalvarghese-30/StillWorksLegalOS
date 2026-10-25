@@ -165,7 +165,8 @@ export function useNotifications() {
 
   // Listen for notification deletion
   useSocketEvent("notification:deleted", (deletedId: string) => {
-    setNotifications((prev) => prev.filter((n) => n._id !== deletedId));
+    notificationsRef.current = notificationsRef.current.filter((item) => item._id !== deletedId);
+    setNotifications(notificationsRef.current);
     fetchNotifications();
   });
 
@@ -229,6 +230,9 @@ export function useNotifications() {
     if (user) {
       fetchNotifications();
     } else {
+      notificationsRef.current = [];
+      processedIdsRef.current.clear();
+      processedReadIdsRef.current.clear();
       setNotifications([]);
       setUnreadCount(0);
     }
