@@ -1580,14 +1580,10 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       }
     }
 
-    // Synchronize Reminder documents if task has callReminder or status/assignee changed
+    // Synchronize reminders when task fields change. Task completion and
+    // document approval are separate review decisions: never approve pending
+    // documents as a side effect of changing a task's status or other fields.
     if (task) {
-      if (task.status === "completed" || updates["status"] === "completed") {
-        await DocumentModel.updateMany(
-          { taskId: task._id, state: "Pending" },
-          { $set: { state: "Approved", approvedAt: now, approvedBy: req.userId } }
-        );
-      }
       if (req.body["callReminder"] === null || req.body["callReminder"] === false) {
         try {
           await deleteCallReminders("task", task._id);
@@ -2297,12 +2293,6 @@ router.post("/:id/approve", requireResourceAccess("task"), async (req: Request, 
     task.approvedAt = now;
     task.rejectedAt = null;
     await task.save();
-
-    // Auto-approve any attached documents that were in Pending state
-    await DocumentModel.updateMany(
-      { taskId: task._id, state: "Pending" },
-      { $set: { state: "Approved", approvedAt: now, approvedBy: req.userId } }
-    );
 
     const populated = await Task.findById(task._id)
       .populate("assignedTo", "name email title")
