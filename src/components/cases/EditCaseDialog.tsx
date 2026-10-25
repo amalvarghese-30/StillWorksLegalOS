@@ -6,6 +6,7 @@ import {
   Tag,
   Building,
   FolderOpen,
+  CalendarDays,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -39,11 +40,9 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
   const [category, setCategory] = useState(record.category || record.practice || "Other Work");
   const [localPath, setLocalPath] = useState(record.localPath || "");
   const [status, setStatus] = useState<"Active" | "Urgent" | "On Hold" | "Closed">(
-    (record.status as any) || "Active"
+    (record.status as "Active" | "Urgent" | "On Hold" | "Closed") || "Active",
   );
-  const [priority, setPriority] = useState<"High" | "Medium" | "Low">(
-    record.priority || "Medium"
-  );
+  const [priority, setPriority] = useState<"High" | "Medium" | "Low">(record.priority || "Medium");
   const [progress, setProgress] = useState<number>(record.progress ?? 0);
   const initialAssigned = useMemo(() => {
     if (record.assignedUsers && record.assignedUsers.length > 0) {
@@ -53,6 +52,13 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
   }, [record.assignedUsers, record.assignedTo]);
   const [assignedTo, setAssignedTo] = useState<string[]>(initialAssigned);
   const [tags, setTags] = useState<string>((record.tags || []).join(", "));
+  const [nextHearing, setNextHearing] = useState<string>(() => {
+    if (!record.nextHearing) return "";
+    const d = new Date(record.nextHearing);
+    if (isNaN(d.getTime())) return "";
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  });
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
@@ -61,15 +67,16 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
   const { data: empData } = useEmployees(undefined, { enabled: isAdmin });
   const { data: rawCategories = [] } = useCategories();
   const categories = useMemo(() => {
-    const rawObj = rawCategories && typeof rawCategories === "object" ? (rawCategories as Record<string, unknown>) : null;
+    const rawObj =
+      rawCategories && typeof rawCategories === "object"
+        ? (rawCategories as Record<string, unknown>)
+        : null;
     const list = Array.isArray(rawCategories)
       ? rawCategories
       : Array.isArray(rawObj?.categories)
-      ? (rawObj?.categories as unknown[])
-      : [];
-    return list
-      .map(extractCategoryName)
-      .filter(Boolean);
+        ? (rawObj?.categories as unknown[])
+        : [];
+    return list.map(extractCategoryName).filter(Boolean);
   }, [rawCategories]);
   const employees = empData?.employees ?? [];
 
@@ -81,14 +88,27 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
       setDescription(record.description || "");
       setCategory(record.category || record.practice || "Other Work");
       setLocalPath(record.localPath || "");
-      setStatus((record.status as any) || "Active");
+      setStatus((record.status as "Active" | "Urgent" | "On Hold" | "Closed") || "Active");
       setPriority(record.priority || "Medium");
       setProgress(record.progress ?? 0);
-      const freshAssigned = record.assignedUsers && record.assignedUsers.length > 0
-        ? record.assignedUsers.map((u) => u._id)
-        : (record.assignedTo?._id ? [record.assignedTo._id] : []);
+      const freshAssigned =
+        record.assignedUsers && record.assignedUsers.length > 0
+          ? record.assignedUsers.map((u) => u._id)
+          : record.assignedTo?._id
+            ? [record.assignedTo._id]
+            : [];
       setAssignedTo(freshAssigned);
       setTags((record.tags || []).join(", "));
+      setNextHearing(
+        record.nextHearing
+          ? (() => {
+              const d = new Date(record.nextHearing);
+              if (isNaN(d.getTime())) return "";
+              const pad = (n: number) => String(n).padStart(2, "0");
+              return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+            })()
+          : "",
+      );
       setErrorMsg(null);
       setShowDiscardConfirm(false);
     }
@@ -96,6 +116,14 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
 
   const isDirty = useMemo(() => {
     const origTags = (record.tags || []).join(", ");
+    const origHearing = record.nextHearing
+      ? (() => {
+          const d = new Date(record.nextHearing);
+          if (isNaN(d.getTime())) return "";
+          const pad = (n: number) => String(n).padStart(2, "0");
+          return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        })()
+      : "";
     const assignedChanged =
       assignedTo.length !== initialAssigned.length ||
       assignedTo.some((id) => !initialAssigned.includes(id));
@@ -106,11 +134,25 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
       localPath !== (record.localPath || "") ||
       status !== (record.status || "Active") ||
       priority !== (record.priority || "Medium") ||
+      nextHearing !== origHearing ||
       progress !== (record.progress ?? 0) ||
       assignedChanged ||
       tags !== origTags
     );
-  }, [title, description, category, localPath, status, priority, progress, assignedTo, initialAssigned, tags, record]);
+  }, [
+    title,
+    description,
+    category,
+    localPath,
+    status,
+    priority,
+    nextHearing,
+    progress,
+    assignedTo,
+    initialAssigned,
+    tags,
+    record,
+  ]);
 
   const handleAttemptClose = () => {
     if (isDirty) {
@@ -149,6 +191,7 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
         localPath: localPath.trim(),
         status,
         priority,
+        nextHearing: nextHearing ? new Date(nextHearing).toISOString() : null,
         progress: Number(progress),
         tags: tagList,
       };
@@ -156,7 +199,7 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
         payload.assignedTo = assignedTo;
         payload.assignedUsers = assignedTo;
       } else {
-        payload.assignedTo = null as any;
+        payload.assignedTo = null;
         payload.assignedUsers = [];
       }
 
@@ -166,9 +209,11 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
       });
 
       handleForceClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to update case:", err);
-      setErrorMsg(err?.message || "Failed to update case. Please check all fields.");
+      const message =
+        err instanceof Error ? err.message : "Failed to update case. Please check all fields.";
+      setErrorMsg(message);
     }
   };
 
@@ -209,7 +254,9 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
             {/* ── SECTION 1: CASE OVERVIEW ── */}
             <div className="px-6 py-5 space-y-4">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Case Overview</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">
+                  Case Overview
+                </span>
                 <div className="flex-1 h-px bg-border/60" />
               </div>
 
@@ -243,10 +290,10 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
                             ? s === "Urgent"
                               ? "bg-destructive/15 text-destructive font-bold"
                               : s === "On Hold"
-                              ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 font-bold"
-                              : s === "Closed"
-                              ? "bg-muted text-muted-foreground font-bold"
-                              : "bg-primary/15 text-primary font-bold"
+                                ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 font-bold"
+                                : s === "Closed"
+                                  ? "bg-muted text-muted-foreground font-bold"
+                                  : "bg-primary/15 text-primary font-bold"
                             : "text-muted-foreground hover:bg-muted hover:text-foreground"
                         }`}
                       >
@@ -269,8 +316,8 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
                             ? p === "High"
                               ? "bg-destructive/15 text-destructive font-bold"
                               : p === "Medium"
-                              ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 font-bold"
-                              : "bg-muted text-foreground font-bold"
+                                ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 font-bold"
+                                : "bg-muted text-foreground font-bold"
                             : "text-muted-foreground hover:bg-muted hover:text-foreground"
                         }`}
                       >
@@ -280,12 +327,36 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
                   </div>
                 </div>
               </div>
+
+              {/* Next Hearing Date */}
+              <div className="space-y-1.5 pt-1">
+                <Label
+                  htmlFor="case-next-hearing"
+                  className="text-xs font-semibold text-foreground flex items-center gap-1.5"
+                >
+                  <CalendarDays size={14} className="text-primary" />
+                  Next Hearing Date
+                </Label>
+                <Input
+                  id="case-next-hearing"
+                  type="date"
+                  value={nextHearing}
+                  onChange={(e) => setNextHearing(e.target.value)}
+                  className="h-10 rounded-md"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Whenever this date is updated, it automatically synchronizes with the firm
+                  calendar.
+                </p>
+              </div>
             </div>
 
             {/* ── SECTION 2: DETAILS & DOCUMENTS ── */}
             <div className="px-6 py-5 space-y-4">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Details &amp; Documents</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">
+                  Details &amp; Documents
+                </span>
                 <div className="flex-1 h-px bg-border/60" />
               </div>
 
@@ -322,7 +393,9 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
                     className="h-11 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   >
                     {categories.map((c) => (
-                      <option key={c} value={c}>{c}</option>
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
                     ))}
                   </select>
                 )}
@@ -345,7 +418,10 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
 
               {/* Local Folder / Document Path */}
               <div className="space-y-1.5">
-                <Label htmlFor="case-localpath" className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <Label
+                  htmlFor="case-localpath"
+                  className="text-xs font-semibold text-foreground flex items-center gap-1.5"
+                >
                   <FolderOpen size={14} className="text-muted-foreground" />
                   Local Folder / Document Path (Optional)
                 </Label>
@@ -357,7 +433,8 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
                   className="h-11 rounded-md"
                 />
                 <p className="text-xs text-muted-foreground">
-                  In desktop mode, clicking this path will directly open the folder in File Explorer / Finder.
+                  In desktop mode, clicking this path will directly open the folder in File Explorer
+                  / Finder.
                 </p>
               </div>
             </div>
@@ -365,7 +442,9 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
             {/* ── SECTION 3: ASSIGNMENT & PROGRESS ── */}
             <div className="px-6 py-5 space-y-4">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Assignment &amp; Progress</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">
+                  Assignment &amp; Progress
+                </span>
                 <div className="flex-1 h-px bg-border/60" />
               </div>
 
@@ -385,7 +464,10 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
               {/* Progress Slider */}
               <div className="space-y-1.5 rounded-lg border border-border bg-muted/20 p-3.5">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="case-progress" className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                  <Label
+                    htmlFor="case-progress"
+                    className="text-xs font-semibold text-foreground flex items-center gap-1.5"
+                  >
                     <Sliders size={14} className="text-primary" />
                     Matter Progress
                   </Label>
@@ -407,7 +489,10 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
 
               {/* Tags */}
               <div className="space-y-1.5">
-                <Label htmlFor="case-tags" className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <Label
+                  htmlFor="case-tags"
+                  className="text-xs font-semibold text-foreground flex items-center gap-1.5"
+                >
                   <Tag size={14} className="text-muted-foreground" />
                   Tags (comma-separated)
                 </Label>

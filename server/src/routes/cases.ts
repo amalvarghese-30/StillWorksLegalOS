@@ -5,6 +5,7 @@ import { Case } from "../models/Case.js";
 import { Client } from "../models/Client.js";
 import { Task } from "../models/Task.js";
 import { DocumentModel } from "../models/Document.js";
+import { CalendarEvent } from "../models/CalendarEvent.js";
 import { initSequence } from "../models/Counter.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { User } from "../models/User.js";
@@ -14,6 +15,111 @@ import { requireAuth } from "../middleware/auth.js";
 import { canAccessCase, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
 import { normaliseAssignees, buildInitialAssignmentHistory } from "../utils/assigneeNormalization.js";
 import { recordCaseAuditAndAdminNotification } from "../utils/auditNotificationHelper.js";
+
+/**
+ * Automatically synchronizes a case's nextHearing date with CalendarEvent.
+ * If nextHearingDate is null or cleared, removes upcoming hearing event for this case.
+ * If nextHearingDate is valid:
+ *   - Updates existing hearing CalendarEvent linked to this case,
+ *   - Or creates a new hearing CalendarEvent.
+ */
+async function syncCaseNextHearingToCalendar({
+  caseRecord,
+  nextHearingDate,
+  userId,
+  io,
+}: {
+  caseRecord: any;
+  nextHearingDate: Date | null | undefined;
+  userId: string;
+  io?: any;
+}) {
+  if (!caseRecord || !caseRecord._id) return;
+  const caseId = caseRecord._id;
+
+  // If nextHearingDate was cleared (null)
+  if (!nextHearingDate) {
+    const upcomingHearing = await CalendarEvent.findOne({
+      caseId,
+      type: "hearing",
+      start: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+    });
+    if (upcomingHearing) {
+      await CalendarEvent.findByIdAndDelete(upcomingHearing._id);
+      if (io) {
+        io.emit("calendar:event:deleted", {
+          eventId: upcomingHearing._id.toString(),
+          caseId: caseId.toString(),
+        });
+      }
+    }
+    return;
+  }
+
+  const hearingDate = new Date(nextHearingDate);
+  if (isNaN(hearingDate.getTime())) return;
+
+  // Resolve assigned users
+  const assignedUsers: mongoose.Types.ObjectId[] =
+    Array.isArray(caseRecord.assignedUsers) && caseRecord.assignedUsers.length > 0
+      ? caseRecord.assignedUsers.map((u: any) => new mongoose.Types.ObjectId(u._id ?? u))
+      : caseRecord.assignedTo
+        ? [new mongoose.Types.ObjectId((caseRecord.assignedTo as any)._id ?? caseRecord.assignedTo)]
+        : [new mongoose.Types.ObjectId(userId)];
+
+  // Resolve primary client ID
+  const primaryClientParty = (caseRecord.parties || []).find(
+    (p: any) => (p.type === "client" || p.type === "sub_client") && p.clientId
+  );
+  const clientId = primaryClientParty ? (primaryClientParty.clientId._id ?? primaryClientParty.clientId) : null;
+
+  const eventTitle = `Hearing: ${caseRecord.number || "Case"} — ${caseRecord.title}`;
+  const eventDesc = `Court hearing for matter ${caseRecord.number || ""}. Court: ${caseRecord.court || "Court"}${caseRecord.judge ? `, Judge: ${caseRecord.judge}` : ""}.`;
+
+  // Look for an existing hearing event linked to this case
+  const existingHearing = await CalendarEvent.findOne({
+    caseId,
+    type: "hearing",
+  }).sort({ start: -1 });
+
+  if (existingHearing) {
+    existingHearing.title = eventTitle;
+    existingHearing.description = eventDesc;
+    existingHearing.start = hearingDate;
+    existingHearing.assignedTo = assignedUsers;
+    if (clientId) existingHearing.clientId = clientId;
+    await existingHearing.save();
+
+    if (io) {
+      io.emit("calendar:event:updated", {
+        eventId: existingHearing._id.toString(),
+        caseId: caseId.toString(),
+        start: hearingDate.toISOString(),
+      });
+    }
+  } else {
+    const newEvent = await CalendarEvent.create({
+      title: eventTitle,
+      description: eventDesc,
+      type: "hearing",
+      start: hearingDate,
+      allDay: false,
+      caseId,
+      clientId: clientId || null,
+      createdBy: new mongoose.Types.ObjectId(userId),
+      assignedTo: assignedUsers,
+      color: "#7C3AED",
+    });
+
+    if (io) {
+      io.emit("calendar:event:created", {
+        eventId: newEvent._id.toString(),
+        caseId: caseId.toString(),
+        start: hearingDate.toISOString(),
+      });
+    }
+  }
+}
 
 const router = Router();
 
@@ -616,6 +722,20 @@ router.post("/", async (req: Request, res: Response) => {
       });
     }
 
+    // 5b. Synchronize nextHearing with Calendar
+    if (parsedNextHearing) {
+      try {
+        await syncCaseNextHearingToCalendar({
+          caseRecord: record,
+          nextHearingDate: parsedNextHearing,
+          userId,
+          io,
+        });
+      } catch (calSyncErr: any) {
+        console.warn(`[cases:create] [corrId: ${corrId}] Non-fatal calendar sync error:`, calSyncErr?.message);
+      }
+    }
+
     // 6. Optional Initial Tasks Creation
     if (Array.isArray(tasks) && tasks.length > 0) {
       console.log(`[cases:create] [corrId: ${corrId}] [stage: initial_tasks] Creating ${tasks.length} initial tasks`);
@@ -906,10 +1026,14 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
       }
     }
 
-    // Convert nextHearing string to Date if provided
-    if (updates["nextHearing"]) {
-      const d = new Date(updates["nextHearing"] as string);
-      updates["nextHearing"] = !isNaN(d.getTime()) ? d : null;
+    // Convert nextHearing string to Date if provided, or null if cleared
+    if (updates["nextHearing"] !== undefined) {
+      if (!updates["nextHearing"]) {
+        updates["nextHearing"] = null;
+      } else {
+        const d = new Date(updates["nextHearing"] as string);
+        updates["nextHearing"] = !isNaN(d.getTime()) ? d : null;
+      }
     }
 
     // Add timeline entry if status is changing
@@ -1021,6 +1145,20 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
         number: record.number,
         title: record.title,
       });
+    }
+
+    // Synchronize nextHearing with Calendar
+    if (updates["nextHearing"] !== undefined) {
+      try {
+        await syncCaseNextHearingToCalendar({
+          caseRecord: record,
+          nextHearingDate: updates["nextHearing"] as Date | null,
+          userId: req.userId!,
+          io,
+        });
+      } catch (calSyncErr: any) {
+        console.warn(`[cases:update] Non-fatal calendar sync error:`, calSyncErr?.message);
+      }
     }
 
     const recordObj: any = record.toObject ? record.toObject() : record;

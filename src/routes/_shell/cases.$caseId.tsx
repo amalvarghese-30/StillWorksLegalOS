@@ -1,11 +1,32 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useRef, useEffect } from "react";
 import {
-  Gavel, FileText, CheckSquare, StickyNote, History, Users,
-  LayoutDashboard, Plus, Loader2, ChevronDown, Clock,
-  Send, Check, X, UserPlus, Activity as ActivityIcon,
-  CalendarDays, Edit3, Trash2, RotateCcw, Download, Eye,
-  MoreHorizontal, FolderOpen, Share2, UserCheck,
+  Gavel,
+  FileText,
+  CheckSquare,
+  StickyNote,
+  History,
+  Users,
+  LayoutDashboard,
+  Plus,
+  Loader2,
+  ChevronDown,
+  Clock,
+  Send,
+  Check,
+  X,
+  UserPlus,
+  Activity as ActivityIcon,
+  CalendarDays,
+  Edit3,
+  Trash2,
+  RotateCcw,
+  Download,
+  Eye,
+  MoreHorizontal,
+  FolderOpen,
+  Share2,
+  UserCheck,
 } from "lucide-react";
 import { openLocalPath } from "@/platform/localPath";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -13,6 +34,7 @@ import { SectionCard } from "@/components/common/Surface";
 import { StatusPill, toneForStatus } from "@/components/common/StatusPill";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -34,10 +56,19 @@ import {
 } from "@/components/ui/alert-dialog";
 import { MobileSectionNav } from "@/components/layout/MobileSectionNav";
 import {
-  useCase, useUpdateCase, useDeleteCase, useAddCaseNote, useAddCaseParty, useRemoveCaseParty,
-  useForwardCase, useReassignCase, useRequestCaseDeletion,
-  useCompleteCase, useReopenCase,
-  type CaseRecord, type CaseParty,
+  useCase,
+  useUpdateCase,
+  useDeleteCase,
+  useAddCaseNote,
+  useAddCaseParty,
+  useRemoveCaseParty,
+  useForwardCase,
+  useReassignCase,
+  useRequestCaseDeletion,
+  useCompleteCase,
+  useReopenCase,
+  type CaseRecord,
+  type CaseParty,
 } from "@/services/cases";
 import { useAuth } from "@/lib/auth";
 import { useTasks, type TaskRecord } from "@/services/tasks";
@@ -64,9 +95,16 @@ export const Route = createFileRoute("/_shell/cases/$caseId")({
   head: () => ({
     meta: [
       { title: "Case workspace · S & S Legal-Tech LLP" },
-      { name: "description", content: "A single operating screen for a matter: hearings, documents, tasks, parties and timeline." },
+      {
+        name: "description",
+        content:
+          "A single operating screen for a matter: hearings, documents, tasks, parties and timeline.",
+      },
       { property: "og:title", content: "Case workspace · S & S Legal-Tech LLP" },
-      { property: "og:description", content: "Hearings, documents, tasks, parties and timeline for one matter." },
+      {
+        property: "og:description",
+        content: "Hearings, documents, tasks, parties and timeline for one matter.",
+      },
     ],
   }),
   component: CaseWorkspace,
@@ -85,7 +123,12 @@ const sections = [
 
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return "Not scheduled";
-  return new Date(iso).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+  return new Date(iso).toLocaleDateString("en-IN", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 function formatRelative(iso: string): string {
@@ -131,10 +174,15 @@ function QuickEditDropdown({ record, caseId }: { record: CaseRecord; caseId: str
               {statuses.map((s) => (
                 <button
                   key={s}
-                  onClick={() => { updateCase.mutate({ id: caseId, data: { status: s } }); setOpen(false); }}
+                  onClick={() => {
+                    updateCase.mutate({ id: caseId, data: { status: s } });
+                    setOpen(false);
+                  }}
                   disabled={updateCase.isPending}
                   className={`flex-1 rounded-sm px-2 py-1.5 text-caption font-medium transition-colors ${
-                    record.status === s ? "bg-primary/15 text-primary ring-1 ring-primary/30" : "bg-muted text-muted-foreground hover:bg-accent"
+                    record.status === s
+                      ? "bg-primary/15 text-primary ring-1 ring-primary/30"
+                      : "bg-muted text-muted-foreground hover:bg-accent"
                   }`}
                 >
                   {s}
@@ -148,10 +196,15 @@ function QuickEditDropdown({ record, caseId }: { record: CaseRecord; caseId: str
               {priorities.map((p) => (
                 <button
                   key={p}
-                  onClick={() => { updateCase.mutate({ id: caseId, data: { priority: p } }); setOpen(false); }}
+                  onClick={() => {
+                    updateCase.mutate({ id: caseId, data: { priority: p } });
+                    setOpen(false);
+                  }}
                   disabled={updateCase.isPending}
                   className={`flex-1 rounded-sm px-2 py-1.5 text-caption font-medium transition-colors ${
-                    record.priority === p ? "bg-primary/15 text-primary ring-1 ring-primary/30" : "bg-muted text-muted-foreground hover:bg-accent"
+                    record.priority === p
+                      ? "bg-primary/15 text-primary ring-1 ring-primary/30"
+                      : "bg-muted text-muted-foreground hover:bg-accent"
                   }`}
                 >
                   {p}
@@ -174,7 +227,15 @@ function AddNoteForm({ caseId }: { caseId: string }) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!text.trim() || addNote.isPending) return;
-    addNote.mutate({ caseId, text: text.trim() }, { onSuccess: () => { setText(""); inputRef.current?.focus(); } });
+    addNote.mutate(
+      { caseId, text: text.trim() },
+      {
+        onSuccess: () => {
+          setText("");
+          inputRef.current?.focus();
+        },
+      },
+    );
   };
 
   return (
@@ -186,7 +247,12 @@ function AddNoteForm({ caseId }: { caseId: string }) {
         placeholder="Write a case note…"
         className="h-10 flex-1 rounded-md"
       />
-      <Button type="submit" size="sm" className="gradient-primary rounded-md text-primary-foreground" disabled={!text.trim() || addNote.isPending}>
+      <Button
+        type="submit"
+        size="sm"
+        className="gradient-primary rounded-md text-primary-foreground"
+        disabled={!text.trim() || addNote.isPending}
+      >
         {addNote.isPending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
       </Button>
     </form>
@@ -231,7 +297,7 @@ function AddPartyForm({ caseId }: { caseId: string }) {
           setSelectedClientId("");
           setShow(false);
         },
-      }
+      },
     );
   };
 
@@ -268,7 +334,12 @@ function AddPartyForm({ caseId }: { caseId: string }) {
         </div>
         <div className="space-y-1.5">
           <Label className="text-caption">Role</Label>
-          <Input value={role} onChange={(e) => setRole(e.target.value)} placeholder="Plaintiff, Defendant…" className="h-10 rounded-md" />
+          <Input
+            value={role}
+            onChange={(e) => setRole(e.target.value)}
+            placeholder="Plaintiff, Defendant…"
+            className="h-10 rounded-md"
+          />
         </div>
 
         {type === "client" && (
@@ -298,15 +369,36 @@ function AddPartyForm({ caseId }: { caseId: string }) {
 
         <div className="space-y-1.5 sm:col-span-2">
           <Label className="text-caption">Name *</Label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Party name" className="h-10 rounded-md" />
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Party name"
+            className="h-10 rounded-md"
+          />
         </div>
       </div>
       <div className="mt-3 flex justify-end gap-2">
-        <Button type="button" variant="ghost" size="sm" className="rounded-md" onClick={() => setShow(false)}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="rounded-md"
+          onClick={() => setShow(false)}
+        >
           <X size={14} /> Cancel
         </Button>
-        <Button type="submit" size="sm" className="gradient-primary rounded-md text-primary-foreground" disabled={!name.trim() || addParty.isPending}>
-          {addParty.isPending ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Save
+        <Button
+          type="submit"
+          size="sm"
+          className="gradient-primary rounded-md text-primary-foreground"
+          disabled={!name.trim() || addParty.isPending}
+        >
+          {addParty.isPending ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Check size={14} />
+          )}{" "}
+          Save
         </Button>
       </div>
     </form>
@@ -369,6 +461,72 @@ function CaseWorkspace() {
   const [previewDoc, setPreviewDoc] = useState<any | null>(null);
   const [partyToDelete, setPartyToDelete] = useState<CaseParty | null>(null);
   const removeParty = useRemoveCaseParty();
+
+  const [showHearingDialog, setShowHearingDialog] = useState(false);
+  const [hearingDateInput, setHearingDateInput] = useState("");
+
+  const openHearingDialog = () => {
+    if (record?.nextHearing) {
+      const d = new Date(record.nextHearing);
+      if (!isNaN(d.getTime())) {
+        const pad = (n: number) => String(n).padStart(2, "0");
+        setHearingDateInput(
+          `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`,
+        );
+      } else {
+        setHearingDateInput("");
+      }
+    } else {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(10, 0, 0, 0);
+      const pad = (n: number) => String(n).padStart(2, "0");
+      setHearingDateInput(
+        `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}T${pad(tomorrow.getHours())}:${pad(tomorrow.getMinutes())}`,
+      );
+    }
+    setShowHearingDialog(true);
+  };
+
+  const handleSaveHearing = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!hearingDateInput) {
+      toast.error("Please pick a valid hearing date");
+      return;
+    }
+    const d = new Date(hearingDateInput);
+    if (isNaN(d.getTime())) {
+      toast.error("Invalid hearing date format");
+      return;
+    }
+    updateCase.mutate(
+      { id: caseId, data: { nextHearing: d.toISOString() } },
+      {
+        onSuccess: () => {
+          toast.success("Next hearing date saved and automatically marked on calendar!");
+          setShowHearingDialog(false);
+        },
+        onError: (err: Error) => {
+          toast.error(err.message || "Failed to update next hearing date");
+        },
+      },
+    );
+  };
+
+  const handleClearHearing = () => {
+    updateCase.mutate(
+      { id: caseId, data: { nextHearing: null } },
+      {
+        onSuccess: () => {
+          toast.success("Next hearing date cleared and removed from calendar");
+          setShowHearingDialog(false);
+        },
+        onError: (err: Error) => {
+          toast.error(err.message || "Failed to clear hearing date");
+        },
+      },
+    );
+  };
 
   const handleForwardCase = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -437,7 +595,10 @@ function CaseWorkspace() {
 
   const handleCompleteCase = async () => {
     try {
-      const res = await completeCase.mutateAsync({ caseId, note: completeNote.trim() || undefined });
+      const res = await completeCase.mutateAsync({
+        caseId,
+        note: completeNote.trim() || undefined,
+      });
       if (res.pendingApproval) {
         toast.success("Case completion submitted for administrator approval.");
       } else {
@@ -466,7 +627,9 @@ function CaseWorkspace() {
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="max-w-sm text-center">
           <h2 className="text-xl font-semibold">Case not found</h2>
-          <p className="mt-2 text-helper text-muted-foreground">This case may have been deleted or you don't have access to it.</p>
+          <p className="mt-2 text-helper text-muted-foreground">
+            This case may have been deleted or you don't have access to it.
+          </p>
         </div>
       </div>
     );
@@ -523,22 +686,36 @@ function CaseWorkspace() {
         }
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="outline" className="rounded-md" onClick={() => setShowEditDialog(true)}>
+            <Button
+              variant="outline"
+              className="rounded-md"
+              onClick={() => setShowEditDialog(true)}
+            >
               <Edit3 size={15} strokeWidth={1.75} />
               <span>Edit Case</span>
             </Button>
-            <Button variant="outline" className="rounded-md" onClick={() => setShowForwardDialog(true)}>
+            <Button
+              variant="outline"
+              className="rounded-md"
+              onClick={() => setShowForwardDialog(true)}
+            >
               <Share2 size={15} strokeWidth={1.75} />
               <span>Forward</span>
             </Button>
-            <Button variant="outline" className="rounded-md" onClick={() => setShowReassignDialog(true)}>
+            <Button
+              variant="outline"
+              className="rounded-md"
+              onClick={() => setShowReassignDialog(true)}
+            >
               <UserCheck size={15} strokeWidth={1.75} />
               <span>Reassign</span>
             </Button>
             {/* Desktop Full Actions */}
             <div className="hidden sm:flex items-center gap-2">
               <Button variant="outline" className="rounded-md" asChild>
-                <Link to="/calendar"><CalendarDays size={17} strokeWidth={1.75} /> View calendar</Link>
+                <Link to="/calendar">
+                  <CalendarDays size={17} strokeWidth={1.75} /> View calendar
+                </Link>
               </Button>
               {record.status === "Closed" ? (
                 <Button
@@ -585,7 +762,12 @@ function CaseWorkspace() {
             <div className="sm:hidden">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="icon" className="size-9 rounded-md" aria-label="More options">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="size-9 rounded-md"
+                    aria-label="More options"
+                  >
                     <MoreHorizontal size={17} />
                   </Button>
                 </DropdownMenuTrigger>
@@ -616,7 +798,9 @@ function CaseWorkspace() {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     className="text-destructive focus:bg-destructive/10 focus:text-destructive"
-                    onClick={() => isAdmin ? setShowDeleteConfirm(true) : setShowRequestDeleteDialog(true)}
+                    onClick={() =>
+                      isAdmin ? setShowDeleteConfirm(true) : setShowRequestDeleteDialog(true)
+                    }
                   >
                     <Trash2 size={15} className="mr-2" />
                     <span>{isAdmin ? "Delete Case" : "Request Deletion"}</span>
@@ -638,7 +822,8 @@ function CaseWorkspace() {
             <div>
               <p className="font-semibold">This matter is currently Marked as Closed</p>
               <p className="text-caption opacity-90">
-                All records, hearings, notes, and documents remain safely preserved. You can edit any details or reopen the case at any time.
+                All records, hearings, notes, and documents remain safely preserved. You can edit
+                any details or reopen the case at any time.
               </p>
             </div>
           </div>
@@ -664,7 +849,8 @@ function CaseWorkspace() {
             <div>
               <p className="font-semibold">Case Completion Requested</p>
               <p className="text-caption opacity-90">
-                An employee has marked this case as completed. Pending administrator verification and approval.
+                An employee has marked this case as completed. Pending administrator verification
+                and approval.
               </p>
             </div>
           </div>
@@ -709,7 +895,9 @@ function CaseWorkspace() {
           {record.localPath && (
             <div className="min-w-0 col-span-2 sm:col-span-2 flex items-center justify-between rounded-lg bg-white/10 px-3 py-2 mt-1">
               <div className="min-w-0">
-                <p className="text-[10px] uppercase font-bold tracking-wider opacity-80">Local Matter Folder</p>
+                <p className="text-[10px] uppercase font-bold tracking-wider opacity-80">
+                  Local Matter Folder
+                </p>
                 <p className="truncate font-mono text-xs text-white/95">{record.localPath}</p>
               </div>
               <Button
@@ -744,7 +932,11 @@ function CaseWorkspace() {
           {/* ── Overview ── */}
           {active === "overview" && (
             <>
-              <SectionCard title="Matter summary" description="The essentials, nothing else." icon={LayoutDashboard}>
+              <SectionCard
+                title="Matter summary"
+                description="The essentials, nothing else."
+                icon={LayoutDashboard}
+              >
                 <p className="text-body text-muted-foreground">
                   {record.description || "No description provided yet."}
                 </p>
@@ -753,55 +945,159 @@ function CaseWorkspace() {
                     ["Category", record.category || record.practice || "General Legal"],
                     ["Filed on", formatDate(record.createdAt)],
                     ["Case number", record.number],
-                    ["Created by", typeof record.createdBy === "object" ? record.createdBy?.name : "System"],
-                    ["Assigned by", typeof record.assignedBy === "object" ? record.assignedBy?.name : record.assignedBy || "Direct"],
+                    [
+                      "Created by",
+                      typeof record.createdBy === "object" ? record.createdBy?.name : "System",
+                    ],
+                    [
+                      "Assigned by",
+                      typeof record.assignedBy === "object"
+                        ? record.assignedBy?.name
+                        : record.assignedBy || "Direct",
+                    ],
                   ].map(([k, v]) => (
                     <div key={k} className="rounded-md bg-muted/60 p-4">
                       <dt className="text-caption text-muted-foreground">{k}</dt>
                       <dd className="mt-1 truncate text-helper font-medium">{v}</dd>
                     </div>
                   ))}
+
+                  {/* ── 6th Item: Next Hearing Date (Linked to Calendar) ── */}
+                  <div className="rounded-md bg-muted/60 p-4 flex flex-col justify-between group transition-all border border-transparent hover:border-primary/30">
+                    <div className="flex items-center justify-between gap-1.5">
+                      <dt className="text-caption text-muted-foreground flex items-center gap-1.5 font-medium">
+                        <CalendarDays size={13} className="text-primary" />
+                        Next hearing date
+                      </dt>
+                      <button
+                        type="button"
+                        onClick={openHearingDialog}
+                        className="text-[11px] font-semibold text-primary hover:text-primary/80 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                        title="Update next hearing and mark on calendar"
+                      >
+                        <Edit3 size={11} />
+                        {record.nextHearing ? "Change" : "Set date"}
+                      </button>
+                    </div>
+
+                    <div className="mt-1.5 flex items-baseline justify-between gap-2 flex-wrap">
+                      <dd className="text-helper font-semibold text-foreground">
+                        {record.nextHearing ? formatDate(record.nextHearing) : "No hearing set"}
+                      </dd>
+                      {record.nextHearing &&
+                        (() => {
+                          const d = new Date(record.nextHearing);
+                          const now = new Date();
+                          const diffDays = Math.ceil(
+                            (d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+                          );
+                          const isOverdue = diffDays < 0;
+                          const label =
+                            diffDays === 0
+                              ? "Today"
+                              : isOverdue
+                                ? `${Math.abs(diffDays)}d overdue`
+                                : `${diffDays}d left`;
+                          return (
+                            <span
+                              className={cn(
+                                "text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0",
+                                isOverdue
+                                  ? "bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300"
+                                  : diffDays === 0
+                                    ? "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300"
+                                    : "bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300",
+                              )}
+                            >
+                              {label}
+                            </span>
+                          );
+                        })()}
+                    </div>
+
+                    {record.nextHearing && (
+                      <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground border-t border-border/40 pt-1.5">
+                        <span className="flex items-center gap-1">
+                          <Clock size={11} />
+                          {new Date(record.nextHearing).toLocaleTimeString("en-IN", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                        <Link
+                          to="/calendar"
+                          className="text-primary hover:underline font-medium inline-flex items-center gap-0.5"
+                        >
+                          View in calendar →
+                        </Link>
+                      </div>
+                    )}
+                  </div>
                 </dl>
                 {record.tags && record.tags.length > 0 && (
                   <div className="mt-4 flex flex-wrap gap-1.5">
                     {record.tags.map((t) => (
-                      <span key={t} className="rounded-pill bg-primary/10 px-3 py-1 text-caption font-medium text-primary">{t}</span>
+                      <span
+                        key={t}
+                        className="rounded-pill bg-primary/10 px-3 py-1 text-caption font-medium text-primary"
+                      >
+                        {t}
+                      </span>
                     ))}
                   </div>
                 )}
               </SectionCard>
 
               {record.assignmentHistory && record.assignmentHistory.length > 0 && (
-                <SectionCard title="Assignment audit trail" description="Who assigned or forwarded this matter." icon={History}>
+                <SectionCard
+                  title="Assignment audit trail"
+                  description="Who assigned or forwarded this matter."
+                  icon={History}
+                >
                   <ol className="relative space-y-4 border-l border-border pl-6">
-                    {record.assignmentHistory.slice().reverse().map((h, i) => (
-                      <li key={i} className="relative text-xs">
-                        <span className="absolute top-1.5 -left-[1.9rem] size-2 rounded-full bg-primary ring-4 ring-card" />
-                        <p className="font-semibold text-foreground">
-                          {h.action ? h.action.toUpperCase() : "ASSIGNED"}: {typeof h.fromUser === "object" ? h.fromUser?.name : "—"} → {typeof h.toUser === "object" ? h.toUser?.name : "—"}
-                        </p>
-                        <p className="text-muted-foreground mt-0.5">
-                          By {typeof h.assignedBy === "object" ? h.assignedBy?.name : "Admin"} • {formatDate(h.timestamp)}
-                        </p>
-                        {h.note && <p className="text-muted-foreground italic mt-0.5">"{h.note}"</p>}
-                      </li>
-                    ))}
+                    {record.assignmentHistory
+                      .slice()
+                      .reverse()
+                      .map((h, i) => (
+                        <li key={i} className="relative text-xs">
+                          <span className="absolute top-1.5 -left-[1.9rem] size-2 rounded-full bg-primary ring-4 ring-card" />
+                          <p className="font-semibold text-foreground">
+                            {h.action ? h.action.toUpperCase() : "ASSIGNED"}:{" "}
+                            {typeof h.fromUser === "object" ? h.fromUser?.name : "—"} →{" "}
+                            {typeof h.toUser === "object" ? h.toUser?.name : "—"}
+                          </p>
+                          <p className="text-muted-foreground mt-0.5">
+                            By {typeof h.assignedBy === "object" ? h.assignedBy?.name : "Admin"} •{" "}
+                            {formatDate(h.timestamp)}
+                          </p>
+                          {h.note && (
+                            <p className="text-muted-foreground italic mt-0.5">"{h.note}"</p>
+                          )}
+                        </li>
+                      ))}
                   </ol>
                 </SectionCard>
               )}
 
               {record.timeline && record.timeline.length > 0 && (
-                <SectionCard title="Recent timeline" description="How the matter progressed." icon={History}>
+                <SectionCard
+                  title="Recent timeline"
+                  description="How the matter progressed."
+                  icon={History}
+                >
                   <ol className="relative space-y-5 border-l border-border pl-6">
-                    {record.timeline.slice(-6).reverse().map((t) => (
-                      <li key={t._id ?? t.event} className="relative">
-                        <span className="absolute top-1.5 -left-[1.9rem] size-2.5 rounded-full bg-primary ring-4 ring-card" />
-                        <p className="font-medium">{t.event}</p>
-                        <p className="text-helper text-muted-foreground">
-                          {formatDate(t.when)} · {t.by}
-                        </p>
-                      </li>
-                    ))}
+                    {record.timeline
+                      .slice(-6)
+                      .reverse()
+                      .map((t) => (
+                        <li key={t._id ?? t.event} className="relative">
+                          <span className="absolute top-1.5 -left-[1.9rem] size-2.5 rounded-full bg-primary ring-4 ring-card" />
+                          <p className="font-medium">{t.event}</p>
+                          <p className="text-helper text-muted-foreground">
+                            {formatDate(t.when)} · {t.by}
+                          </p>
+                        </li>
+                      ))}
                   </ol>
                 </SectionCard>
               )}
@@ -810,7 +1106,17 @@ function CaseWorkspace() {
 
           {/* ── Hearings ── */}
           {active === "hearings" && (
-            <SectionCard title="Hearings" description="Court dates and scheduled hearings for this matter." icon={Gavel}>
+            <SectionCard
+              title="Hearings"
+              description="Court dates and scheduled hearings for this matter."
+              icon={Gavel}
+              action={
+                <Button size="sm" variant="outline" onClick={openHearingDialog} className="gap-1.5">
+                  <CalendarDays size={14} />
+                  {record.nextHearing ? "Update Next Hearing" : "Schedule Next Hearing"}
+                </Button>
+              }
+            >
               {hearings.length === 0 ? (
                 <div className="rounded-lg border border-dashed p-12 text-center">
                   <Gavel size={32} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
@@ -818,8 +1124,13 @@ function CaseWorkspace() {
                   <p className="mt-1 text-helper text-muted-foreground">
                     Schedule a hearing from the Calendar module to link it to this case.
                   </p>
-                  <Button className="mt-4 gradient-primary rounded-md text-primary-foreground" asChild>
-                    <Link to="/calendar"><CalendarDays size={16} /> Open calendar</Link>
+                  <Button
+                    className="mt-4 gradient-primary rounded-md text-primary-foreground"
+                    asChild
+                  >
+                    <Link to="/calendar">
+                      <CalendarDays size={16} /> Open calendar
+                    </Link>
                   </Button>
                 </div>
               ) : (
@@ -829,11 +1140,17 @@ function CaseWorkspace() {
                       <span className="absolute top-2 -left-[1.9rem] size-2.5 rounded-full bg-primary ring-4 ring-card" />
                       <div className="rounded-md border border-border bg-card p-4">
                         <p className="font-medium">{h.title}</p>
-                        {h.description && <p className="mt-1 text-helper text-muted-foreground">{h.description}</p>}
+                        {h.description && (
+                          <p className="mt-1 text-helper text-muted-foreground">{h.description}</p>
+                        )}
                         <p className="num mt-2 flex items-center gap-1 text-caption text-muted-foreground">
                           <Clock size={12} />
-                          {formatDate(h.start)}{" · "}
-                          {new Date(h.start).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                          {formatDate(h.start)}
+                          {" · "}
+                          {new Date(h.start).toLocaleTimeString("en-IN", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
                         </p>
                       </div>
                     </li>
@@ -864,7 +1181,8 @@ function CaseWorkspace() {
                   <FileText size={32} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
                   <p className="mt-4 font-medium">No documents yet</p>
                   <p className="mt-1 text-helper text-muted-foreground">
-                    Upload documents directly to this matter or link them from the document repository.
+                    Upload documents directly to this matter or link them from the document
+                    repository.
                   </p>
                   <Button
                     size="sm"
@@ -878,15 +1196,21 @@ function CaseWorkspace() {
               ) : (
                 <ul className="divide-y divide-border/60">
                   {documents.map((d) => (
-                    <li key={d._id} className="flex flex-wrap items-center justify-between gap-4 py-3">
+                    <li
+                      key={d._id}
+                      className="flex flex-wrap items-center justify-between gap-4 py-3"
+                    >
                       <div className="flex items-center gap-3 min-w-0">
                         <span className="num grid size-9 shrink-0 place-items-center rounded-sm bg-muted text-caption font-semibold text-muted-foreground">
                           {(d.kind ?? "DOC").slice(0, 3).toUpperCase()}
                         </span>
                         <div className="min-w-0">
-                          <p className="truncate text-helper font-medium text-foreground">{d.name}</p>
+                          <p className="truncate text-helper font-medium text-foreground">
+                            {d.name}
+                          </p>
                           <p className="truncate text-caption text-muted-foreground">
-                            {d.sizeFormatted || `${(d.size / 1024).toFixed(1)} KB`} • {formatDate(d.createdAt)}
+                            {d.sizeFormatted || `${(d.size / 1024).toFixed(1)} KB`} •{" "}
+                            {formatDate(d.createdAt)}
                           </p>
                         </div>
                       </div>
@@ -937,10 +1261,15 @@ function CaseWorkspace() {
             >
               {tasks.length === 0 ? (
                 <div className="rounded-lg border border-dashed p-12 text-center">
-                  <CheckSquare size={32} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
+                  <CheckSquare
+                    size={32}
+                    className="mx-auto text-muted-foreground"
+                    strokeWidth={1.5}
+                  />
                   <p className="mt-4 font-medium">No tasks yet</p>
                   <p className="mt-1 text-helper text-muted-foreground">
-                    Create a task directly for this case or link existing tasks from the Tasks module.
+                    Create a task directly for this case or link existing tasks from the Tasks
+                    module.
                   </p>
                   <Button
                     size="sm"
@@ -963,12 +1292,16 @@ function CaseWorkspace() {
                         <CheckSquare size={17} strokeWidth={1.75} />
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-helper font-medium text-foreground group-hover:text-primary transition-colors">{t.title}</p>
+                        <p className="truncate text-helper font-medium text-foreground group-hover:text-primary transition-colors">
+                          {t.title}
+                        </p>
                         <p className="truncate text-caption text-muted-foreground">
                           {t.category?.replace(/_/g, " ")} · Due {formatDate(t.deadline)}
                         </p>
                       </div>
-                      <StatusPill tone={toneForStatus(t.status)}>{t.status.replace(/_/g, " ")}</StatusPill>
+                      <StatusPill tone={toneForStatus(t.status)}>
+                        {t.status.replace(/_/g, " ")}
+                      </StatusPill>
                     </li>
                   ))}
                 </ul>
@@ -978,7 +1311,10 @@ function CaseWorkspace() {
 
           {/* ── Notes ── */}
           {active === "notes" && (
-            <SectionCard title="Notes" description="Case notes and observations." icon={StickyNote}
+            <SectionCard
+              title="Notes"
+              description="Case notes and observations."
+              icon={StickyNote}
               action={<AddNoteForm caseId={caseId} />}
             >
               {record.notes && record.notes.length > 0 ? (
@@ -994,9 +1330,15 @@ function CaseWorkspace() {
                 </ul>
               ) : (
                 <div className="rounded-lg border border-dashed p-12 text-center">
-                  <StickyNote size={32} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
+                  <StickyNote
+                    size={32}
+                    className="mx-auto text-muted-foreground"
+                    strokeWidth={1.5}
+                  />
                   <p className="mt-4 font-medium">No notes yet</p>
-                  <p className="mt-1 text-helper text-muted-foreground">Add a note above to start documenting this matter.</p>
+                  <p className="mt-1 text-helper text-muted-foreground">
+                    Add a note above to start documenting this matter.
+                  </p>
                 </div>
               )}
             </SectionCard>
@@ -1004,7 +1346,10 @@ function CaseWorkspace() {
 
           {/* ── Parties ── */}
           {active === "parties" && (
-            <SectionCard title="Parties" description="Clients, sub-clients and relationships." icon={Users}
+            <SectionCard
+              title="Parties"
+              description="Clients, sub-clients and relationships."
+              icon={Users}
               action={<AddPartyForm caseId={caseId} />}
             >
               {record.parties && record.parties.length > 0 ? (
@@ -1028,7 +1373,15 @@ function CaseWorkspace() {
                             )}
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0">
-                            <StatusPill tone={p.type === "client" ? "primary" : p.type === "opposing_party" ? "destructive" : "muted"}>
+                            <StatusPill
+                              tone={
+                                p.type === "client"
+                                  ? "primary"
+                                  : p.type === "opposing_party"
+                                    ? "destructive"
+                                    : "muted"
+                              }
+                            >
                               {p.type.replace(/_/g, " ")}
                             </StatusPill>
                             <button
@@ -1050,7 +1403,9 @@ function CaseWorkspace() {
                 <div className="rounded-lg border border-dashed p-12 text-center">
                   <Users size={32} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
                   <p className="mt-4 font-medium">No parties added</p>
-                  <p className="mt-1 text-helper text-muted-foreground">Add clients, sub-clients, opposing parties and counsel.</p>
+                  <p className="mt-1 text-helper text-muted-foreground">
+                    Add clients, sub-clients, opposing parties and counsel.
+                  </p>
                 </div>
               )}
             </SectionCard>
@@ -1058,7 +1413,11 @@ function CaseWorkspace() {
 
           {/* ── Timeline ── */}
           {active === "timeline" && (
-            <SectionCard title="Timeline" description="Every milestone in this matter." icon={History}>
+            <SectionCard
+              title="Timeline"
+              description="Every milestone in this matter."
+              icon={History}
+            >
               {record.timeline && record.timeline.length > 0 ? (
                 <ol className="relative space-y-5 border-l border-border pl-6">
                   {record.timeline.map((t) => (
@@ -1082,19 +1441,39 @@ function CaseWorkspace() {
 
           {/* ── Activity ── */}
           {active === "activity" && (
-            <SectionCard title="Activity log" description="Notes and timeline entries — everything that's happened." icon={ActivityIcon}>
+            <SectionCard
+              title="Activity log"
+              description="Notes and timeline entries — everything that's happened."
+              icon={ActivityIcon}
+            >
               {(() => {
                 const items = [
-                  ...(record.timeline ?? []).map((t) => ({ kind: "timeline", text: t.event, by: t.by, when: t.when })),
-                  ...(record.notes ?? []).map((n) => ({ kind: "note", text: n.text, by: n.author, when: n.createdAt })),
+                  ...(record.timeline ?? []).map((t) => ({
+                    kind: "timeline",
+                    text: t.event,
+                    by: t.by,
+                    when: t.when,
+                  })),
+                  ...(record.notes ?? []).map((n) => ({
+                    kind: "note",
+                    text: n.text,
+                    by: n.author,
+                    when: n.createdAt,
+                  })),
                 ].sort((a, b) => new Date(b.when).getTime() - new Date(a.when).getTime());
 
                 if (items.length === 0) {
                   return (
                     <div className="rounded-lg border border-dashed p-12 text-center">
-                      <ActivityIcon size={32} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
+                      <ActivityIcon
+                        size={32}
+                        className="mx-auto text-muted-foreground"
+                        strokeWidth={1.5}
+                      />
                       <p className="mt-4 font-medium">No activity yet</p>
-                      <p className="mt-1 text-helper text-muted-foreground">Notes and timeline events will appear here.</p>
+                      <p className="mt-1 text-helper text-muted-foreground">
+                        Notes and timeline events will appear here.
+                      </p>
                     </div>
                   );
                 }
@@ -1104,14 +1483,20 @@ function CaseWorkspace() {
                     {items.map((item, i) => (
                       <li key={i} className="flex gap-3">
                         <span className="mt-1 grid size-8 shrink-0 place-items-center rounded-full bg-primary/10 text-caption font-semibold text-primary">
-                          {item.kind === "timeline" ? <History size={14} /> : <StickyNote size={14} />}
+                          {item.kind === "timeline" ? (
+                            <History size={14} />
+                          ) : (
+                            <StickyNote size={14} />
+                          )}
                         </span>
                         <div className="min-w-0">
                           <p className="text-helper">
                             <span className="font-medium">{item.by}</span>{" "}
                             <span className="text-muted-foreground">{item.text}</span>
                           </p>
-                          <p className="text-caption text-muted-foreground">{formatRelative(item.when)}</p>
+                          <p className="text-caption text-muted-foreground">
+                            {formatRelative(item.when)}
+                          </p>
                         </div>
                       </li>
                     ))}
@@ -1138,12 +1523,17 @@ function CaseWorkspace() {
               Delete Case
             </AlertDialogTitle>
             <AlertDialogDescription className="text-helper text-muted-foreground mt-2">
-              Are you sure you want to delete case <span className="font-semibold text-foreground">"{record.number} — {record.title}"</span>?
-              This will permanently delete the matter and its associated records.
+              Are you sure you want to delete case{" "}
+              <span className="font-semibold text-foreground">
+                "{record.number} — {record.title}"
+              </span>
+              ? This will permanently delete the matter and its associated records.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="mt-5 flex justify-end gap-2">
-            <AlertDialogCancel className="rounded-md" disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel className="rounded-md" disabled={isDeleting}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               className="rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={handleDeleteCase}
@@ -1163,7 +1553,8 @@ function CaseWorkspace() {
               <Trash2 size={18} /> Request Case Deletion
             </DialogTitle>
             <DialogDescription className="text-helper text-muted-foreground mt-1">
-              Submit a deletion request for matter "{record.number} — {record.title}" for administrator approval.
+              Submit a deletion request for matter "{record.number} — {record.title}" for
+              administrator approval.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -1182,7 +1573,11 @@ function CaseWorkspace() {
                 setShowRequestDeleteDialog(false);
                 setCaseDeleteReason("");
               } catch (err: any) {
-                toast.error(err?.response?.data?.message || err?.message || "Failed to submit deletion request");
+                toast.error(
+                  err?.response?.data?.message ||
+                    err?.message ||
+                    "Failed to submit deletion request",
+                );
               }
             }}
             className="mt-4 space-y-4"
@@ -1199,7 +1594,12 @@ function CaseWorkspace() {
               />
             </div>
             <DialogFooter className="mt-5 flex justify-end gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={() => setShowRequestDeleteDialog(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowRequestDeleteDialog(false)}
+              >
                 Cancel
               </Button>
               <Button
@@ -1208,7 +1608,11 @@ function CaseWorkspace() {
                 variant="destructive"
                 disabled={requestCaseDeletion.isPending || !caseDeleteReason.trim()}
               >
-                {requestCaseDeletion.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : <Trash2 size={14} className="mr-1" />}
+                {requestCaseDeletion.isPending ? (
+                  <Loader2 size={14} className="animate-spin mr-1" />
+                ) : (
+                  <Trash2 size={14} className="mr-1" />
+                )}
                 Submit Request
               </Button>
             </DialogFooter>
@@ -1225,7 +1629,11 @@ function CaseWorkspace() {
             </AlertDialogTitle>
             <AlertDialogDescription className="text-helper text-muted-foreground mt-2 space-y-3">
               <span>
-                Are you sure you want to mark case <span className="font-semibold text-foreground">"{record.number} — {record.title}"</span> as completed?
+                Are you sure you want to mark case{" "}
+                <span className="font-semibold text-foreground">
+                  "{record.number} — {record.title}"
+                </span>{" "}
+                as completed?
               </span>
               <div className="rounded-md border border-primary/20 bg-primary/5 p-3 text-xs text-foreground/80 space-y-1 text-left">
                 <p className="font-medium text-foreground">
@@ -1238,7 +1646,9 @@ function CaseWorkspace() {
                 </p>
               </div>
               <div className="pt-2 text-left">
-                <Label className="text-xs font-medium text-muted-foreground">Completion remarks / notes (optional)</Label>
+                <Label className="text-xs font-medium text-muted-foreground">
+                  Completion remarks / notes (optional)
+                </Label>
                 <Input
                   value={completeNote}
                   onChange={(e) => setCompleteNote(e.target.value)}
@@ -1249,7 +1659,9 @@ function CaseWorkspace() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="mt-5 flex justify-end gap-2">
-            <AlertDialogCancel className="rounded-md" disabled={completeCase.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel className="rounded-md" disabled={completeCase.isPending}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               className="rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
               onClick={(e) => {
@@ -1258,7 +1670,11 @@ function CaseWorkspace() {
               }}
               disabled={completeCase.isPending}
             >
-              {completeCase.isPending ? "Submitting…" : isAdmin ? "Complete Case & Tasks" : "Submit for Approval"}
+              {completeCase.isPending
+                ? "Submitting…"
+                : isAdmin
+                  ? "Complete Case & Tasks"
+                  : "Submit for Approval"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1272,12 +1688,18 @@ function CaseWorkspace() {
               Reopen Case
             </AlertDialogTitle>
             <AlertDialogDescription className="text-helper text-muted-foreground mt-2">
-              Are you sure you want to reopen case <span className="font-semibold text-foreground">"{record.number} — {record.title}"</span>?
-              Its status will be restored to <strong className="text-foreground">Active</strong>, and firm administrators will be notified.
+              Are you sure you want to reopen case{" "}
+              <span className="font-semibold text-foreground">
+                "{record.number} — {record.title}"
+              </span>
+              ? Its status will be restored to <strong className="text-foreground">Active</strong>,
+              and firm administrators will be notified.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="mt-5 flex justify-end gap-2">
-            <AlertDialogCancel className="rounded-md" disabled={reopenCase.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel className="rounded-md" disabled={reopenCase.isPending}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               className="rounded-md bg-emerald-600 text-white hover:bg-emerald-700"
               onClick={handleReopenCase}
@@ -1289,7 +1711,10 @@ function CaseWorkspace() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={Boolean(partyToDelete)} onOpenChange={(open) => !open && setPartyToDelete(null)}>
+      <AlertDialog
+        open={Boolean(partyToDelete)}
+        onOpenChange={(open) => !open && setPartyToDelete(null)}
+      >
         <AlertDialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-title font-semibold text-destructive flex items-center gap-2">
@@ -1297,19 +1722,22 @@ function CaseWorkspace() {
               Remove Party
             </AlertDialogTitle>
             <AlertDialogDescription className="text-helper text-muted-foreground mt-2">
-              Are you sure you want to remove <span className="font-semibold text-foreground">"{partyToDelete?.name}"</span> from this matter?
-              The party will be unlinked from this case.
+              Are you sure you want to remove{" "}
+              <span className="font-semibold text-foreground">"{partyToDelete?.name}"</span> from
+              this matter? The party will be unlinked from this case.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="mt-5 flex justify-end gap-2">
-            <AlertDialogCancel className="rounded-md" disabled={removeParty.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel className="rounded-md" disabled={removeParty.isPending}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               className="rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => {
                 if (partyToDelete?._id) {
                   removeParty.mutate(
                     { caseId, partyId: partyToDelete._id },
-                    { onSettled: () => setPartyToDelete(null) }
+                    { onSettled: () => setPartyToDelete(null) },
                   );
                 } else {
                   setPartyToDelete(null);
@@ -1390,7 +1818,12 @@ function CaseWorkspace() {
               />
             </div>
             <DialogFooter className="mt-5 flex justify-end gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={() => setShowForwardDialog(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowForwardDialog(false)}
+              >
                 Cancel
               </Button>
               <Button
@@ -1399,7 +1832,11 @@ function CaseWorkspace() {
                 className="gradient-primary text-primary-foreground"
                 disabled={forwardCase.isPending}
               >
-                {forwardCase.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : <Share2 size={14} className="mr-1" />}
+                {forwardCase.isPending ? (
+                  <Loader2 size={14} className="animate-spin mr-1" />
+                ) : (
+                  <Share2 size={14} className="mr-1" />
+                )}
                 Forward Case
               </Button>
             </DialogFooter>
@@ -1445,7 +1882,12 @@ function CaseWorkspace() {
               />
             </div>
             <DialogFooter className="mt-5 flex justify-end gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={() => setShowReassignDialog(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowReassignDialog(false)}
+              >
                 Cancel
               </Button>
               <Button
@@ -1454,9 +1896,101 @@ function CaseWorkspace() {
                 className="gradient-primary text-primary-foreground"
                 disabled={reassignCase.isPending}
               >
-                {reassignCase.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : <UserCheck size={14} className="mr-1" />}
+                {reassignCase.isPending ? (
+                  <Loader2 size={14} className="animate-spin mr-1" />
+                ) : (
+                  <UserCheck size={14} className="mr-1" />
+                )}
                 Reassign Case
               </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Next Hearing Dialog */}
+      <Dialog open={showHearingDialog} onOpenChange={setShowHearingDialog}>
+        <DialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-title font-semibold text-foreground flex items-center gap-2">
+              <CalendarDays size={18} className="text-primary" /> Next Hearing Date
+            </DialogTitle>
+            <DialogDescription className="text-helper text-muted-foreground mt-1">
+              Set or update the upcoming court hearing for &quot;{record.number} — {record.title}
+              &quot;.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleSaveHearing} className="mt-4 space-y-4">
+            <div className="space-y-1.5">
+              <Label className="text-helper font-semibold">Date &amp; Time of Hearing</Label>
+              <Input
+                type="datetime-local"
+                value={hearingDateInput}
+                onChange={(e) => setHearingDateInput(e.target.value)}
+                className="h-10 rounded-md"
+                required
+              />
+              <p className="text-[11px] text-muted-foreground mt-1 flex items-center gap-1">
+                <Clock size={12} className="text-primary shrink-0" />
+                This will update the case and be automatically marked on the calendar.
+              </p>
+            </div>
+
+            {(record.court || record.judge) && (
+              <div className="rounded-md bg-muted/60 p-3 text-xs text-muted-foreground">
+                {record.court && (
+                  <p>
+                    <span className="font-semibold text-foreground">Court:</span> {record.court}
+                  </p>
+                )}
+                {record.judge && (
+                  <p className="mt-0.5">
+                    <span className="font-semibold text-foreground">Judge:</span> {record.judge}
+                  </p>
+                )}
+              </div>
+            )}
+
+            <DialogFooter className="mt-5 flex flex-col-reverse sm:flex-row sm:justify-between gap-2">
+              {record.nextHearing ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="border-destructive/30 text-destructive hover:bg-destructive/10"
+                  disabled={updateCase.isPending}
+                  onClick={handleClearHearing}
+                >
+                  Clear hearing
+                </Button>
+              ) : (
+                <div />
+              )}
+
+              <div className="flex items-center gap-2 self-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowHearingDialog(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  className="gradient-primary text-primary-foreground"
+                  disabled={updateCase.isPending || !hearingDateInput}
+                >
+                  {updateCase.isPending ? (
+                    <Loader2 size={14} className="animate-spin mr-1" />
+                  ) : (
+                    <Check size={14} className="mr-1" />
+                  )}
+                  Save &amp; Mark Calendar
+                </Button>
+              </div>
             </DialogFooter>
           </form>
         </DialogContent>

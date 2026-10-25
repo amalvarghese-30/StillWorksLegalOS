@@ -57,8 +57,24 @@ export interface CaseRecord {
   nextHearing?: string | null;
   localPath?: string;
   parties: CaseParty[];
-  assignedTo?: { _id: string; name: string; email?: string; title?: string; role?: string; avatar?: string; avatarUrl?: string };
-  assignedUsers?: Array<{ _id: string; name: string; email?: string; title?: string; role?: string; avatar?: string; avatarUrl?: string }>;
+  assignedTo?: {
+    _id: string;
+    name: string;
+    email?: string;
+    title?: string;
+    role?: string;
+    avatar?: string;
+    avatarUrl?: string;
+  };
+  assignedUsers?: Array<{
+    _id: string;
+    name: string;
+    email?: string;
+    title?: string;
+    role?: string;
+    avatar?: string;
+    avatarUrl?: string;
+  }>;
   assignedBy?: { _id: string; name: string; email?: string; title?: string };
   assignedAt?: string | null;
   startedAt?: string | null;
@@ -106,7 +122,7 @@ export interface CaseTaskPayload {
   subCategory?: string;
   priority?: "High" | "Medium" | "Low";
   deadline?: string;
-  assignedTo?: string | string[];
+  assignedTo?: string | string[] | null;
   assignedUsers?: string[];
   checklist?: { text: string; done?: boolean; subItems?: { text: string; done?: boolean }[] }[];
   agent?: string;
@@ -127,10 +143,10 @@ export interface CreateCasePayload {
   judge?: string;
   status?: string;
   priority?: string;
-  nextHearing?: string;
+  nextHearing?: string | null;
   localPath?: string;
   parties?: CaseParty[];
-  assignedTo?: string | string[];
+  assignedTo?: string | string[] | null;
   assignedUsers?: string[];
   tags?: string[];
   progress?: number;
@@ -187,6 +203,8 @@ export function useUpdateCase() {
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: caseKeys.detail(vars.id) });
       qc.invalidateQueries({ queryKey: caseKeys.all });
+      qc.invalidateQueries({ queryKey: ["calendar", "events"] });
+      qc.invalidateQueries({ queryKey: ["reports"] });
     },
   });
 }
@@ -281,7 +299,11 @@ export function useReviewCaseAccessRequest() {
 
 export function useForwardCase() {
   const qc = useQueryClient();
-  return useMutation<CaseResponse, Error, { caseId?: string; id?: string; toUserId: string; note?: string }>({
+  return useMutation<
+    CaseResponse,
+    Error,
+    { caseId?: string; id?: string; toUserId: string; note?: string }
+  >({
     mutationFn: ({ caseId, id, toUserId, note }) => {
       const targetId = caseId || id;
       return api.post(`/cases/${targetId}/forward`, { toUserId, note });
@@ -299,7 +321,11 @@ export function useForwardCase() {
 
 export function useReassignCase() {
   const qc = useQueryClient();
-  return useMutation<CaseResponse, Error, { caseId?: string; id?: string; toUserId: string; note?: string }>({
+  return useMutation<
+    CaseResponse,
+    Error,
+    { caseId?: string; id?: string; toUserId: string; note?: string }
+  >({
     mutationFn: ({ caseId, id, toUserId, note }) => {
       const targetId = caseId || id;
       return api.post(`/cases/${targetId}/reassign`, { toUserId, note });
@@ -317,9 +343,12 @@ export function useReassignCase() {
 
 export function useRequestCaseDeletion() {
   const qc = useQueryClient();
-  return useMutation<{ case: CaseRecord; message: string }, Error, { caseId: string; reason: string }>({
-    mutationFn: ({ caseId, reason }) =>
-      api.post(`/cases/${caseId}/request-deletion`, { reason }),
+  return useMutation<
+    { case: CaseRecord; message: string },
+    Error,
+    { caseId: string; reason: string }
+  >({
+    mutationFn: ({ caseId, reason }) => api.post(`/cases/${caseId}/request-deletion`, { reason }),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: caseKeys.detail(vars.caseId) });
       qc.invalidateQueries({ queryKey: caseKeys.all });
@@ -330,9 +359,12 @@ export function useRequestCaseDeletion() {
 }
 export function useCompleteCase() {
   const qc = useQueryClient();
-  return useMutation<{ case: CaseRecord; message: string; pendingApproval?: boolean }, Error, { caseId: string; note?: string }>({
-    mutationFn: ({ caseId, note }) =>
-      api.post(`/cases/${caseId}/complete`, { note }),
+  return useMutation<
+    { case: CaseRecord; message: string; pendingApproval?: boolean },
+    Error,
+    { caseId: string; note?: string }
+  >({
+    mutationFn: ({ caseId, note }) => api.post(`/cases/${caseId}/complete`, { note }),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: caseKeys.detail(vars.caseId) });
       qc.invalidateQueries({ queryKey: caseKeys.all });
@@ -346,8 +378,7 @@ export function useCompleteCase() {
 export function useReopenCase() {
   const qc = useQueryClient();
   return useMutation<{ case: CaseRecord; message: string }, Error, { caseId: string }>({
-    mutationFn: ({ caseId }) =>
-      api.post(`/cases/${caseId}/reopen`, {}),
+    mutationFn: ({ caseId }) => api.post(`/cases/${caseId}/reopen`, {}),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: caseKeys.detail(vars.caseId) });
       qc.invalidateQueries({ queryKey: caseKeys.all });
@@ -357,4 +388,3 @@ export function useReopenCase() {
     },
   });
 }
-
