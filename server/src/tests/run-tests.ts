@@ -4533,6 +4533,109 @@ async function run() {
     assert(dbTaskAfterApprove.status === "completed", "S35-21: Task under case automatically marked completed on approval");
   }
 
+  // --- Suite 36: Task Document Upload, Approval Centre Integration & Auto-Approval Workflow ---
+  console.log("\n--- Suite 36: Task Document Upload, Approval Centre Integration & Auto-Approval Workflow ---");
+  {
+    // Create admin & employee
+    const s36Admin = await User.create({
+      name: "S36 Admin",
+      email: `s36admin_${Date.now()}@stillworks.legal`,
+      passwordHash: "hash",
+      role: "admin",
+      permissions: { all: true },
+    });
+    const s36AdminToken = await createToken(s36Admin);
+
+    const s36Emp = await User.create({
+      name: "S36 Employee",
+      email: `s36emp_${Date.now()}@stillworks.legal`,
+      passwordHash: "hash",
+      role: "employee",
+      permissions: { tasks: true, documents: true },
+    });
+    const s36EmpToken = await createToken(s36Emp);
+
+    // 1. Create task assigned to employee
+    const s36Task = await Task.create({
+      title: "Draft Writ Petition & Attach Supporting Affidavits",
+      description: "Complete the initial review and attach affidavit documentation",
+      status: "in_progress",
+      priority: "High",
+      category: "Litigation",
+      assignedTo: s36Emp._id,
+      assignedUsers: [s36Emp._id],
+      assignedBy: s36Admin._id,
+      createdBy: s36Admin._id,
+    });
+    assert(Boolean(s36Task._id), "S36-01: Task created successfully and assigned to employee");
+
+    // 2. Upload document attached to taskId
+    const s36Doc = await DocumentModel.create({
+      name: "Affidavit_Draft_v1.pdf",
+      originalName: "Affidavit_Draft_v1.pdf",
+      kind: "pdf",
+      sizeFormatted: "45 KB",
+      size: 46080,
+      mimeType: "application/pdf",
+      taskId: s36Task._id,
+      uploadedBy: s36Emp._id,
+      storagePath: "tasks/Affidavit_Draft_v1.pdf",
+      sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      state: "Pending",
+    });
+    assert(Boolean(s36Doc.taskId), "S36-02: Document created and linked to taskId");
+    assert(s36Doc.state === "Pending", "S36-03: Newly uploaded task document starts in Pending state");
+
+    // 3. Employee queries GET /api/documents?taskId=...
+    const docQueryRes = await request(app)
+      .get(`/api/documents?taskId=${s36Task._id}`)
+      .set("Authorization", `Bearer ${s36EmpToken}`);
+
+    assert(docQueryRes.status === 200, "S36-04: GET /api/documents?taskId=... returns 200");
+    const queriedDoc = docQueryRes.body.documents?.find((d: any) => d._id === s36Doc._id.toString());
+    assert(Boolean(queriedDoc), "S36-05: Task document returned in list query");
+    assert(queriedDoc.canAccess === true, "S36-06: Employee assigned to task has canAccess: true");
+    assert(queriedDoc.accessStatus === "approved", "S36-07: Employee assigned to task has accessStatus: approved");
+
+    // 4. Employee submits task for approval
+    const submitTaskRes = await request(app)
+      .patch(`/api/tasks/${s36Task._id}`)
+      .set("Authorization", `Bearer ${s36EmpToken}`)
+      .send({ status: "pending_approval" });
+
+    assert(submitTaskRes.status === 200, "S36-08: Employee submits task for approval -> 200");
+    assert(submitTaskRes.body.task?.status === "pending_approval", "S36-09: Task status transitioned to pending_approval");
+
+    // 5. Admin queries Approval Centre GET /api/admin/approvals
+    const approvalsRes = await request(app)
+      .get("/api/admin/approvals?category=tasks&status=pending")
+      .set("Authorization", `Bearer ${s36AdminToken}`);
+
+    assert(approvalsRes.status === 200, "S36-10: GET /api/admin/approvals returns 200");
+    const taskApprovalItem = approvalsRes.body.approvals?.find((a: any) => a._id === `task_${s36Task._id}`);
+    assert(Boolean(taskApprovalItem), "S36-11: Submitted task found in Admin Approvals list");
+    assert(Array.isArray(taskApprovalItem.documents) && taskApprovalItem.documents.length === 1, "S36-12: Task approval item has attached documents populated");
+    assert(taskApprovalItem.documents[0]._id.toString() === s36Doc._id.toString(), "S36-13: Attached document ID matches uploaded task document");
+    assert(taskApprovalItem.context.includes("1 attached document"), "S36-14: Approval context highlights the attached document");
+    assert(Boolean(taskApprovalItem.documentDetails), "S36-15: Document details populated on approval item for immediate drawer preview");
+
+    // 6. Admin approves the task completion
+    const adminApproveRes = await request(app)
+      .post(`/api/tasks/${s36Task._id}/approve`)
+      .set("Authorization", `Bearer ${s36AdminToken}`)
+      .send({});
+
+    assert(adminApproveRes.status === 200, "S36-16: Admin approves task completion -> 200");
+    assert(adminApproveRes.body.task?.status === "completed", "S36-17: Task status is now completed");
+    assert(Boolean(adminApproveRes.body.task?.approvedAt), "S36-18: Task approvedAt timestamp recorded");
+
+    // 7. Verify attached document is automatically approved
+    const dbDocAfterApprove = await DocumentModel.findById(s36Doc._id).lean() as any;
+    assert(dbDocAfterApprove.state === "Approved", "S36-19: Document attached to task auto-transitioned to Approved state");
+    assert(Boolean(dbDocAfterApprove.approvedAt), "S36-20: Document approvedAt timestamp recorded");
+  }
+
+
   try {
     if (mongoose.connection.readyState === 1) {
       await mongoose.connection.dropDatabase();

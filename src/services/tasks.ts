@@ -183,6 +183,7 @@ export type UpdateTaskPayload = Partial<CreateTaskPayload>;
 export const taskKeys = {
   all: ["tasks"] as const,
   list: (filters: Record<string, string>) => ["tasks", "list", filters] as const,
+  lists: () => ["tasks"] as const,
   detail: (id: string) => ["tasks", id] as const,
   options: ["tasks", "options"] as const,
 };

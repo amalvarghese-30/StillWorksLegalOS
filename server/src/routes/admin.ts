@@ -1508,6 +1508,7 @@ router.get("/approvals", requireAdminOrPermission("approvals"), async (req: Requ
       DocumentModel.find(docFilter)
         .populate("uploadedBy", "name email role")
         .populate("caseId", "title number")
+        .populate("taskId", "title status number caseId")
         .populate("clientId", "name")
         .sort({ createdAt: -1 })
         .lean(),
@@ -1537,6 +1538,23 @@ router.get("/approvals", requireAdminOrPermission("approvals"), async (req: Requ
         .lean(),
     ]);
 
+    // Fetch documents attached to any of the tasks
+    const taskIds = tasks.map((t: any) => t._id);
+    const taskDocs = taskIds.length > 0 ? await DocumentModel.find({ taskId: { $in: taskIds } })
+      .select("_id name originalName size sizeFormatted mimeType state createdAt uploadedBy version taskId")
+      .populate("uploadedBy", "name email role")
+      .sort({ createdAt: -1 })
+      .lean() : [];
+
+    const taskDocsMap: Record<string, any[]> = {};
+    taskDocs.forEach((doc: any) => {
+      const tid = doc.taskId?.toString();
+      if (tid) {
+        if (!taskDocsMap[tid]) taskDocsMap[tid] = [];
+        taskDocsMap[tid].push(doc);
+      }
+    });
+
     // Map into normalized approval items
     const allItems: any[] = [];
 
@@ -1547,12 +1565,18 @@ router.get("/approvals", requireAdminOrPermission("approvals"), async (req: Requ
       if (statusParam !== "all" && itemStatus !== statusParam) return;
       const when = d.createdAt;
       const aging = computeAging(when, isPending);
+      const taskContext = d.taskId?.title ? ` for task "${d.taskId.title}"` : "";
+      const docCase = d.caseId
+        ? { _id: d.caseId._id, title: d.caseId.title, number: d.caseId.number }
+        : d.taskId?.caseId
+        ? { _id: d.taskId.caseId._id || d.taskId.caseId, title: d.taskId.caseId.title, number: d.taskId.caseId.number }
+        : null;
       allItems.push({
         _id: d._id.toString(),
         kind: "Document Upload",
         category: "documents",
         title: d.name,
-        context: `Uploaded for review (${d.sizeFormatted || "document"})`,
+        context: `Uploaded for review (${d.sizeFormatted || "document"})${taskContext}`,
         when,
         status: itemStatus,
         priority: "medium",
@@ -1573,7 +1597,8 @@ router.get("/approvals", requireAdminOrPermission("approvals"), async (req: Requ
           sizeFormatted: d.sizeFormatted,
           mimeType: d.mimeType,
           state: d.state,
-          case: d.caseId ? { _id: d.caseId._id, title: d.caseId.title, number: d.caseId.number } : null,
+          case: docCase,
+          task: d.taskId ? { _id: d.taskId._id, title: d.taskId.title, status: d.taskId.status } : null,
           client: d.clientId ? { _id: d.clientId._id, name: d.clientId.name } : null,
           uploadedBy: d.uploadedBy,
           createdAt: d.createdAt,
@@ -1660,6 +1685,8 @@ router.get("/approvals", requireAdminOrPermission("approvals"), async (req: Requ
       const totalItems = t.checklist?.length ?? 0;
       const doneItems = t.checklist?.filter((c: any) => c.done).length ?? 0;
       const checklistSummary = totalItems > 0 ? ` · ${doneItems}/${totalItems} subtasks completed` : "";
+      const attachedDocs = taskDocsMap[t._id.toString()] || [];
+      const docCountSummary = attachedDocs.length > 0 ? ` · ${attachedDocs.length} attached document${attachedDocs.length > 1 ? "s" : ""}` : "";
       const isPending = t.status === "pending_approval";
       const itemStatus = isPending ? "pending" : t.status === "completed" ? "approved" : "rejected";
       const when = t.submittedForApprovalAt || t.updatedAt || t.createdAt;
@@ -1670,7 +1697,7 @@ router.get("/approvals", requireAdminOrPermission("approvals"), async (req: Requ
         kind: "Task Completion",
         category: "tasks",
         title: t.title,
-        context: `Submitted by ${assignedUser?.name ?? "Assignee"}${checklistSummary}`,
+        context: `Submitted by ${assignedUser?.name ?? "Assignee"}${checklistSummary}${docCountSummary}`,
         when,
         status: itemStatus,
         priority: t.priority || "medium",
@@ -1685,6 +1712,8 @@ router.get("/approvals", requireAdminOrPermission("approvals"), async (req: Requ
         rejectionReason: t.rejectionReason,
         reviewedAt: t.approvedAt || t.rejectedAt || (itemStatus === "approved" ? t.completedAt : undefined),
         reviewedBy: t.rejectedBy ? { _id: t.rejectedBy.toString(), name: t.rejectedByName } : undefined,
+        documents: attachedDocs,
+        documentDetails: attachedDocs.length === 1 ? attachedDocs[0] : undefined,
         taskDetails: {
           _id: t._id.toString(),
           title: t.title,
@@ -1719,6 +1748,7 @@ router.get("/approvals", requireAdminOrPermission("approvals"), async (req: Requ
           checklist: t.checklist || [],
           remarks: t.remarks || [],
           assignmentHistory: t.assignmentHistory || [],
+          documents: attachedDocs,
         },
       });
     });

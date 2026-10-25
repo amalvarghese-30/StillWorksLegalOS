@@ -347,7 +347,7 @@ function ApprovalsPage() {
         } else {
           await updateDocument.mutateAsync({
             id: target.docId!,
-            data: { state: "Rejected" },
+            data: { state: "Rejected", rejectedReason: reason } as any,
           });
         }
       }

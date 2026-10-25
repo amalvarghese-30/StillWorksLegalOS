@@ -87,6 +87,22 @@ router.get("/", async (req: Request, res: Response) => {
     const currentUserId = req.userId?.toString();
     const isAdmin = req.user?.role === "admin";
 
+    // Pre-query accessible tasks for documents with taskId
+    const docTaskIds = rawDocuments.map((d: any) => d.taskId).filter(Boolean);
+    let accessibleTaskSet = new Set<string>();
+    if (!isAdmin && docTaskIds.length > 0 && currentUserId) {
+      const userAccessibleTasks = await Task.find({
+        _id: { $in: docTaskIds },
+        $or: [
+          { assignedTo: currentUserId },
+          { assignedUsers: currentUserId },
+          { assignedBy: currentUserId },
+          { createdBy: currentUserId },
+        ],
+      }).select("_id").lean();
+      accessibleTaskSet = new Set(userAccessibleTasks.map((t: any) => t._id.toString()));
+    }
+
     const documents = rawDocuments.map((doc: any) => {
       const userReqs = (doc.accessRequests || []).filter(
         (ar: any) => (ar?.userId?._id || ar?.userId)?.toString() === currentUserId
@@ -97,6 +113,9 @@ router.get("/", async (req: Request, res: Response) => {
       let accessStatus: "approved" | "pending" | "rejected" | "none" = "none";
 
       if (isAdmin) {
+        canAccess = true;
+        accessStatus = "approved";
+      } else if (doc.taskId && accessibleTaskSet.has(doc.taskId.toString())) {
         canAccess = true;
         accessStatus = "approved";
       } else if (doc.state === "Rejected") {
@@ -870,7 +889,14 @@ router.patch("/:id", requireResourceAccess("document"), async (req: Request, res
         documentId: document._id.toString(),
         name: document.name,
         state: document.state,
+        taskId: document.taskId ? document.taskId.toString() : undefined,
       });
+      if (document.taskId) {
+        io.emit("task:updated", {
+          taskId: document.taskId.toString(),
+          task: { _id: document.taskId.toString() },
+        });
+      }
     }
 
     res.json({ document });

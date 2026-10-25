@@ -148,7 +148,29 @@ export interface ApprovalItem {
       note?: string;
       timestamp: string;
     }>;
+    documents?: Array<{
+      _id: string;
+      name: string;
+      originalName?: string;
+      size?: number;
+      sizeFormatted?: string;
+      mimeType?: string;
+      state?: string;
+      createdAt?: string;
+      task?: { _id: string; title: string; status?: string } | null;
+    }>;
   };
+  documents?: Array<{
+    _id: string;
+    name: string;
+    originalName?: string;
+    size?: number;
+    sizeFormatted?: string;
+    mimeType?: string;
+    state?: string;
+    createdAt?: string;
+    task?: { _id: string; title: string; status?: string } | null;
+  }>;
   documentDetails?: {
     _id: string;
     name: string;
@@ -159,6 +181,7 @@ export interface ApprovalItem {
     state?: string;
     storagePath?: string;
     case?: { _id: string; title: string; number: string } | null;
+    task?: { _id: string; title: string; status?: string } | null;
     client?: { _id: string; name: string } | null;
     uploadedBy?: { _id: string; name: string; email?: string; role?: string } | null;
     createdAt?: string;

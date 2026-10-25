@@ -12,6 +12,7 @@ import { PendingTaskReminderAlerts } from "@/components/tasks/PendingTaskReminde
 import { notifications, getNotificationPermissionStatus, isElectron } from "@/platform";
 import { useSocketEvent } from "@/lib/socket";
 import { useQueryClient } from "@tanstack/react-query";
+import { taskKeys } from "@/services/tasks";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_shell")({
@@ -128,11 +129,15 @@ function ShellLayout() {
   useSocketEvent("document:created", () => {
     queryClient.invalidateQueries({ queryKey: ["documents"] });
     queryClient.invalidateQueries({ queryKey: ["reports"] });
+    queryClient.invalidateQueries({ queryKey: taskKeys.all });
+    queryClient.invalidateQueries({ queryKey: ["cases"] });
   });
 
   useSocketEvent("document:updated", () => {
     queryClient.invalidateQueries({ queryKey: ["documents"] });
     queryClient.invalidateQueries({ queryKey: ["reports"] });
+    queryClient.invalidateQueries({ queryKey: taskKeys.all });
+    queryClient.invalidateQueries({ queryKey: ["cases"] });
   });
 
   useSocketEvent<{ documentId: string }>("document:deleted", (payload) => {
@@ -141,6 +146,8 @@ function ShellLayout() {
     }
     queryClient.invalidateQueries({ queryKey: ["documents"] });
     queryClient.invalidateQueries({ queryKey: ["reports"] });
+    queryClient.invalidateQueries({ queryKey: taskKeys.all });
+    queryClient.invalidateQueries({ queryKey: ["cases"] });
   });
 
   if (!ready || !user) {

@@ -29,8 +29,11 @@ import {
   ShieldCheck,
   ChevronRight,
   ArrowRight,
+  CheckSquare,
 } from "lucide-react";
 import type { ApprovalItem } from "@/services/admin";
+import { downloadDocument } from "@/services/documents";
+import { toast } from "sonner";
 import { iconForKind, priorityBadge, agingBadge } from "./ApprovalTable";
 import { Link } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
@@ -66,6 +69,27 @@ export function ApprovalDetailDrawer({
   const req = item.requestDetails;
   const caseData = task?.case || doc?.case || item.caseDetails || (item.requestDetails as any)?.case;
   const clientData = task?.client || doc?.client;
+
+  const allDocs = (doc
+    ? [doc]
+    : task?.documents && task.documents.length > 0
+    ? task.documents
+    : item.documents || []) as any[];
+
+  const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
+
+  const handleDownloadDoc = async (docId: string, name?: string) => {
+    setDownloadingDocId(docId);
+    try {
+      await downloadDocument(docId);
+      toast.success(`Downloaded ${name || "document"}`);
+    } catch (err) {
+      console.error("Download failed:", err);
+      toast.error("Failed to download document");
+    } finally {
+      setDownloadingDocId(null);
+    }
+  };
 
   // Subtask statistics
   const totalSubtasks = task?.checklist?.length ?? 0;
@@ -104,11 +128,11 @@ export function ApprovalDetailDrawer({
             </div>
             <div>
               {displayStatus === "pending" ? (
-                <StatusPill tone="amber">Pending Review</StatusPill>
+                <StatusPill tone="warning">Pending Review</StatusPill>
               ) : displayStatus === "approved" ? (
-                <StatusPill tone="emerald">Approved & Completed</StatusPill>
+                <StatusPill tone="success">Approved & Completed</StatusPill>
               ) : (
-                <StatusPill tone="rose">Changes Requested</StatusPill>
+                <StatusPill tone="danger">Changes Requested</StatusPill>
               )}
             </div>
           </div>
@@ -169,9 +193,14 @@ export function ApprovalDetailDrawer({
               )}
               <TabsTrigger
                 value="documents"
-                className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none px-1 text-xs font-semibold text-muted-foreground hover:text-foreground"
+                className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none px-1 text-xs font-semibold text-muted-foreground hover:text-foreground flex items-center gap-1.5"
               >
                 Documents
+                {allDocs.length > 0 && (
+                  <span className="size-4 rounded-full bg-primary/10 text-primary text-[10px] font-bold grid place-items-center">
+                    {allDocs.length}
+                  </span>
+                )}
               </TabsTrigger>
               <TabsTrigger
                 value="activity"
@@ -324,9 +353,9 @@ export function ApprovalDetailDrawer({
                           <span className="font-semibold text-foreground group-hover:text-primary transition-colors truncate block">
                             {clientData.name}
                           </span>
-                          {clientData.phone && (
+                          {(clientData as any)?.phone && (
                             <span className="text-[11px] text-muted-foreground">
-                              {clientData.phone}
+                              {(clientData as any).phone}
                             </span>
                           )}
                         </div>
@@ -334,6 +363,24 @@ export function ApprovalDetailDrawer({
                       <ExternalLink size={14} className="text-muted-foreground group-hover:text-primary shrink-0" />
                     </Link>
                   ) : null}
+
+                  {doc?.task && (
+                    <div className="flex items-center justify-between p-3 rounded-xl border border-border/80 bg-card text-xs">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="grid size-7 place-items-center rounded-lg bg-amber-500/10 text-amber-600 shrink-0">
+                          <CheckSquare size={14} />
+                        </span>
+                        <div className="min-w-0">
+                          <span className="font-semibold text-foreground truncate block">
+                            Task: {doc.task.title}
+                          </span>
+                          <span className="text-[11px] text-muted-foreground capitalize">
+                            Status: {doc.task.status?.replace(/_/g, " ") || "Active"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -447,35 +494,57 @@ export function ApprovalDetailDrawer({
 
             {/* DOCUMENTS TAB */}
             <TabsContent value="documents" className="mt-0 space-y-4">
-              {doc ? (
-                <div className="p-4 rounded-xl border border-border/80 bg-card shadow-soft space-y-3">
-                  <div className="flex items-start gap-3">
-                    <span className="grid size-10 place-items-center rounded-lg bg-primary/10 text-primary shrink-0">
-                      <FileText size={20} />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <h4 className="font-semibold text-sm text-foreground truncate">
-                        {doc.name}
-                      </h4>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {doc.sizeFormatted || "Document"} • {doc.mimeType || "application/pdf"}
-                      </p>
-                    </div>
-                  </div>
+              {allDocs.length > 0 ? (
+                <div className="space-y-3">
+                  {allDocs.map((d: any) => {
+                    const docState = (d.state || "Pending").toLowerCase();
+                    const stateTone: "success" | "danger" | "warning" = docState === "approved" ? "success" : docState === "rejected" ? "danger" : "warning";
+                    const stateLabel = docState === "approved" ? "Approved" : docState === "rejected" ? "Rejected" : "Pending Review";
+                    return (
+                      <div
+                        key={d._id}
+                        className="p-4 rounded-xl border border-border/80 bg-card shadow-soft space-y-3"
+                      >
+                        <div className="flex items-start gap-3">
+                          <span className="grid size-10 place-items-center rounded-lg bg-primary/10 text-primary shrink-0">
+                            <FileText size={20} />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <h4 className="font-semibold text-sm text-foreground truncate" title={d.name}>
+                              {d.name}
+                            </h4>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {d.sizeFormatted || "Document"} • {d.mimeType || "application/pdf"}
+                              {d.createdAt && ` • ${new Intl.DateTimeFormat("en-IN", { dateStyle: "short" }).format(new Date(d.createdAt))}`}
+                            </p>
+                            {d.task?.title && (
+                              <p className="text-[11px] text-primary/80 mt-1 font-medium truncate">
+                                Attached to task: {d.task.title}
+                              </p>
+                            )}
+                          </div>
+                        </div>
 
-                  <div className="pt-2 border-t border-border/60 flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">
-                      Status: <strong className="text-foreground">{doc.state || "Pending Review"}</strong>
-                    </span>
-                    <a
-                      href={`/api/documents/${doc._id}/download`}
-                      download
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 shadow-soft transition-colors"
-                    >
-                      <Download size={13} />
-                      Download file
-                    </a>
-                  </div>
+                        <div className="pt-2 border-t border-border/60 flex items-center justify-between">
+                          <StatusPill tone={stateTone}>{stateLabel}</StatusPill>
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={downloadingDocId === d._id}
+                            onClick={() => handleDownloadDoc(d._id, d.name)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 h-8 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 shadow-soft transition-colors"
+                          >
+                            {downloadingDocId === d._id ? (
+                              <Loader2 size={13} className="animate-spin" />
+                            ) : (
+                              <Download size={13} />
+                            )}
+                            Download file
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="p-8 rounded-xl border border-dashed border-border text-center space-y-2">

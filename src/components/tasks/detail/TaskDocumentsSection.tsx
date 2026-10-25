@@ -214,10 +214,27 @@ export function TaskDocumentsSection({
                   >
                     {doc.name}
                   </p>
-                  <p className="text-[10px] text-muted-foreground">
-                    {doc.sizeFormatted || "File"} •{" "}
-                    {formatReadableDate(doc.createdAt) || "Recent"}
-                  </p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <p className="text-[10px] text-muted-foreground">
+                      {doc.sizeFormatted || "File"} •{" "}
+                      {formatReadableDate(doc.createdAt) || "Recent"}
+                    </p>
+                    {doc.state === "Pending" && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20">
+                        Pending Approval
+                      </span>
+                    )}
+                    {doc.state === "Approved" && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
+                        Approved
+                      </span>
+                    )}
+                    {doc.state === "Rejected" && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20">
+                        Rejected
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 

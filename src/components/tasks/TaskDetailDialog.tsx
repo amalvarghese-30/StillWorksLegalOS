@@ -396,7 +396,7 @@ function TaskDetailDialogInner({
       });
 
       queryClient.invalidateQueries({ queryKey: taskKeys.detail(activeTask._id) });
-      queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: taskKeys.all });
       toast.success("Task details saved successfully!");
     } catch (err) {
       console.error("Failed to save task details:", err);

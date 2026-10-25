@@ -219,7 +219,7 @@ export async function canAccessDocument(
   if (userPermissions && userPermissions["documents"] === false) return false;
 
   const doc = await DocumentModel.findById(documentId)
-    .select("uploadedBy caseId accessRequests state")
+    .select("uploadedBy caseId taskId accessRequests state")
     .lean();
   if (!doc) return false;
 
@@ -246,7 +246,13 @@ export async function canAccessDocument(
   // 1. Direct uploader (if not revoked)
   if (doc.uploadedBy?.toString() === userId) return true;
 
-  // 2. Case relationship (if not revoked)
+  // 2. Task relationship (if attached to a task the user can access)
+  if (doc.taskId) {
+    const hasTaskAccess = await canAccessTask(userId, userRole, doc.taskId.toString(), userPermissions);
+    if (hasTaskAccess) return true;
+  }
+
+  // 3. Case relationship (if not revoked)
   if (doc.caseId) {
     const hasCaseAccess = await canAccessCase(userId, userRole, doc.caseId.toString(), userPermissions);
     if (hasCaseAccess) return true;
