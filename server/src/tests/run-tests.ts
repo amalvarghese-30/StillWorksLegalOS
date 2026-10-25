@@ -4689,6 +4689,7 @@ const { NotificationService } = await import("../services/notifications.js");
     // deadline, assignment, notes, category path and checklist. These fields
     // must survive the onboarding/case-creation path just like standalone tasks.
     const s37InitialTaskDeadline = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const s37InitialHearingDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     const caseRes = await request(app)
       .post("/api/cases")
       .set("Authorization", `Bearer ${s37AdminToken}`)
@@ -4697,6 +4698,7 @@ const { NotificationService } = await import("../services/notifications.js");
         practice: "Real Estate & Land",
         category: "Litigation",
         mainCategory: "CIDCO Work",
+        nextHearing: s37InitialHearingDate.toISOString(),
         court: "High Court of Bombay",
         status: "Active",
         priority: "High",
@@ -4737,6 +4739,49 @@ const { NotificationService } = await import("../services/notifications.js");
     assert(new Date(s37InitialTask.deadline).getTime() === s37InitialTaskDeadline.getTime(), "S37-04e: Initial task preserves its own deadline");
     assert(String(s37InitialTask.assignedTo) === s37Emp._id.toString(), "S37-04f: Initial task preserves its selected assignee");
     assert(s37InitialTask.checklist?.[0]?.subItems?.[0]?.text === "Check survey number", "S37-04g: Initial task preserves nested checklist items");
+
+    // Hearing synchronization must update the designated next-hearing event,
+    // not overwrite a separate historical hearing belonging to this case.
+    let canonicalHearing = await CalendarEvent.findOne({
+      caseId: s37Case._id,
+      type: "hearing",
+      isNextHearing: true,
+    });
+    assert(Boolean(canonicalHearing), "S37-04h: Case creation creates a marked next-hearing event");
+    const historicalHearingDate = new Date(s37InitialHearingDate.getTime() + 15 * 24 * 60 * 60 * 1000);
+    const historicalHearing = await CalendarEvent.create({
+      title: "Historical hearing — preserve this record",
+      description: "Historical hearing used by the regression test",
+      type: "hearing",
+      start: historicalHearingDate,
+      end: historicalHearingDate,
+      allDay: false,
+      caseId: s37Case._id,
+      clientId: s37Client._id,
+      createdBy: s37Admin._id,
+      assignedTo: [s37Emp._id],
+      isNextHearing: false,
+    });
+    const updatedHearingDate = new Date(s37InitialHearingDate.getTime() + 5 * 24 * 60 * 60 * 1000);
+    const hearingUpdateRes = await request(app)
+      .patch(`/api/cases/${s37Case._id}`)
+      .set("Authorization", `Bearer ${s37AdminToken}`)
+      .send({ nextHearing: updatedHearingDate.toISOString() });
+    assert(hearingUpdateRes.status === 200, "S37-04i: Updating next hearing date succeeds");
+    canonicalHearing = await CalendarEvent.findOne({ caseId: s37Case._id, type: "hearing", isNextHearing: true });
+    const preservedHistoricalHearing = await CalendarEvent.findById(historicalHearing._id);
+    assert(
+      Boolean(canonicalHearing && canonicalHearing.start.getTime() === updatedHearingDate.getTime()),
+      "S37-04j: Next-hearing event is updated to the new date",
+    );
+    assert(
+      Boolean(preservedHistoricalHearing && preservedHistoricalHearing.start.getTime() === historicalHearingDate.getTime()),
+      "S37-04k: Updating next hearing does not alter historical hearing events",
+    );
+    assert(
+      (await CalendarEvent.countDocuments({ caseId: s37Case._id, type: "hearing", isNextHearing: true })) === 1,
+      "S37-04l: A case has exactly one canonical next-hearing event",
+    );
 
     // 3. Create Task under Case WITHOUT explicitly providing clientId
     const taskUnderCaseRes = await request(app)
