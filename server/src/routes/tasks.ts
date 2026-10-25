@@ -1291,6 +1291,14 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       }
     }
 
+    // Load the persisted task before resolving linked relationships so partial
+    // updates can preserve or derive the correct case/client pair.
+    const originalTask = await Task.findById(req.params["id"]);
+    if (!originalTask) {
+      res.status(404).json({ message: "Task not found" });
+      return;
+    }
+
     if (updates["caseId"] !== undefined) {
       const resolved = await resolveCaseId(updates["caseId"]);
       if (resolved.error) {
@@ -1306,6 +1314,47 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
         return;
       }
       updates["clientId"] = resolved.id;
+    }
+
+    const originalCaseId = originalTask.caseId ? originalTask.caseId.toString() : null;
+    const originalClientId = originalTask.clientId ? originalTask.clientId.toString() : null;
+    const targetCaseId = updates["caseId"] !== undefined
+      ? (updates["caseId"] ? String(updates["caseId"]) : null)
+      : originalCaseId;
+    let targetClientId = updates["clientId"] !== undefined
+      ? (updates["clientId"] ? String(updates["clientId"]) : null)
+      : originalClientId;
+
+    if (targetCaseId) {
+      const targetCase = await Case.findById(targetCaseId).select("parties").lean();
+      if (!targetCase) {
+        res.status(404).json({ message: "Linked case not found" });
+        return;
+      }
+      const targetCaseClientIds = new Set<string>(
+        (targetCase.parties ?? [])
+          .filter((party: any) => (party.type === "client" || party.type === "sub_client") && party.clientId)
+          .map((party: any) => String(party.clientId?._id ?? party.clientId)),
+      );
+      const primaryParty = targetCase.parties?.find(
+        (party: any) => (party.type === "client" || party.type === "sub_client") && party.clientId,
+      );
+      const primaryClientId = primaryParty?.clientId
+        ? String(primaryParty.clientId?._id ?? primaryParty.clientId)
+        : null;
+
+      const caseChanged = targetCaseId !== originalCaseId;
+      const explicitClientChange = updates["clientId"] !== undefined;
+      if (caseChanged && !explicitClientChange) {
+        targetClientId = primaryClientId;
+        updates["clientId"] = targetClientId;
+      } else if (targetCaseClientIds.size > 0 && targetClientId && !targetCaseClientIds.has(targetClientId)) {
+        res.status(400).json({ message: "The selected client is not linked to the selected case" });
+        return;
+      } else if (targetCaseClientIds.size > 0 && !targetClientId) {
+        res.status(400).json({ message: "Tasks linked to this case must retain a client linked to the case" });
+        return;
+      }
     }
 
     updates["updatedBy"] = req.userId;
@@ -1326,13 +1375,6 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
         res.status(403).json({ message: "Cannot link task to a client you don't have access to" });
         return;
       }
-    }
-
-    // Fetch the original task to detect changes
-    const originalTask = await Task.findById(req.params["id"]);
-    if (!originalTask) {
-      res.status(404).json({ message: "Task not found" });
-      return;
     }
 
     // Build human-readable audit diffs of modified fields
