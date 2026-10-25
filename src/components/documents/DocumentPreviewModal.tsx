@@ -76,29 +76,28 @@ export function DocumentPreviewModal({
       setResolvedMime(mime);
 
       const nameLower = (fileName || documentName || "").toLowerCase();
+      const extension = nameLower.includes(".") ? nameLower.slice(nameLower.lastIndexOf(".")) : "";
+      const isPdf = mime === "application/pdf" || extension === ".pdf";
+      const safeImageExtensions = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff"]);
+      const isSafeImage =
+        !mime.includes("svg") &&
+        (mime.startsWith("image/") || safeImageExtensions.has(extension));
+      const isText =
+        mime.startsWith("text/") ||
+        mime === "application/json" ||
+        [".txt", ".csv", ".json", ".log"].includes(extension);
 
-      // Determine preview strategy strictly by content type & safe extensions
-      if (
-        mime === "application/pdf" ||
-        (!mime && nameLower.endsWith(".pdf"))
-      ) {
+      // Legacy files often have application/octet-stream or missing MIME metadata.
+      // Use a strict safe extension allowlist, never preview SVG as active content.
+      if (isPdf) {
         const url = URL.createObjectURL(blob);
         setObjectUrl(url);
         setPreviewType("pdf");
-      } else if (
-        mime.startsWith("image/") &&
-        !mime.includes("svg") // Never render SVG as raw HTML/image to prevent XSS
-      ) {
+      } else if (isSafeImage) {
         const url = URL.createObjectURL(blob);
         setObjectUrl(url);
         setPreviewType("image");
-      } else if (
-        mime.startsWith("text/") ||
-        mime === "application/json" ||
-        nameLower.endsWith(".txt") ||
-        nameLower.endsWith(".csv") ||
-        nameLower.endsWith(".json")
-      ) {
+      } else if (isText) {
         const text = await blob.text();
         if (requestId !== previewRequestRef.current) return;
         setTextContent(text);
