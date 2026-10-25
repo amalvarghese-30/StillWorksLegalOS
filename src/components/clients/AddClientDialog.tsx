@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   X,
   Plus,
@@ -204,7 +204,15 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
       .filter(Boolean);
   }, [rawCategories]);
 
-  const selectedParent = categoryTree.find((c) => c.name === caseForm.mainCategory);
+  const normalizedTree = useMemo(() => {
+    const rawObj = categoryTree && typeof categoryTree === "object" ? (categoryTree as Record<string, unknown>) : null;
+    if (Array.isArray(categoryTree)) return categoryTree;
+    if (Array.isArray(rawObj?.tree)) return rawObj.tree as any[];
+    if (Array.isArray(rawObj?.data)) return rawObj.data as any[];
+    return [];
+  }, [categoryTree]);
+
+  const selectedParent = normalizedTree.find((c) => c?.name === caseForm.mainCategory);
   const availableSubCategories = selectedParent?.children ?? [];
 
   const updateCase = <K extends keyof CaseFormState>(key: K, value: CaseFormState[K]) => {
@@ -1524,9 +1532,9 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                         <span className="text-[11px] text-destructive">Failed to load categories</span>
                       )}
                     </div>
-                    {categoryTree.length > 0 ? (
+                    {normalizedTree.length > 0 ? (
                       <div className="flex flex-wrap gap-1.5 pt-1">
-                        {categoryTree.map((c) => {
+                        {normalizedTree.map((c) => {
                           const isSelected = caseForm.mainCategory === c.name;
                           return (
                             <button

@@ -143,7 +143,15 @@ export function AddCaseDialog({
       .filter(Boolean);
   }, [rawCategories]);
 
-  const selectedParent = categoryTree.find((c) => c.name === form.mainCategory);
+  const normalizedTree = useMemo(() => {
+    const rawObj = categoryTree && typeof categoryTree === "object" ? (categoryTree as Record<string, unknown>) : null;
+    if (Array.isArray(categoryTree)) return categoryTree;
+    if (Array.isArray(rawObj?.tree)) return rawObj.tree as any[];
+    if (Array.isArray(rawObj?.data)) return rawObj.data as any[];
+    return [];
+  }, [categoryTree]);
+
+  const selectedParent = normalizedTree.find((c) => c?.name === form.mainCategory);
   const availableSubCategories = selectedParent?.children ?? [];
 
   const staffList = taskOptions?.staff ?? [];
@@ -813,9 +821,9 @@ export function AddCaseDialog({
                     </span>
                   )}
                 </div>
-                {categoryTree.length > 0 ? (
+                {normalizedTree.length > 0 ? (
                   <div className="flex flex-wrap gap-2 pt-1">
-                    {categoryTree.map((c) => {
+                    {normalizedTree.map((c) => {
                       const isSelected = form.mainCategory === c.name;
                       return (
                         <button

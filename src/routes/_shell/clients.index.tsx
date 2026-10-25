@@ -221,7 +221,9 @@ function ClientsPage() {
         </div>
       )}
 
-      <AddClientDialog open={showAddDialog} onClose={() => setShowAddDialog(false)} />
+      {showAddDialog && (
+        <AddClientDialog open={showAddDialog} onClose={() => setShowAddDialog(false)} />
+      )}
     </div>
   );
 }
