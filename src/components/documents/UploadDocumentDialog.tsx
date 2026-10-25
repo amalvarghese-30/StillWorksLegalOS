@@ -59,13 +59,17 @@ export function UploadDocumentDialog({
 
   const displayedCases = preSelectedClientId
     ? allCases.filter((c: any) => {
-        const pMatch = c.parties?.some((p: any) => String(p.clientId) === String(preSelectedClientId));
-        const cMatch = String(c.clientId) === String(preSelectedClientId);
+        const normalizeId = (value: any) =>
+          value && typeof value === "object" ? String(value._id ?? "") : String(value ?? "");
+        const pMatch = c.parties?.some((p: any) => normalizeId(p.clientId) === String(preSelectedClientId));
+        const cMatch = normalizeId(c.clientId) === String(preSelectedClientId);
         return pMatch || cMatch;
       })
     : allCases;
 
-  const cases = displayedCases.length > 0 ? displayedCases : allCases;
+  // A client-scoped upload must not fall back to unrelated matters when the
+  // client has no accessible linked cases. Direct-to-client upload remains available.
+  const cases = preSelectedClientId ? displayedCases : allCases;
 
   const locked = uploadStatus === "uploading" || uploadStatus === "complete";
 
