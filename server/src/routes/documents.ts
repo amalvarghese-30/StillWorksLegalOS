@@ -709,10 +709,24 @@ router.post("/upload", async (req: Request, res: Response) => {
         caseNumber = caseDoc.number;
         nasFolder = getCaseFolderPath(caseNumber, meta.caseId);
 
-        // Derive client relationship from case parties if available
+        // Derive the permitted client relationships from this case's actual
+        // parties. Do not allow a clientId from an unrelated profile to be
+        // attached to a case document.
+        const casePartyClientIds = new Set<string>(
+          (caseDoc.parties ?? [])
+            .filter((p: any) => (p.type === "client" || p.type === "sub_client") && p.clientId)
+            .map((p: any) => String(p.clientId?._id ?? p.clientId)),
+        );
         const clientParty = caseDoc.parties?.find((p: any) => (p.type === "client" || p.type === "sub_client") && p.clientId);
         if (clientParty && clientParty.clientId && !linkedClientId) {
           linkedClientId = clientParty.clientId as any;
+        }
+        if (
+          meta.clientId &&
+          !casePartyClientIds.has(meta.clientId) &&
+          !(linkedTask?.clientId && String(linkedTask.clientId) === meta.clientId)
+        ) {
+          throw httpError(400, "The selected client is not linked to this case or task");
         }
       }
 
