@@ -66,6 +66,33 @@ function ShellLayout() {
     queryClient.invalidateQueries({ queryKey: ["notifications"] });
   });
 
+  useSocketEvent("calendar:event:created", () => {
+    queryClient.invalidateQueries({ queryKey: ["calendar"] });
+    queryClient.invalidateQueries({ queryKey: ["reports"] });
+  });
+
+  useSocketEvent("calendar:event:updated", () => {
+    queryClient.invalidateQueries({ queryKey: ["calendar"] });
+    queryClient.invalidateQueries({ queryKey: ["reports"] });
+  });
+
+  useSocketEvent("calendar:event:deleted", () => {
+    queryClient.invalidateQueries({ queryKey: ["calendar"] });
+    queryClient.invalidateQueries({ queryKey: ["reports"] });
+  });
+
+  useSocketEvent("case:created", () => {
+    queryClient.invalidateQueries({ queryKey: ["cases"] });
+    queryClient.invalidateQueries({ queryKey: ["calendar"] });
+    queryClient.invalidateQueries({ queryKey: ["reports"] });
+  });
+
+  useSocketEvent("case:updated", () => {
+    queryClient.invalidateQueries({ queryKey: ["cases"] });
+    queryClient.invalidateQueries({ queryKey: ["calendar"] });
+    queryClient.invalidateQueries({ queryKey: ["reports"] });
+  });
+
   useSocketEvent<{ taskId: string }>("task:deleted", (payload) => {
     if (payload?.taskId) {
       queryClient.removeQueries({ queryKey: ["tasks", payload.taskId] });

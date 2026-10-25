@@ -192,6 +192,8 @@ export function useCreateCase() {
       qc.invalidateQueries({ queryKey: caseKeys.all });
       qc.invalidateQueries({ queryKey: ["tasks"] });
       qc.invalidateQueries({ queryKey: ["reports"] });
+      qc.invalidateQueries({ queryKey: ["calendar"] });
+      qc.invalidateQueries({ queryKey: ["calendar", "events"] });
     },
   });
 }
@@ -203,6 +205,7 @@ export function useUpdateCase() {
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: caseKeys.detail(vars.id) });
       qc.invalidateQueries({ queryKey: caseKeys.all });
+      qc.invalidateQueries({ queryKey: ["calendar"] });
       qc.invalidateQueries({ queryKey: ["calendar", "events"] });
       qc.invalidateQueries({ queryKey: ["reports"] });
     },
@@ -215,6 +218,8 @@ export function useDeleteCase() {
     mutationFn: (id) => api.delete(`/cases/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: caseKeys.all });
+      qc.invalidateQueries({ queryKey: ["calendar"] });
+      qc.invalidateQueries({ queryKey: ["calendar", "events"] });
     },
   });
 }

@@ -26,6 +26,15 @@ import { useCategories, extractCategoryName } from "@/services/categories";
 import { useAuth } from "@/lib/auth";
 import { DiscardConfirmationDialog } from "@/components/ui/discard-confirmation-dialog";
 import { AssigneeMultiSelect } from "@/components/common/AssigneeMultiSelect";
+import { parseFlexibleDate, toSafeIso } from "@/lib/dates";
+
+function toDateInputValue(val: unknown): string {
+  if (!val) return "";
+  const d = parseFlexibleDate(val);
+  if (!d) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
 interface EditCaseDialogProps {
   open: boolean;
@@ -52,13 +61,7 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
   }, [record.assignedUsers, record.assignedTo]);
   const [assignedTo, setAssignedTo] = useState<string[]>(initialAssigned);
   const [tags, setTags] = useState<string>((record.tags || []).join(", "));
-  const [nextHearing, setNextHearing] = useState<string>(() => {
-    if (!record.nextHearing) return "";
-    const d = new Date(record.nextHearing);
-    if (isNaN(d.getTime())) return "";
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  });
+  const [nextHearing, setNextHearing] = useState<string>(() => toDateInputValue(record.nextHearing));
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
@@ -99,16 +102,7 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
             : [];
       setAssignedTo(freshAssigned);
       setTags((record.tags || []).join(", "));
-      setNextHearing(
-        record.nextHearing
-          ? (() => {
-              const d = new Date(record.nextHearing);
-              if (isNaN(d.getTime())) return "";
-              const pad = (n: number) => String(n).padStart(2, "0");
-              return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-            })()
-          : "",
-      );
+      setNextHearing(toDateInputValue(record.nextHearing));
       setErrorMsg(null);
       setShowDiscardConfirm(false);
     }
@@ -116,14 +110,7 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
 
   const isDirty = useMemo(() => {
     const origTags = (record.tags || []).join(", ");
-    const origHearing = record.nextHearing
-      ? (() => {
-          const d = new Date(record.nextHearing);
-          if (isNaN(d.getTime())) return "";
-          const pad = (n: number) => String(n).padStart(2, "0");
-          return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-        })()
-      : "";
+    const origHearing = toDateInputValue(record.nextHearing);
     const assignedChanged =
       assignedTo.length !== initialAssigned.length ||
       assignedTo.some((id) => !initialAssigned.includes(id));
@@ -191,7 +178,7 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
         localPath: localPath.trim(),
         status,
         priority,
-        nextHearing: nextHearing ? new Date(nextHearing).toISOString() : null,
+        nextHearing: nextHearing ? (toSafeIso(nextHearing) ?? null) : null,
         progress: Number(progress),
         tags: tagList,
       };

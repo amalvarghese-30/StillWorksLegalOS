@@ -10,6 +10,7 @@ import { useSocketEvent } from "@/lib/socket";
 import { useCases, useUpdateCase, caseKeys, type CaseRecord } from "@/services/cases";
 import { useEmployees } from "@/services/admin";
 import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
+import { formatSafeDate } from "@/lib/dates";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -57,9 +58,8 @@ function toneForStatus(s: string): "primary" | "success" | "warning" | "muted" |
   return map[s] ?? "primary";
 }
 
-function formatDate(iso: string | null): string {
-  if (!iso) return "Not scheduled";
-  return new Date(iso).toLocaleDateString("en-IN", {
+function formatDate(iso: string | null | undefined): string {
+  return formatSafeDate(iso, "Not scheduled", {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -107,12 +107,18 @@ function CaseCard({
         </div>
       </div>
 
-      <dl className="mt-5 grid grid-cols-2 gap-4">
+      <dl className="mt-5 grid grid-cols-2 sm:grid-cols-3 gap-3">
         <div>
           <dt className="text-caption text-muted-foreground">Category</dt>
           <dd className="mt-0.5 truncate text-helper font-medium">{c.category || c.practice || "General Legal"}</dd>
         </div>
         <div>
+          <dt className="text-caption text-muted-foreground">Next Hearing</dt>
+          <dd className="mt-0.5 truncate text-helper font-medium text-foreground">
+            {formatDate(c.nextHearing)}
+          </dd>
+        </div>
+        <div className="col-span-2 sm:col-span-1">
           <dt className="text-caption text-muted-foreground">Assigned</dt>
           <dd className="mt-0.5 truncate text-helper font-medium" title={c.assignedUsers && c.assignedUsers.length > 0 ? c.assignedUsers.map((u) => u.name).join(", ") : (c.assignedTo?.name ?? "Unassigned")}>
             {c.assignedUsers && c.assignedUsers.length > 0

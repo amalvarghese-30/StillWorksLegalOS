@@ -87,6 +87,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { EditCaseDialog } from "@/components/cases/EditCaseDialog";
+import { parseFlexibleDate, toSafeIso } from "@/lib/dates";
 import { AddTaskDialog } from "@/components/tasks/AddTaskDialog";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import { UploadDocumentDialog } from "@/components/documents/UploadDocumentDialog";
@@ -467,8 +468,8 @@ function CaseWorkspace() {
 
   const openHearingDialog = () => {
     if (record?.nextHearing) {
-      const d = new Date(record.nextHearing);
-      if (!isNaN(d.getTime())) {
+      const d = parseFlexibleDate(record.nextHearing);
+      if (d) {
         const pad = (n: number) => String(n).padStart(2, "0");
         setHearingDateInput(
           `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`,
@@ -494,13 +495,13 @@ function CaseWorkspace() {
       toast.error("Please pick a valid hearing date");
       return;
     }
-    const d = new Date(hearingDateInput);
-    if (isNaN(d.getTime())) {
+    const iso = toSafeIso(hearingDateInput);
+    if (!iso) {
       toast.error("Invalid hearing date format");
       return;
     }
     updateCase.mutate(
-      { id: caseId, data: { nextHearing: d.toISOString() } },
+      { id: caseId, data: { nextHearing: iso } },
       {
         onSuccess: () => {
           toast.success("Next hearing date saved and automatically marked on calendar!");

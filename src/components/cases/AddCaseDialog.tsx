@@ -530,7 +530,7 @@ export function AddCaseDialog({
         categoryPath: form.selectedSubCategories.length > 0 ? form.selectedSubCategories : undefined,
         courtCaseId: form.courtCaseId.trim() || undefined,
         countCaseNumber: form.countCaseNumber.trim() || form.courtCaseId.trim() || undefined,
-        nextHearing: form.nextHearing ? new Date(form.nextHearing).toISOString() : undefined,
+        nextHearing: form.nextHearing ? (toSafeIso(form.nextHearing) ?? undefined) : undefined,
         localPath: form.localPath.trim() || undefined,
         status: form.status,
         priority: form.priority,

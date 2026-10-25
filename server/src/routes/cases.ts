@@ -17,6 +17,59 @@ import { normaliseAssignees, buildInitialAssignmentHistory } from "../utils/assi
 import { recordCaseAuditAndAdminNotification } from "../utils/auditNotificationHelper.js";
 
 /**
+ * Robust flexible date parser supporting:
+ * - Date instances & numeric timestamps
+ * - DD-MM-YYYY, DD/MM/YYYY, DD.MM.YYYY
+ * - YYYY-MM-DD, YYYY/MM/DD
+ * - ISO-8601 strings
+ * Defaults court hearings to 10:00 AM local time if date-only is provided.
+ */
+function parseFlexibleDate(val: unknown): Date | null {
+  if (!val) return null;
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+  if (typeof val === "number") {
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof val !== "string") return null;
+  const s = val.trim();
+  if (!s) return null;
+
+  // DD-MM-YYYY or DD/MM/YYYY or DD.MM.YYYY
+  const dmyMatch = s.match(
+    /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?:[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/
+  );
+  if (dmyMatch) {
+    const day = parseInt(dmyMatch[1], 10);
+    const month = parseInt(dmyMatch[2], 10) - 1;
+    const year = parseInt(dmyMatch[3], 10);
+    const hours = dmyMatch[4] !== undefined ? parseInt(dmyMatch[4], 10) : 10;
+    const minutes = dmyMatch[5] !== undefined ? parseInt(dmyMatch[5], 10) : 0;
+    const seconds = dmyMatch[6] !== undefined ? parseInt(dmyMatch[6], 10) : 0;
+    const d = new Date(year, month, day, hours, minutes, seconds);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  // YYYY-MM-DD or YYYY/MM/DD
+  const ymdMatch = s.match(
+    /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/
+  );
+  if (ymdMatch) {
+    const year = parseInt(ymdMatch[1], 10);
+    const month = parseInt(ymdMatch[2], 10) - 1;
+    const day = parseInt(ymdMatch[3], 10);
+    const hours = ymdMatch[4] !== undefined ? parseInt(ymdMatch[4], 10) : 10;
+    const minutes = ymdMatch[5] !== undefined ? parseInt(ymdMatch[5], 10) : 0;
+    const seconds = ymdMatch[6] !== undefined ? parseInt(ymdMatch[6], 10) : 0;
+    const d = new Date(year, month, day, hours, minutes, seconds);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  const standard = new Date(s);
+  return isNaN(standard.getTime()) ? null : standard;
+}
+
+/**
  * Automatically synchronizes a case's nextHearing date with CalendarEvent.
  * If nextHearingDate is null or cleared, removes upcoming hearing event for this case.
  * If nextHearingDate is valid:
@@ -30,7 +83,7 @@ async function syncCaseNextHearingToCalendar({
   io,
 }: {
   caseRecord: any;
-  nextHearingDate: Date | null | undefined;
+  nextHearingDate: Date | string | null | undefined;
   userId: string;
   io?: any;
 }) {
@@ -56,16 +109,25 @@ async function syncCaseNextHearingToCalendar({
     return;
   }
 
-  const hearingDate = new Date(nextHearingDate);
-  if (isNaN(hearingDate.getTime())) return;
+  const hearingDate = parseFlexibleDate(nextHearingDate);
+  if (!hearingDate) return;
 
-  // Resolve assigned users
-  const assignedUsers: mongoose.Types.ObjectId[] =
-    Array.isArray(caseRecord.assignedUsers) && caseRecord.assignedUsers.length > 0
-      ? caseRecord.assignedUsers.map((u: any) => new mongoose.Types.ObjectId(u._id ?? u))
-      : caseRecord.assignedTo
-        ? [new mongoose.Types.ObjectId((caseRecord.assignedTo as any)._id ?? caseRecord.assignedTo)]
-        : [new mongoose.Types.ObjectId(userId)];
+  // Resolve assigned users: include assigned counsel as well as creator so it is visible in My Calendar
+  const assignedUserIds = new Set<string>();
+  if (Array.isArray(caseRecord.assignedUsers) && caseRecord.assignedUsers.length > 0) {
+    for (const u of caseRecord.assignedUsers) {
+      const id = String(u?._id ?? u);
+      if (id && mongoose.Types.ObjectId.isValid(id)) assignedUserIds.add(id);
+    }
+  }
+  if (caseRecord.assignedTo) {
+    const id = String((caseRecord.assignedTo as any)._id ?? caseRecord.assignedTo);
+    if (id && mongoose.Types.ObjectId.isValid(id)) assignedUserIds.add(id);
+  }
+  if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+    assignedUserIds.add(String(userId));
+  }
+  const assignedUsers = Array.from(assignedUserIds).map((id) => new mongoose.Types.ObjectId(id));
 
   // Resolve primary client ID
   const primaryClientParty = (caseRecord.parties || []).find(
@@ -534,10 +596,7 @@ router.post("/", async (req: Request, res: Response) => {
 
     let parsedNextHearing: Date | null = null;
     if (nextHearing) {
-      const d = new Date(nextHearing);
-      if (!isNaN(d.getTime())) {
-        parsedNextHearing = d;
-      }
+      parsedNextHearing = parseFlexibleDate(nextHearing);
     }
 
     // 3. Parties Resolution & Client Relationship Integrity (Phase 6)
@@ -1031,8 +1090,7 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
       if (!updates["nextHearing"]) {
         updates["nextHearing"] = null;
       } else {
-        const d = new Date(updates["nextHearing"] as string);
-        updates["nextHearing"] = !isNaN(d.getTime()) ? d : null;
+        updates["nextHearing"] = parseFlexibleDate(updates["nextHearing"]);
       }
     }
 

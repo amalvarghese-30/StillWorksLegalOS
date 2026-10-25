@@ -6,21 +6,73 @@
 // ---------------------------------------------------------------------------
 
 /**
+ * Parses any flexible date format into a valid Date object or null:
+ * - Date instances
+ * - Numeric timestamps
+ * - DD-MM-YYYY, DD/MM/YYYY, DD.MM.YYYY
+ * - YYYY-MM-DD, YYYY/MM/DD
+ * - ISO-8601 strings (e.g. 2026-11-16T10:00:00.000Z)
+ * Defaults time to 10:00 AM local time if only date portion is provided,
+ * preventing timezone shifts across dates.
+ */
+export function parseFlexibleDate(val: unknown): Date | null {
+  if (!val) return null;
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+  if (typeof val === "number") {
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof val !== "string") return null;
+  const s = val.trim();
+  if (!s) return null;
+
+  // DD-MM-YYYY or DD/MM/YYYY or DD.MM.YYYY
+  const dmyMatch = s.match(
+    /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?:[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/
+  );
+  if (dmyMatch) {
+    const day = parseInt(dmyMatch[1], 10);
+    const month = parseInt(dmyMatch[2], 10) - 1; // 0-indexed
+    const year = parseInt(dmyMatch[3], 10);
+    const hours = dmyMatch[4] !== undefined ? parseInt(dmyMatch[4], 10) : 10;
+    const minutes = dmyMatch[5] !== undefined ? parseInt(dmyMatch[5], 10) : 0;
+    const seconds = dmyMatch[6] !== undefined ? parseInt(dmyMatch[6], 10) : 0;
+    const d = new Date(year, month, day, hours, minutes, seconds);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  // YYYY-MM-DD or YYYY/MM/DD
+  const ymdMatch = s.match(
+    /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/
+  );
+  if (ymdMatch) {
+    const year = parseInt(ymdMatch[1], 10);
+    const month = parseInt(ymdMatch[2], 10) - 1;
+    const day = parseInt(ymdMatch[3], 10);
+    const hours = ymdMatch[4] !== undefined ? parseInt(ymdMatch[4], 10) : 10;
+    const minutes = ymdMatch[5] !== undefined ? parseInt(ymdMatch[5], 10) : 0;
+    const seconds = ymdMatch[6] !== undefined ? parseInt(ymdMatch[6], 10) : 0;
+    const d = new Date(year, month, day, hours, minutes, seconds);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  const standard = new Date(s);
+  return isNaN(standard.getTime()) ? null : standard;
+}
+
+/**
  * Validates whether a value is a non-null, valid date or ISO string.
  */
 export function isValidDate(val: unknown): boolean {
-  if (!val) return false;
-  const d = val instanceof Date ? val : new Date(val as string | number);
-  return !isNaN(d.getTime());
+  return parseFlexibleDate(val) !== null;
 }
 
 /**
  * Safely converts an input into a valid ISO string. Returns null if invalid.
  */
 export function toSafeIso(val: unknown): string | null {
-  if (!val) return null;
-  const d = val instanceof Date ? val : new Date(val as string | number);
-  return isNaN(d.getTime()) ? null : d.toISOString();
+  const d = parseFlexibleDate(val);
+  return d ? d.toISOString() : null;
 }
 
 /**
@@ -33,8 +85,8 @@ export function formatSafeDate(
   options?: Intl.DateTimeFormatOptions
 ): string {
   if (!val) return fallback;
-  const d = val instanceof Date ? val : new Date(val as string | number);
-  if (isNaN(d.getTime())) return fallback;
+  const d = parseFlexibleDate(val);
+  if (!d) return fallback;
 
   return d.toLocaleDateString(
     "en-IN",
@@ -47,8 +99,8 @@ export function formatSafeDate(
  */
 export function formatSafeDateTime(val: unknown, fallback = "—"): string {
   if (!val) return fallback;
-  const d = val instanceof Date ? val : new Date(val as string | number);
-  if (isNaN(d.getTime())) return fallback;
+  const d = parseFlexibleDate(val);
+  if (!d) return fallback;
 
   return d.toLocaleString("en-IN", {
     day: "numeric",
@@ -65,8 +117,8 @@ export function formatSafeDateTime(val: unknown, fallback = "—"): string {
  */
 export function formatSafeRelative(val: unknown, fallback = "—"): string {
   if (!val) return fallback;
-  const d = val instanceof Date ? val : new Date(val as string | number);
-  if (isNaN(d.getTime())) return fallback;
+  const d = parseFlexibleDate(val);
+  if (!d) return fallback;
 
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
@@ -81,4 +133,3 @@ export function formatSafeRelative(val: unknown, fallback = "—"): string {
 }
 
 export const formatReadableDate = formatSafeDate;
-

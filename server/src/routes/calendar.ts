@@ -45,8 +45,11 @@ router.get("/events", async (req: Request, res: Response) => {
       if (req.user!.role === "admin") {
         filter["assignedTo"] = employeeId;
       } else {
-        // Non-admins can only see their own events
-        filter["assignedTo"] = req.userId;
+        // Non-admins see events they are assigned to or created
+        filter["$or"] = [
+          { assignedTo: { $in: [req.userId] } },
+          { createdBy: req.userId },
+        ];
       }
     } else if (req.user!.role !== "admin") {
       const { getAccessibleCaseIds } = await import("../middleware/authorization.js");

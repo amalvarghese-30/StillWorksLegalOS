@@ -647,7 +647,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
             caseForm.courtCaseId.trim() ||
             undefined,
           nextHearing: caseForm.nextHearing
-            ? new Date(caseForm.nextHearing).toISOString()
+            ? (toSafeIso(caseForm.nextHearing) ?? undefined)
             : undefined,
           localPath: caseForm.localPath.trim() || undefined,
           status: caseForm.status,
@@ -900,7 +900,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                 caseForm.courtCaseId.trim() ||
                 undefined,
               nextHearing: caseForm.nextHearing
-                ? new Date(caseForm.nextHearing).toISOString()
+                ? (toSafeIso(caseForm.nextHearing) ?? undefined)
                 : undefined,
               localPath: caseForm.localPath.trim() || undefined,
               status: caseForm.status,
