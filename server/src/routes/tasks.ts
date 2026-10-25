@@ -1015,7 +1015,6 @@ router.post("/", async (req: Request, res: Response) => {
 
     // Attach only the prevalidated documents using a compare-and-set filter so
     // a concurrent reassignment cannot silently move an unrelated file.
-    const attachedDocumentIds: Types.ObjectId[] = [];
     try {
       for (const snapshot of taskDocumentsToAttach) {
         const attachFilter: Record<string, unknown> = {
@@ -1039,7 +1038,6 @@ router.post("/", async (req: Request, res: Response) => {
         if (!attached) {
           throw new Error("A selected document changed while the task was being created");
         }
-        attachedDocumentIds.push(snapshot._id);
       }
     } catch (associationError) {
       // Roll back only associations made by this request. Do not overwrite a
