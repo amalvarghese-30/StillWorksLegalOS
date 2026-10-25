@@ -569,6 +569,10 @@ async function run() {
     assert(logoutRes.status === 200, "AUTH-006: POST /api/auth/logout returns 200");
     const sessionInDb = await Session.findOne({ token: authToken });
     assert(sessionInDb?.isRevoked === true, "AUTH-007: Session marked isRevoked:true in MongoDB");
+    assert(
+      (logoutRes.headers["set-cookie"] || []).some((cookie: string) => cookie.startsWith("stillworks_refresh=") && cookie.includes("Max-Age=0")),
+      "AUTH-007A: Logout expires the httpOnly refresh cookie",
+    );
 
     // AUTH-008: Revoked token cannot access protected endpoint
     const postLogoutAccess = await request(app)
@@ -2206,6 +2210,13 @@ async function run() {
     assert(treeRes.status === 200, "SUITE23-CAT-002: GET /api/categories/tree returns 200");
     assert(Array.isArray(treeRes.body.tree) && treeRes.body.tree.length >= 9, "SUITE23-CAT-003: Category tree contains main categories");
 
+    // Non-admin users cannot create a top-level category or bypass the Other Works restriction.
+    const forbiddenCategoryRes = await request(app)
+      .post("/api/categories")
+      .set("Authorization", `Bearer ${empToken}`)
+      .send({ name: "Unauthorized Top-Level Category" });
+    assert(forbiddenCategoryRes.status === 403, "SUITE23-CAT-004: Non-admin category creation outside Other Works is forbidden");
+
     // 2. Priority Zero: Fix Client Not Found on Compound Name - Phone
     const jatinder = await Client.create({
       name: "Jatinder Singh",
@@ -2378,6 +2389,13 @@ async function run() {
       });
     assert(calEventRes.status === 201, "SUITE24-CAL-001: Calendar event created with remarks alias (201)");
     assert(calEventRes.body.event.description === "Hearing adjourned for commissioner report", "SUITE24-CAL-002: Remarks correctly persisted into event.description");
+
+    const clearEventEndRes = await request(app)
+      .patch(`/api/calendar/events/${calEventRes.body.event._id}`)
+      .set("Authorization", `Bearer ${empToken}`)
+      .send({ end: null });
+    assert(clearEventEndRes.status === 200, "SUITE24-CAL-003: Calendar event end date can be cleared");
+    assert(clearEventEndRes.body.event.end === null || clearEventEndRes.body.event.end === undefined, "SUITE24-CAL-004: Cleared calendar end date remains empty");
 
     // 5. Category 3-level tree construction verification
     const initialTreeRes = await request(app)
