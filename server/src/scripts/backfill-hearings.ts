@@ -15,6 +15,8 @@
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import { connectDB } from "../db.js";
+import { User } from "../models/User.js";
+import { Client } from "../models/Client.js";
 import { Case } from "../models/Case.js";
 import { CalendarEvent } from "../models/CalendarEvent.js";
 
@@ -96,11 +98,7 @@ async function main() {
     nextHearing: { $ne: null, $exists: true },
     status: { $nin: ["Archived"] },
     deletedAt: { $exists: false },
-  })
-    .populate("assignedTo", "_id name")
-    .populate("assignedUsers", "_id name")
-    .populate("parties.clientId", "_id name")
-    .lean();
+  }).lean();
 
   console.log(`[backfill] Found ${cases.length} case(s) with nextHearing date.`);
 
