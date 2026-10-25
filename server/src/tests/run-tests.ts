@@ -4685,7 +4685,10 @@ const { NotificationService } = await import("../services/notifications.js");
     const s37Client = clientRes.body.client;
     assert(Boolean(s37Client._id), "S37-02: Created client has valid _id");
 
-    // 2. Create Case linked to Client
+    // 2. Create a case with an initial subcategory task containing its own
+    // deadline, assignment, notes, category path and checklist. These fields
+    // must survive the onboarding/case-creation path just like standalone tasks.
+    const s37InitialTaskDeadline = new Date(Date.now() + 24 * 60 * 60 * 1000);
     const caseRes = await request(app)
       .post("/api/cases")
       .set("Authorization", `Bearer ${s37AdminToken}`)
@@ -4693,6 +4696,7 @@ const { NotificationService } = await import("../services/notifications.js");
         title: "Acme Infra Land Dispute Proceedings",
         practice: "Real Estate & Land",
         category: "Litigation",
+        mainCategory: "CIDCO Work",
         court: "High Court of Bombay",
         status: "Active",
         priority: "High",
@@ -4704,10 +4708,35 @@ const { NotificationService } = await import("../services/notifications.js");
             clientId: s37Client._id,
           },
         ],
+        tasks: [
+          {
+            title: "CIDCO Application",
+            description: "Prepare and file the CIDCO application.",
+            notes: "Confirm the survey records before filing.",
+            mainCategory: "CIDCO Work",
+            subCategory: "CIDCO Application",
+            category: "CIDCO Application",
+            priority: "High",
+            deadline: s37InitialTaskDeadline.toISOString(),
+            assignedTo: [s37Emp._id.toString()],
+            assignedUsers: [s37Emp._id.toString()],
+            checklist: [
+              { text: "Verify survey records", done: false, subItems: [{ text: "Check survey number", done: false }] },
+            ],
+          },
+        ],
       });
     assert(caseRes.status === 201, "S37-03: Case created linked to client -> 201");
     const s37Case = caseRes.body.case;
     assert(Boolean(s37Case._id), "S37-04: Created case has valid _id");
+    const s37InitialTask = await Task.findOne({ caseId: s37Case._id, title: "CIDCO Application" }).lean() as any;
+    assert(Boolean(s37InitialTask), "S37-04a: Case creation creates selected subcategory as an independent task");
+    assert(s37InitialTask.clientId?.toString() === s37Client._id.toString(), "S37-04b: Initial task inherits canonical clientId");
+    assert(s37InitialTask.mainCategory === "CIDCO Work" && s37InitialTask.subCategory === "CIDCO Application", "S37-04c: Initial task preserves main/subcategory fields");
+    assert(s37InitialTask.notes === "Confirm the survey records before filing.", "S37-04d: Initial task preserves internal notes");
+    assert(new Date(s37InitialTask.deadline).getTime() === s37InitialTaskDeadline.getTime(), "S37-04e: Initial task preserves its own deadline");
+    assert(String(s37InitialTask.assignedTo) === s37Emp._id.toString(), "S37-04f: Initial task preserves its selected assignee");
+    assert(s37InitialTask.checklist?.[0]?.subItems?.[0]?.text === "Check survey number", "S37-04g: Initial task preserves nested checklist items");
 
     // 3. Create Task under Case WITHOUT explicitly providing clientId
     const taskUnderCaseRes = await request(app)
