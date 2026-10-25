@@ -1187,8 +1187,40 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
 
     if (updates["parties"] !== undefined) {
       const primaryClientParty = (record.parties || []).find((p: any) => (p.type === "client" || p.type === "sub_client") && p.clientId);
-      const newClientId = primaryClientParty ? (primaryClientParty.clientId as any)._id ?? primaryClientParty.clientId : null;
-      await DocumentModel.updateMany({ caseId: record._id }, { clientId: newClientId });
+      const primaryClientIdValue = primaryClientParty
+        ? ((primaryClientParty.clientId as any)?._id ?? primaryClientParty.clientId)
+        : null;
+      const newClientId = primaryClientIdValue
+        ? new mongoose.Types.ObjectId(String(primaryClientIdValue))
+        : null;
+
+      // Keep the client relationship consistent across the case's linked tasks
+      // and task attachments. Case-level documents are updated separately so
+      // task-specific document relationships are never overwritten blindly.
+      const linkedTasks = await Task.find({ caseId: record._id, isDeleted: { $ne: true } })
+        .select("_id")
+        .lean();
+      const linkedTaskIds = linkedTasks.map((t) => t._id);
+
+      await Task.updateMany(
+        { _id: { $in: linkedTaskIds } },
+        { $set: { clientId: newClientId } },
+      );
+
+      await DocumentModel.updateMany(
+        {
+          caseId: record._id,
+          $or: [{ taskId: null }, { taskId: { $exists: false } }],
+        },
+        { $set: { clientId: newClientId } },
+      );
+
+      if (linkedTaskIds.length > 0) {
+        await DocumentModel.updateMany(
+          { caseId: record._id, taskId: { $in: linkedTaskIds } },
+          { $set: { clientId: newClientId } },
+        );
+      }
     }
 
     const updatedFields = Object.keys(updates).filter((k) => k !== "updatedBy");
