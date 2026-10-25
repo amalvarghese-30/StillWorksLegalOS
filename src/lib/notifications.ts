@@ -30,6 +30,14 @@ export interface Notification {
  * Hook to manage notifications state.
  * Provides notifications, unread count, sound controls, and socket-driven live alerts.
  */
+function rememberBoundedId(set: Set<string>, id: string): void {
+  set.add(id);
+  if (set.size > 500) {
+    const toRemove = Array.from(set).slice(0, 100);
+    toRemove.forEach((item) => set.delete(item));
+  }
+}
+
 export function useNotifications() {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -50,14 +58,6 @@ export function useNotifications() {
   const processedIdsRef = useRef<Set<string>>(new Set());
   const processedReadIdsRef = useRef<Set<string>>(new Set());
 
-  const rememberId = (set: Set<string>, id: string) => {
-    set.add(id);
-    if (set.size > 500) {
-      const toRemove = Array.from(set).slice(0, 100);
-      toRemove.forEach((item) => set.delete(item));
-    }
-  };
-
   const fetchNotifications = useCallback(async () => {
     if (!user) {
       notificationsRef.current = [];
@@ -76,8 +76,8 @@ export function useNotifications() {
         .filter((n) => Boolean(n._id));
       notificationsRef.current = list;
       for (const item of list) {
-        rememberId(processedIdsRef.current, item._id);
-        if (item.read) rememberId(processedReadIdsRef.current, item._id);
+        rememberBoundedId(processedIdsRef.current, item._id);
+        if (item.read) rememberBoundedId(processedReadIdsRef.current, item._id);
       }
       setNotifications(list);
 
@@ -104,7 +104,7 @@ export function useNotifications() {
     if (!normId || processedIdsRef.current.has(normId)) {
       return;
     }
-    rememberId(processedIdsRef.current, normId);
+    rememberBoundedId(processedIdsRef.current, normId);
 
     const norm: Notification = { ...notification, _id: normId, read: Boolean(notification.read) };
     if (!notificationsRef.current.some((item) => item._id === normId)) {
@@ -153,7 +153,7 @@ export function useNotifications() {
 
     const current = notificationsRef.current.find((item) => item._id === normId);
     if (updated.read && current && !current.read && !processedReadIdsRef.current.has(normId)) {
-      rememberId(processedReadIdsRef.current, normId);
+      rememberBoundedId(processedReadIdsRef.current, normId);
       setUnreadCount((prev) => Math.max(0, prev - 1));
     }
 
@@ -178,7 +178,7 @@ export function useNotifications() {
       });
       const current = notificationsRef.current.find((item) => item._id === notificationId);
       if (current && !current.read && !processedReadIdsRef.current.has(notificationId)) {
-        rememberId(processedReadIdsRef.current, notificationId);
+        rememberBoundedId(processedReadIdsRef.current, notificationId);
         setUnreadCount((prev) => Math.max(0, prev - 1));
       }
       notificationsRef.current = notificationsRef.current.map((item) =>
@@ -197,7 +197,7 @@ export function useNotifications() {
         method: "PATCH",
       });
       for (const item of notificationsRef.current) {
-        if (!item.read) rememberId(processedReadIdsRef.current, item._id);
+        if (!item.read) rememberBoundedId(processedReadIdsRef.current, item._id);
       }
       notificationsRef.current = notificationsRef.current.map((item) => ({ ...item, read: true }));
       setNotifications(notificationsRef.current);
@@ -222,7 +222,7 @@ export function useNotifications() {
         console.error("[useNotifications] Failed to delete notification:", err);
       }
     },
-    [notifications]
+    []
   );
 
   // Initial fetch when user is authenticated
