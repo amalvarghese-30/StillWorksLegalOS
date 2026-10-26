@@ -46,16 +46,23 @@ function requestGithubApi(apiPath, token, customTransport = https) {
 
 /**
  * Check if a Git tag exists using exact ref lookup.
+ * Returns refObj when tag exists.
  * Fails closed on any unexpected status code.
  */
-async function checkExactTagExists(owner, repo, tag, token, customTransport) {
+async function checkExactTagRef(owner, repo, tag, token, customTransport) {
   const cleanTag = tag.startsWith('v') ? tag.slice(1) : tag;
   const candidates = [`v${cleanTag}`, cleanTag];
 
   for (const candidate of candidates) {
     const res = await requestGithubApi(`/repos/${owner}/${repo}/git/ref/tags/${encodeURIComponent(candidate)}`, token, customTransport);
     if (res.statusCode === 200) {
-      return { exists: true, tag: candidate };
+      let refObj;
+      try {
+        refObj = JSON.parse(res.body);
+      } catch (e) {
+        throw new Error(`[release-safety] Malformed JSON from GitHub git ref API: ${e.message}`);
+      }
+      return { exists: true, tag: candidate, refObj };
     }
     if (res.statusCode === 404) {
       continue;
@@ -64,6 +71,56 @@ async function checkExactTagExists(owner, repo, tag, token, customTransport) {
     throw new Error(`[release-safety] GitHub API tag check failed with HTTP ${res.statusCode}: ${res.body.slice(0, 200)}`);
   }
   return { exists: false };
+}
+
+/**
+ * Legacy alias for backwards compatibility
+ */
+async function checkExactTagExists(owner, repo, tag, token, customTransport) {
+  const result = await checkExactTagRef(owner, repo, tag, token, customTransport);
+  return { exists: result.exists, tag: result.tag };
+}
+
+/**
+ * Resolve target commit SHA from a tag ref object.
+ * Handles both lightweight tags (type === 'commit') and annotated tags (type === 'tag').
+ */
+async function resolveTagCommitSha(owner, repo, refObj, token, customTransport) {
+  if (!refObj || !refObj.object) return null;
+  let current = refObj.object;
+  let depth = 0;
+  while (current && current.type === 'tag' && depth < 5) {
+    depth++;
+    const tagRes = await requestGithubApi(`/repos/${owner}/${repo}/git/tags/${current.sha}`, token, customTransport);
+    if (tagRes.statusCode !== 200) {
+      throw new Error(`[release-safety] Failed to dereference annotated tag object ${current.sha}: HTTP ${tagRes.statusCode} - ${tagRes.body.slice(0, 150)}`);
+    }
+    let tagObj;
+    try {
+      tagObj = JSON.parse(tagRes.body);
+    } catch (e) {
+      throw new Error(`[release-safety] Malformed JSON in annotated tag object ${current.sha}: ${e.message}`);
+    }
+    if (!tagObj || !tagObj.object) {
+      throw new Error(`[release-safety] Malformed annotated tag object ${current.sha}: missing target object`);
+    }
+    current = tagObj.object;
+  }
+  return current && current.sha ? current.sha : null;
+}
+
+/**
+ * Check if two git commit SHAs match (handling prefix or case differences)
+ */
+function isSameSha(shaA, shaB) {
+  if (!shaA || !shaB) return false;
+  const a = shaA.trim().toLowerCase();
+  const b = shaB.trim().toLowerCase();
+  if (a === b) return true;
+  if (a.length >= 7 && b.length >= 7 && (a.startsWith(b) || b.startsWith(a))) {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -123,9 +180,9 @@ async function getAllTags(owner, repo, token, customTransport) {
 }
 
 /**
- * Verify release artifacts exist and match version
+ * Verify release artifacts exist, match version, and are non-dummy real binaries
  */
-function validateReleaseArtifacts(releaseDir, version) {
+function validateReleaseArtifacts(releaseDir, version, options = {}) {
   const absDir = path.resolve(process.cwd(), releaseDir || 'release');
   if (!fs.existsSync(absDir)) {
     throw new Error(`[release-safety] Release output directory not found: ${absDir}`);
@@ -137,11 +194,23 @@ function validateReleaseArtifacts(releaseDir, version) {
     throw new Error(`[release-safety] Missing Windows installer package (.exe) in ${absDir}`);
   }
 
+  const minSize = options.minInstallerSizeBytes !== undefined ? options.minInstallerSizeBytes : 1024 * 1024; // 1 MB minimum
+  let hasValidInstaller = false;
   for (const installer of installers) {
     const stats = fs.statSync(path.join(absDir, installer));
     if (stats.size === 0) {
       throw new Error(`[release-safety] Windows installer package is empty (0 bytes): ${installer}`);
     }
+    if (stats.size < minSize) {
+      throw new Error(`[release-safety] Windows installer package '${installer}' is suspiciously small (${stats.size} bytes < ${minSize} bytes minimum). Real installers must not be stubs or placeholders.`);
+    }
+    if (installer.includes(version)) {
+      hasValidInstaller = true;
+    }
+  }
+
+  if (!hasValidInstaller) {
+    throw new Error(`[release-safety] No installer package found matching version '${version}' in filename (found: ${installers.join(', ')})`);
   }
 
   const latestYmlPath = path.join(absDir, 'latest.yml');
@@ -154,8 +223,29 @@ function validateReleaseArtifacts(releaseDir, version) {
     throw new Error(`[release-safety] latest.yml version mismatch: expected version '${version}', got:\n${latestYmlContent}`);
   }
 
+  if (!latestYmlContent.includes('path:') || !latestYmlContent.includes('sha512:')) {
+    throw new Error(`[release-safety] latest.yml is missing required electron-builder metadata fields (path, sha512)`);
+  }
+
   console.log(`✓ [release-safety] Verified installer (${installers.join(', ')}) and valid latest.yml for v${version}`);
   return { valid: true, installers, latestYmlPath };
+}
+
+/**
+ * Parse git reference to determine if it is a version tag
+ */
+function parseTargetTag(ref) {
+  if (!ref) return { isTag: false, tagName: null };
+  const clean = ref.trim();
+  if (clean.startsWith('refs/tags/')) {
+    return { isTag: true, tagName: clean.replace('refs/tags/', '') };
+  }
+  if (!clean.startsWith('refs/heads/') && !clean.startsWith('refs/pull/')) {
+    if (/^v?\d+\.\d+\.\d+/.test(clean)) {
+      return { isTag: true, tagName: clean };
+    }
+  }
+  return { isTag: false, tagName: null };
 }
 
 /**
@@ -164,19 +254,14 @@ function validateReleaseArtifacts(releaseDir, version) {
 function validateTagMatchesVersion(version, refOrTag) {
   if (!refOrTag) return true; // No tag provided to compare against (e.g. pre-tag dry-run)
 
-  let cleanTag = refOrTag.trim();
-  // In GitHub Actions, branch or PR builds set GITHUB_REF to refs/heads/... or refs/pull/...
-  // These are not release tags and should not be validated as tag names
-  if (cleanTag.startsWith('refs/heads/') || cleanTag.startsWith('refs/pull/')) {
-    return true;
-  }
-  if (cleanTag.startsWith('refs/tags/')) {
-    cleanTag = cleanTag.replace('refs/tags/', '');
+  const { isTag, tagName } = parseTargetTag(refOrTag);
+  if (!isTag) {
+    return true; // Non-tag branch or PR ref
   }
 
   const expectedVTag = `v${version}`;
-  if (cleanTag !== expectedVTag && cleanTag !== version) {
-    throw new Error(`[release-safety] Tag mismatch: Git tag '${cleanTag}' does not match package.json version '${version}' (expected '${expectedVTag}')`);
+  if (tagName !== expectedVTag) {
+    throw new Error(`[release-safety] Tag mismatch: Git tag '${tagName}' does not match package.json version '${version}' (expected '${expectedVTag}')`);
   }
 
   return true;
@@ -194,59 +279,101 @@ async function validateReleaseVersion(options = {}) {
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
   const version = options.versionOverride || pkg.version;
   const tagName = `v${version}`;
-  const owner = options.owner || 'amalvarghese-30';
-  const repo = options.repo || 'StillWorksLegalOS';
+
+  let defaultOwner = 'amalvarghese-30';
+  let defaultRepo = 'StillWorksLegalOS';
+  if (process.env.GITHUB_REPOSITORY && process.env.GITHUB_REPOSITORY.includes('/')) {
+    const parts = process.env.GITHUB_REPOSITORY.split('/');
+    defaultOwner = parts[0];
+    defaultRepo = parts[1];
+  }
+  const owner = options.owner || defaultOwner;
+  const repo = options.repo || defaultRepo;
   const token = options.token || process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
   const isDryRun = options.isDryRun ?? (process.argv.includes('--dry-run') || process.env.DRY_RUN === 'true');
   const checkArtifacts = options.checkArtifacts ?? (process.argv.includes('--check-artifacts') || process.env.CHECK_ARTIFACTS === 'true');
-  const targetTag = options.targetTag !== undefined
-    ? options.targetTag
-    : (process.env.GITHUB_REF && process.env.GITHUB_REF.startsWith('refs/tags/') ? process.env.GITHUB_REF : null);
   const transport = options.transport || https;
 
-  console.log(`[release-safety] Validating release candidate: ${tagName} (dryRun: ${isDryRun}, checkArtifacts: ${checkArtifacts})`);
+  const targetRef = options.targetRef !== undefined
+    ? options.targetRef
+    : (options.targetTag !== undefined ? options.targetTag : (process.env.GITHUB_REF || null));
+  const expectedCommitSha = options.expectedCommitSha || options.expectedSha || process.env.GITHUB_SHA || null;
 
-  // 1. Verify tag matches package version if tag reference is present
-  if (targetTag) {
-    validateTagMatchesVersion(version, targetTag);
-    console.log(`✓ [release-safety] Git tag '${targetTag}' matches package.json version '${version}'`);
+  console.log(`[release-safety] Validating release candidate: ${tagName} (ref: ${targetRef || 'none'}, dryRun: ${isDryRun}, checkArtifacts: ${checkArtifacts})`);
+
+  const { isTag, tagName: triggeringTag } = parseTargetTag(targetRef);
+
+  // 1. If targetRef is a tag, validate that the tag exactly matches v${package.json.version}
+  if (isTag) {
+    validateTagMatchesVersion(version, targetRef);
+    console.log(`✓ [release-safety] Triggering tag '${triggeringTag}' matches package.json version '${version}'`);
   }
 
-  // 2. Exact check against GitHub API
-  const [exactTagResult, exactReleaseResult] = await Promise.all([
-    checkExactTagExists(owner, repo, tagName, token, transport),
-    checkExactReleaseExists(owner, repo, tagName, token, transport),
-  ]);
-
-  // 3. Fallback to list check for additional coverage
-  const allTags = await getAllTags(owner, repo, token, transport);
-  const tagInList = allTags.includes(tagName) || allTags.includes(version);
-
-  const tagExists = exactTagResult.exists || tagInList;
-  const releaseExists = exactReleaseResult.exists;
-
-  if (tagExists || releaseExists) {
-    const reasons = [
-      tagExists ? `Git tag '${tagName}' already exists on GitHub` : null,
-      releaseExists ? `GitHub Release '${tagName}' already exists` : null,
-    ].filter(Boolean);
-
-    const errorMsg = `[release-safety] REJECTED: ${reasons.join(' and ')}. Duplicate versions cannot be released without an explicit version increment in package.json. Force-updating or deleting published releases is strictly forbidden.`;
-
+  // 2. Exact check against GitHub API for existing Release
+  const exactReleaseResult = await checkExactReleaseExists(owner, repo, tagName, token, transport);
+  if (exactReleaseResult.exists) {
+    const errorMsg = `[release-safety] REJECTED: GitHub Release '${tagName}' already exists. Published releases cannot be overwritten or deleted. Increment the version in package.json to release a new build.`;
     if (!isDryRun) {
       throw new Error(errorMsg);
     } else {
       console.log(`[release-safety] (Dry-run mode detected existing release safely: non-fatal)`);
-      return { allowed: false, reasons, version, tagName };
+      return { allowed: false, reasons: [`GitHub Release '${tagName}' already exists`], version, tagName };
+    }
+  }
+
+  // 3. Exact check against GitHub API for existing Tag
+  const exactTagResult = await checkExactTagRef(owner, repo, tagName, token, transport);
+
+  if (isTag) {
+    // This run was triggered by a tag push
+    if (!exactTagResult.exists) {
+      // The tag that supposedly triggered the build does not exist on GitHub
+      throw new Error(`[release-safety] Triggering tag '${triggeringTag}' not found on GitHub remote repository`);
+    }
+
+    // Verify tag resolves to expected commit
+    const resolvedSha = await resolveTagCommitSha(owner, repo, exactTagResult.refObj, token, transport);
+    if (!resolvedSha) {
+      throw new Error(`[release-safety] Unable to resolve target commit for triggering tag '${triggeringTag}'`);
+    }
+
+    if (expectedCommitSha && !isSameSha(resolvedSha, expectedCommitSha)) {
+      throw new Error(`[release-safety] REJECTED: Triggering tag '${triggeringTag}' resolves to commit '${resolvedSha}', which does not match expected commit '${expectedCommitSha}'. Release tags must resolve to the commit being built.`);
+    }
+
+    console.log(`✓ [release-safety] Validated triggering tag '${triggeringTag}' resolves to expected commit '${resolvedSha}'`);
+  } else {
+    // This run was NOT triggered by a tag (e.g. workflow_dispatch from branch main)
+    // If the tag already exists, this is a duplicate version!
+    if (exactTagResult.exists) {
+      const errorMsg = `[release-safety] REJECTED: Git tag '${tagName}' already exists on GitHub. Manual release dispatch from a branch cannot reuse an existing version. Increment the version in package.json.`;
+      if (!isDryRun) {
+        throw new Error(errorMsg);
+      } else {
+        console.log(`[release-safety] (Dry-run mode detected existing tag safely: non-fatal)`);
+        return { allowed: false, reasons: [`Git tag '${tagName}' already exists on GitHub`], version, tagName };
+      }
+    }
+
+    // Fallback paginated check across tag list for manual dispatch
+    const allTags = await getAllTags(owner, repo, token, transport);
+    if (allTags.includes(tagName) || allTags.includes(version)) {
+      const errorMsg = `[release-safety] REJECTED: Version '${tagName}' found in remote tag list. Duplicate versions cannot be released without an explicit version increment in package.json.`;
+      if (!isDryRun) {
+        throw new Error(errorMsg);
+      } else {
+        console.log(`[release-safety] (Dry-run mode detected existing tag safely: non-fatal)`);
+        return { allowed: false, reasons: [`Version '${tagName}' exists in remote tag list`], version, tagName };
+      }
     }
   }
 
   // 4. Verify release artifacts if requested
   if (checkArtifacts) {
-    validateReleaseArtifacts(options.releaseDir || 'release', version);
+    validateReleaseArtifacts(options.releaseDir || 'release', version, options);
   }
 
-  console.log(`✓ [release-safety] Version ${tagName} is unique and valid for release.`);
+  console.log(`✓ [release-safety] Version ${tagName} is validated and safe for release.`);
   return { allowed: true, version, tagName };
 }
 
@@ -261,7 +388,11 @@ module.exports = {
   validateReleaseVersion,
   validateReleaseArtifacts,
   validateTagMatchesVersion,
+  parseTargetTag,
+  resolveTagCommitSha,
+  checkExactTagRef,
   checkExactTagExists,
   checkExactReleaseExists,
   getAllTags,
+  isSameSha,
 };

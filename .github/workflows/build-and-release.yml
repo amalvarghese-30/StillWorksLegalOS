@@ -56,6 +56,9 @@ jobs:
           npx electron-builder --config electron-builder.json --win --publish never
 
       - name: Verify Release Artifacts & Updater Metadata
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
         run: |
           node scripts/validate-release-version.cjs --check-artifacts
 
