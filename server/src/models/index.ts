@@ -50,3 +50,7 @@ export type { IGmailAccount } from "./GmailAccount.js";
 export { TaskReminderState } from "./TaskReminderState.js";
 export type { ITaskReminderState } from "./TaskReminderState.js";
 
+export { HearingRecord } from "./HearingRecord.js";
+export type { IHearingRecord, HearingStatus } from "./HearingRecord.js";
+
+

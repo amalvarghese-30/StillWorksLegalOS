@@ -943,7 +943,9 @@ router.post("/", async (req: Request, res: Response) => {
         res.status(400).json({ message: "documentIds must be an array" });
         return;
       }
-      const rawDocumentIds = [...new Set(req.body.documentIds.map((id: unknown) => String(id)))];
+      const rawDocumentIds: string[] = Array.from(
+        new Set((req.body.documentIds as unknown[]).map((id: unknown) => String(id))),
+      );
       if (rawDocumentIds.some((id: string) => !Types.ObjectId.isValid(id))) {
         res.status(400).json({ message: "One or more document IDs are invalid" });
         return;
