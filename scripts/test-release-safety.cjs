@@ -58,6 +58,10 @@ async function runTests() {
   console.log('  TESTING RELEASE SAFETY VALIDATOR (FAIL-CLOSED)  ');
   console.log('==================================================\n');
 
+  // Preserve ambient environment
+  const originalGithubRef = process.env.GITHUB_REF;
+  delete process.env.GITHUB_REF;
+
   let passed = 0;
   let failed = 0;
 
@@ -99,6 +103,12 @@ async function runTests() {
       () => validateTagMatchesVersion('1.0.95', 'refs/tags/v2.0.0'),
       /Tag mismatch/
     );
+  });
+
+  test('REL-TAG-003: Branch and PR refs (refs/pull/... or refs/heads/...) are recognized as non-tag builds', () => {
+    assert.strictEqual(validateTagMatchesVersion('1.0.95', 'refs/pull/4/merge'), true);
+    assert.strictEqual(validateTagMatchesVersion('1.0.95', 'refs/heads/main'), true);
+    assert.strictEqual(validateTagMatchesVersion('1.0.95', 'refs/heads/fix/release-validation-hardening'), true);
   });
 
   // 2. Fail closed on API 500 error
@@ -267,6 +277,10 @@ async function runTests() {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  if (originalGithubRef !== undefined) {
+    process.env.GITHUB_REF = originalGithubRef;
+  }
 
   console.log('\n========================================');
   console.log(`Release Safety Tests: ${passed} Passed, ${failed} Failed`);

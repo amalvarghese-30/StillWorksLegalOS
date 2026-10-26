@@ -165,6 +165,11 @@ function validateTagMatchesVersion(version, refOrTag) {
   if (!refOrTag) return true; // No tag provided to compare against (e.g. pre-tag dry-run)
 
   let cleanTag = refOrTag.trim();
+  // In GitHub Actions, branch or PR builds set GITHUB_REF to refs/heads/... or refs/pull/...
+  // These are not release tags and should not be validated as tag names
+  if (cleanTag.startsWith('refs/heads/') || cleanTag.startsWith('refs/pull/')) {
+    return true;
+  }
   if (cleanTag.startsWith('refs/tags/')) {
     cleanTag = cleanTag.replace('refs/tags/', '');
   }
@@ -194,7 +199,9 @@ async function validateReleaseVersion(options = {}) {
   const token = options.token || process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
   const isDryRun = options.isDryRun ?? (process.argv.includes('--dry-run') || process.env.DRY_RUN === 'true');
   const checkArtifacts = options.checkArtifacts ?? (process.argv.includes('--check-artifacts') || process.env.CHECK_ARTIFACTS === 'true');
-  const targetTag = options.targetTag || process.env.GITHUB_REF || null;
+  const targetTag = options.targetTag !== undefined
+    ? options.targetTag
+    : (process.env.GITHUB_REF && process.env.GITHUB_REF.startsWith('refs/tags/') ? process.env.GITHUB_REF : null);
   const transport = options.transport || https;
 
   console.log(`[release-safety] Validating release candidate: ${tagName} (dryRun: ${isDryRun}, checkArtifacts: ${checkArtifacts})`);
