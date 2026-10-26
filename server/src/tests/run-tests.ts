@@ -14,6 +14,7 @@ import { Server as SocketIOServer } from "socket.io";
 // Set environment before imports
 process.env["JWT_SECRET"] = "test-secret-that-is-at-least-64-characters-long-for-test-runs-12345";
 process.env["NODE_ENV"] = "test";
+process.env["TZ"] = "Asia/Kolkata"; // Match the firm's calendar timezone in date-grouping regression tests.
 
 const { User } = await import("../models/User.js");
 const { Session } = await import("../models/Session.js");
