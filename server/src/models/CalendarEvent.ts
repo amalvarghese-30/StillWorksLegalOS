@@ -26,6 +26,9 @@ export interface ICalendarEvent extends Document {
   /** True only for the canonical CalendarEvent representing Case.nextHearing. */
   isNextHearing?: boolean;
   color?: string;
+  hearingStatus?: "scheduled" | "held" | "rescheduled" | "cancelled";
+  hearingRecordId?: mongoose.Types.ObjectId | null;
+  remarks?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -51,8 +54,15 @@ const CalendarEventSchema = new Schema<ICalendarEvent>(
     clientId: { type: Schema.Types.ObjectId, ref: "Client" },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     assignedTo: { type: [Schema.Types.ObjectId], ref: "User", default: [] },
-    isNextHearing: { type: Boolean, default: false, index: true },
     color: { type: String, default: "" },
+    isNextHearing: { type: Boolean, default: false, index: true },
+    hearingStatus: {
+      type: String,
+      enum: ["scheduled", "held", "rescheduled", "cancelled"],
+      default: "scheduled",
+    },
+    hearingRecordId: { type: Schema.Types.ObjectId, ref: "HearingRecord", default: null },
+    remarks: { type: String, default: "" },
   },
   {
     timestamps: true,
@@ -71,8 +81,9 @@ const CalendarEventSchema = new Schema<ICalendarEvent>(
 
 CalendarEventSchema.index({ start: 1, end: 1 });
 CalendarEventSchema.index({ assignedTo: 1, start: 1 });
+
 // At most one canonical "next hearing" event per case. Historical hearing events
-// remain unmarked and are deliberately preserved when the next date changes.
+// remain unmarked (isNextHearing: false) and are deliberately preserved when the next date changes.
 CalendarEventSchema.index(
   { caseId: 1 },
   {

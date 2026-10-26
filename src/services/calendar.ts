@@ -20,6 +20,10 @@ export interface CalendarEvent {
   createdBy: { _id: string; name: string };
   assignedTo?: { _id: string; name: string }[];
   color?: string;
+  isNextHearing?: boolean;
+  hearingStatus?: "scheduled" | "held" | "rescheduled" | "cancelled";
+  hearingRecordId?: string;
+  remarks?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -38,6 +42,14 @@ export interface CreateEventPayload {
   caseId?: string;
   clientId?: string;
   assignedTo?: string[];
+  remarks?: string;
+}
+
+export interface RecordHearingPayload {
+  status: "held" | "rescheduled" | "cancelled" | "scheduled";
+  remarks?: string;
+  nextHearingDate?: string | null;
+  hearingDate?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -73,10 +85,38 @@ export function useCreateEvent() {
 
 export function useUpdateEvent() {
   const qc = useQueryClient();
-  return useMutation<{ event: CalendarEvent }, Error, { id: string; data: Partial<CreateEventPayload> }>({
+  return useMutation<
+    { event: CalendarEvent },
+    Error,
+    { id: string; data: Partial<CreateEventPayload> }
+  >({
     mutationFn: ({ id, data }) => api.patch(`/calendar/events/${id}`, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: calendarKeys.all });
+      qc.invalidateQueries({ queryKey: ["cases"] });
+      qc.invalidateQueries({ queryKey: ["reports"] });
+    },
+  });
+}
+
+export function useRecordHearing() {
+  const qc = useQueryClient();
+  return useMutation<
+    {
+      success: boolean;
+      hearingRecord: Record<string, unknown>;
+      currentEvent: CalendarEvent;
+      nextEvent?: CalendarEvent;
+      case?: Record<string, unknown>;
+    },
+    Error,
+    { eventId: string; data: RecordHearingPayload }
+  >({
+    mutationFn: ({ eventId, data }) => api.post(`/calendar/events/${eventId}/record-hearing`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: calendarKeys.all });
+      qc.invalidateQueries({ queryKey: ["cases"] });
+      qc.invalidateQueries({ queryKey: ["reports"] });
     },
   });
 }
@@ -87,6 +127,8 @@ export function useDeleteEvent() {
     mutationFn: (id) => api.delete(`/calendar/events/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: calendarKeys.all });
+      qc.invalidateQueries({ queryKey: ["cases"] });
+      qc.invalidateQueries({ queryKey: ["reports"] });
     },
   });
 }
