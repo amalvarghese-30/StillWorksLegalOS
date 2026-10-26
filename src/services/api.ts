@@ -175,6 +175,8 @@ export async function clearTokens(): Promise<void> {
   if (typeof window !== "undefined") {
     try {
       window.localStorage.removeItem(REMEMBER_ME_KEY);
+      window.localStorage.removeItem("stillworks.session");
+      window.sessionStorage.removeItem("stillworks.session");
       // Clean up any historical keys from older releases
       window.localStorage.removeItem("stillworks.refresh_token");
       window.sessionStorage.removeItem("stillworks.refresh_token");
@@ -268,7 +270,11 @@ export async function refreshAccessToken(): Promise<string | null> {
         });
 
         if (!res.ok) {
-          await clearTokens();
+          if (res.status === 401 || res.status === 403) {
+            await clearTokens();
+          } else {
+            accessToken = null;
+          }
           return null;
         }
 
@@ -285,7 +291,13 @@ export async function refreshAccessToken(): Promise<string | null> {
       });
 
       if (!res.ok) {
-        await clearTokens();
+        if (res.status === 401 || res.status === 403) {
+          // Explicit authentication failure: refresh token missing, expired, revoked, or invalid
+          await clearTokens();
+        } else {
+          // Transient 5xx or server gateway error: clear in-memory token but do not wipe session hints
+          accessToken = null;
+        }
         return null;
       }
 
@@ -293,7 +305,8 @@ export async function refreshAccessToken(): Promise<string | null> {
       await persistTokens(data.accessToken);
       return data.accessToken;
     } catch {
-      await clearTokens();
+      // Network/offline error: do not wipe persistent session hints on temporary network loss
+      accessToken = null;
       return null;
     } finally {
       isRefreshing = false;

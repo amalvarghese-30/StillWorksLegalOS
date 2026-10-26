@@ -380,9 +380,9 @@ if (webDistPath && existsSync(webDistPath)) {
 // HTTP server + Socket.io
 // ---------------------------------------------------------------------------
 
-const httpServer = createServer(app);
+export const httpServer = createServer(app);
 
-const io = new Server(httpServer, {
+export const io = new Server(httpServer, {
   cors: {
     origin: (origin, callback) => {
       if (isOriginAllowed(origin)) {
@@ -393,7 +393,7 @@ const io = new Server(httpServer, {
     credentials: true,
     methods: ["GET", "POST"],
   },
-  transports: ["websocket", "polling"],
+  transports: ["polling", "websocket"],
 });
 
 // Make io accessible to route handlers

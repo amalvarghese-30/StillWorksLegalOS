@@ -431,6 +431,7 @@ router.post("/refresh", async (req: Request, res: Response) => {
     const refreshToken = bodyToken || cookieToken;
 
     if (!refreshToken) {
+      clearRefreshCookie(res, req);
       res.status(401).json({ message: "Refresh token is required" });
       return;
     }
@@ -438,6 +439,7 @@ router.post("/refresh", async (req: Request, res: Response) => {
     // Verify refresh token signature & expiration
     const payload = verifyToken(refreshToken);
     if (!payload) {
+      clearRefreshCookie(res, req);
       res.status(401).json({ message: "Invalid or expired refresh token" });
       return;
     }

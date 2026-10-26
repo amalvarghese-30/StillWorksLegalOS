@@ -118,7 +118,8 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     setStatus("connecting");
 
     const newSocket: Socket = io(SOCKET_URL, {
-      transports: ["websocket", "polling"],
+      transports: ["polling", "websocket"],
+      upgrade: true,
       // Read the token fresh on every (re)connection — it rotates on refresh
       auth: (cb) => cb({ token: getAccessToken() }),
       reconnection: true,
@@ -164,21 +165,30 @@ export function SocketProvider({ children }: { children: ReactNode }) {
         msg.includes("Authentication") ||
         msg.includes("jwt");
 
-      if (isAuthError && authRefreshAttempts < maxAuthRefreshAttempts) {
-        authRefreshAttempts += 1;
-        setStatus("reconnecting");
-        try {
-          const newToken = await refreshAccessToken();
-          if (newToken) {
-            newSocket.auth = { token: newToken };
-            setTimeout(() => {
-              newSocket.connect();
-            }, 1000);
-            return;
+      if (isAuthError) {
+        if (authRefreshAttempts < maxAuthRefreshAttempts) {
+          authRefreshAttempts += 1;
+          console.warn(`[socket] Auth failed (${authRefreshAttempts}/${maxAuthRefreshAttempts}). Attempting token refresh.`);
+          setStatus("reconnecting");
+          try {
+            const newToken = await refreshAccessToken();
+            if (newToken) {
+              newSocket.auth = { token: newToken };
+              setTimeout(() => {
+                newSocket.connect();
+              }, 1000);
+              return;
+            }
+          } catch {
+            // Token refresh failed
           }
-        } catch {
-          // Token refresh failed
+        } else {
+          console.warn("[socket] Max auth refresh attempts reached; stopping reconnect loop.");
+          newSocket.disconnect();
         }
+      } else {
+        // Transport, proxy, or network error (e.g., websocket failed before polling fallback, network offline)
+        console.warn(`[socket] Transport/network error: ${msg || "connection dropped or refused"}`);
       }
 
       setStatus("error");

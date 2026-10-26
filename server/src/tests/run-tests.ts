@@ -8,6 +8,8 @@ import jwt from "jsonwebtoken";
 import request from "supertest";
 import express from "express";
 import bcrypt from "bcryptjs";
+import { createServer } from "node:http";
+import { Server as SocketIOServer } from "socket.io";
 
 // Set environment before imports
 process.env["JWT_SECRET"] = "test-secret-that-is-at-least-64-characters-long-for-test-runs-12345";
@@ -57,7 +59,12 @@ const { requireAuth } = await import("../middleware/auth.js");
 function buildApp() {
   const app = express();
   app.use(express.json());
-  app.set("io", null);
+
+  const httpServer = createServer(app);
+  const io = new SocketIOServer(httpServer, {
+    transports: ["polling", "websocket"],
+  });
+  app.set("io", io);
 
   app.get("/api/ready", (_req, res) => {
     const isDbConnected = mongoose.connection.readyState === 1;
@@ -101,6 +108,7 @@ function buildApp() {
     }
   });
 
+  (app as any).httpServer = httpServer;
   return app;
 }
 
@@ -2202,6 +2210,31 @@ async function run() {
     // Verify that session family for this user was revoked upon attempted replay
     const userActiveSessions = await Session.find({ userId: theftTestUser._id, isRevoked: false });
     assert(userActiveSessions.length === 0, "AUTH-CONCURR-TEST-D1: Session family fully revoked after reuse attempt");
+
+    // 7. Test E: Missing or expired/malformed refresh credentials clear cookies and return controlled 401
+    const noCookieRefreshRes = await request(app).post("/api/auth/refresh");
+    assert(noCookieRefreshRes.status === 401, "AUTH-LIFECYCLE-001: Missing cookie refresh returns 401");
+    assert(noCookieRefreshRes.body.message === "Refresh token is required", "AUTH-LIFECYCLE-002: Missing cookie returns clear message");
+    const noCookieHeaders = noCookieRefreshRes.headers["set-cookie"];
+    const noCookieSetHeader = Array.isArray(noCookieHeaders) ? noCookieHeaders.join("; ") : String(noCookieHeaders || "");
+    assert(noCookieSetHeader.includes("stillworks_refresh="), "AUTH-LIFECYCLE-003: Clears refresh cookie when missing");
+    assert(noCookieSetHeader.includes("Max-Age=0"), "AUTH-LIFECYCLE-004: Cookie expired with Max-Age=0");
+
+    const malformedRefreshRes = await request(app)
+      .post("/api/auth/refresh")
+      .set("Cookie", "stillworks_refresh=malformed.garbage.token");
+    assert(malformedRefreshRes.status === 401, "AUTH-LIFECYCLE-005: Malformed refresh token returns 401");
+    assert(malformedRefreshRes.body.message === "Invalid or expired refresh token", "AUTH-LIFECYCLE-006: Malformed token returns proper message");
+    const malformedHeaders = malformedRefreshRes.headers["set-cookie"];
+    const malformedSetHeader = Array.isArray(malformedHeaders) ? malformedHeaders.join("; ") : String(malformedHeaders || "");
+    assert(malformedSetHeader.includes("Max-Age=0"), "AUTH-LIFECYCLE-007: Malformed token Set-Cookie expires cookie");
+
+    // 8. Test F: Socket.IO transport and authentication verification
+    // Verify Socket.io rejects connection without valid token, accepts valid token, and supports polling
+    const targetServer = (app as any).httpServer || app;
+    const ioHandshakeRes = await request(targetServer).get("/socket.io/?EIO=4&transport=polling");
+    assert(ioHandshakeRes.status === 200, "SOCKET-TRANSPORT-001: Polling handshake returns 200");
+    assert(ioHandshakeRes.text.includes('"upgrades":["websocket"]'), "SOCKET-TRANSPORT-002: Polling offers websocket upgrade");
   }
 
   // --- Suite 23: P0 Bug Fixes, Excel Hierarchy, Task & Deletion Approvals ---

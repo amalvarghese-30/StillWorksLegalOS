@@ -137,6 +137,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         }
         if (!token) {
+          // Refresh did not return an access token (either unauthenticated or 401).
+          // Ensure invalid hints and stale user state are wiped so the login page can be reached cleanly.
+          setUser(null);
+          await clearTokens();
+          window.localStorage.removeItem(STORAGE_KEY);
+          window.sessionStorage.removeItem(STORAGE_KEY);
           setReady(true);
           return;
         }
