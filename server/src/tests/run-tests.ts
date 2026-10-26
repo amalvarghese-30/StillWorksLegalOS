@@ -5391,6 +5391,171 @@ const { NotificationService } = await import("../services/notifications.js");
       new Date(concCaseDoc!.nextHearing!).toISOString() === new Date(concCanonicalEvents[0].start).toISOString(),
       "S38-70: Case.nextHearing matches the canonical event start date exactly"
     );
+
+    // 16. Existing HearingRecord updating on subsequent edits (prevents stale history)
+    const histUpdateCaseRes = await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${s38AdminToken}`)
+      .send({
+        title: "History Update Preservation Test",
+        nextHearing: new Date("2026-10-19T10:00:00.000Z").toISOString(),
+      });
+    const histCaseId = histUpdateCaseRes.body.case._id;
+    const histEvent1 = await CalendarEvent.findOne({ caseId: histCaseId, isNextHearing: true });
+    assert(histEvent1 !== null, "S38-71: Found initial canonical event for history update test");
+
+    // First record-hearing creates initial HearingRecord
+    await request(app)
+      .post(`/api/calendar/events/${histEvent1!._id}/record-hearing`)
+      .set("Authorization", `Bearer ${s38AdminToken}`)
+      .send({
+        status: "held",
+        remarks: "Initial hearing remarks on 19 Oct",
+        nextHearingDate: new Date("2026-11-02T10:00:00.000Z").toISOString(),
+      });
+
+    const initialRecord = await HearingRecord.findOne({ caseId: histCaseId, hearingDate: new Date("2026-10-19T10:00:00.000Z") });
+    assert(initialRecord !== null, "S38-72: Initial HearingRecord exists");
+    assert(initialRecord!.remarks === "Initial hearing remarks on 19 Oct", "S38-73: Initial remarks saved");
+
+    // Second record-hearing on the same event updates remarks and status on existing HearingRecord
+    const updateRecordRes = await request(app)
+      .post(`/api/calendar/events/${histEvent1!._id}/record-hearing`)
+      .set("Authorization", `Bearer ${s38AdminToken}`)
+      .send({
+        status: "held",
+        remarks: "Updated hearing remarks: final submissions completed",
+        nextHearingDate: new Date("2026-11-02T10:00:00.000Z").toISOString(),
+      });
+    assert(updateRecordRes.status === 200, "S38-74: Update existing hearing record returns 200");
+
+    const updatedRecord = await HearingRecord.findOne({ caseId: histCaseId, hearingDate: new Date("2026-10-19T10:00:00.000Z") });
+    assert(updatedRecord !== null, "S38-75: HearingRecord still exists after update");
+    assert(
+      updatedRecord!.remarks === "Updated hearing remarks: final submissions completed",
+      "S38-76: Existing HearingRecord was updated rather than left with stale remarks"
+    );
+
+    // 17. Calendar synchronization failure during Case date update fails closed with rollback
+    const rollbackCaseRes = await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${s38AdminToken}`)
+      .send({
+        title: "Calendar Sync Rollback Test",
+        nextHearing: new Date("2026-11-01T10:00:00.000Z").toISOString(),
+      });
+    const rollbackCaseId = rollbackCaseRes.body.case._id;
+    const origCaseDoc = await Case.findById(rollbackCaseId);
+    const origHearingDate = new Date(origCaseDoc!.nextHearing!).toISOString();
+
+    // Temporarily stub CalendarEvent write failure during syncCaseNextHearingToCalendar
+    const originalCalendarCreate = CalendarEvent.create;
+    try {
+      (CalendarEvent as any).create = () => {
+        throw new Error("Simulated storage failure during calendar event creation");
+      };
+
+      const failSyncRes = await request(app)
+        .patch(`/api/cases/${rollbackCaseId}`)
+        .set("Authorization", `Bearer ${s38AdminToken}`)
+        .send({
+          nextHearing: new Date("2026-11-15T10:00:00.000Z").toISOString(),
+        });
+
+      assert(failSyncRes.status === 500, "S38-77: Failed calendar sync returns 500 error rather than false success 200");
+      assert(
+        failSyncRes.body.message.includes("Calendar synchronization failed"),
+        "S38-78: Error message indicates calendar synchronization failed and rollback occurred"
+      );
+
+      // Verify that Case.nextHearing was rolled back to origHearingDate and not left in an inconsistent state
+      const caseAfterFailedSync = await Case.findById(rollbackCaseId);
+      assert(
+        new Date(caseAfterFailedSync!.nextHearing!).toISOString() === origHearingDate,
+        "S38-79: Case.nextHearing rolled back to original date following sync failure"
+      );
+    } finally {
+      (CalendarEvent as any).create = originalCalendarCreate;
+    }
+
+    // 18. End-to-end multi-step workflow verification matching Client Test A, B, C:
+    // 19 Oct 2026 -> 2 Nov 2026 -> 16 Nov 2026 -> 23 Nov 2026
+    const e2eCaseRes = await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${s38AdminToken}`)
+      .send({
+        title: "Client Exact Hearing Workflow Matter",
+        court: "Supreme Court of India",
+        judge: "Hon'ble Chief Justice",
+        nextHearing: new Date("2026-10-19T10:00:00.000Z").toISOString(),
+      });
+    const e2eCaseId = e2eCaseRes.body.case._id;
+
+    // Step A: Record hearing from Calendar on 19 Oct -> next date 2 Nov
+    const e2eOctEvent = await CalendarEvent.findOne({ caseId: e2eCaseId, isNextHearing: true });
+    assert(e2eOctEvent !== null, "S38-80: Found initial 19 Oct event");
+    const stepARes = await request(app)
+      .post(`/api/calendar/events/${e2eOctEvent!._id}/record-hearing`)
+      .set("Authorization", `Bearer ${s38AdminToken}`)
+      .send({
+        status: "held",
+        remarks: "Matter heard; additional documents requested.",
+        nextHearingDate: new Date("2026-11-02T10:00:00.000Z").toISOString(),
+      });
+    assert(stepARes.status === 200, "S38-81: Step A returns 200");
+
+    // Step B: Update date from Cases tab from 2 Nov -> 16 Nov
+    const stepBRes = await request(app)
+      .patch(`/api/cases/${e2eCaseId}`)
+      .set("Authorization", `Bearer ${s38AdminToken}`)
+      .send({
+        nextHearing: new Date("2026-11-16T10:00:00.000Z").toISOString(),
+        hearingRemarks: "Adjourned per respondent request",
+        hearingStatus: "rescheduled",
+      });
+    assert(stepBRes.status === 200, "S38-82: Step B returns 200");
+
+    // Step C: Update date from Calendar from 16 Nov -> 23 Nov
+    const e2eNov16Event = await CalendarEvent.findOne({
+      caseId: e2eCaseId,
+      start: new Date("2026-11-16T10:00:00.000Z"),
+    });
+    assert(e2eNov16Event !== null, "S38-83: Found 16 Nov event for calendar edit");
+    const stepCRes = await request(app)
+      .patch(`/api/calendar/events/${e2eNov16Event!._id}`)
+      .set("Authorization", `Bearer ${s38AdminToken}`)
+      .send({
+        start: new Date("2026-11-23T10:00:00.000Z").toISOString(),
+        remarks: "Rescheduled on calendar to 23 Nov",
+      });
+    assert(stepCRes.status === 200, "S38-84: Step C returns 200");
+
+    // Verify all 4 dates exist in Calendar
+    const allE2eEvents = await CalendarEvent.find({ caseId: e2eCaseId, type: "hearing" }).sort({ start: 1 });
+    assert(allE2eEvents.length === 4, "S38-85: All 4 hearing dates (19 Oct, 2 Nov, 16 Nov, 23 Nov) exist on calendar");
+    
+    // Exactly 1 canonical upcoming event
+    const canonicals = allE2eEvents.filter(e => e.isNextHearing === true);
+    assert(canonicals.length === 1, "S38-86: Exactly one event is marked isNextHearing: true");
+    assert(
+      new Date(canonicals[0].start).toISOString() === new Date("2026-11-23T10:00:00.000Z").toISOString(),
+      "S38-87: The 23 Nov event is the canonical upcoming hearing"
+    );
+
+    // Case.nextHearing is 23 Nov
+    const finalE2eCase = await Case.findById(e2eCaseId);
+    assert(
+      new Date(finalE2eCase!.nextHearing!).toISOString() === new Date("2026-11-23T10:00:00.000Z").toISOString(),
+      "S38-88: Case.nextHearing in database matches 23 Nov"
+    );
+
+    // Hearing history contains all recorded outcomes
+    const finalHistory = await HearingRecord.find({ caseId: e2eCaseId }).sort({ hearingDate: 1 });
+    assert(finalHistory.length >= 3, "S38-89: Hearing history contains all historical hearing records");
+    assert(
+      finalHistory.some(h => h.remarks === "Matter heard; additional documents requested." && h.status === "held"),
+      "S38-90: 19 Oct remarks and held status preserved in history"
+    );
   }
 
   // =========================================================================
