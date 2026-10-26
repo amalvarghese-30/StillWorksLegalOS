@@ -74,8 +74,12 @@ async function verifyRelease() {
   console.log("✓ No hardcoded secrets detected in build artifacts");
 
   // 6. Automated Smoke Test
-  console.log("\n[Step 6/6] Running Automated Smoke Test Suite...");
+  console.log("\n[Step 6/7] Running Automated Smoke Test Suite...");
   run("node scripts/smoke-test.cjs");
+
+  // 7. Release Safety & Fail-Closed Validation Tests
+  console.log("\n[Step 7/7] Running Release Safety & Fail-Closed Regression Suite...");
+  run("node scripts/test-release-safety.cjs");
 
   console.log("\n==================================================");
   console.log("✓ ALL RELEASE VERIFICATION CHECKS PASSED CLEANLY!");

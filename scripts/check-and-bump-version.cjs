@@ -43,6 +43,13 @@ function bumpPatch(version) {
 }
 
 async function main() {
+  if (!process.argv.includes('--allow-auto-bump') && process.env.ALLOW_AUTO_BUMP !== 'true') {
+    console.error('[version-check] Automatic uncontrolled version bumping is disabled for release safety.');
+    console.error('[version-check] Versions must be planned and committed explicitly in package.json.');
+    console.error('[version-check] Use scripts/validate-release-version.cjs to verify release readiness.');
+    process.exit(1);
+  }
+
   const pkgPath = 'package.json';
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
   const currentVersion = pkg.version;
