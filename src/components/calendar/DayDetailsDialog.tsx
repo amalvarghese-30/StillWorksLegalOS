@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   CalendarDays,
   Plus,
@@ -7,8 +8,8 @@ import {
   PhoneCall,
   CheckSquare,
   Building,
-  User,
   Pencil,
+  FileCheck2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { CalendarEvent } from "@/services/calendar";
+import { RecordHearingDialog } from "./RecordHearingDialog";
 
 interface DayDetailsDialogProps {
   open: boolean;
@@ -70,6 +72,8 @@ export function DayDetailsDialog({
   onScheduleEvent,
   onEditEvent,
 }: DayDetailsDialogProps) {
+  const [recordingEvent, setRecordingEvent] = useState<CalendarEvent | null>(null);
+
   if (!open || !dateStr) return null;
 
   const dateObj = new Date(dateStr + "T00:00:00");
@@ -81,134 +85,180 @@ export function DayDetailsDialog({
   });
 
   return (
-    <Dialog open={open} onOpenChange={(val) => !val && onClose()}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg rounded-xl border border-border bg-card p-6 shadow-lift">
-        <DialogHeader className="border-b border-border/60 pb-4">
-          <div className="flex items-center gap-2.5">
-            <span className="grid size-9 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
-              <CalendarDays size={18} strokeWidth={1.75} />
-            </span>
-            <div>
-              <DialogTitle className="text-title font-semibold text-foreground">
-                {formattedDate}
-              </DialogTitle>
-              <DialogDescription className="text-helper text-muted-foreground">
-                {events.length === 0
-                  ? "No hearings or events scheduled"
-                  : `${events.length} event(s) scheduled for this day`}
-              </DialogDescription>
+    <>
+      <Dialog open={open} onOpenChange={(val) => !val && onClose()}>
+        <DialogContent className="w-[calc(100vw-1.5rem)] sm:w-full sm:max-w-lg max-h-[85vh] overflow-y-auto overflow-x-hidden rounded-xl border border-border bg-card p-4 sm:p-6 shadow-lift">
+          <DialogHeader className="border-b border-border/60 pb-4">
+            <div className="flex items-center gap-2.5">
+              <span className="grid size-9 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
+                <CalendarDays size={18} strokeWidth={1.75} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <DialogTitle className="text-title font-semibold text-foreground break-words">
+                  {formattedDate}
+                </DialogTitle>
+                <DialogDescription className="text-helper text-muted-foreground">
+                  {events.length === 0
+                    ? "No hearings or events scheduled"
+                    : `${events.length} event(s) scheduled for this day`}
+                </DialogDescription>
+              </div>
             </div>
-          </div>
-        </DialogHeader>
+          </DialogHeader>
 
-        <div className="mt-4 space-y-3">
-          {events.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border/80 p-8 text-center">
-              <CalendarDays size={32} strokeWidth={1.5} className="mx-auto text-muted-foreground/40" />
-              <p className="mt-3 text-helper font-medium text-foreground">Nothing scheduled for this day</p>
-              <p className="mt-1 text-caption text-muted-foreground">
-                You can add a court hearing, client call, or firm event.
-              </p>
-            </div>
-          ) : (
-            <ul className="space-y-2.5">
-              {events.map((event) => {
-                const Icon = getEventIcon(event.type);
-                const timeStr = event.allDay
-                  ? "All Day"
-                  : `${new Date(event.start).toLocaleTimeString("en-IN", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}${
-                      event.end
-                        ? " – " +
-                          new Date(event.end).toLocaleTimeString("en-IN", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })
-                        : ""
-                    }`;
+          <div className="mt-4 space-y-3 min-w-0">
+            {events.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border/80 p-8 text-center">
+                <CalendarDays
+                  size={32}
+                  strokeWidth={1.5}
+                  className="mx-auto text-muted-foreground/40"
+                />
+                <p className="mt-3 text-helper font-medium text-foreground">
+                  Nothing scheduled for this day
+                </p>
+                <p className="mt-1 text-caption text-muted-foreground">
+                  You can add a court hearing, client call, or firm event.
+                </p>
+              </div>
+            ) : (
+              <ul className="space-y-3 min-w-0">
+                {events.map((event) => {
+                  const Icon = getEventIcon(event.type);
+                  const isHearingWithCase = event.type === "hearing" && Boolean(event.caseId);
+                  const timeStr = event.allDay
+                    ? "All Day"
+                    : `${new Date(event.start).toLocaleTimeString("en-IN", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}${
+                        event.end
+                          ? " – " +
+                            new Date(event.end).toLocaleTimeString("en-IN", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : ""
+                      }`;
 
-                return (
-                  <li
-                    key={event._id}
-                    className="flex flex-col gap-2 rounded-lg border border-border bg-background/60 p-3.5 shadow-soft transition-colors hover:bg-muted/40"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-2.5 min-w-0">
-                        <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
-                          <Icon size={14} />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="truncate font-semibold text-helper text-foreground">
-                            {event.title}
-                          </p>
-                          {event.description && (
-                            <p className="truncate text-caption text-muted-foreground mt-0.5">
-                              {event.description}
+                  return (
+                    <li
+                      key={event._id}
+                      className="w-full min-w-0 flex flex-col gap-2.5 rounded-lg border border-border bg-background/60 p-3.5 shadow-soft transition-colors hover:bg-muted/40"
+                    >
+                      {/* Top Row: Icon + Title & Description + Badge */}
+                      <div className="flex items-start justify-between gap-2.5 min-w-0">
+                        <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                          <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
+                            <Icon size={14} />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-semibold text-helper text-foreground break-words whitespace-normal leading-snug">
+                              {event.title}
                             </p>
+                            {event.description && (
+                              <p className="text-caption text-muted-foreground mt-1 break-words whitespace-normal">
+                                {event.description}
+                              </p>
+                            )}
+                            {event.remarks && event.remarks !== event.description && (
+                              <p className="text-caption text-primary/90 font-medium mt-1 break-words whitespace-normal bg-primary/5 px-2 py-1 rounded">
+                                Remarks: {event.remarks}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <span
+                          className={`shrink-0 rounded-pill border px-2 py-0.5 text-caption font-medium uppercase tracking-wider text-[10px] ${getEventCls(
+                            event.type,
+                          )}`}
+                        >
+                          {event.hearingStatus && event.type === "hearing"
+                            ? `${event.hearingStatus}`
+                            : event.type.replace("_", " ")}
+                        </span>
+                      </div>
+
+                      {/* Bottom Row: Time & Case Link + Actions */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-caption text-muted-foreground border-t border-border/40 pt-2.5 mt-0.5 min-w-0">
+                        <div className="flex flex-wrap items-center gap-3 min-w-0">
+                          <span className="inline-flex items-center gap-1 shrink-0">
+                            <Clock size={12} className="text-muted-foreground/80" />
+                            {timeStr}
+                          </span>
+                          {event.caseId && (
+                            <span className="inline-flex items-center gap-1 shrink-0 font-medium text-foreground/80">
+                              <Briefcase size={12} className="text-primary" />
+                              Case linked
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Actions group */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          {isHearingWithCase && (
+                            <button
+                              type="button"
+                              onClick={() => setRecordingEvent(event)}
+                              className="inline-flex items-center gap-1 rounded bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary hover:bg-primary/20 transition-colors"
+                              title="Record hearing outcome, work done, and schedule next date"
+                            >
+                              <FileCheck2 size={12} /> Record Hearing &amp; Add Next Date
+                            </button>
+                          )}
+                          {onEditEvent && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onClose();
+                                onEditEvent(event);
+                              }}
+                              className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                              title="Edit / Reschedule event"
+                            >
+                              <Pencil size={11} /> Edit / Reschedule
+                            </button>
                           )}
                         </div>
                       </div>
-                      <span
-                        className={`shrink-0 rounded-pill border px-2 py-0.5 text-caption font-medium ${getEventCls(
-                          event.type
-                        )}`}
-                      >
-                        {event.type.replace("_", " ")}
-                      </span>
-                    </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
 
-                    <div className="flex items-center justify-between text-caption text-muted-foreground border-t border-border/40 pt-2 mt-1">
-                      <div className="flex items-center gap-4">
-                        <span className="flex items-center gap-1">
-                          <Clock size={12} />
-                          {timeStr}
-                        </span>
-                        {event.caseId && (
-                          <span className="flex items-center gap-1 truncate">
-                            <Briefcase size={12} />
-                            Case linked
-                          </span>
-                        )}
-                      </div>
-                      {onEditEvent && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onClose();
-                            onEditEvent(event);
-                          }}
-                          className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline ml-2"
-                        >
-                          <Pencil size={11} /> Edit / Reschedule
-                        </button>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
+          <DialogFooter className="mt-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 border-t border-border/60 pt-4">
+            <Button
+              type="button"
+              className="gradient-primary rounded-md text-primary-foreground order-2 sm:order-1"
+              onClick={() => {
+                onClose();
+                onScheduleEvent(dateStr);
+              }}
+            >
+              <Plus size={15} className="mr-1.5" />
+              Schedule Event for this Date
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              className="rounded-md order-1 sm:order-2"
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-        <DialogFooter className="mt-6 flex items-center justify-between border-t border-border/60 pt-4">
-          <Button
-            type="button"
-            className="gradient-primary rounded-md text-primary-foreground"
-            onClick={() => {
-              onClose();
-              onScheduleEvent(dateStr);
-            }}
-          >
-            <Plus size={15} className="mr-1.5" />
-            Schedule Event for this Date
-          </Button>
-          <Button type="button" variant="outline" onClick={onClose} className="rounded-md">
-            Close
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      {recordingEvent && (
+        <RecordHearingDialog
+          open={Boolean(recordingEvent)}
+          onClose={() => setRecordingEvent(null)}
+          event={recordingEvent}
+        />
+      )}
+    </>
   );
 }

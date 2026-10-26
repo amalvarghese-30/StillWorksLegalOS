@@ -1,6 +1,9 @@
 import { Router, type Request, type Response } from "express";
 import { Types } from "mongoose";
 import { CalendarEvent } from "../models/CalendarEvent.js";
+import { Case } from "../models/Case.js";
+import { HearingRecord, type HearingStatus } from "../models/HearingRecord.js";
+import { parseFlexibleDate } from "../utils/dateParser.js";
 import { Reminder } from "../models/Reminder.js";
 import { syncCallReminders, deleteCallReminders } from "../services/reminders.js";
 import { AuditLog } from "../models/AuditLog.js";
@@ -32,8 +35,8 @@ router.get("/events", async (req: Request, res: Response) => {
       filter["start"] = { ...(filter["start"] as Record<string, unknown>), $lte: new Date(end) };
     }
 
-    // If no range given, default to current month
-    if (!start && !end) {
+    // If no range given and no caseId filter, default to current month
+    if (!start && !end && !caseId) {
       const now = new Date();
       const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
       const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
@@ -249,27 +252,36 @@ router.post("/events", async (req: Request, res: Response) => {
 
 router.patch("/events/:id", requireResourceAccess("calendarEvent"), async (req: Request, res: Response) => {
   try {
+    const existingEvent = await CalendarEvent.findById(req.params["id"]);
+    if (!existingEvent) {
+      res.status(404).json({ message: "Event not found" });
+      return;
+    }
+
     const updates: Record<string, unknown> = {};
 
-    const allowed = ["title", "description", "type", "allDay", "caseId", "clientId", "assignedTo", "color"];
+    const allowed = ["title", "description", "type", "allDay", "caseId", "clientId", "assignedTo", "color", "hearingStatus"];
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     }
-    // Accept remarks as alias for description
-    if (req.body["remarks"] !== undefined && updates["description"] === undefined) {
-      updates["description"] = req.body["remarks"];
+    // Accept remarks as alias for description and field on hearing
+    if (req.body["remarks"] !== undefined) {
+      updates["remarks"] = req.body["remarks"];
+      if (updates["description"] === undefined) {
+        updates["description"] = req.body["remarks"];
+      }
     }
     if (req.body["start"]) {
-      const parsedStart = new Date(req.body["start"]);
-      if (isNaN(parsedStart.getTime())) {
+      const parsedStart = parseFlexibleDate(req.body["start"]);
+      if (!parsedStart) {
         res.status(400).json({ message: "Invalid start date format" });
         return;
       }
       updates["start"] = parsedStart;
     }
     if (req.body["end"]) {
-      const parsedEnd = new Date(req.body["end"]);
-      if (isNaN(parsedEnd.getTime())) {
+      const parsedEnd = parseFlexibleDate(req.body["end"]);
+      if (!parsedEnd) {
         res.status(400).json({ message: "Invalid end date format" });
         return;
       }
@@ -285,13 +297,89 @@ router.patch("/events/:id", requireResourceAccess("calendarEvent"), async (req: 
       }
     }
 
-    // Validate case access if caseId changed
-    if (updates["caseId"] && req.user!.role !== "admin") {
-      const { getAccessibleCaseIds } = await import("../middleware/authorization.js");
+    // Validate case access if caseId changed or if modifying linked hearing
+    const targetCaseId = updates["caseId"] ? String(updates["caseId"]) : (existingEvent.caseId ? existingEvent.caseId.toString() : null);
+    if (targetCaseId && req.user!.role !== "admin" && !req.user?.permissions?.cases) {
       const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
-      if (!accessibleCaseIds.includes(updates["caseId"] as string)) {
-        res.status(403).json({ message: "Cannot move event to a case you don't have access to" });
+      if (!accessibleCaseIds.includes(targetCaseId)) {
+        res.status(403).json({ message: "You do not have permission to modify events for this case" });
         return;
+      }
+    }
+
+    // Calendar-to-case synchronization for hearings
+    if (existingEvent.type === "hearing" && existingEvent.caseId) {
+      const linkedCase = await Case.findById(existingEvent.caseId);
+      if (linkedCase) {
+        const oldStart = existingEvent.start;
+        const newStart = updates["start"] as Date | undefined;
+
+        // Check if event was canonical next hearing
+        const isCanonical =
+          existingEvent.isNextHearing === true ||
+          (linkedCase.nextHearing && Math.abs(linkedCase.nextHearing.getTime() - oldStart.getTime()) <= 60000);
+
+        if (newStart && Math.abs(oldStart.getTime() - newStart.getTime()) > 60000) {
+          if (isCanonical) {
+            linkedCase.nextHearing = newStart;
+            linkedCase.timeline.push({
+              event: `Next hearing rescheduled to ${newStart.toLocaleDateString("en-IN")}`,
+              by: req.user?.name ?? "Unknown",
+              when: new Date(),
+            });
+            await linkedCase.save();
+
+            // Record in HearingRecord history
+            await HearingRecord.create({
+              caseId: linkedCase._id,
+              hearingDate: oldStart,
+              status: "rescheduled",
+              remarks: (typeof req.body["remarks"] === "string" ? req.body["remarks"] : "") || "Rescheduled via Calendar edit",
+              nextHearingDate: newStart,
+              recordedBy: new Types.ObjectId(req.userId!),
+              calendarEventId: existingEvent._id,
+            });
+
+            updates["isNextHearing"] = true;
+            updates["hearingStatus"] = "scheduled";
+
+            const io = req.app.get("io");
+            if (io) {
+              io.emit("case:updated", {
+                caseId: linkedCase._id.toString(),
+                number: linkedCase.number,
+                title: linkedCase.title,
+                nextHearing: newStart.toISOString(),
+              });
+            }
+          }
+        } else if (updates["type"] !== undefined && updates["type"] !== "hearing" && isCanonical) {
+          updates["isNextHearing"] = false;
+          const nextHearingEvent = await CalendarEvent.findOne({
+            caseId: existingEvent.caseId,
+            type: "hearing",
+            _id: { $ne: existingEvent._id },
+            start: { $gte: new Date() },
+          }).sort({ start: 1 });
+
+          linkedCase.nextHearing = nextHearingEvent ? nextHearingEvent.start : null;
+          await linkedCase.save();
+
+          if (nextHearingEvent) {
+            nextHearingEvent.isNextHearing = true;
+            await nextHearingEvent.save();
+          }
+
+          const io = req.app.get("io");
+          if (io) {
+            io.emit("case:updated", {
+              caseId: linkedCase._id.toString(),
+              number: linkedCase.number,
+              title: linkedCase.title,
+              nextHearing: linkedCase.nextHearing ? linkedCase.nextHearing.toISOString() : null,
+            });
+          }
+        }
       }
     }
 
@@ -341,10 +429,258 @@ router.patch("/events/:id", requireResourceAccess("calendarEvent"), async (req: 
       userAgent: req.headers["user-agent"],
     });
 
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("calendar:event:updated", {
+        eventId: event._id.toString(),
+        caseId: event.caseId ? event.caseId.toString() : undefined,
+      });
+    }
+
     res.json({ event });
   } catch (err) {
     console.error("[calendar] Update error:", err);
     res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/calendar/events/:id/record-hearing — dedicated Record Hearing & Add Next Date
+// ---------------------------------------------------------------------------
+
+router.post("/events/:id/record-hearing", requireResourceAccess("calendarEvent"), async (req: Request, res: Response) => {
+  try {
+    const event = await CalendarEvent.findById(req.params["id"]);
+    if (!event) {
+      res.status(404).json({ message: "Event not found" });
+      return;
+    }
+
+    if (event.type !== "hearing" || !event.caseId) {
+      res.status(400).json({ message: "Event is not a court hearing linked to a case" });
+      return;
+    }
+
+    // Verify case access
+    if (req.user!.role !== "admin" && !req.user?.permissions?.cases) {
+      const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
+      if (!accessibleCaseIds.includes(event.caseId.toString())) {
+        res.status(403).json({ message: "You do not have permission to modify hearings for this case" });
+        return;
+      }
+    }
+
+    const caseRecord = await Case.findById(event.caseId);
+    if (!caseRecord) {
+      res.status(404).json({ message: "Linked case not found" });
+      return;
+    }
+
+    const status = ["held", "rescheduled", "cancelled", "scheduled"].includes(req.body.status)
+      ? (req.body.status as HearingStatus)
+      : "held";
+    const remarks = typeof req.body.remarks === "string" ? req.body.remarks.trim() : "";
+
+    let parsedNextHearing: Date | null = null;
+    if (req.body.nextHearingDate) {
+      parsedNextHearing = parseFlexibleDate(req.body.nextHearingDate);
+      if (!parsedNextHearing) {
+        res.status(400).json({ message: "Invalid next hearing date format" });
+        return;
+      }
+    }
+
+    const hearingDate = req.body.hearingDate
+      ? parseFlexibleDate(req.body.hearingDate) || event.start
+      : event.start;
+
+    // 1. Idempotent check: find existing HearingRecord or create new
+    let historyRecord = await HearingRecord.findOne({
+      caseId: caseRecord._id,
+      hearingDate,
+    });
+
+    if (historyRecord) {
+      historyRecord.status = status;
+      historyRecord.remarks = remarks;
+      historyRecord.nextHearingDate = parsedNextHearing;
+      historyRecord.recordedBy = new Types.ObjectId(req.userId!);
+      historyRecord.calendarEventId = event._id as Types.ObjectId;
+      await historyRecord.save();
+    } else {
+      historyRecord = await HearingRecord.create({
+        caseId: caseRecord._id,
+        hearingDate,
+        status,
+        remarks,
+        nextHearingDate: parsedNextHearing,
+        recordedBy: new Types.ObjectId(req.userId!),
+        calendarEventId: event._id as Types.ObjectId,
+      });
+    }
+
+    // 2. Preserve original calendar entry
+    event.isNextHearing = false;
+    event.hearingStatus = status;
+    event.remarks = remarks;
+    if (remarks && !event.description.includes(remarks)) {
+      event.description = event.description
+        ? `${event.description}\n\nOutcome / Remarks: ${remarks}`
+        : `Outcome / Remarks: ${remarks}`;
+    }
+    event.hearingRecordId = historyRecord._id as Types.ObjectId;
+    await event.save();
+
+    // 3. Demote other canonical events for this case
+    await CalendarEvent.updateMany(
+      { caseId: caseRecord._id, type: "hearing", isNextHearing: true },
+      { $set: { isNextHearing: false } }
+    );
+
+    let nextEvent = null;
+    const io = req.app.get("io");
+
+    // 4. If nextHearingDate provided, create separate upcoming event
+    if (parsedNextHearing) {
+      const eventTitle = `Hearing: ${caseRecord.number || "Case"} — ${caseRecord.title}`;
+      const eventDesc = `Court hearing for matter ${caseRecord.number || ""}. Court: ${caseRecord.court || "Court"}${caseRecord.judge ? `, Judge: ${caseRecord.judge}` : ""}.`;
+
+      // Resolve primary client party
+      const primaryParty = (caseRecord.parties || []).find(
+        (p: any) => (p.type === "client" || p.type === "sub_client") && p.clientId
+      );
+      const clientId = primaryParty?.clientId ? ((primaryParty.clientId as any)._id ?? primaryParty.clientId) : null;
+
+      // Check if an event for this exact date already exists (e.g. on retry / repeated submission)
+      const existingNext = await CalendarEvent.findOne({
+        caseId: caseRecord._id,
+        type: "hearing",
+        start: parsedNextHearing,
+      });
+
+      if (existingNext) {
+        existingNext.title = eventTitle;
+        existingNext.description = eventDesc;
+        existingNext.isNextHearing = true;
+        existingNext.hearingStatus = "scheduled";
+        existingNext.assignedTo =
+          event.assignedTo && event.assignedTo.length > 0
+            ? event.assignedTo
+            : [new Types.ObjectId(req.userId!)];
+        if (clientId) existingNext.clientId = clientId;
+        await existingNext.save();
+        nextEvent = existingNext;
+      } else {
+        try {
+          nextEvent = await CalendarEvent.create({
+            title: eventTitle,
+            description: eventDesc,
+            type: "hearing",
+            start: parsedNextHearing,
+            end: parsedNextHearing,
+            allDay: false,
+            caseId: caseRecord._id,
+            clientId: clientId || null,
+            createdBy: new Types.ObjectId(req.userId!),
+            assignedTo:
+              event.assignedTo && event.assignedTo.length > 0
+                ? event.assignedTo
+                : [new Types.ObjectId(req.userId!)],
+            color: "#7C3AED",
+            isNextHearing: true,
+            hearingStatus: "scheduled",
+          });
+        } catch (createErr: any) {
+          if (createErr.code === 11000) {
+            await CalendarEvent.updateMany(
+              { caseId: caseRecord._id, type: "hearing", isNextHearing: true },
+              { $set: { isNextHearing: false } }
+            );
+            nextEvent = await CalendarEvent.create({
+              title: eventTitle,
+              description: eventDesc,
+              type: "hearing",
+              start: parsedNextHearing,
+              end: parsedNextHearing,
+              allDay: false,
+              caseId: caseRecord._id,
+              clientId: clientId || null,
+              createdBy: new Types.ObjectId(req.userId!),
+              assignedTo:
+                event.assignedTo && event.assignedTo.length > 0
+                  ? event.assignedTo
+                  : [new Types.ObjectId(req.userId!)],
+            color: "#7C3AED",
+            isNextHearing: true,
+            hearingStatus: "scheduled",
+          });
+        } else {
+          throw createErr;
+        }
+      }
+    }
+
+      caseRecord.nextHearing = parsedNextHearing;
+      caseRecord.timeline.push({
+        event: `Hearing ${status} on ${hearingDate.toLocaleDateString("en-IN")}. Next hearing set to ${parsedNextHearing.toLocaleDateString("en-IN")}${remarks ? `: ${remarks}` : ""}`,
+        by: req.user?.name ?? "Unknown",
+        when: new Date(),
+      });
+      await caseRecord.save();
+
+      if (io) {
+        io.emit("calendar:event:created", {
+          eventId: nextEvent._id.toString(),
+          caseId: caseRecord._id.toString(),
+          start: parsedNextHearing.toISOString(),
+          isNextHearing: true,
+        });
+      }
+    } else {
+      caseRecord.nextHearing = null;
+      caseRecord.timeline.push({
+        event: `Hearing ${status} on ${hearingDate.toLocaleDateString("en-IN")}${remarks ? `: ${remarks}` : ""}`,
+        by: req.user?.name ?? "Unknown",
+        when: new Date(),
+      });
+      await caseRecord.save();
+    }
+
+    await AuditLog.create({
+      userId: req.userId,
+      userName: req.user?.name ?? "Unknown",
+      action: "update",
+      resource: "calendar",
+      resourceId: event._id.toString(),
+      resourceName: `Hearing recorded: ${caseRecord.number || caseRecord.title}`,
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    if (io) {
+      io.emit("calendar:event:updated", {
+        eventId: event._id.toString(),
+        caseId: caseRecord._id.toString(),
+        isNextHearing: false,
+      });
+      io.emit("case:updated", {
+        caseId: caseRecord._id.toString(),
+        number: caseRecord.number,
+        title: caseRecord.title,
+        nextHearing: caseRecord.nextHearing ? caseRecord.nextHearing.toISOString() : null,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      hearingRecord: historyRecord,
+      currentEvent: event,
+      nextEvent,
+      case: caseRecord,
+    });
+  } catch (err: any) {
+    console.error("[calendar] Record hearing error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
   }
 });
 
@@ -358,6 +694,35 @@ router.delete("/events/:id", requireResourceAccess("calendarEvent"), async (req:
     if (!event) {
       res.status(404).json({ message: "Event not found" });
       return;
+    }
+
+    // If canonical next hearing was deleted, update case nextHearing
+    if (event.type === "hearing" && event.caseId && event.isNextHearing) {
+      const nextUpcomingHearing = await CalendarEvent.findOne({
+        caseId: event.caseId,
+        type: "hearing",
+        _id: { $ne: event._id },
+        start: { $gte: new Date() },
+      }).sort({ start: 1 });
+
+      const linkedCase = await Case.findById(event.caseId);
+      if (linkedCase) {
+        linkedCase.nextHearing = nextUpcomingHearing ? nextUpcomingHearing.start : null;
+        await linkedCase.save();
+        if (nextUpcomingHearing) {
+          nextUpcomingHearing.isNextHearing = true;
+          await nextUpcomingHearing.save();
+        }
+        const io = req.app.get("io");
+        if (io) {
+          io.emit("case:updated", {
+            caseId: linkedCase._id.toString(),
+            number: linkedCase.number,
+            title: linkedCase.title,
+            nextHearing: linkedCase.nextHearing ? linkedCase.nextHearing.toISOString() : null,
+          });
+        }
+      }
     }
 
     // Clean up associated reminders atomically

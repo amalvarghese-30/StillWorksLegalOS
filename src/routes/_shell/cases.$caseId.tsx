@@ -34,6 +34,7 @@ import { SectionCard } from "@/components/common/Surface";
 import { StatusPill, toneForStatus } from "@/components/common/StatusPill";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
@@ -67,8 +68,10 @@ import {
   useRequestCaseDeletion,
   useCompleteCase,
   useReopenCase,
+  useCaseHearings,
   type CaseRecord,
   type CaseParty,
+  type HearingRecord,
 } from "@/services/cases";
 import { useAuth } from "@/lib/auth";
 import { useTasks, type TaskRecord } from "@/services/tasks";
@@ -263,7 +266,7 @@ function AddNoteForm({ caseId }: { caseId: string }) {
 function getPartyClientId(party: CaseParty | undefined): string | null {
   if (!party || !party.clientId) return null;
   if (typeof party.clientId === "object" && party.clientId !== null) {
-    return (party.clientId as any)._id?.toString() || null;
+    return (party.clientId as unknown as { _id?: string })._id?.toString() || null;
   }
   return typeof party.clientId === "string" ? party.clientId : null;
 }
@@ -423,6 +426,7 @@ function CaseWorkspace() {
     end: "2099-12-31",
     caseId,
   });
+  const { data: hearingHistoryData } = useCaseHearings(caseId);
   const navigate = useNavigate();
   const updateCase = useUpdateCase();
   const deleteCase = useDeleteCase();
@@ -465,8 +469,12 @@ function CaseWorkspace() {
 
   const [showHearingDialog, setShowHearingDialog] = useState(false);
   const [hearingDateInput, setHearingDateInput] = useState("");
+  const [hearingRemarks, setHearingRemarks] = useState("");
+  const [hearingStatus, setHearingStatus] = useState<"held" | "rescheduled" | "cancelled">("held");
 
   const openHearingDialog = () => {
+    setHearingRemarks("");
+    setHearingStatus("held");
     if (record?.nextHearing) {
       const d = parseFlexibleDate(record.nextHearing);
       if (d) {
@@ -501,7 +509,14 @@ function CaseWorkspace() {
       return;
     }
     updateCase.mutate(
-      { id: caseId, data: { nextHearing: iso } },
+      {
+        id: caseId,
+        data: {
+          nextHearing: iso,
+          hearingRemarks: hearingRemarks.trim() || undefined,
+          hearingStatus,
+        } as any,
+      },
       {
         onSuccess: () => {
           toast.success("Next hearing date saved and automatically marked on calendar!");
@@ -903,7 +918,10 @@ function CaseWorkspace() {
                 className="mt-0.5 sm:mt-1 flex items-center gap-1 text-left group"
                 title="Click to update hearing date"
               >
-                <CalendarDays size={13} className="shrink-0 opacity-75 group-hover:opacity-100 transition-opacity" />
+                <CalendarDays
+                  size={13}
+                  className="shrink-0 opacity-75 group-hover:opacity-100 transition-opacity"
+                />
                 <span className="text-sm sm:text-body font-semibold underline underline-offset-2 opacity-95 group-hover:opacity-100 transition-opacity">
                   {formatDate(record.nextHearing)}
                 </span>
@@ -915,7 +933,10 @@ function CaseWorkspace() {
                 className="mt-0.5 sm:mt-1 flex items-center gap-1 text-left group"
                 title="Set next hearing date"
               >
-                <CalendarDays size={13} className="shrink-0 opacity-60 group-hover:opacity-90 transition-opacity" />
+                <CalendarDays
+                  size={13}
+                  className="shrink-0 opacity-60 group-hover:opacity-90 transition-opacity"
+                />
                 <span className="text-sm sm:text-body font-medium opacity-60 group-hover:opacity-90 transition-opacity">
                   Not scheduled
                 </span>
@@ -1139,32 +1160,124 @@ function CaseWorkspace() {
           {active === "hearings" && (
             <SectionCard
               title="Hearings"
-              description="Court dates and scheduled hearings for this matter."
+              description="Court dates, hearing history, and scheduled hearings for this matter."
               icon={Gavel}
               action={
                 <Button size="sm" variant="outline" onClick={openHearingDialog} className="gap-1.5">
                   <CalendarDays size={14} />
-                  {record.nextHearing ? "Update Next Hearing" : "Schedule Next Hearing"}
+                  {record.nextHearing ? "Record Hearing & Add Next Date" : "Schedule Next Hearing"}
                 </Button>
               }
             >
-              {hearings.length === 0 ? (
-                <div className="rounded-lg border border-dashed p-12 text-center">
-                  <Gavel size={32} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
-                  <p className="mt-4 font-medium">No hearings scheduled</p>
-                  <p className="mt-1 text-helper text-muted-foreground">
-                    Schedule a hearing from the Calendar module to link it to this case.
-                  </p>
-                  <Button
-                    className="mt-4 gradient-primary rounded-md text-primary-foreground"
-                    asChild
-                  >
-                    <Link to="/calendar">
-                      <CalendarDays size={16} /> Open calendar
-                    </Link>
-                  </Button>
+              {/* Upcoming Hearing Banner */}
+              {record.nextHearing && (
+                <div className="mb-6 rounded-xl border border-primary/30 bg-primary/5 p-4 sm:p-5 shadow-soft">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 rounded-pill bg-primary/15 px-2.5 py-0.5 text-caption font-semibold text-primary">
+                          <Clock size={12} /> Upcoming Next Hearing
+                        </span>
+                      </div>
+                      <p className="text-title font-semibold text-foreground pt-1">
+                        {formatDate(record.nextHearing)}
+                      </p>
+                      <p className="text-helper text-muted-foreground">
+                        {new Date(record.nextHearing).toLocaleTimeString("en-IN", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                        {record.court ? ` · ${record.court}` : ""}
+                        {record.judge ? ` · Judge: ${record.judge}` : ""}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="gradient-primary text-primary-foreground shrink-0 self-start sm:self-auto gap-1.5"
+                      onClick={openHearingDialog}
+                    >
+                      <Gavel size={14} /> Record Hearing &amp; Add Next Date
+                    </Button>
+                  </div>
                 </div>
-              ) : (
+              )}
+
+              {/* Permanent Hearing History */}
+              {hearingHistory.length > 0 && (
+                <div className="space-y-3 mb-6">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-helper font-semibold text-foreground uppercase tracking-wider">
+                      Hearing History &amp; Recorded Outcomes
+                    </h4>
+                    <span className="text-caption text-muted-foreground">
+                      {hearingHistory.length} entry/entries
+                    </span>
+                  </div>
+                  <ol className="relative space-y-4 border-l border-border pl-6">
+                    {hearingHistory.map((h) => {
+                      const statusColor =
+                        h.status === "held"
+                          ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
+                          : h.status === "rescheduled"
+                            ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30"
+                            : h.status === "cancelled"
+                              ? "bg-rose-500/15 text-rose-700 dark:text-rose-400 border-rose-500/30"
+                              : "bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/30";
+
+                      return (
+                        <li key={h._id} className="relative">
+                          <span className="absolute top-2 -left-[1.9rem] size-2.5 rounded-full bg-primary ring-4 ring-card" />
+                          <div className="rounded-lg border border-border bg-card p-4 space-y-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="font-semibold text-foreground">
+                                {formatDate(h.hearingDate)}
+                              </span>
+                              <span
+                                className={`rounded-pill border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider ${statusColor}`}
+                              >
+                                {h.status === "held"
+                                  ? "Held"
+                                  : h.status === "rescheduled"
+                                    ? "Rescheduled"
+                                    : h.status}
+                              </span>
+                            </div>
+
+                            {h.remarks ? (
+                              <p className="text-body text-foreground/90 bg-muted/30 p-2.5 rounded border border-border/50 break-words">
+                                {h.remarks}
+                              </p>
+                            ) : (
+                              <p className="text-caption text-muted-foreground italic">
+                                No remarks recorded
+                              </p>
+                            )}
+
+                            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-border/40 text-caption text-muted-foreground">
+                              {h.nextHearingDate && (
+                                <span className="font-medium text-foreground">
+                                  Next date fixed: {formatDate(h.nextHearingDate)}
+                                </span>
+                              )}
+                              <span>
+                                Recorded by {h.recordedBy?.name || "System"} on{" "}
+                                {new Date(h.createdAt).toLocaleDateString("en-IN", {
+                                  day: "numeric",
+                                  month: "short",
+                                  year: "numeric",
+                                })}
+                              </span>
+                            </div>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </div>
+              )}
+
+              {/* Fallback to calendar events if no dedicated history */}
+              {hearingHistory.length === 0 && hearings.length > 0 && (
                 <ol className="relative space-y-5 border-l border-border pl-6">
                   {hearings.map((h) => (
                     <li key={h._id} className="relative">
@@ -1187,6 +1300,25 @@ function CaseWorkspace() {
                     </li>
                   ))}
                 </ol>
+              )}
+
+              {/* Empty state */}
+              {hearingHistory.length === 0 && hearings.length === 0 && !record.nextHearing && (
+                <div className="rounded-lg border border-dashed p-12 text-center">
+                  <Gavel size={32} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
+                  <p className="mt-4 font-medium">No hearings scheduled or recorded</p>
+                  <p className="mt-1 text-helper text-muted-foreground">
+                    Set a hearing date or schedule from the Calendar module.
+                  </p>
+                  <Button
+                    className="mt-4 gradient-primary rounded-md text-primary-foreground"
+                    asChild
+                  >
+                    <Link to="/calendar">
+                      <CalendarDays size={16} /> Open calendar
+                    </Link>
+                  </Button>
+                </div>
               )}
             </SectionCard>
           )}
@@ -1941,20 +2073,70 @@ function CaseWorkspace() {
 
       {/* Next Hearing Dialog */}
       <Dialog open={showHearingDialog} onOpenChange={setShowHearingDialog}>
-        <DialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">
+        <DialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md w-full">
           <DialogHeader>
             <DialogTitle className="text-title font-semibold text-foreground flex items-center gap-2">
-              <CalendarDays size={18} className="text-primary" /> Next Hearing Date
+              <CalendarDays size={18} className="text-primary" />
+              {record.nextHearing ? "Record Hearing & Add Next Date" : "Schedule Next Hearing Date"}
             </DialogTitle>
             <DialogDescription className="text-helper text-muted-foreground mt-1">
-              Set or update the upcoming court hearing for &quot;{record.number} — {record.title}
-              &quot;.
+              {record.nextHearing
+                ? `Record the outcome of the current hearing and set the next date for "${record.number} — ${record.title}".`
+                : `Set the upcoming court hearing for "${record.number} — ${record.title}".`}
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleSaveHearing} className="mt-4 space-y-4">
+            {record.nextHearing && (
+              <div className="rounded-md border border-border bg-muted/30 p-3 space-y-1">
+                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  Current Scheduled Hearing
+                </p>
+                <p className="text-helper font-medium text-foreground">
+                  {formatDate(record.nextHearing)} at{" "}
+                  {new Date(record.nextHearing).toLocaleTimeString("en-IN", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </p>
+              </div>
+            )}
+
+            {record.nextHearing && (
+              <div className="space-y-1.5">
+                <Label className="text-helper font-semibold">
+                  Current Hearing Status / Outcome
+                </Label>
+                <select
+                  value={hearingStatus}
+                  onChange={(e) =>
+                    setHearingStatus(e.target.value as "held" | "rescheduled" | "cancelled")
+                  }
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-body shadow-xs focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="held">Hearing Held / Conducted</option>
+                  <option value="rescheduled">Rescheduled / Adjourned without hearing</option>
+                  <option value="cancelled">Matter Disposed / Cancelled</option>
+                </select>
+              </div>
+            )}
+
             <div className="space-y-1.5">
-              <Label className="text-helper font-semibold">Date &amp; Time of Hearing</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-helper font-semibold">Work done / Hearing remarks</Label>
+                <span className="text-[11px] text-muted-foreground">(Optional)</span>
+              </div>
+              <Textarea
+                rows={2}
+                placeholder="e.g. Matter heard; additional documents requested."
+                value={hearingRemarks}
+                onChange={(e) => setHearingRemarks(e.target.value)}
+                className="resize-none"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-helper font-semibold">Next Hearing Date &amp; Time</Label>
               <Input
                 type="datetime-local"
                 value={hearingDateInput}
@@ -2019,7 +2201,7 @@ function CaseWorkspace() {
                   ) : (
                     <Check size={14} className="mr-1" />
                   )}
-                  Save &amp; Mark Calendar
+                  Save Hearing &amp; Next Date
                 </Button>
               </div>
             </DialogFooter>

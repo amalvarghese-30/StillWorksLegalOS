@@ -172,6 +172,8 @@ async function main() {
             createdBy: creatorId,
             assignedTo,
             color: "#6366f1",
+            isNextHearing: true,
+            hearingStatus: "scheduled",
           });
         }
         created++;
@@ -183,22 +185,44 @@ async function main() {
 
         if (diffMs > ONE_MINUTE_MS) {
           console.log(
-            `  [UPDATE] ${c.number} "${c.title}" → existing: ${existingStart.toLocaleDateString("en-IN")} → new: ${hearingDate.toLocaleDateString("en-IN")}`
+            `  [PRESERVE & ADD] ${c.number} "${c.title}" → preserving existing: ${existingStart.toLocaleDateString("en-IN")} → new upcoming: ${hearingDate.toLocaleDateString("en-IN")}`
           );
           if (!DRY_RUN) {
-            existingEvent.title = eventTitle;
-            existingEvent.description = eventDesc;
-            existingEvent.start = hearingDate;
-            existingEvent.end = hearingDate;
-            existingEvent.assignedTo = assignedTo;
-            if (clientId) existingEvent.clientId = clientId;
+            existingEvent.isNextHearing = false;
+            if (existingEvent.hearingStatus === "scheduled") {
+              existingEvent.hearingStatus = "rescheduled";
+            }
             await existingEvent.save();
+
+            const creatorId = c.createdBy
+              ? ((c.createdBy as any)?._id ?? c.createdBy)
+              : assignedTo[0] ?? new mongoose.Types.ObjectId();
+
+            await CalendarEvent.create({
+              title: eventTitle,
+              description: eventDesc,
+              type: "hearing",
+              start: hearingDate,
+              end: hearingDate,
+              allDay: false,
+              caseId,
+              clientId: clientId || null,
+              createdBy: creatorId,
+              assignedTo,
+              color: "#6366f1",
+              isNextHearing: true,
+              hearingStatus: "scheduled",
+            });
           }
           updated++;
         } else {
           console.log(
             `  [OK]     ${c.number} "${c.title}" → hearing event is current (${existingStart.toLocaleDateString("en-IN")})`
           );
+          if (!DRY_RUN && !existingEvent.isNextHearing) {
+            existingEvent.isNextHearing = true;
+            await existingEvent.save();
+          }
           skipped++;
         }
       }

@@ -23,6 +23,7 @@ const { Notification } = await import("../models/Notification.js");
 const { NotificationService } = await import("../services/notifications.js");
 const { Reminder } = await import("../models/Reminder.js");
 const { CalendarEvent } = await import("../models/CalendarEvent.js");
+const { HearingRecord } = await import("../models/HearingRecord.js");
 const { default: adminRoutes } = await import("../routes/admin.js");
 const { default: authRoutes } = await import("../routes/auth.js");
 const { deliveredOtpsForTesting } = await import("../services/passwordResetDelivery.js");
@@ -4801,6 +4802,276 @@ const { NotificationService } = await import("../services/notifications.js");
     // Verify only 1 notification exists in DB
     const notifCount = await Notification.countDocuments({ dedupeKey });
     assert(notifCount === 1, "S37-26: Database holds exactly 1 notification for unique dedupeKey");
+  }
+
+  // =========================================================================
+  // Suite 38: Hearing Date Synchronization & Permanent Hearing History
+  // =========================================================================
+  console.log("\n--- Suite 38: Hearing Date Synchronization & Permanent Hearing History ---");
+  {
+    const createTestToken = async (u: any) => {
+      const token = jwt.sign(
+        { userId: u._id.toString(), email: u.email, role: u.role },
+        JWT_SECRET
+      );
+      await Session.create({
+        userId: u._id,
+        token,
+        refreshTokenHash: `hash_${Date.now()}_${Math.random()}`,
+        isRevoked: false,
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+      });
+      return token;
+    };
+
+    const s38Admin = await User.create({
+      name: "Hearing Admin",
+      email: `hearing.admin.${Date.now()}@stillworks.test`,
+      passwordHash: await bcrypt.hash("Password123!", 10),
+      role: "admin",
+      status: "online",
+    });
+    const s38AdminToken = await createTestToken(s38Admin);
+
+    const s38Emp = await User.create({
+      name: "Hearing Emp",
+      email: `hearing.emp.${Date.now()}@stillworks.test`,
+      passwordHash: await bcrypt.hash("Password123!", 10),
+      role: "employee",
+      status: "online",
+      permissions: { calendar: true, cases: true },
+    });
+    const s38EmpToken = await createTestToken(s38Emp);
+
+    const s38Unauth = await User.create({
+      name: "Hearing Unauth",
+      email: `hearing.unauth.${Date.now()}@stillworks.test`,
+      passwordHash: await bcrypt.hash("Password123!", 10),
+      role: "employee",
+      status: "online",
+      permissions: { calendar: false, cases: false },
+    });
+    const s38UnauthToken = await createTestToken(s38Unauth);
+
+    // 1. Creating a case with a next hearing creates/synchronizes canonical calendar event
+    const caseDate1 = new Date("2026-10-19T10:00:00.000Z");
+    const createCaseRes = await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${s38AdminToken}`)
+      .send({
+        title: "Dispute over Land Parcel 102",
+        category: "Property Law",
+        court: "Bombay High Court",
+        nextHearing: caseDate1.toISOString(),
+      });
+    assert(createCaseRes.status === 201, "S38-01: Case created with nextHearing -> 201");
+    const caseId = createCaseRes.body.case._id;
+
+    // Check calendar event created
+    const calRes1 = await request(app)
+      .get(`/api/calendar/events?caseId=${caseId}&type=hearing`)
+      .set("Authorization", `Bearer ${s38AdminToken}`);
+    assert(calRes1.status === 200, "S38-02: Calendar query returns 200");
+    assert(calRes1.body.events.length === 1, "S38-03: Exactly one canonical hearing event created on case creation");
+    const event1 = calRes1.body.events[0];
+    assert(event1.isNextHearing === true, "S38-04: Canonical event has isNextHearing: true");
+    assert(new Date(event1.start).getTime() === caseDate1.getTime(), "S38-05: Calendar event start matches case nextHearing");
+
+    // 2. Exact User Scenario: Record Hearing with remarks & add next date from Calendar
+    // Existing: 19 October 2026
+    // Remarks: "Matter heard; additional documents requested."
+    // Next hearing: 2 November 2026
+    const nextHearingDate2 = new Date("2026-11-02T10:00:00.000Z");
+    const recordHearingRes = await request(app)
+      .post(`/api/calendar/events/${event1._id}/record-hearing`)
+      .set("Authorization", `Bearer ${s38AdminToken}`)
+      .send({
+        status: "held",
+        remarks: "Matter heard; additional documents requested.",
+        nextHearingDate: nextHearingDate2.toISOString(),
+      });
+    assert(recordHearingRes.status === 200, "S38-06: Record hearing & add next date returns 200");
+    assert(recordHearingRes.body.success === true, "S38-07: Record hearing reports success: true");
+
+    // Check Calendar: 19 October remains on the calendar!
+    const calRes2 = await request(app)
+      .get(`/api/calendar/events?caseId=${caseId}&type=hearing&start=2026-01-01&end=2026-12-31`)
+      .set("Authorization", `Bearer ${s38AdminToken}`);
+    assert(calRes2.status === 200, "S38-08: Calendar query after recording hearing returns 200");
+    assert(calRes2.body.events.length === 2, "S38-09: Calendar now contains both 19 Oct and 2 Nov hearings");
+
+    const octEvent = calRes2.body.events.find((e: any) => new Date(e.start).getTime() === caseDate1.getTime());
+    const novEvent = calRes2.body.events.find((e: any) => new Date(e.start).getTime() === nextHearingDate2.getTime());
+    assert(Boolean(octEvent), "S38-10: 19 October entry preserved in calendar");
+    assert(octEvent.isNextHearing === false, "S38-11: 19 October entry demoted from canonical next hearing");
+    assert(octEvent.hearingStatus === "held", "S38-12: 19 October entry marked with status 'held'");
+    assert(octEvent.remarks === "Matter heard; additional documents requested.", "S38-13: 19 October entry has saved remarks");
+
+    assert(Boolean(novEvent), "S38-14: 2 November appears as separate upcoming hearing in calendar");
+    assert(novEvent.isNextHearing === true, "S38-15: 2 November is marked as canonical upcoming next hearing");
+
+    // Check Cases tab & Case detail: shows 2 November as Next Hearing
+    const caseDetailRes = await request(app)
+      .get(`/api/cases/${caseId}`)
+      .set("Authorization", `Bearer ${s38AdminToken}`);
+    assert(caseDetailRes.status === 200, "S38-16: GET /api/cases/:id returns 200");
+    assert(
+      new Date(caseDetailRes.body.case.nextHearing).getTime() === nextHearingDate2.getTime(),
+      "S38-17: Case.nextHearing updated to 2 November"
+    );
+
+    // Check Case hearing history
+    const historyRes = await request(app)
+      .get(`/api/cases/${caseId}/hearings`)
+      .set("Authorization", `Bearer ${s38AdminToken}`);
+    assert(historyRes.status === 200, "S38-18: GET /api/cases/:id/hearings returns 200");
+    assert(historyRes.body.hearings.length >= 1, "S38-19: Case has persistent hearing history");
+    const hRecord1 = historyRes.body.hearings.find((h: any) => new Date(h.hearingDate).getTime() === caseDate1.getTime());
+    assert(Boolean(hRecord1), "S38-20: History contains 19 October hearing record");
+    assert(hRecord1.remarks === "Matter heard; additional documents requested.", "S38-21: History record contains remarks");
+    assert(hRecord1.status === "held", "S38-22: History record has status 'held'");
+    assert(new Date(hRecord1.nextHearingDate).getTime() === nextHearingDate2.getTime(), "S38-23: History record links to next date 2 November");
+
+    // 3. Repeated submissions do not create duplicate history entries or canonical events (Idempotency)
+    const repeatRes = await request(app)
+      .post(`/api/calendar/events/${octEvent._id}/record-hearing`)
+      .set("Authorization", `Bearer ${s38AdminToken}`)
+      .send({
+        status: "held",
+        remarks: "Matter heard; additional documents requested.",
+        nextHearingDate: nextHearingDate2.toISOString(),
+      });
+    assert(repeatRes.status === 200, "S38-24: Repeated submission returns 200");
+    const historyCount = await HearingRecord.countDocuments({ caseId, hearingDate: caseDate1 });
+    assert(historyCount === 1, "S38-25: No duplicate HearingRecord created on retry");
+    const canonicalCount = await CalendarEvent.countDocuments({ caseId, type: "hearing", isNextHearing: true });
+    assert(canonicalCount === 1, "S38-26: Exactly one canonical upcoming event exists (no unique index violation)");
+
+    // 4. Reverse workflow: update next hearing from Cases tab
+    const nextHearingDate3 = new Date("2026-11-16T10:00:00.000Z");
+    const patchCaseRes = await request(app)
+      .patch(`/api/cases/${caseId}`)
+      .set("Authorization", `Bearer ${s38AdminToken}`)
+      .send({
+        nextHearing: nextHearingDate3.toISOString(),
+        hearingRemarks: "Adjourned by consent; bench not sitting",
+        hearingStatus: "rescheduled",
+      });
+    assert(patchCaseRes.status === 200, "S38-27: Case patched with new hearing date returns 200");
+    assert(
+      new Date(patchCaseRes.body.case.nextHearing).getTime() === nextHearingDate3.getTime(),
+      "S38-28: Patched case has 16 November nextHearing"
+    );
+
+    // Confirm previous date (2 Nov) remains in history and on calendar, and 16 Nov is new canonical
+    const calRes3 = await request(app)
+      .get(`/api/calendar/events?caseId=${caseId}&type=hearing&start=2026-01-01&end=2026-12-31`)
+      .set("Authorization", `Bearer ${s38AdminToken}`);
+    assert(calRes3.body.events.length === 3, "S38-29: Calendar retains all 3 dates (19 Oct, 2 Nov, 16 Nov)");
+
+    const nov2Event = calRes3.body.events.find((e: any) => new Date(e.start).getTime() === nextHearingDate2.getTime());
+    const nov16Event = calRes3.body.events.find((e: any) => new Date(e.start).getTime() === nextHearingDate3.getTime());
+    assert(Boolean(nov2Event), "S38-30: 2 Nov preserved on calendar");
+    assert(nov2Event.isNextHearing === false, "S38-31: 2 Nov is not canonical");
+    assert(nov2Event.hearingStatus === "rescheduled", "S38-32: 2 Nov hearing marked as rescheduled without falsely marking held");
+
+    assert(Boolean(nov16Event), "S38-33: 16 Nov present on calendar");
+    assert(nov16Event.isNextHearing === true, "S38-34: 16 Nov is current canonical upcoming hearing");
+
+    // 5. Calendar PATCH to update start date updates linked case nextHearing
+    const nextHearingDate4 = new Date("2026-11-23T10:00:00.000Z");
+    const calPatchRes = await request(app)
+      .patch(`/api/calendar/events/${nov16Event._id}`)
+      .set("Authorization", `Bearer ${s38AdminToken}`)
+      .send({
+        start: nextHearingDate4.toISOString(),
+        remarks: "Date adjusted on calendar",
+      });
+    assert(calPatchRes.status === 200, "S38-35: Calendar PATCH returns 200");
+    const updatedCaseCheck = await Case.findById(caseId);
+    assert(
+      new Date(updatedCaseCheck?.nextHearing!).getTime() === nextHearingDate4.getTime(),
+      "S38-36: Case.nextHearing synchronized from calendar PATCH to 23 Nov"
+    );
+
+    // 6. Invalid dates rejected without partial updates
+    const invalidDateRes = await request(app)
+      .patch(`/api/cases/${caseId}`)
+      .set("Authorization", `Bearer ${s38AdminToken}`)
+      .send({
+        nextHearing: "not-a-valid-date",
+      });
+    assert(invalidDateRes.status === 400, "S38-37: Invalid date format on case patch rejected with 400");
+    const caseAfterInvalid = await Case.findById(caseId);
+    assert(
+      new Date(caseAfterInvalid?.nextHearing!).getTime() === nextHearingDate4.getTime(),
+      "S38-38: Case nextHearing preserved intact after invalid date rejection"
+    );
+
+    // 7. Authorization: Unauthorized user cannot record hearing or update case
+    const unauthRecordRes = await request(app)
+      .post(`/api/calendar/events/${nov16Event._id}/record-hearing`)
+      .set("Authorization", `Bearer ${s38UnauthToken}`)
+      .send({
+        status: "held",
+        remarks: "Malicious update attempt",
+      });
+    assert(unauthRecordRes.status === 403, "S38-39: Unauthorized user blocked from recording hearing with 403");
+
+    // 8. Unlinked hearing events do not cause case updates
+    const unlinkedEventRes = await request(app)
+      .post("/api/calendar/events")
+      .set("Authorization", `Bearer ${s38AdminToken}`)
+      .send({
+        title: "Unlinked General Hearing Mock",
+        start: new Date("2026-12-01T10:00:00.000Z").toISOString(),
+        type: "hearing",
+      });
+    assert(unlinkedEventRes.status === 201, "S38-40: Unlinked hearing event created -> 201");
+    const unlinkedRecordRes = await request(app)
+      .post(`/api/calendar/events/${unlinkedEventRes.body.event._id}/record-hearing`)
+      .set("Authorization", `Bearer ${s38AdminToken}`)
+      .send({
+        status: "held",
+        remarks: "Should fail gracefully",
+      });
+    assert(unlinkedRecordRes.status === 400, "S38-41: Unlinked hearing rejected by record-hearing with 400");
+
+    // 9. Editing unrelated calendar event types continues to work
+    const taskEventRes = await request(app)
+      .post("/api/calendar/events")
+      .set("Authorization", `Bearer ${s38AdminToken}`)
+      .send({
+        title: "Internal Partner Strategy Meeting",
+        start: new Date("2026-12-05T14:00:00.000Z").toISOString(),
+        type: "firm_event",
+      });
+    assert(taskEventRes.status === 201, "S38-42: Non-hearing event created -> 201");
+    const taskPatchRes = await request(app)
+      .patch(`/api/calendar/events/${taskEventRes.body.event._id}`)
+      .set("Authorization", `Bearer ${s38AdminToken}`)
+      .send({
+        title: "Internal Partner Strategy Meeting - Updated",
+      });
+    assert(taskPatchRes.status === 200, "S38-43: Non-hearing event edit returns 200");
+    assert(taskPatchRes.body.event.title === "Internal Partner Strategy Meeting - Updated", "S38-44: Title updated successfully");
+
+    // 10. Reopening case retains all hearing history and remarks
+    await request(app)
+      .post(`/api/cases/${caseId}/complete`)
+      .set("Authorization", `Bearer ${s38AdminToken}`)
+      .send({ note: "Closing matter" });
+    const reopenedRes = await request(app)
+      .post(`/api/cases/${caseId}/reopen`)
+      .set("Authorization", `Bearer ${s38AdminToken}`)
+      .send({ reason: "Reopening matter to record further hearings" });
+    assert(reopenedRes.status === 200, "S38-45: Case reopen returns 200");
+
+    const caseReopenedHearings = await request(app)
+      .get(`/api/cases/${caseId}/hearings`)
+      .set("Authorization", `Bearer ${s38AdminToken}`);
+    assert(caseReopenedHearings.status === 200, "S38-46: Hearing history query on reopened case returns 200");
+    assert(caseReopenedHearings.body.hearings.length >= 2, "S38-47: Reopened case preserved all historical hearing entries");
   }
 
 

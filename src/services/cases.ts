@@ -38,6 +38,19 @@ export interface AssignmentHistoryEntry {
   timestamp: string;
 }
 
+export interface HearingRecord {
+  _id: string;
+  caseId: string;
+  hearingDate: string;
+  status: "held" | "rescheduled" | "cancelled" | "scheduled";
+  remarks: string;
+  nextHearingDate?: string | null;
+  recordedBy?: { _id: string; name: string; email?: string; title?: string };
+  calendarEventId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CaseRecord {
   _id: string;
   number: string;
@@ -91,6 +104,7 @@ export interface CaseRecord {
   timeline: CaseTimelineEntry[];
   progress: number;
   tags: string[];
+  hearingHistory?: HearingRecord[];
   createdAt: string;
   updatedAt: string;
 }
@@ -181,6 +195,14 @@ export function useCase(id: string | undefined) {
     queryKey: caseKeys.detail(id!),
     queryFn: () => api.get(`/cases/${id}`),
     enabled: !!id,
+  });
+}
+
+export function useCaseHearings(caseId?: string) {
+  return useQuery<{ hearings: HearingRecord[] }>({
+    queryKey: ["cases", caseId, "hearings"],
+    queryFn: () => api.get(`/cases/${caseId}/hearings`),
+    enabled: Boolean(caseId),
   });
 }
 

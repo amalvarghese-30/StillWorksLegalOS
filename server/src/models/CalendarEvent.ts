@@ -24,6 +24,10 @@ export interface ICalendarEvent extends Document {
   createdBy: mongoose.Types.ObjectId;
   assignedTo: mongoose.Types.ObjectId[];
   color?: string;
+  isNextHearing?: boolean;
+  hearingStatus?: "scheduled" | "held" | "rescheduled" | "cancelled";
+  hearingRecordId?: mongoose.Types.ObjectId | null;
+  remarks?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -50,6 +54,14 @@ const CalendarEventSchema = new Schema<ICalendarEvent>(
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     assignedTo: { type: [Schema.Types.ObjectId], ref: "User", default: [] },
     color: { type: String, default: "" },
+    isNextHearing: { type: Boolean, default: false, index: true },
+    hearingStatus: {
+      type: String,
+      enum: ["scheduled", "held", "rescheduled", "cancelled"],
+      default: "scheduled",
+    },
+    hearingRecordId: { type: Schema.Types.ObjectId, ref: "HearingRecord", default: null },
+    remarks: { type: String, default: "" },
   },
   {
     timestamps: true,
@@ -68,6 +80,17 @@ const CalendarEventSchema = new Schema<ICalendarEvent>(
 
 CalendarEventSchema.index({ start: 1, end: 1 });
 CalendarEventSchema.index({ assignedTo: 1, start: 1 });
+CalendarEventSchema.index(
+  { caseId: 1, type: 1, isNextHearing: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      caseId: { $type: "objectId" },
+      type: "hearing",
+      isNextHearing: true,
+    },
+  }
+);
 
 // ---------------------------------------------------------------------------
 // Model
