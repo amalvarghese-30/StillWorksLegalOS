@@ -200,10 +200,10 @@ export function DayDetailsDialog({
                             <button
                               type="button"
                               onClick={() => setRecordingEvent(event)}
-                              className="inline-flex items-center gap-1 rounded bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary hover:bg-primary/20 transition-colors"
+                              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-[12px] font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring transition-all cursor-pointer active:scale-95"
                               title="Record hearing outcome, work done, and schedule next date"
                             >
-                              <FileCheck2 size={12} /> Record Hearing &amp; Add Next Date
+                              <FileCheck2 size={13} /> Next Date
                             </button>
                           )}
                           {onEditEvent && (
