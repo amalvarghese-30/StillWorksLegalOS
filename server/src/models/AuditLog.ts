@@ -31,7 +31,8 @@ export type AuditResource =
   | "chat"
   | "user"
   | "settings"
-  | "approval";
+  | "approval"
+  | "category";
 
 export interface IAuditLog extends Document {
   userId: mongoose.Types.ObjectId;
@@ -155,6 +156,7 @@ const AuditLogSchema = new Schema<IAuditLog>(
         "user",
         "settings",
         "approval",
+        "category",
       ],
       required: true,
       index: true,

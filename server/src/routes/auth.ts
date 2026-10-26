@@ -87,6 +87,7 @@ function clearRefreshCookie(res: Response, req?: Request): void {
     `SameSite=${sameSite}`,
     "Path=/api/auth",
     "Max-Age=0",
+    "Expires=Thu, 01 Jan 1970 00:00:00 GMT",
   ];
   const cookieDomain = getCookieDomain(req);
   if (cookieDomain) {
@@ -99,6 +100,9 @@ function clearRefreshCookie(res: Response, req?: Request): void {
       parts.push("Secure");
     }
   }
+  // Expire the same cookie using the same scope/domain attributes as setRefreshCookie.
+  // Without this header the browser keeps its refresh cookie after logout.
+  res.setHeader("Set-Cookie", parts.join("; "));
 }
 
 async function hashRefreshToken(token: string): Promise<string> {

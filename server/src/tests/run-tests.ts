@@ -38,6 +38,8 @@ const { default: searchRoutes } = await import("../routes/search.js");
 const { default: categoriesRoutes } = await import("../routes/categories.js");
 const { default: gmailRoutes } = await import("../routes/gmail.js");
 const { default: approvalsRoutes } = await import("../routes/approvals.js");
+const { default: notificationsRoutes } = await import("../routes/notifications.js");
+const { default: webhooksRoutes } = await import("../routes/webhooks.js");
 const { ApprovalRequest } = await import("../models/ApprovalRequest.js");
 const { Category } = await import("../models/Category.js");
 const { TaskReminderState } = await import("../models/TaskReminderState.js");
@@ -79,6 +81,8 @@ function buildApp() {
   app.use("/api/documents", documentsRoutes);
   app.use("/api/chat", chatRoutes);
   app.use("/api/search", searchRoutes);
+  app.use("/api/notifications", notificationsRoutes);
+  app.use("/api/webhooks", webhooksRoutes);
 
   app.get("/api/presence", requireAuth, (_req, res) => {
     res.json({ presence: presenceService.getLivePresenceMap() });
@@ -174,6 +178,26 @@ async function run() {
       },
     });
     const token = await createToken(manager);
+
+    // Employee directory is permission-gated and never returns credential/reset/integration secrets.
+    const directoryRes = await request(app)
+      .get("/api/admin/employees")
+      .set("Authorization", `Bearer ${token}`);
+    assert(directoryRes.status === 200, "AUTHZ-EMP-LIST-001: Employee permission allows directory access");
+    assert(
+      directoryRes.body.employees.every((u: Record<string, unknown>) =>
+        !("passwordHash" in u) && !("resetOtpHash" in u) && !("resetOtpExpires" in u) && !("resetOtpAttempts" in u) && !("telegramChatId" in u)),
+      "AUTHZ-EMP-LIST-002: Directory omits sensitive account fields",
+    );
+    const restrictedUser = await createUser({
+      email: `restricted-directory-${Date.now()}@test.com`,
+      permissions: { dashboard: true, clients: true, cases: true, tasks: true, documents: true, calendar: true, chat: true, reports: true, employees: false, approvals: false, auditLogs: false, settings: false },
+    });
+    const restrictedToken = await createToken(restrictedUser);
+    const deniedDirectoryRes = await request(app)
+      .get("/api/admin/employees")
+      .set("Authorization", `Bearer ${restrictedToken}`);
+    assert(deniedDirectoryRes.status === 403, "AUTHZ-EMP-LIST-003: Directory denied without employee permission");
 
     // AUTHZ-EMP-001
     const res1 = await request(app)
@@ -570,6 +594,16 @@ async function run() {
     assert(logoutRes.status === 200, "AUTH-006: POST /api/auth/logout returns 200");
     const sessionInDb = await Session.findOne({ token: authToken });
     assert(sessionInDb?.isRevoked === true, "AUTH-007: Session marked isRevoked:true in MongoDB");
+    const rawSetCookies = logoutRes.headers["set-cookie"];
+    const cookieList: string[] = Array.isArray(rawSetCookies)
+      ? rawSetCookies
+      : typeof rawSetCookies === "string"
+        ? [rawSetCookies]
+        : [];
+    assert(
+      cookieList.some((cookie: string) => cookie.startsWith("stillworks_refresh=") && cookie.includes("Max-Age=0")),
+      "AUTH-007A: Logout expires the httpOnly refresh cookie",
+    );
 
     // AUTH-008: Revoked token cannot access protected endpoint
     const postLogoutAccess = await request(app)
@@ -2207,6 +2241,13 @@ async function run() {
     assert(treeRes.status === 200, "SUITE23-CAT-002: GET /api/categories/tree returns 200");
     assert(Array.isArray(treeRes.body.tree) && treeRes.body.tree.length >= 9, "SUITE23-CAT-003: Category tree contains main categories");
 
+    // Non-admin users cannot create a top-level category or bypass the Other Works restriction.
+    const forbiddenCategoryRes = await request(app)
+      .post("/api/categories")
+      .set("Authorization", `Bearer ${empToken}`)
+      .send({ name: "Unauthorized Top-Level Category" });
+    assert(forbiddenCategoryRes.status === 403, "SUITE23-CAT-004: Non-admin category creation outside Other Works is forbidden");
+
     // 2. Priority Zero: Fix Client Not Found on Compound Name - Phone
     const jatinder = await Client.create({
       name: "Jatinder Singh",
@@ -2379,6 +2420,13 @@ async function run() {
       });
     assert(calEventRes.status === 201, "SUITE24-CAL-001: Calendar event created with remarks alias (201)");
     assert(calEventRes.body.event.description === "Hearing adjourned for commissioner report", "SUITE24-CAL-002: Remarks correctly persisted into event.description");
+
+    const clearEventEndRes = await request(app)
+      .patch(`/api/calendar/events/${calEventRes.body.event._id}`)
+      .set("Authorization", `Bearer ${empToken}`)
+      .send({ end: null });
+    assert(clearEventEndRes.status === 200, "SUITE24-CAL-003: Calendar event end date can be cleared");
+    assert(clearEventEndRes.body.event.end === null || clearEventEndRes.body.event.end === undefined, "SUITE24-CAL-004: Cleared calendar end date remains empty");
 
     // 5. Category 3-level tree construction verification
     const initialTreeRes = await request(app)
@@ -5343,6 +5391,327 @@ const { NotificationService } = await import("../services/notifications.js");
       new Date(concCaseDoc!.nextHearing!).toISOString() === new Date(concCanonicalEvents[0].start).toISOString(),
       "S38-70: Case.nextHearing matches the canonical event start date exactly"
     );
+  }
+
+  // =========================================================================
+  // SUITE 39: AUDIT REMEDIATION PHASES 1–3 REGRESSION SUITE
+  // =========================================================================
+  {
+    console.log("\nSuite: Audit Remediation Phases 1–3 Regression Suite");
+
+    const auditAdmin = await createUser({
+      email: `audit-admin-${Date.now()}@test.com`,
+      role: "admin",
+    });
+    const auditAdminToken = await createToken(auditAdmin);
+
+    const auditEmpA = await createUser({
+      email: `audit-emp-a-${Date.now()}@test.com`,
+      role: "employee",
+      permissions: { dashboard: true, clients: true, cases: true, tasks: true, documents: true, calendar: true, chat: true, reports: true, employees: false, approvals: false, auditLogs: false, settings: false },
+    });
+    const auditEmpAToken = await createToken(auditEmpA);
+
+    const auditEmpB = await createUser({
+      email: `audit-emp-b-${Date.now()}@test.com`,
+      role: "employee",
+      permissions: { dashboard: true, clients: true, cases: true, tasks: true, documents: true, calendar: true, chat: true, reports: true, employees: false, approvals: false, auditLogs: false, settings: false },
+    });
+    const auditEmpBToken = await createToken(auditEmpB);
+
+    const auditEmpC = await createUser({
+      email: `audit-emp-c-${Date.now()}@test.com`,
+      role: "employee",
+      permissions: { dashboard: true, clients: true, cases: true, tasks: true, documents: true, calendar: true, chat: true, reports: true, employees: false, approvals: false, auditLogs: false, settings: false },
+    });
+    const auditEmpCToken = await createToken(auditEmpC);
+
+    // -----------------------------------------------------------------------
+    // 1. Category Restrictions
+    // -----------------------------------------------------------------------
+    let otherWorksParent = await Category.findOne({ slug: "other-works", parentId: null });
+    if (!otherWorksParent) {
+      otherWorksParent = await Category.create({
+        name: "Other Works",
+        slug: "other-works",
+        level: 1,
+        categoryType: "admin",
+        isActive: true,
+        displayOrder: 99,
+      });
+    } else {
+      otherWorksParent.isActive = true;
+      await otherWorksParent.save();
+    }
+
+    let legalParent = await Category.findOne({ slug: "corporate-litigation", parentId: null });
+    if (!legalParent) {
+      legalParent = await Category.create({
+        name: "Corporate Litigation",
+        slug: "corporate-litigation",
+        level: 1,
+        categoryType: "legal",
+        isActive: true,
+        displayOrder: 1,
+      });
+    }
+
+    let deactivatedParent = await Category.findOne({ slug: "other-works-inactive", parentId: null });
+    if (!deactivatedParent) {
+      deactivatedParent = await Category.create({
+        name: "Other Works (Inactive)",
+        slug: "other-works-inactive",
+        level: 1,
+        categoryType: "admin",
+        isActive: false,
+        displayOrder: 100,
+      });
+    }
+
+    // S39-01: Non-admin cannot create under non-Other Works parent
+    const nonAdminIllegalParentRes = await request(app)
+      .post("/api/categories")
+      .set("Authorization", `Bearer ${auditEmpAToken}`)
+      .send({
+        name: "Illegal Subcategory",
+        parentId: legalParent._id.toString(),
+      });
+    assert(nonAdminIllegalParentRes.status === 403, "S39-01: Non-admin creation under non-Other Works parent returns 403");
+
+    // S39-02: Non-admin cannot create under deactivated parent
+    const nonAdminInactiveParentRes = await request(app)
+      .post("/api/categories")
+      .set("Authorization", `Bearer ${auditEmpAToken}`)
+      .send({
+        name: "Inactive Child Subcategory",
+        parentId: deactivatedParent._id.toString(),
+      });
+    assert(nonAdminInactiveParentRes.status === 403, "S39-02: Non-admin creation under deactivated parent returns 403");
+
+    // S39-03: Non-admin can create under active Other Works parent, forced to custom type
+    const nonAdminValidCategoryRes = await request(app)
+      .post("/api/categories")
+      .set("Authorization", `Bearer ${auditEmpAToken}`)
+      .send({
+        name: "Custom Research Task",
+        parentId: otherWorksParent._id.toString(),
+        categoryType: "legal", // Attempting to escalate to legal category
+      });
+    assert(nonAdminValidCategoryRes.status === 201, "S39-03: Non-admin creation under Other Works parent returns 201");
+    assert(nonAdminValidCategoryRes.body.category.categoryType === "custom", "S39-04: Non-admin categoryType forced to 'custom'");
+    assert(nonAdminValidCategoryRes.body.category.isCustom === true, "S39-05: Non-admin category marked isCustom: true");
+
+    // -----------------------------------------------------------------------
+    // 2. Calendar Event Optional End Date Handling
+    // -----------------------------------------------------------------------
+    const calEventRes = await request(app)
+      .post("/api/calendar/events")
+      .set("Authorization", `Bearer ${auditAdminToken}`)
+      .send({
+        title: "Conference Call",
+        start: new Date("2026-11-10T10:00:00Z").toISOString(),
+        end: new Date("2026-11-10T11:00:00Z").toISOString(),
+        type: "firm_event",
+      });
+    const calEventId = calEventRes.body.event._id;
+
+    // S39-06: Omitted end date preserves existing end date
+    const omitEndRes = await request(app)
+      .patch(`/api/calendar/events/${calEventId}`)
+      .set("Authorization", `Bearer ${auditAdminToken}`)
+      .send({ title: "Updated Conference Call" });
+    assert(omitEndRes.status === 200, "S39-06: PATCH omitting end date returns 200");
+    assert(omitEndRes.body.event.end !== null, "S39-07: Omitted end date preserves original end date");
+
+    // S39-08: Invalid end date format returns 400
+    const invalidEndRes = await request(app)
+      .patch(`/api/calendar/events/${calEventId}`)
+      .set("Authorization", `Bearer ${auditAdminToken}`)
+      .send({ end: "not-a-valid-date" });
+    assert(invalidEndRes.status === 400, "S39-08: Invalid end date format rejected with 400");
+
+    // S39-09: Explicit null clears end date
+    const nullEndRes = await request(app)
+      .patch(`/api/calendar/events/${calEventId}`)
+      .set("Authorization", `Bearer ${auditAdminToken}`)
+      .send({ end: null });
+    assert(nullEndRes.status === 200, "S39-09: PATCH with end: null returns 200");
+    assert(nullEndRes.body.event.end === null, "S39-10: End date successfully cleared to null");
+
+    // -----------------------------------------------------------------------
+    // 3. Notification ID Validation & Isolation
+    // -----------------------------------------------------------------------
+    // S39-11: Malformed notification ID on mark-as-read returns 400
+    const malformedReadRes = await request(app)
+      .patch("/api/notifications/invalid-id-123/read")
+      .set("Authorization", `Bearer ${auditEmpAToken}`);
+    assert(malformedReadRes.status === 400, "S39-11: Malformed notification ID on PATCH /:id/read returns 400");
+
+    // S39-12: Malformed notification ID on delete returns 400
+    const malformedDeleteRes = await request(app)
+      .delete("/api/notifications/invalid-id-123")
+      .set("Authorization", `Bearer ${auditEmpAToken}`);
+    assert(malformedDeleteRes.status === 400, "S39-12: Malformed notification ID on DELETE /:id returns 400");
+
+    // Create a real notification for Emp A
+    const { Notification } = await import("../models/Notification.js");
+    const notifA = await Notification.create({
+      userId: auditEmpA._id,
+      type: "TASK_ASSIGNED",
+      title: "Notice for Emp A",
+      message: "Please review task",
+      read: false,
+    });
+
+    // S39-13: Emp B cannot mark Emp A's notification as read
+    const foreignReadRes = await request(app)
+      .patch(`/api/notifications/${notifA._id}/read`)
+      .set("Authorization", `Bearer ${auditEmpBToken}`);
+    assert(foreignReadRes.status === 404, "S39-13: Cross-user notification mark-as-read returns 404");
+
+    // S39-14: Emp B cannot delete Emp A's notification
+    const foreignDeleteRes = await request(app)
+      .delete(`/api/notifications/${notifA._id}`)
+      .set("Authorization", `Bearer ${auditEmpBToken}`);
+    assert(foreignDeleteRes.status === 404, "S39-14: Cross-user notification delete returns 404");
+
+    // S39-15: Emp A can mark own notification as read
+    const ownReadRes = await request(app)
+      .patch(`/api/notifications/${notifA._id}/read`)
+      .set("Authorization", `Bearer ${auditEmpAToken}`);
+    assert(ownReadRes.status === 200, "S39-15: Notification owner can mark as read (200)");
+
+    // -----------------------------------------------------------------------
+    // 4. Multi-Assignee Global Task Search (TASK-06)
+    // -----------------------------------------------------------------------
+    const multiTask = await Task.create({
+      title: "MultiAssigneeDiscoveryKeywordXYZ Search Task",
+      description: "Search discovery test",
+      assignedTo: auditEmpA._id,
+      assignedUsers: [auditEmpB._id],
+      createdBy: auditEmpC._id,
+      status: "in_progress",
+    });
+
+    // S39-16: Primary assignee finds task via global search
+    const searchPrimaryRes = await request(app)
+      .get("/api/search?q=MultiAssigneeDiscoveryKeywordXYZ")
+      .set("Authorization", `Bearer ${auditEmpAToken}`);
+    assert(searchPrimaryRes.status === 200, "S39-16: GET /api/search returns 200 for primary assignee");
+    assert(
+      searchPrimaryRes.body.tasks.some((t: any) => t._id.toString() === multiTask._id.toString()),
+      "S39-17: Primary assignee discovers task in global search"
+    );
+
+    // S39-18: Co-assignee (via assignedUsers) finds task via global search
+    const searchCoAssigneeRes = await request(app)
+      .get("/api/search?q=MultiAssigneeDiscoveryKeywordXYZ")
+      .set("Authorization", `Bearer ${auditEmpBToken}`);
+    assert(searchCoAssigneeRes.status === 200, "S39-18: GET /api/search returns 200 for co-assignee");
+    assert(
+      searchCoAssigneeRes.body.tasks.some((t: any) => t._id.toString() === multiTask._id.toString()),
+      "S39-19: Co-assignee in assignedUsers discovers task in global search"
+    );
+
+    // S39-20: Task creator finds task via global search
+    const searchCreatorRes = await request(app)
+      .get("/api/search?q=MultiAssigneeDiscoveryKeywordXYZ")
+      .set("Authorization", `Bearer ${auditEmpCToken}`);
+    assert(
+      searchCreatorRes.body.tasks.some((t: any) => t._id.toString() === multiTask._id.toString()),
+      "S39-20: Task creator discovers task in global search"
+    );
+
+    // S39-21: Unrelated employee does NOT discover task in global search
+    const auditEmpUnrelated = await createUser({
+      email: `audit-emp-unrelated-${Date.now()}@test.com`,
+      role: "employee",
+      permissions: { dashboard: true, clients: true, cases: true, tasks: true, documents: true, calendar: true, chat: true, reports: true, employees: false, approvals: false, auditLogs: false, settings: false },
+    });
+    const auditEmpUnrelatedToken = await createToken(auditEmpUnrelated);
+    const searchUnrelatedRes = await request(app)
+      .get("/api/search?q=MultiAssigneeDiscoveryKeywordXYZ")
+      .set("Authorization", `Bearer ${auditEmpUnrelatedToken}`);
+    assert(
+      !searchUnrelatedRes.body.tasks.some((t: any) => t._id.toString() === multiTask._id.toString()),
+      "S39-21: Unrelated employee cannot discover scoped task in global search"
+    );
+
+    // S39-22: Admin discovers task in global search
+    const searchAdminRes = await request(app)
+      .get("/api/search?q=MultiAssigneeDiscoveryKeywordXYZ")
+      .set("Authorization", `Bearer ${auditAdminToken}`);
+    assert(
+      searchAdminRes.body.tasks.some((t: any) => t._id.toString() === multiTask._id.toString()),
+      "S39-22: Admin discovers task in global search"
+    );
+
+    // -----------------------------------------------------------------------
+    // 5. Hearing Input Validation
+    // -----------------------------------------------------------------------
+    const hearingCaseRes = await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${auditAdminToken}`)
+      .send({
+        title: "Hearing Validation Test Case",
+        nextHearing: new Date("2026-11-25T10:00:00Z").toISOString(),
+      });
+    const hearingCaseId = hearingCaseRes.body.case._id;
+    const hearingEvent = await CalendarEvent.findOne({ caseId: hearingCaseId, isNextHearing: true });
+    assert(hearingEvent !== null, "S39-23: Canonical hearing event exists");
+
+    // S39-24: Unsupported hearing status returns 400
+    const invalidStatusRes = await request(app)
+      .post(`/api/calendar/events/${hearingEvent!._id}/record-hearing`)
+      .set("Authorization", `Bearer ${auditAdminToken}`)
+      .send({
+        status: "bogus_unsupported_status",
+        remarks: "Test remarks",
+      });
+    assert(invalidStatusRes.status === 400, "S39-24: Unsupported hearing status rejected with 400");
+    assert(invalidStatusRes.body.message.includes("status"), "S39-25: Rejection message cites status");
+
+    // S39-26: Invalid hearingDate returns 400
+    const invalidHearingDateRes = await request(app)
+      .post(`/api/calendar/events/${hearingEvent!._id}/record-hearing`)
+      .set("Authorization", `Bearer ${auditAdminToken}`)
+      .send({
+        status: "held",
+        hearingDate: "invalid-date-string",
+      });
+    assert(invalidHearingDateRes.status === 400, "S39-26: Invalid hearingDate format rejected with 400");
+
+    // S39-27: Invalid nextHearingDate returns 400
+    const invalidNextDateRes = await request(app)
+      .post(`/api/calendar/events/${hearingEvent!._id}/record-hearing`)
+      .set("Authorization", `Bearer ${auditAdminToken}`)
+      .send({
+        status: "held",
+        nextHearingDate: "invalid-next-date-string",
+      });
+    assert(invalidNextDateRes.status === 400, "S39-27: Invalid nextHearingDate format rejected with 400");
+
+    // S39-28: Verify database was unmodified after 400 rejections
+    const postValidationRecords = await HearingRecord.find({ caseId: hearingCaseId });
+    assert(postValidationRecords.length === 0, "S39-28: No HearingRecord created on rejected requests");
+    const unchangedEvent = await CalendarEvent.findById(hearingEvent!._id);
+    assert(unchangedEvent?.isNextHearing === true, "S39-29: Event remains canonical next hearing after rejected requests");
+
+    // -----------------------------------------------------------------------
+    // 6. WhatsApp Webhook Security (Token Fallback Elimination)
+    // -----------------------------------------------------------------------
+    // Ensure no WHATSAPP_WEBHOOK_VERIFY_TOKEN is configured in test env
+    delete process.env["WHATSAPP_WEBHOOK_VERIFY_TOKEN"];
+    delete process.env["WHATSAPP_APP_SECRET"];
+
+    const unconfiguredWebhookGet = await request(app)
+      .get("/api/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=stillworks_legalos_webhook_secret&hub.challenge=test_challenge");
+    assert(unconfiguredWebhookGet.status === 503, "S39-30: GET /api/webhooks/whatsapp returns 503 when unconfigured (fallback removed)");
+
+    const unconfiguredWebhookPost = await request(app)
+      .post("/api/webhooks/whatsapp")
+      .send({ test: true });
+    assert(unconfiguredWebhookPost.status === 503, "S39-31: POST /api/webhooks/whatsapp returns 503 when unconfigured");
   }
 
 

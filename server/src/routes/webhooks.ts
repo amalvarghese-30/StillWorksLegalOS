@@ -13,7 +13,11 @@ router.get("/whatsapp", (req: Request, res: Response) => {
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
-  const expectedToken = process.env["WHATSAPP_WEBHOOK_VERIFY_TOKEN"] || "stillworks_legalos_webhook_secret";
+  const expectedToken = process.env["WHATSAPP_WEBHOOK_VERIFY_TOKEN"];
+  if (!expectedToken) {
+    res.status(503).json({ message: "WhatsApp webhook verification is not configured on this server" });
+    return;
+  }
 
   if (mode === "subscribe" && token === expectedToken) {
     console.log("[webhooks] WhatsApp webhook verified successfully");
@@ -30,6 +34,11 @@ router.get("/whatsapp", (req: Request, res: Response) => {
  */
 router.post("/whatsapp", async (req: Request, res: Response) => {
   try {
+    if (!process.env["WHATSAPP_APP_SECRET"]) {
+      res.status(503).json({ message: "WhatsApp webhook is not configured on this server" });
+      return;
+    }
+
     const rawBody = JSON.stringify(req.body);
     const signature = req.headers["x-hub-signature-256"] as string | undefined;
 
