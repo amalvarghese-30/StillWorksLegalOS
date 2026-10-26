@@ -637,13 +637,21 @@ router.post("/events/:id/record-hearing", requireResourceAccess("calendarEvent")
       return;
     }
 
-    const status = ["held", "rescheduled", "cancelled", "scheduled"].includes(req.body.status)
-      ? (req.body.status as HearingStatus)
-      : "held";
+    const ALLOWED_HEARING_STATUSES = ["held", "rescheduled", "cancelled", "scheduled"];
+    if (req.body.status !== undefined && !ALLOWED_HEARING_STATUSES.includes(req.body.status)) {
+      res.status(400).json({ message: "Invalid hearing status value" });
+      return;
+    }
+    const status: HearingStatus = (req.body.status as HearingStatus) || "held";
     const remarks = typeof req.body.remarks === "string" ? req.body.remarks.trim() : "";
 
     let parsedNextHearing: Date | null = null;
-    if (req.body.nextHearingDate) {
+    if (
+      Object.prototype.hasOwnProperty.call(req.body, "nextHearingDate") &&
+      req.body.nextHearingDate !== undefined &&
+      req.body.nextHearingDate !== null &&
+      req.body.nextHearingDate !== ""
+    ) {
       parsedNextHearing = parseFlexibleDate(req.body.nextHearingDate);
       if (!parsedNextHearing) {
         res.status(400).json({ message: "Invalid next hearing date format" });
@@ -651,9 +659,18 @@ router.post("/events/:id/record-hearing", requireResourceAccess("calendarEvent")
       }
     }
 
-    const hearingDate = req.body.hearingDate
-      ? parseFlexibleDate(req.body.hearingDate) || event.start
-      : event.start;
+    let hearingDate = event.start;
+    if (
+      Object.prototype.hasOwnProperty.call(req.body, "hearingDate") &&
+      req.body.hearingDate !== undefined
+    ) {
+      const parsedHearingDate = parseFlexibleDate(req.body.hearingDate);
+      if (!parsedHearingDate) {
+        res.status(400).json({ message: "Invalid hearing date format" });
+        return;
+      }
+      hearingDate = parsedHearingDate;
+    }
 
     // 1. Transactional / safe sequence execution
     let historyRecord: any = null;

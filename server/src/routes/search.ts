@@ -136,17 +136,30 @@ router.get("/", async (req: Request, res: Response) => {
           ],
         };
 
-        // Non-admins only see tasks assigned to them or created by them
+        // Non-admins only see non-deleted tasks assigned to them, co-assigned to them, or created by them
         if (req.user!.role !== "admin") {
+          const userObjId = Types.ObjectId.isValid(req.userId!) ? new Types.ObjectId(req.userId!) : null;
           taskFilter = {
             $and: [
               { title: queryRegex },
+              { isDeleted: { $ne: true } },
               {
                 $or: [
-                  { assignedTo: req.userId }, // Tasks assigned to them
-                  { createdBy: req.userId }, // Tasks they created
+                  { assignedTo: req.userId },
+                  ...(userObjId ? [{ assignedTo: userObjId }] : []),
+                  { assignedUsers: req.userId },
+                  ...(userObjId ? [{ assignedUsers: userObjId }] : []),
+                  { createdBy: req.userId },
+                  ...(userObjId ? [{ createdBy: userObjId }] : []),
                 ],
               },
+            ],
+          };
+        } else {
+          taskFilter = {
+            $and: [
+              { title: queryRegex },
+              { isDeleted: { $ne: true } },
             ],
           };
         }

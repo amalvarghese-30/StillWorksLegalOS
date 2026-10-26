@@ -68,7 +68,13 @@ router.get("/unread-count", async (req: Request, res: Response) => {
 
 router.patch("/:id/read", async (req: Request, res: Response) => {
   try {
-    const notificationId = new Types.ObjectId(req.params["id"] as string);
+    const rawId = String(req.params["id"] || "");
+    if (!rawId || !Types.ObjectId.isValid(rawId)) {
+      res.status(400).json({ message: "Invalid notification ID format" });
+      return;
+    }
+
+    const notificationId = new Types.ObjectId(rawId);
     const userId = new Types.ObjectId(req.userId!);
 
     const notification = await NotificationService.markAsRead(
@@ -109,7 +115,13 @@ router.patch("/read-all", async (req: Request, res: Response) => {
 
 router.delete("/:id", async (req: Request, res: Response) => {
   try {
-    const notificationId = new Types.ObjectId(req.params["id"] as string);
+    const rawId = String(req.params["id"] || "");
+    if (!rawId || !Types.ObjectId.isValid(rawId)) {
+      res.status(400).json({ message: "Invalid notification ID format" });
+      return;
+    }
+
+    const notificationId = new Types.ObjectId(rawId);
     const userId = new Types.ObjectId(req.userId!);
 
     const deleted = await NotificationService.deleteNotification(

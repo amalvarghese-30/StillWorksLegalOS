@@ -87,6 +87,7 @@ function clearRefreshCookie(res: Response, req?: Request): void {
     `SameSite=${sameSite}`,
     "Path=/api/auth",
     "Max-Age=0",
+    "Expires=Thu, 01 Jan 1970 00:00:00 GMT",
   ];
   const cookieDomain = getCookieDomain(req);
   if (cookieDomain) {

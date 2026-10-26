@@ -320,10 +320,13 @@ router.get("/employees", requireAdminOrPermission("employees"), async (req: Requ
     if (status) filter["status"] = status;
     if (role) filter["role"] = role;
 
+    const SAFE_EMPLOYEE_FIELDS =
+      "_id name email role title status phone secondaryPhone avatarUrl avatar permissions lastActiveAt createdAt updatedAt";
+
     const employees = await User.find(filter)
       // Return only directory-safe fields; never expose credentials, reset tokens,
       // or private integration identifiers through the employee listing endpoint.
-      .select("-passwordHash -resetOtpHash -resetOtpExpires -resetOtpAttempts -telegramChatId")
+      .select(SAFE_EMPLOYEE_FIELDS)
       .sort({ name: 1 })
       .lean();
 
