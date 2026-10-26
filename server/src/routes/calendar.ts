@@ -358,13 +358,22 @@ router.patch("/events/:id", requireResourceAccess("calendarEvent"), async (req: 
             await existingEvent.save({ session: session || undefined });
             finalOldEvent = existingEvent;
 
-            // Save HearingRecord
-            const existingRecord = await HearingRecord.findOne({
+            // Save HearingRecord (update if existing for this date, or create new)
+            let existingRecord = await HearingRecord.findOne({
               caseId: linkedCase._id,
               hearingDate: oldStart,
             }).session(session);
 
-            if (!existingRecord) {
+            if (existingRecord) {
+              existingRecord.status = existingEvent.hearingStatus;
+              if (typeof req.body["remarks"] === "string" && req.body["remarks"].trim()) {
+                existingRecord.remarks = req.body["remarks"].trim();
+              }
+              existingRecord.nextHearingDate = newStart;
+              existingRecord.recordedBy = new Types.ObjectId(req.userId!);
+              existingRecord.calendarEventId = existingEvent._id;
+              await existingRecord.save({ session: session || undefined });
+            } else {
               const hist = (
                 await HearingRecord.create(
                   [
