@@ -667,17 +667,32 @@ router.post("/upload", async (req: Request, res: Response) => {
 
       let caseNumber = "";
       let linkedClientId: Types.ObjectId | null = null;
+      let linkedTask: any = null;
+      let taskAllowsUpload = false;
 
       if (meta.taskId) {
         if (!Types.ObjectId.isValid(meta.taskId)) throw httpError(400, "Invalid task ID format");
-        const taskDoc = await Task.findById(meta.taskId).select("_id caseId clientId").lean();
-        if (!taskDoc) throw httpError(404, "Task not found");
-        if (!meta.caseId && taskDoc.caseId) {
-          meta.caseId = taskDoc.caseId.toString();
+        linkedTask = await Task.findById(meta.taskId).select("_id caseId clientId").lean();
+        if (!linkedTask) throw httpError(404, "Task not found");
+
+        // A task-linked upload must be authorized against the task itself,
+        // including standalone tasks that have no caseId/clientId.
+        taskAllowsUpload = await canAccessTask(
+          req.userId!,
+          req.user!.role,
+          meta.taskId,
+          req.user?.permissions,
+        );
+        if (!taskAllowsUpload) throw httpError(403, "Cannot upload to a task you don't have access to");
+
+        const canonicalTaskCaseId = linkedTask.caseId?.toString() ?? "";
+        if (meta.caseId && meta.caseId !== canonicalTaskCaseId) {
+          throw httpError(400, "The selected case does not match this task");
         }
-        if (!linkedClientId && taskDoc.clientId) {
-          linkedClientId = taskDoc.clientId as any;
-        }
+        if (canonicalTaskCaseId) meta.caseId = canonicalTaskCaseId;
+        if (linkedTask.clientId) linkedClientId = linkedTask.clientId as any;
+      } else if (meta.caseId && !Types.ObjectId.isValid(meta.caseId)) {
+        throw httpError(400, "Invalid case ID format");
       }
 
       if (meta.caseId) {
@@ -694,10 +709,24 @@ router.post("/upload", async (req: Request, res: Response) => {
         caseNumber = caseDoc.number;
         nasFolder = getCaseFolderPath(caseNumber, meta.caseId);
 
-        // Derive client relationship from case parties if available
+        // Derive the permitted client relationships from this case's actual
+        // parties. Do not allow a clientId from an unrelated profile to be
+        // attached to a case document.
+        const casePartyClientIds = new Set<string>(
+          (caseDoc.parties ?? [])
+            .filter((p: any) => (p.type === "client" || p.type === "sub_client") && p.clientId)
+            .map((p: any) => String(p.clientId?._id ?? p.clientId)),
+        );
         const clientParty = caseDoc.parties?.find((p: any) => (p.type === "client" || p.type === "sub_client") && p.clientId);
-        if (clientParty && clientParty.clientId) {
+        if (clientParty && clientParty.clientId && !linkedClientId) {
           linkedClientId = clientParty.clientId as any;
+        }
+        if (
+          meta.clientId &&
+          !casePartyClientIds.has(meta.clientId) &&
+          !(linkedTask?.clientId && String(linkedTask.clientId) === meta.clientId)
+        ) {
+          throw httpError(400, "The selected client is not linked to this case or task");
         }
       }
 
@@ -705,12 +734,21 @@ router.post("/upload", async (req: Request, res: Response) => {
         if (!Types.ObjectId.isValid(meta.clientId)) throw httpError(400, "Invalid client ID format");
         const clientDoc = await Client.findById(meta.clientId).select("_id").lean();
         if (!clientDoc) throw httpError(404, "Client not found");
-        let canClient = await canAccessClient(req.userId!, req.user!.role, meta.clientId, req.user?.permissions);
-        if (!canClient && meta.taskId) {
-          const hasTaskAccess = await canAccessTask(req.userId!, req.user!.role, meta.taskId, req.user?.permissions);
-          if (hasTaskAccess) {
-            canClient = true;
+
+        // Never let a task upload silently link to an unrelated client.
+        // Task-linked uploads must use the canonical client relationship from
+        // the task or its case; standalone unlinked tasks must be linked first.
+        if (linkedTask) {
+          if (!linkedClientId || linkedClientId.toString() !== clientDoc._id.toString()) {
+            throw httpError(400, "This task is not linked to the selected client. Link the task to the client first.");
           }
+        }
+
+        let canClient = await canAccessClient(req.userId!, req.user!.role, meta.clientId, req.user?.permissions);
+        if (!canClient && linkedTask && taskAllowsUpload && linkedClientId?.toString() === clientDoc._id.toString()) {
+          // Task assignment authorizes work on this task's canonical client,
+          // but does not authorize choosing an unrelated client.
+          canClient = true;
         }
         if (!canClient) throw httpError(403, "Cannot upload to a client you don't have access to");
         linkedClientId = clientDoc._id as Types.ObjectId;
@@ -832,7 +870,6 @@ router.post("/upload", async (req: Request, res: Response) => {
       if (io) {
         io.emit("document:created", {
           documentId: doc._id.toString(),
-          name: meta.displayName,
           caseId: meta.caseId?.toString(),
           taskId: meta.taskId?.toString(),
           clientId: (linkedClientId || meta.clientId)?.toString(),
@@ -840,7 +877,8 @@ router.post("/upload", async (req: Request, res: Response) => {
         if (meta.taskId) {
           io.emit("task:updated", {
             taskId: meta.taskId.toString(),
-            task: { _id: meta.taskId.toString() },
+            caseId: meta.caseId?.toString(),
+            clientId: (linkedClientId || meta.clientId)?.toString(),
           });
         }
       }
@@ -981,14 +1019,15 @@ router.patch("/:id", requireResourceAccess("document"), async (req: Request, res
     if (io) {
       io.emit("document:updated", {
         documentId: document._id.toString(),
-        name: document.name,
-        state: document.state,
         taskId: document.taskId ? document.taskId.toString() : undefined,
+        caseId: document.caseId ? document.caseId.toString() : undefined,
+        clientId: document.clientId ? document.clientId.toString() : undefined,
       });
       if (document.taskId) {
         io.emit("task:updated", {
           taskId: document.taskId.toString(),
-          task: { _id: document.taskId.toString() },
+          caseId: document.caseId ? document.caseId.toString() : undefined,
+          clientId: document.clientId ? document.clientId.toString() : undefined,
         });
       }
     }
@@ -1167,7 +1206,9 @@ router.patch("/:docId/access-requests/:requestId", requireAuth, async (req: Requ
     if (io) {
       io.emit("document:updated", {
         documentId: document._id.toString(),
-        name: document.name,
+        taskId: document.taskId ? document.taskId.toString() : undefined,
+        caseId: document.caseId ? document.caseId.toString() : undefined,
+        clientId: document.clientId ? document.clientId.toString() : undefined,
       });
     }
 
@@ -1256,7 +1297,9 @@ router.post("/:docId/revoke-user", requireAuth, async (req: Request, res: Respon
     if (io) {
       io.emit("document:updated", {
         documentId: document._id.toString(),
-        name: document.name,
+        taskId: document.taskId ? document.taskId.toString() : undefined,
+        caseId: document.caseId ? document.caseId.toString() : undefined,
+        clientId: document.clientId ? document.clientId.toString() : undefined,
       });
     }
 

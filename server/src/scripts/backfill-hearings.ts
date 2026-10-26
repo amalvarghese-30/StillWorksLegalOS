@@ -9,6 +9,8 @@
  *   npx tsx src/scripts/backfill-hearings.ts --apply   # apply changes
  *
  * Idempotent: running --apply multiple times produces the same result.
+ * The script only adopts a legacy hearing when the relationship is unambiguous;
+ * otherwise it creates a separately marked next-hearing event and preserves history.
  * Skips cases with status "Archived" or soft-deleted.
  */
 
@@ -119,8 +121,42 @@ async function main() {
     }
 
     try {
-      // Find the most recent hearing event linked to this case
-      const existingEvent = await CalendarEvent.findOne({ caseId, type: "hearing" }).sort({ start: -1 });
+      // Prefer the explicitly marked next-hearing event. Legacy unmarked
+      // events are only adopted when date matching identifies exactly one
+      // candidate, or the case has exactly one historical hearing.
+      let existingEvent = await CalendarEvent.findOne({
+        caseId,
+        type: "hearing",
+        isNextHearing: true,
+      });
+
+      const unmarkedEvents = existingEvent
+        ? []
+        : await CalendarEvent.find({
+            caseId,
+            type: "hearing",
+            isNextHearing: { $ne: true },
+          }).sort({ start: -1 });
+
+      const sameLocalDate = (left: Date, right: Date) =>
+        left.getFullYear() === right.getFullYear() &&
+        left.getMonth() === right.getMonth() &&
+        left.getDate() === right.getDate();
+
+      if (!existingEvent) {
+        const sameDateEvents = unmarkedEvents.filter((event) =>
+          sameLocalDate(new Date(event.start), hearingDate)
+        );
+        if (sameDateEvents.length === 1) {
+          existingEvent = sameDateEvents[0];
+        } else if (sameDateEvents.length === 0 && unmarkedEvents.length === 1) {
+          existingEvent = unmarkedEvents[0];
+        } else if (sameDateEvents.length > 1 || unmarkedEvents.length > 1) {
+          console.warn(
+            `  [AMBIGUOUS] ${c.number} has multiple unmarked hearing events. Historical events will be preserved; a separate next-hearing event will be created if applying.`
+          );
+        }
+      }
 
       // Build assigned users set
       const assignedUserIds = new Set<string>();
@@ -171,8 +207,8 @@ async function main() {
             clientId: clientId || null,
             createdBy: creatorId,
             assignedTo,
-            color: "#6366f1",
             isNextHearing: true,
+            color: "#6366f1",
             hearingStatus: "scheduled",
           });
         }
@@ -216,8 +252,14 @@ async function main() {
           }
           updated++;
         } else {
+          if (!DRY_RUN && existingEvent.isNextHearing !== true) {
+            existingEvent.isNextHearing = true;
+            existingEvent.clientId = clientId || null;
+            existingEvent.assignedTo = assignedTo;
+            await existingEvent.save();
+          }
           console.log(
-            `  [OK]     ${c.number} "${c.title}" → hearing event is current (${existingStart.toLocaleDateString("en-IN")})`
+            `  [OK]     ${c.number} "${c.title}" → canonical next-hearing event is current (${existingStart.toLocaleDateString("en-IN")})`
           );
           if (!DRY_RUN && !existingEvent.isNextHearing) {
             existingEvent.isNextHearing = true;

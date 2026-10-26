@@ -16,6 +16,12 @@ import { requireAuth } from "../middleware/auth.js";
 import { canAccessCase, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
 import { normaliseAssignees, buildInitialAssignmentHistory } from "../utils/assigneeNormalization.js";
 import { recordCaseAuditAndAdminNotification } from "../utils/auditNotificationHelper.js";
+import { withTransactionOrFallback } from "../utils/dbTransaction.js";
+
+function sanitizeInputText(str: unknown, maxLen: number): string {
+  if (typeof str !== "string") return "";
+  return str.slice(0, maxLen);
+}
 
 /**
  * Robust flexible date parser supporting:
@@ -95,258 +101,309 @@ async function syncCaseNextHearingToCalendar({
   remarks?: string;
   status?: HearingStatus;
 }) {
-  if (!caseRecord || !caseRecord._id) return;
+  if (!caseRecord?._id) return;
   const caseId = caseRecord._id;
 
-  // If nextHearingDate was cleared (null)
+  // Only delete the explicitly marked canonical next-hearing event. For legacy
+  // records without that marker, delete an unmarked upcoming event only when
+  // exactly one candidate exists; multiple hearings are ambiguous and must be
+  // preserved rather than deleting a historical hearing by accident.
   if (!nextHearingDate) {
-    const upcomingHearing = await CalendarEvent.findOne({
-      caseId,
-      type: "hearing",
-      isNextHearing: true,
-    });
-    if (upcomingHearing) {
-      upcomingHearing.isNextHearing = false;
-      if (upcomingHearing.hearingStatus === "scheduled") {
-        upcomingHearing.hearingStatus = "cancelled";
-      }
-      if (remarks) {
-        upcomingHearing.remarks = remarks;
-      }
-      await upcomingHearing.save();
-
-      // Record in HearingRecord history if not already recorded
-      const existingHistory = await HearingRecord.findOne({
+    await withTransactionOrFallback(async (session) => {
+      let upcomingHearing = await CalendarEvent.findOne({
         caseId,
-        hearingDate: upcomingHearing.start,
-      });
-      if (!existingHistory) {
-        const newRecord = await HearingRecord.create({
+        type: "hearing",
+        isNextHearing: true,
+      }).session(session);
+
+      if (!upcomingHearing) {
+        const candidates = await CalendarEvent.find({
+          caseId,
+          type: "hearing",
+          isNextHearing: { $ne: true },
+          start: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+        })
+          .sort({ start: 1 })
+          .limit(2)
+          .session(session);
+        if (candidates.length === 1) upcomingHearing = candidates[0];
+      }
+
+      if (upcomingHearing) {
+        upcomingHearing.isNextHearing = false;
+        if (upcomingHearing.hearingStatus === "scheduled") {
+          upcomingHearing.hearingStatus = "cancelled";
+        }
+        if (remarks) {
+          upcomingHearing.remarks = remarks;
+        }
+        await upcomingHearing.save({ session: session || undefined });
+
+        // Record in HearingRecord history if not already recorded
+        const existingHistory = await HearingRecord.findOne({
           caseId,
           hearingDate: upcomingHearing.start,
-          status: status || "cancelled",
-          remarks: remarks || "Next hearing cleared",
-          recordedBy: new mongoose.Types.ObjectId(userId),
-          calendarEventId: upcomingHearing._id,
-        });
-        upcomingHearing.hearingRecordId = newRecord._id as mongoose.Types.ObjectId;
-        await upcomingHearing.save();
-      }
+        }).session(session);
 
-      if (io) {
-        io.emit("calendar:event:updated", {
-          eventId: upcomingHearing._id.toString(),
-          caseId: caseId.toString(),
-          isNextHearing: false,
-        });
+        if (!existingHistory) {
+          const newRecord = (
+            await HearingRecord.create(
+              [
+                {
+                  caseId,
+                  hearingDate: upcomingHearing.start,
+                  status: status || "cancelled",
+                  remarks: remarks || "Next hearing cleared",
+                  recordedBy: new mongoose.Types.ObjectId(userId),
+                  calendarEventId: upcomingHearing._id,
+                },
+              ],
+              { session: session || undefined },
+            )
+          )[0];
+          upcomingHearing.hearingRecordId = newRecord._id as mongoose.Types.ObjectId;
+          await upcomingHearing.save({ session: session || undefined });
+        }
+
+        if (io) {
+          io.emit("calendar:event:updated", {
+            eventId: upcomingHearing._id.toString(),
+            caseId: caseId.toString(),
+            isNextHearing: false,
+          });
+        }
       }
-    }
+    });
     return;
   }
 
   const hearingDate = parseFlexibleDate(nextHearingDate);
-  if (!hearingDate) return;
+  if (!hearingDate) throw new Error("Invalid next hearing date; calendar event was not synchronized.");
 
-  // Resolve assigned users: include assigned counsel as well as creator so it is visible in My Calendar
   const assignedUserIds = new Set<string>();
-  if (Array.isArray(caseRecord.assignedUsers) && caseRecord.assignedUsers.length > 0) {
-    for (const u of caseRecord.assignedUsers) {
-      const id = String(u?._id ?? u);
-      if (id && mongoose.Types.ObjectId.isValid(id)) assignedUserIds.add(id);
+  if (Array.isArray(caseRecord.assignedUsers)) {
+    for (const user of caseRecord.assignedUsers) {
+      const id = String(user?._id ?? user);
+      if (mongoose.Types.ObjectId.isValid(id)) assignedUserIds.add(id);
     }
   }
   if (caseRecord.assignedTo) {
     const id = String((caseRecord.assignedTo as any)._id ?? caseRecord.assignedTo);
-    if (id && mongoose.Types.ObjectId.isValid(id)) assignedUserIds.add(id);
+    if (mongoose.Types.ObjectId.isValid(id)) assignedUserIds.add(id);
   }
-  if (userId && mongoose.Types.ObjectId.isValid(userId)) {
-    assignedUserIds.add(String(userId));
-  }
+  if (userId && mongoose.Types.ObjectId.isValid(userId)) assignedUserIds.add(userId);
   const assignedUsers = Array.from(assignedUserIds).map((id) => new mongoose.Types.ObjectId(id));
 
-  // Resolve primary client ID
   const primaryClientParty = (caseRecord.parties || []).find(
-    (p: any) => (p.type === "client" || p.type === "sub_client") && p.clientId
+    (party: any) => (party.type === "client" || party.type === "sub_client") && party.clientId,
   );
-  const clientId = primaryClientParty ? (primaryClientParty.clientId._id ?? primaryClientParty.clientId) : null;
+  const rawClientId = primaryClientParty
+    ? ((primaryClientParty.clientId as any)?._id ?? primaryClientParty.clientId)
+    : null;
+  const clientId = rawClientId ? new mongoose.Types.ObjectId(String(rawClientId)) : null;
 
   const eventTitle = `Hearing: ${caseRecord.number || "Case"} — ${caseRecord.title}`;
   const eventDesc = `Court hearing for matter ${caseRecord.number || ""}. Court: ${caseRecord.court || "Court"}${caseRecord.judge ? `, Judge: ${caseRecord.judge}` : ""}.`;
 
-  // Look for canonical upcoming hearing event, or latest hearing event linked to this case
-  let existingCanonical = await CalendarEvent.findOne({
-    caseId,
-    type: "hearing",
-    isNextHearing: true,
-  });
+  let eventToEmit: { type: "created" | "updated"; event: any } | null = null;
+  let oldEventToEmit: any = null;
 
-  if (!existingCanonical) {
-    // Check for legacy hearing event without isNextHearing flag
-    existingCanonical = await CalendarEvent.findOne({
+  await withTransactionOrFallback(async (session) => {
+    // Look for canonical upcoming hearing event, or latest hearing event linked to this case
+    let existingCanonical = await CalendarEvent.findOne({
       caseId,
       type: "hearing",
-    }).sort({ start: -1 });
-  }
+      isNextHearing: true,
+    }).session(session);
 
-  if (existingCanonical) {
-    const timeDiff = Math.abs(existingCanonical.start.getTime() - hearingDate.getTime());
-    if (timeDiff <= 60000) {
-      // Same date: update details and ensure canonical flag is set
-      existingCanonical.title = eventTitle;
-      existingCanonical.description = eventDesc;
-      existingCanonical.isNextHearing = true;
-      existingCanonical.assignedTo = assignedUsers;
-      if (remarks) existingCanonical.remarks = remarks;
-      if (status) existingCanonical.hearingStatus = status;
-      if (clientId) existingCanonical.clientId = clientId;
-      await existingCanonical.save();
-
-      if (io) {
-        io.emit("calendar:event:updated", {
-          eventId: existingCanonical._id.toString(),
-          caseId: caseId.toString(),
-          start: hearingDate.toISOString(),
-          isNextHearing: true,
-        });
-      }
-    } else {
-      // Date changed! Preserve the previous event as historical
-      const prevDate = existingCanonical.start;
-      existingCanonical.isNextHearing = false;
-      const histStatus = status || (existingCanonical.hearingStatus === "held" ? "held" : "rescheduled");
-      existingCanonical.hearingStatus = histStatus;
-      if (remarks) {
-        existingCanonical.remarks = remarks;
-      }
-      await existingCanonical.save();
-
-      // Persist the historical hearing record for the previous date
-      const existingHistory = await HearingRecord.findOne({
-        caseId,
-        hearingDate: prevDate,
-      });
-      if (!existingHistory) {
-        const historyRecord = await HearingRecord.create({
-          caseId,
-          hearingDate: prevDate,
-          status: histStatus,
-          remarks: remarks || "",
-          nextHearingDate: hearingDate,
-          recordedBy: new mongoose.Types.ObjectId(userId),
-          calendarEventId: existingCanonical._id,
-        });
-        existingCanonical.hearingRecordId = historyRecord._id as mongoose.Types.ObjectId;
-        await existingCanonical.save();
-      }
-
-      // Demote any other event that might have isNextHearing: true to respect partial unique index
-      await CalendarEvent.updateMany(
-        { caseId, type: "hearing", isNextHearing: true },
-        { $set: { isNextHearing: false } }
-      );
-
-      // Check if an event for this exact date already exists (e.g. on retry / repeated submission)
-      const existingNext = await CalendarEvent.findOne({
+    if (!existingCanonical) {
+      const unmarked = await CalendarEvent.find({
         caseId,
         type: "hearing",
-        start: hearingDate,
-      });
+        isNextHearing: { $ne: true },
+      })
+        .sort({ start: -1 })
+        .session(session);
 
-      let newEvent;
-      if (existingNext) {
-        existingNext.title = eventTitle;
-        existingNext.description = eventDesc;
-        existingNext.isNextHearing = true;
-        existingNext.hearingStatus = "scheduled";
-        existingNext.assignedTo = assignedUsers;
-        if (clientId) existingNext.clientId = clientId;
-        await existingNext.save();
-        newEvent = existingNext;
+      if (unmarked.length > 0) {
+        const exactMatch = unmarked.find(
+          (ev) => Math.abs(new Date(ev.start).getTime() - hearingDate.getTime()) <= 60000,
+        );
+        existingCanonical = exactMatch || unmarked[0];
+      }
+    }
+
+    if (existingCanonical) {
+      const timeDiff = Math.abs(new Date(existingCanonical.start).getTime() - hearingDate.getTime());
+      if (timeDiff <= 60000) {
+        // Same date: update details and ensure canonical flag is set
+        existingCanonical.title = eventTitle;
+        existingCanonical.description = eventDesc;
+        existingCanonical.isNextHearing = true;
+        existingCanonical.assignedTo = assignedUsers;
+        if (remarks) existingCanonical.remarks = remarks;
+        if (status) existingCanonical.hearingStatus = status;
+        if (clientId) existingCanonical.clientId = clientId;
+        await existingCanonical.save({ session: session || undefined });
+        eventToEmit = { type: "updated", event: existingCanonical };
+        return;
       } else {
-        try {
-          newEvent = await CalendarEvent.create({
-            title: eventTitle,
-            description: eventDesc,
-            type: "hearing",
-            start: hearingDate,
-            end: hearingDate,
-            allDay: false,
+        // Date changed! Preserve the previous event as historical
+        const prevDate = existingCanonical.start;
+        existingCanonical.isNextHearing = false;
+        const histStatus = status || (existingCanonical.hearingStatus === "held" ? "held" : "rescheduled");
+        existingCanonical.hearingStatus = histStatus;
+        if (remarks) {
+          existingCanonical.remarks = remarks;
+        }
+        await existingCanonical.save({ session: session || undefined });
+
+        // Persist the historical hearing record for the previous date
+        const existingHistory = await HearingRecord.findOne({
+          caseId,
+          hearingDate: prevDate,
+        }).session(session);
+
+        if (!existingHistory) {
+          const historyRecord = (
+            await HearingRecord.create(
+              [
+                {
+                  caseId,
+                  hearingDate: prevDate,
+                  status: histStatus,
+                  remarks: remarks || "",
+                  nextHearingDate: hearingDate,
+                  recordedBy: new mongoose.Types.ObjectId(userId),
+                  calendarEventId: existingCanonical._id,
+                },
+              ],
+              { session: session || undefined },
+            )
+          )[0];
+          existingCanonical.hearingRecordId = historyRecord._id as mongoose.Types.ObjectId;
+          await existingCanonical.save({ session: session || undefined });
+        }
+        oldEventToEmit = existingCanonical;
+      }
+    }
+
+    // Demote any stray canonical hearing for this case to maintain invariant
+    await CalendarEvent.updateMany(
+      { caseId, type: "hearing", isNextHearing: true },
+      { $set: { isNextHearing: false } },
+      { session: session || undefined },
+    );
+
+    // Check if an event for this exact date already exists (e.g. on retry / repeated submission)
+    const existingNext = await CalendarEvent.findOne({
+      caseId,
+      type: "hearing",
+      start: hearingDate,
+    }).session(session);
+
+    let newEvent;
+    if (existingNext) {
+      existingNext.title = eventTitle;
+      existingNext.description = eventDesc;
+      existingNext.isNextHearing = true;
+      existingNext.hearingStatus = "scheduled";
+      existingNext.assignedTo = assignedUsers;
+      if (clientId) existingNext.clientId = clientId;
+      await existingNext.save({ session: session || undefined });
+      newEvent = existingNext;
+    } else {
+      try {
+        newEvent = (
+          await CalendarEvent.create(
+            [
+              {
+                title: eventTitle,
+                description: eventDesc,
+                type: "hearing",
+                start: hearingDate,
+                end: hearingDate,
+                allDay: false,
+                caseId,
+                clientId: clientId || null,
+                createdBy: new mongoose.Types.ObjectId(userId),
+                assignedTo: assignedUsers,
+                color: "#7C3AED",
+                isNextHearing: true,
+                hearingStatus: "scheduled",
+              },
+            ],
+            { session: session || undefined },
+          )
+        )[0];
+      } catch (createErr: any) {
+        if (createErr.code === 11000) {
+          // Concurrency / Duplicate-key recovery:
+          // Find the concurrently created or existing canonical event
+          const concurrentlyCreated = await CalendarEvent.findOne({
             caseId,
-            clientId: clientId || null,
-            createdBy: new mongoose.Types.ObjectId(userId),
-            assignedTo: assignedUsers,
-            color: "#7C3AED",
+            type: "hearing",
             isNextHearing: true,
-            hearingStatus: "scheduled",
-          });
-        } catch (createErr: any) {
-          if (createErr.code === 11000) {
-            // Idempotency: recover if duplicate canonical event exists
-            await CalendarEvent.updateMany(
-              { caseId, type: "hearing", isNextHearing: true },
-              { $set: { isNextHearing: false } }
-            );
-            newEvent = await CalendarEvent.create({
-              title: eventTitle,
-              description: eventDesc,
-              type: "hearing",
-              start: hearingDate,
-              end: hearingDate,
-              allDay: false,
-              caseId,
-              clientId: clientId || null,
-              createdBy: new mongoose.Types.ObjectId(userId),
-              assignedTo: assignedUsers,
-              color: "#7C3AED",
-              isNextHearing: true,
-              hearingStatus: "scheduled",
-            });
+          }).session(session);
+
+          if (concurrentlyCreated) {
+            if (Math.abs(new Date(concurrentlyCreated.start).getTime() - hearingDate.getTime()) <= 60000) {
+              concurrentlyCreated.title = eventTitle;
+              concurrentlyCreated.description = eventDesc;
+              concurrentlyCreated.clientId = clientId || null;
+              concurrentlyCreated.assignedTo = assignedUsers;
+              await concurrentlyCreated.save({ session: session || undefined });
+              newEvent = concurrentlyCreated;
+            } else {
+              // Concurrently created event is for a different date: preserve it as historical and point to this date
+              concurrentlyCreated.isNextHearing = false;
+              await concurrentlyCreated.save({ session: session || undefined });
+              newEvent = (
+                await CalendarEvent.create(
+                  [
+                    {
+                      title: eventTitle,
+                      description: eventDesc,
+                      type: "hearing",
+                      start: hearingDate,
+                      end: hearingDate,
+                      allDay: false,
+                      caseId,
+                      clientId: clientId || null,
+                      createdBy: new mongoose.Types.ObjectId(userId),
+                      assignedTo: assignedUsers,
+                      color: "#7C3AED",
+                      isNextHearing: true,
+                      hearingStatus: "scheduled",
+                    },
+                  ],
+                  { session: session || undefined },
+                )
+              )[0];
+            }
           } else {
             throw createErr;
           }
+        } else {
+          throw createErr;
         }
       }
-
-      if (io) {
-        io.emit("calendar:event:updated", {
-          eventId: existingCanonical._id.toString(),
-          caseId: caseId.toString(),
-          isNextHearing: false,
-        });
-        io.emit("calendar:event:created", {
-          eventId: newEvent._id.toString(),
-          caseId: caseId.toString(),
-          start: hearingDate.toISOString(),
-          isNextHearing: true,
-        });
-      }
     }
-  } else {
-    // Demote any stray canonical hearing for safety
-    await CalendarEvent.updateMany(
-      { caseId, type: "hearing", isNextHearing: true },
-      { $set: { isNextHearing: false } }
-    );
+    eventToEmit = { type: "created", event: newEvent };
+  });
 
-    const newEvent = await CalendarEvent.create({
-      title: eventTitle,
-      description: eventDesc,
-      type: "hearing",
-      start: hearingDate,
-      end: hearingDate,
-      allDay: false,
-      caseId,
-      clientId: clientId || null,
-      createdBy: new mongoose.Types.ObjectId(userId),
-      assignedTo: assignedUsers,
-      color: "#7C3AED",
-      isNextHearing: true,
-      hearingStatus: "scheduled",
-    });
-
-    if (io) {
-      io.emit("calendar:event:created", {
-        eventId: newEvent._id.toString(),
+  if (io) {
+    if (oldEventToEmit) {
+      io.emit("calendar:event:updated", {
+        eventId: oldEventToEmit._id.toString(),
+        caseId: caseId.toString(),
+        isNextHearing: false,
+      });
+    }
+    if (eventToEmit) {
+      const { type, event } = eventToEmit as { type: string; event: any };
+      io.emit(type === "created" ? "calendar:event:created" : "calendar:event:updated", {
+        eventId: event._id.toString(),
         caseId: caseId.toString(),
         start: hearingDate.toISOString(),
         isNextHearing: true,
@@ -975,11 +1032,7 @@ router.post("/", async (req: Request, res: Response) => {
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("case:created", {
-        caseId: record._id.toString(),
-        number: record.number,
-        title: record.title,
-      });
+      io.emit("case:created", { caseId: record._id.toString() });
     }
 
     // 5b. Synchronize nextHearing with Calendar
@@ -1089,10 +1142,23 @@ router.post("/", async (req: Request, res: Response) => {
         );
 
         try {
+          const taskMainCategory = typeof t.mainCategory === "string" && t.mainCategory.trim()
+            ? t.mainCategory.trim()
+            : (typeof req.body.mainCategory === "string" ? req.body.mainCategory.trim() : "");
+          const taskSubCategory = typeof t.subCategory === "string" ? t.subCategory.trim() : "";
+          const taskCategoryPath = Array.isArray(t.categoryPath)
+            ? t.categoryPath.map((part: unknown) => String(part).trim()).filter(Boolean)
+            : [taskMainCategory, taskSubCategory].filter(Boolean);
+
           const createdTask = await Task.create({
             title: taskTitle,
             description: taskDesc,
+            notes: typeof t.notes === "string" ? sanitizeInputText(t.notes.trim(), 5000) : "",
             category: taskCategory,
+            mainCategory: taskMainCategory,
+            subCategory: taskSubCategory,
+            categoryPath: taskCategoryPath,
+            customCategory: typeof t.customCategory === "string" ? sanitizeInputText(t.customCategory.trim(), 200) : "",
             priority: taskPriority,
             status: "pending",
             deadline: parsedDeadline,
@@ -1104,6 +1170,7 @@ router.post("/", async (req: Request, res: Response) => {
             caseId: record._id,
             clientId: resolvedClientId,
             checklist: checklistItems,
+            localPath: typeof t.localPath === "string" ? sanitizeInputText(t.localPath.trim(), 1000) : "",
             agent: typeof t.agent === "string" ? t.agent.trim().slice(0, 100) : "",
             createdBy: userId,
             updatedBy: new mongoose.Types.ObjectId(userId),
@@ -1112,7 +1179,6 @@ router.post("/", async (req: Request, res: Response) => {
           if (io) {
             io.emit("task:created", {
               taskId: createdTask._id.toString(),
-              title: createdTask.title,
               caseId: record._id.toString(),
             });
           }
@@ -1384,8 +1450,40 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
 
     if (updates["parties"] !== undefined) {
       const primaryClientParty = (record.parties || []).find((p: any) => (p.type === "client" || p.type === "sub_client") && p.clientId);
-      const newClientId = primaryClientParty ? (primaryClientParty.clientId as any)._id ?? primaryClientParty.clientId : null;
-      await DocumentModel.updateMany({ caseId: record._id }, { clientId: newClientId });
+      const primaryClientIdValue = primaryClientParty
+        ? ((primaryClientParty.clientId as any)?._id ?? primaryClientParty.clientId)
+        : null;
+      const newClientId = primaryClientIdValue
+        ? new mongoose.Types.ObjectId(String(primaryClientIdValue))
+        : null;
+
+      // Keep the client relationship consistent across the case's linked tasks
+      // and task attachments. Case-level documents are updated separately so
+      // task-specific document relationships are never overwritten blindly.
+      const linkedTasks = await Task.find({ caseId: record._id, isDeleted: { $ne: true } })
+        .select("_id")
+        .lean();
+      const linkedTaskIds = linkedTasks.map((t) => t._id);
+
+      await Task.updateMany(
+        { _id: { $in: linkedTaskIds } },
+        { $set: { clientId: newClientId } },
+      );
+
+      await DocumentModel.updateMany(
+        {
+          caseId: record._id,
+          $or: [{ taskId: null }, { taskId: { $exists: false } }],
+        },
+        { $set: { clientId: newClientId } },
+      );
+
+      if (linkedTaskIds.length > 0) {
+        await DocumentModel.updateMany(
+          { caseId: record._id, taskId: { $in: linkedTaskIds } },
+          { $set: { clientId: newClientId } },
+        );
+      }
     }
 
     const updatedFields = Object.keys(updates).filter((k) => k !== "updatedBy");
@@ -1404,11 +1502,7 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("case:updated", {
-        caseId: record._id.toString(),
-        number: record.number,
-        title: record.title,
-      });
+      io.emit("case:updated", { caseId: record._id.toString() });
     }
 
     // Synchronize nextHearing with Calendar
@@ -1517,7 +1611,7 @@ router.post("/:id/request-deletion", requireResourceAccess("case"), async (req: 
     }
 
     if (io) {
-      io.emit("case:updated", { case: caseRecord });
+      io.emit("case:updated", { caseId: caseRecord._id.toString() });
     }
 
     res.status(201).json({
@@ -1603,7 +1697,7 @@ router.post("/:id/complete", requireResourceAccess("case"), async (req: Request,
       }
 
       if (io) {
-        io.emit("case:updated", { case: caseRecord });
+        io.emit("case:updated", { caseId: caseRecord._id.toString() });
       }
 
       res.json({
@@ -1656,7 +1750,7 @@ router.post("/:id/complete", requireResourceAccess("case"), async (req: Request,
     );
 
     if (io) {
-      io.emit("case:updated", { case: caseRecord });
+      io.emit("case:updated", { caseId: caseRecord._id.toString() });
       io.emit("task:updated", { caseId: caseRecord._id.toString() });
     }
 
@@ -1734,7 +1828,7 @@ router.post("/:id/reopen", requireResourceAccess("case"), async (req: Request, r
     }
 
     if (io) {
-      io.emit("case:updated", { case: caseRecord });
+      io.emit("case:updated", { caseId: caseRecord._id.toString() });
     }
 
     res.json({

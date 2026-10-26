@@ -23,8 +23,9 @@ export interface ICalendarEvent extends Document {
   clientId: mongoose.Types.ObjectId | null;
   createdBy: mongoose.Types.ObjectId;
   assignedTo: mongoose.Types.ObjectId[];
-  color?: string;
+  /** True only for the canonical CalendarEvent representing Case.nextHearing. */
   isNextHearing?: boolean;
+  color?: string;
   hearingStatus?: "scheduled" | "held" | "rescheduled" | "cancelled";
   hearingRecordId?: mongoose.Types.ObjectId | null;
   remarks?: string;
@@ -80,16 +81,16 @@ const CalendarEventSchema = new Schema<ICalendarEvent>(
 
 CalendarEventSchema.index({ start: 1, end: 1 });
 CalendarEventSchema.index({ assignedTo: 1, start: 1 });
+
+// At most one canonical "next hearing" event per case. Historical hearing events
+// remain unmarked (isNextHearing: false) and are deliberately preserved when the next date changes.
 CalendarEventSchema.index(
-  { caseId: 1, type: 1, isNextHearing: 1 },
+  { caseId: 1 },
   {
     unique: true,
-    partialFilterExpression: {
-      caseId: { $type: "objectId" },
-      type: "hearing",
-      isNextHearing: true,
-    },
-  }
+    partialFilterExpression: { type: "hearing", isNextHearing: true },
+    name: "uniq_next_hearing_per_case",
+  },
 );
 
 // ---------------------------------------------------------------------------

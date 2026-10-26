@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -47,6 +47,18 @@ export function TaskCompletionDialog({
   const [note, setNote] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  // Remember successfully uploaded files so a retry after a partial upload does
+  // not upload duplicate copies of files that already belong to this task.
+  const uploadedFileIdsRef = useRef<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    if (!open) {
+      setNote("");
+      setSelectedFiles([]);
+      uploadedFileIdsRef.current.clear();
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }, [open]);
 
   const checklist = task.checklist || [];
   const totalSteps = checklist.length;
@@ -79,8 +91,18 @@ export function TaskCompletionDialog({
           ? (task.clientId as any)._id
           : task.clientId || undefined;
 
-      // Upload any attached supporting documents
+      // Upload any attached supporting documents. Do not submit completion if
+      // any selected upload failed; retain successful IDs so retrying cannot
+      // create duplicate copies of already-uploaded files.
+      const failedFileNames: string[] = [];
       for (const file of selectedFiles) {
+        const fileKey = `${file.name}|${file.size}|${file.lastModified}`;
+        const alreadyUploadedId = uploadedFileIdsRef.current.get(fileKey);
+        if (alreadyUploadedId) {
+          uploadedDocIds.push(alreadyUploadedId);
+          continue;
+        }
+
         const formData = new FormData();
         formData.append("name", file.name);
         formData.append("taskId", task._id);
@@ -90,13 +112,22 @@ export function TaskCompletionDialog({
 
         try {
           const res = await uploadDocumentStream(formData);
-          if (res?.document?._id) {
-            uploadedDocIds.push(res.document._id);
-          }
+          const documentId = res?.document?._id;
+          if (!documentId) throw new Error("Upload succeeded without a document ID");
+          uploadedDocIds.push(documentId);
+          uploadedFileIdsRef.current.set(fileKey, documentId);
         } catch (uploadErr) {
+          failedFileNames.push(file.name);
           console.error(`Failed to upload ${file.name}:`, uploadErr);
           toast.error(`Failed to attach ${file.name}`);
         }
+      }
+
+      if (failedFileNames.length > 0) {
+        queryClient.invalidateQueries({ queryKey: ["documents"] });
+        queryClient.invalidateQueries({ queryKey: taskKeys.detail(task._id) });
+        toast.error("Task was not submitted. Retry the failed document uploads; files that already uploaded will not be uploaded again.");
+        return;
       }
 
       await onConfirmComplete(note.trim(), uploadedDocIds);
