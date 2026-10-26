@@ -39,6 +39,29 @@ const EVENT_TYPES: { value: string; label: string }[] = [
   { value: "personal", label: "Personal" },
 ];
 
+// ---------------------------------------------------------------------------
+// Helpers for Browser-Local Date & Time Conversion
+// ---------------------------------------------------------------------------
+
+function formatLocalDate(value?: string | Date | null): string {
+  if (!value) return "";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatLocalTime(value?: string | Date | null, fallback = "10:30"): string {
+  if (!value) return fallback;
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return fallback;
+  const hours = String(d.getHours()).padStart(2, "0");
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
 export function ScheduleHearingDialog({ open, onClose, initialDate, eventToEdit }: ScheduleHearingDialogProps) {
   const createEvent = useCreateEvent();
   const updateEvent = useUpdateEvent();
@@ -61,10 +84,10 @@ export function ScheduleHearingDialog({ open, onClose, initialDate, eventToEdit 
       setTitle(eventToEdit.title || "");
       setDescription(eventToEdit.description || "");
       setType(eventToEdit.type || "hearing");
-      setStartDate(eventToEdit.start ? eventToEdit.start.slice(0, 10) : "");
-      setStartTime(eventToEdit.start && eventToEdit.start.length >= 16 ? eventToEdit.start.slice(11, 16) : "10:30");
-      setEndDate(eventToEdit.end ? eventToEdit.end.slice(0, 10) : (eventToEdit.start ? eventToEdit.start.slice(0, 10) : ""));
-      setEndTime(eventToEdit.end && eventToEdit.end.length >= 16 ? eventToEdit.end.slice(11, 16) : "11:30");
+      setStartDate(formatLocalDate(eventToEdit.start));
+      setStartTime(eventToEdit.allDay ? "10:30" : formatLocalTime(eventToEdit.start, "10:30"));
+      setEndDate(formatLocalDate(eventToEdit.end || eventToEdit.start));
+      setEndTime(eventToEdit.allDay ? "11:30" : formatLocalTime(eventToEdit.end, "11:30"));
       setAllDay(Boolean(eventToEdit.allDay));
       setCaseId(eventToEdit.caseId || "");
     } else if (initialDate) {
@@ -79,18 +102,38 @@ export function ScheduleHearingDialog({ open, onClose, initialDate, eventToEdit 
     e.preventDefault();
     if (!title.trim() || !startDate) return;
 
+    let startIso: string;
+    let endIso: string | undefined = undefined;
+
+    if (allDay) {
+      // Local all-day start
+      const [sYear, sMonth, sDay] = startDate.split("-").map(Number);
+      startIso = new Date(sYear, sMonth - 1, sDay, 0, 0, 0, 0).toISOString();
+      if (endDate) {
+        const [eYear, eMonth, eDay] = endDate.split("-").map(Number);
+        endIso = new Date(eYear, eMonth - 1, eDay, 23, 59, 59, 999).toISOString();
+      }
+    } else {
+      const [sYear, sMonth, sDay] = startDate.split("-").map(Number);
+      const [sHour, sMinute] = (startTime || "10:30").split(":").map(Number);
+      startIso = new Date(sYear, sMonth - 1, sDay, sHour, sMinute, 0, 0).toISOString();
+
+      const effectiveEndDate = endDate || startDate;
+      const [eYear, eMonth, eDay] = effectiveEndDate.split("-").map(Number);
+      const [eHour, eMinute] = (endTime || "11:30").split(":").map(Number);
+      endIso = new Date(eYear, eMonth - 1, eDay, eHour, eMinute, 0, 0).toISOString();
+    }
+
     const payload: CreateEventPayload = {
       title: title.trim(),
       description,
       type,
-      start: allDay ? `${startDate}T00:00:00` : `${startDate}T${startTime}:00`,
+      start: startIso,
       allDay,
     };
 
-    if (!allDay && (endDate || (startDate && startTime))) {
-      payload.end = endDate
-        ? `${endDate}T${endTime}:00`
-        : `${startDate}T${endTime}:00`;
+    if (endIso) {
+      payload.end = endIso;
     }
 
     if (caseId) payload.caseId = caseId;

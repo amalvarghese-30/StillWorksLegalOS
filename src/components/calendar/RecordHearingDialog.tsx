@@ -43,13 +43,22 @@ export function RecordHearingDialog({ open, onClose, event }: RecordHearingDialo
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    let nextHearingIso: string | null = null;
+    if (nextDate) {
+      // nextDate is from <input type="datetime-local" />: "YYYY-MM-DDTHH:mm"
+      const d = new Date(nextDate);
+      if (!Number.isNaN(d.getTime())) {
+        nextHearingIso = d.toISOString();
+      }
+    }
+
     recordHearingMutation.mutate(
       {
         eventId: event._id,
         data: {
           status,
           remarks: remarks.trim(),
-          nextHearingDate: nextDate ? new Date(nextDate).toISOString() : null,
+          nextHearingDate: nextHearingIso,
           hearingDate: event.start,
         },
       },

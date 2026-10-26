@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
-import { Plus, CalendarDays, ChevronLeft, ChevronRight, Gavel, PhoneCall, CheckSquare, Users, Building2, User, Loader2, AlertTriangle, Search } from "lucide-react";
+import { Plus, CalendarDays, ChevronLeft, ChevronRight, Gavel, PhoneCall, CheckSquare, Users, Building2, User, Loader2, AlertTriangle, Search, Pencil } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
@@ -8,6 +8,20 @@ import { useCalendarEvents, type CalendarEvent } from "@/services/calendar";
 import { useEmployees } from "@/services/admin";
 import { ScheduleHearingDialog } from "@/components/calendar/ScheduleHearingDialog";
 import { DayDetailsDialog } from "@/components/calendar/DayDetailsDialog";
+
+export function getLocalDateKey(value: string | Date): string {
+  const date = value instanceof Date ? value : new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
 
 export const Route = createFileRoute("/_shell/calendar")({
   head: () => ({
@@ -78,8 +92,10 @@ function CalendarPage() {
     setShowScheduleDialog(true);
   };
 
-  const monthStart = new Date(currentYear, currentMonth, 1).toISOString();
-  const monthEnd = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59).toISOString();
+  // Expand the query range by 7 days on both ends so events falling into adjacent days
+  // or spanning across timezone boundaries are reliably fetched for month view and day popup
+  const monthStart = new Date(currentYear, currentMonth, 1 - 7, 0, 0, 0).toISOString();
+  const monthEnd = new Date(currentYear, currentMonth + 1, 7, 23, 59, 59).toISOString();
 
   const { data: eventsData, isLoading, isError } = useCalendarEvents({
     start: monthStart,
@@ -103,7 +119,7 @@ function CalendarPage() {
 
   const selectedDateEvents = useMemo(() => {
     if (!selectedDate) return [];
-    return allEvents.filter((e) => e.start.slice(0, 10) === selectedDate);
+    return allEvents.filter((e) => getLocalDateKey(e.start) === selectedDate);
   }, [selectedDate, allEvents]);
 
   const monthNames = [
@@ -130,19 +146,30 @@ function CalendarPage() {
   const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
   const daysInPrevMonth = new Date(currentYear, currentMonth, 0).getDate();
 
-  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const todayStr = getLocalDateKey(today);
 
-  const days = [];
-  for (let i = adjustedStart - 1; i >= 0; i--) days.push({ day: daysInPrevMonth - i, month: "prev" });
-  for (let d = 1; d <= daysInMonth; d++) days.push({ day: d, month: "current" });
+  const days: { day: number; month: "prev" | "current" | "next"; dateStr: string }[] = [];
+  for (let i = adjustedStart - 1; i >= 0; i--) {
+    const d = daysInPrevMonth - i;
+    const prevDate = new Date(currentYear, currentMonth - 1, d);
+    days.push({ day: d, month: "prev", dateStr: getLocalDateKey(prevDate) });
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    const curDate = new Date(currentYear, currentMonth, d);
+    days.push({ day: d, month: "current", dateStr: getLocalDateKey(curDate) });
+  }
   const remaining = 42 - days.length;
-  for (let d = 1; d <= remaining; d++) days.push({ day: d, month: "next" });
+  for (let d = 1; d <= remaining; d++) {
+    const nextDate = new Date(currentYear, currentMonth + 1, d);
+    days.push({ day: d, month: "next", dateStr: getLocalDateKey(nextDate) });
+  }
 
-  const eventsByDay: Record<number, CalendarEvent[]> = {};
+  const eventsByDayKey: Record<string, CalendarEvent[]> = {};
   for (const e of events) {
-    const d = new Date(e.start).getDate();
-    if (!eventsByDay[d]) eventsByDay[d] = [];
-    eventsByDay[d]!.push(e);
+    const key = getLocalDateKey(e.start);
+    if (!key) continue;
+    if (!eventsByDayKey[key]) eventsByDayKey[key] = [];
+    eventsByDayKey[key]!.push(e);
   }
 
   const agendaEvents = events
@@ -301,9 +328,9 @@ function CalendarPage() {
               <div className="grid min-w-[640px] grid-cols-7 gap-2">
                 {days.map((d, i) => {
                   const inMonth = d.month === "current";
-                  const dateStr = inMonth ? `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-${String(d.day).padStart(2, "0")}` : "";
+                  const dateStr = d.dateStr;
                   const isToday = dateStr === todayStr;
-                  const dayEvents = inMonth ? (eventsByDay[d.day] ?? []) : [];
+                  const dayEvents = inMonth ? (eventsByDayKey[dateStr] ?? []) : [];
                   return (
                     <div
                       key={i}

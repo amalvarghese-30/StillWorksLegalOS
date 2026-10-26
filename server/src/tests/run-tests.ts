@@ -5589,6 +5589,123 @@ const { NotificationService } = await import("../services/notifications.js");
       finalHistory.some(h => h.remarks === "Matter heard; additional documents requested." && h.status === "held"),
       "S38-90: 19 Oct remarks and held status preserved in history"
     );
+
+    // -----------------------------------------------------------------------
+    // S38-91 to S38-100: Timezone Boundary, Month Grid & Selected Date Popup Alignment
+    // -----------------------------------------------------------------------
+    // 1. Create a hearing event whose UTC date differs from IST (Asia/Kolkata UTC+5:30)
+    // 18:30 UTC on 2026-11-04 is 00:00 IST on 2026-11-05
+    const tzBoundaryHearing = await CalendarEvent.create({
+      title: "Hearing: Late Night Boundary Case",
+      description: "Timezone boundary test",
+      type: "hearing",
+      start: new Date("2026-11-04T19:00:00.000Z"), // 00:30 AM on 5 Nov in IST
+      caseId: e2eCaseId,
+      createdBy: s38Admin._id,
+      assignedTo: [s38Admin._id],
+      isNextHearing: false,
+      hearingStatus: "scheduled",
+    });
+
+    // Also add a regular task event on the same day (5 Nov)
+    const tzBoundaryTask = await CalendarEvent.create({
+      title: "Task: Prepare 5 Nov Brief",
+      description: "Briefing document review",
+      type: "task",
+      start: new Date("2026-11-05T05:30:00.000Z"), // 11:00 AM on 5 Nov in IST
+      createdBy: s38Admin._id,
+      assignedTo: [s38Admin._id],
+    });
+
+    // Query calendar events for November with extended boundary window
+    const novEventsRes = await request(app)
+      .get("/api/calendar/events")
+      .set("Authorization", `Bearer ${s38AdminToken}`)
+      .query({
+        start: new Date("2026-10-25T00:00:00.000Z").toISOString(),
+        end: new Date("2026-12-07T23:59:59.000Z").toISOString(),
+      });
+    assert(novEventsRes.status === 200, "S38-91: Calendar query with expanded window returns 200");
+    const novEvents = novEventsRes.body.events;
+    assert(
+      novEvents.some((e: any) => e._id.toString() === tzBoundaryHearing._id.toString()),
+      "S38-92: Timezone boundary event returned in calendar query"
+    );
+
+    // Local date grouping test function matching getLocalDateKey in frontend
+    function testGetLocalDateKey(val: string | Date): string {
+      const d = new Date(val);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    }
+
+    const nov5Key = testGetLocalDateKey(tzBoundaryHearing.start);
+    const nov5Events = novEvents.filter((e: any) => testGetLocalDateKey(e.start) === nov5Key);
+    assert(
+      nov5Events.some((e: any) => e._id.toString() === tzBoundaryHearing._id.toString()),
+      "S38-93: Boundary hearing grouped into its local calendar date"
+    );
+    assert(
+      nov5Events.some((e: any) => e._id.toString() === tzBoundaryTask._id.toString()),
+      "S38-94: Multiple events (hearing + task) correctly grouped under same local date"
+    );
+
+    // 2. Sequential progression: 19 October -> 5 November -> 16 November
+    const seqCaseRes = await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${s38AdminToken}`)
+      .send({
+        title: "Sequential Hearing Progression Matter",
+        practice: "Commercial",
+        nextHearing: "2026-10-19T10:00:00.000Z",
+      });
+    assert(seqCaseRes.status === 201, "S38-95: Sequential case created on 19 Oct");
+    const seqCaseId = seqCaseRes.body.case._id;
+
+    // Reschedule from 19 Oct to 5 Nov
+    const octHearing = await CalendarEvent.findOne({ caseId: seqCaseId, isNextHearing: true });
+    assert(octHearing !== null, "S38-96: Canonical 19 Oct hearing exists");
+
+    const recordToNov5Res = await request(app)
+      .post(`/api/calendar/events/${octHearing!._id}/record-hearing`)
+      .set("Authorization", `Bearer ${s38AdminToken}`)
+      .send({
+        status: "held",
+        remarks: "19 Oct work completed; argued prelim issues",
+        nextHearingDate: "2026-11-05T10:30:00.000Z",
+        hearingDate: octHearing!.start,
+      });
+    assert(recordToNov5Res.status === 200, "S38-97: 19 Oct recorded and rescheduled to 5 Nov (200)");
+
+    // Reschedule from 5 Nov to 16 Nov
+    const nov5Hearing = await CalendarEvent.findOne({ caseId: seqCaseId, isNextHearing: true });
+    assert(nov5Hearing !== null, "S38-98: Canonical 5 Nov hearing exists");
+
+    const recordToNov16Res = await request(app)
+      .post(`/api/calendar/events/${nov5Hearing!._id}/record-hearing`)
+      .set("Authorization", `Bearer ${s38AdminToken}`)
+      .send({
+        status: "held",
+        remarks: "5 Nov hearing completed; rejoinder filed",
+        nextHearingDate: "2026-11-16T11:00:00.000Z",
+        hearingDate: nov5Hearing!.start,
+      });
+    assert(recordToNov16Res.status === 200, "S38-99: 5 Nov recorded and rescheduled to 16 Nov (200)");
+
+    // Verify all 3 dates remain present and case.nextHearing is 16 Nov
+    const allSeqHearings = await CalendarEvent.find({ caseId: seqCaseId, type: "hearing" }).sort({ start: 1 });
+    assert(allSeqHearings.length === 3, "S38-100: All 3 hearings (19 Oct, 5 Nov, 16 Nov) preserved in CalendarEvent");
+    const canonicalSeq = allSeqHearings.filter(h => h.isNextHearing);
+    assert(canonicalSeq.length === 1, "S38-101: Exactly one canonical next hearing");
+    assert(
+      new Date(canonicalSeq[0].start).toISOString() === new Date("2026-11-16T11:00:00.000Z").toISOString(),
+      "S38-102: Canonical hearing is 16 Nov"
+    );
+
+    const updatedSeqCase = await Case.findById(seqCaseId);
+    assert(
+      new Date(updatedSeqCase!.nextHearing!).toISOString() === new Date("2026-11-16T11:00:00.000Z").toISOString(),
+      "S38-103: Case.nextHearing synchronized to 16 Nov"
+    );
   }
 
   // =========================================================================
