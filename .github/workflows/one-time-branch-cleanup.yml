@@ -1,4 +1,5 @@
 name: One-time merged branch cleanup
+# Temporary one-run workflow; remove this file after successful cleanup.
 
 on:
   push:
