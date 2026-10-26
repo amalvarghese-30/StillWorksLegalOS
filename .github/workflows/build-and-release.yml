@@ -2,6 +2,8 @@ name: Build & Release Desktop EXE
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*.*.*'
   workflow_dispatch:
@@ -29,6 +31,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
@@ -39,6 +42,14 @@ jobs:
       - name: Install dependencies
         run: |
           npm install --legacy-peer-deps
+
+      - name: Determine & Bump Version for Auto-Update
+        id: versioning
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ALLOW_AUTO_BUMP: 'true'
+        run: |
+          node scripts/check-and-bump-version.cjs --allow-auto-bump
 
       - name: Validate Release Version & Prohibit Duplicates
         env:
@@ -67,8 +78,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $pkg = Get-Content package.json | ConvertFrom-Json
-          $version = $pkg.version
-          $tag = "v$version"
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          if ("${{ steps.versioning.outputs.is_bumped }}" -eq "true") {
+            git add package.json
+            git commit -m "chore(release): bump desktop version to ${{ steps.versioning.outputs.version }} [skip ci]"
+            git push origin main
+          }
+          $tag = "v${{ steps.versioning.outputs.version }}"
+          git tag -f "$tag"
+          git push origin "$tag" --force
           $assets = (Get-ChildItem release -File | Where-Object { $_.Name -like "ss-legaltech*" -or $_.Name -eq "latest.yml" }).FullName
-          gh release create $tag $assets --title "$tag" --notes "StillWorks LegalOS $tag"
+          gh release delete "$tag" --yes 2>$null || $true
+          gh release create "$tag" $assets --title "$tag" --notes "StillWorks LegalOS $tag"
