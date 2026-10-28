@@ -88,12 +88,12 @@ export function isOtherWorkCategory(name?: string | null): boolean {
 
 export function isHeirshipCategory(name?: string | null): boolean {
   if (!name) return false;
-  const n = name.trim().toLowerCase();
+  const n = name.trim().toLowerCase().replace(/\s+/g, " ");
   return (
     n === "heirship & court matters" ||
-    n.includes("heirship") ||
-    n.includes("hership") ||
-    n.includes("court matters")
+    n === "heirship and court matters" ||
+    n === "hership & court matters" ||
+    n === "hership and court matters"
   );
 }
 

@@ -641,6 +641,7 @@ function CasesPage() {
           open={showImportDialog}
           onClose={() => setShowImportDialog(false)}
           entityType="cases"
+          existingRecords={rawCases}
           onImportSuccess={() => {
             queryClient.invalidateQueries({ queryKey: caseKeys.all });
           }}

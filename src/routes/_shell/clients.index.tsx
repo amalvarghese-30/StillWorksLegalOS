@@ -236,6 +236,7 @@ function ClientsPage() {
           open={showImportDialog}
           onClose={() => setShowImportDialog(false)}
           entityType="clients"
+          existingRecords={data?.clients || []}
           onImportSuccess={() => {
             queryClient.invalidateQueries({ queryKey: clientKeys.all });
           }}

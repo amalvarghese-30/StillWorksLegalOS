@@ -43,6 +43,7 @@ import { useCreateDirectChat } from "@/services/chat";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import { usePresence } from "@/lib/presence";
 import { cn } from "@/lib/utils";
+import { formatSafeDate } from "@/lib/dates";
 import { toast } from "sonner";
 
 interface EmployeeDetailWorkspaceProps {
@@ -395,7 +396,7 @@ export function EmployeeDetailWorkspace({
                 {employee?.lastActiveAt && (
                   <div className="flex items-center gap-1.5">
                     <Clock size={13} className="text-muted-foreground/70" />
-                    <span>Active {new Date(employee.lastActiveAt).toLocaleDateString()}</span>
+                    <span>Active {formatSafeDate(employee.lastActiveAt)}</span>
                   </div>
                 )}
               </div>
@@ -822,7 +823,7 @@ export function EmployeeDetailWorkspace({
                       <td className="py-3 px-4">
                         {c.nextHearing ? (
                           <span className="font-mono text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded text-[11px]">
-                            {new Date(c.nextHearing).toLocaleDateString()}
+                            {formatSafeDate(c.nextHearing)}
                           </span>
                         ) : (
                           <span className="text-muted-foreground/60">—</span>
@@ -991,7 +992,7 @@ export function EmployeeDetailWorkspace({
                                 isOverdue ? "bg-rose-500/10 text-rose-400 font-bold" : "text-muted-foreground bg-muted/60"
                               )}
                             >
-                              {new Date(t.deadline).toLocaleDateString()}
+                              {formatSafeDate(t.deadline)}
                             </span>
                           ) : (
                             <span className="text-muted-foreground/60">—</span>
@@ -1172,7 +1173,7 @@ export function EmployeeDetailWorkspace({
                   </div>
                   <div className="text-right shrink-0">
                     <div className="text-xs font-mono text-muted-foreground">
-                      {new Date(log.createdAt).toLocaleDateString()}
+                      {formatSafeDate(log.createdAt)}
                     </div>
                     <div className="text-[10px] text-muted-foreground/60 font-mono">
                       {new Date(log.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}

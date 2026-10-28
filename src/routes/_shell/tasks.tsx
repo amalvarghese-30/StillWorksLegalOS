@@ -1294,6 +1294,7 @@ function TasksPage() {
           open={showImportDialog}
           onClose={() => setShowImportDialog(false)}
           entityType="tasks"
+          existingRecords={tasks}
           onImportSuccess={() => {
             queryClient.invalidateQueries({ queryKey: taskKeys.all });
           }}

@@ -139,6 +139,7 @@ export function AddCaseDialog({
   const [tagInput, setTagInput] = useState("");
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const [inheritedClientId, setInheritedClientId] = useState<string | null>(null);
+  const [isTitleManuallyEdited, setIsTitleManuallyEdited] = useState(false);
 
   const { data: clientsData } = useClients({ limit: "100" });
   const { data: taskOptions } = useTaskOptions();
@@ -182,7 +183,7 @@ export function AddCaseDialog({
     setForm((prev) => {
       const client = primaryClientName.trim();
       const catLabel = nextVal === "__other__" ? (prev.customCategory.trim() || "Custom Matter") : nextVal;
-      const newTitle = catLabel ? (client ? `${client} - ${catLabel}` : catLabel) : prev.title;
+      const autoTitle = catLabel ? (client ? `${client} - ${catLabel}` : catLabel) : (client || "");
       return {
         ...prev,
         mainCategory: nextVal,
@@ -190,7 +191,8 @@ export function AddCaseDialog({
         selectedSubCategories: [],
         categoryPath: [],
         customCategory: nextVal !== "__other__" ? "" : prev.customCategory,
-        title: newTitle || prev.title,
+        title: isTitleManuallyEdited && prev.title.trim() ? prev.title : (autoTitle || prev.title),
+        nextHearing: isHeirshipCategory(nextVal) ? prev.nextHearing : "",
       };
     });
   };
@@ -217,10 +219,10 @@ export function AddCaseDialog({
     });
     setForm((prev) => {
       const catLabel = prev.mainCategory === "__other__" ? (prev.customCategory.trim() || "Custom Matter") : prev.mainCategory;
-      const newTitle = catLabel ? `${selectedClient.name} - ${catLabel}` : selectedClient.name;
+      const autoTitle = catLabel ? `${selectedClient.name} - ${catLabel}` : selectedClient.name;
       return {
         ...prev,
-        title: newTitle,
+        title: isTitleManuallyEdited && prev.title.trim() ? prev.title : autoTitle,
       };
     });
   };
@@ -231,6 +233,7 @@ export function AddCaseDialog({
 
   useEffect(() => {
     if (open) {
+      setIsTitleManuallyEdited(false);
       if (preselectedClientId) {
         setParties([
           {
@@ -247,6 +250,7 @@ export function AddCaseDialog({
       setSubtaskInput({});
       setInheritedClientId(null);
     } else {
+      setIsTitleManuallyEdited(false);
       setInheritedClientId(null);
     }
   }, [open, preselectedClientId, preselectedClientName]);
@@ -305,6 +309,7 @@ export function AddCaseDialog({
     setSubtaskInput({});
     setTagInput("");
     setShowDiscardConfirm(false);
+    setIsTitleManuallyEdited(false);
     onClose();
   };
 
@@ -653,7 +658,7 @@ export function AddCaseDialog({
         categoryPath: resolvedPath,
         courtCaseId: form.courtCaseId.trim() || undefined,
         countCaseNumber: form.countCaseNumber.trim() || form.courtCaseId.trim() || undefined,
-        nextHearing: form.nextHearing ? (toSafeIso(form.nextHearing) ?? undefined) : undefined,
+        nextHearing: isHeirshipCategory(form.mainCategory) && form.nextHearing ? (toSafeIso(form.nextHearing) ?? undefined) : undefined,
         localPath: form.localPath.trim() || undefined,
         status: form.status,
         priority: form.priority,
@@ -792,9 +797,11 @@ export function AddCaseDialog({
                         const val = e.target.value;
                         update("subCategory", val);
                         update("categoryPath", val ? [val] : []);
-                        const client = primaryClientName.trim();
-                        if (client && val && val !== "__other__") {
-                          update("title", `${client} - ${val}`);
+                        if (!isTitleManuallyEdited) {
+                          const client = primaryClientName.trim();
+                          if (client && val && val !== "__other__") {
+                            update("title", `${client} - ${val}`);
+                          }
                         }
                       }}
                       className="h-11 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary"
@@ -823,7 +830,7 @@ export function AddCaseDialog({
                         const val = e.target.value;
                         const newPath = val ? [form.subCategory, val] : [form.subCategory];
                         update("categoryPath", newPath);
-                        if (val) {
+                        if (!isTitleManuallyEdited && val) {
                           const client = primaryClientName.trim();
                           if (client) {
                             update("title", `${client} - ${val}`);
@@ -853,9 +860,11 @@ export function AddCaseDialog({
                       onChange={(e) => {
                         const val = e.target.value;
                         update("customCategory", val);
-                        const client = primaryClientName.trim();
-                        if (client && val.trim()) {
-                          update("title", `${client} - ${val.trim()}`);
+                        if (!isTitleManuallyEdited) {
+                          const client = primaryClientName.trim();
+                          if (client && val.trim()) {
+                            update("title", `${client} - ${val.trim()}`);
+                          }
                         }
                       }}
                       placeholder="Enter manual category name (e.g. Real Estate Joint Venture)..."
@@ -883,7 +892,15 @@ export function AddCaseDialog({
                   <Input
                     id="case-title"
                     value={form.title}
-                    onChange={(e) => update("title", e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val.trim() === "") {
+                        setIsTitleManuallyEdited(false);
+                      } else {
+                        setIsTitleManuallyEdited(true);
+                      }
+                      update("title", val);
+                    }}
                     placeholder={
                       primaryClientName
                         ? `${primaryClientName} - ${form.mainCategory || "Main Category"}`

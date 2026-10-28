@@ -124,65 +124,6 @@ export function TaskEditForm({
         />
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label htmlFor="task-main-cat" className="text-helper font-medium">Main Category</Label>
-          <select
-            id="task-main-cat"
-            value={mainCategory}
-            onChange={(e) => {
-              setMainCategory(e.target.value);
-              setSubCategory("");
-              setCustomCategory("");
-            }}
-            className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-          >
-            <option value="">Select main category…</option>
-            {categoryTree.map((c) => (
-              <option key={c.name} value={c.name}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="task-sub-cat" className="text-helper font-medium">Subcategory / Work Type</Label>
-          <select
-            id="task-sub-cat"
-            value={subCategory}
-            onChange={(e) => {
-              setSubCategory(e.target.value);
-              if (e.target.value !== "__other__") setCustomCategory("");
-            }}
-            disabled={!mainCategory || availableSubCategories.length === 0}
-            className="h-10 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
-          >
-            <option value="">Select subcategory…</option>
-            {availableSubCategories.map((sc) => (
-              <option key={sc._id || sc.name} value={sc.name}>
-                {sc.name}
-              </option>
-            ))}
-            <option value="__other__">+ Other / Custom Subcategory...</option>
-          </select>
-        </div>
-      </div>
-
-      {subCategory === "__other__" && (
-        <div className="space-y-1.5">
-          <Label htmlFor="task-custom-cat" className="text-helper font-medium">Custom Work Type / Subcategory</Label>
-          <Input
-            id="task-custom-cat"
-            value={customCategory}
-            onChange={(e) => setCustomCategory(e.target.value)}
-            placeholder="Enter custom work type..."
-            className="h-10 rounded-md"
-            maxLength={100}
-          />
-        </div>
-      )}
-
       <div className="space-y-1.5">
         <Label className="text-xs font-semibold text-foreground">Priority</Label>
         <div className="flex h-10 rounded-lg border border-border overflow-hidden bg-muted/30">

@@ -614,7 +614,7 @@ function ReportsPage() {
                               {c.visitCount}
                             </td>
                             <td className="py-2.5 px-3 text-muted-foreground">
-                              {c.lastVisitAt ? new Date(c.lastVisitAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                              {c.lastVisitAt ? formatSafeDate(c.lastVisitAt) : "—"}
                             </td>
                             <td className="py-2.5 px-3 text-right no-print">
                               <Button
@@ -1452,7 +1452,7 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                                 {t.deadline && (
                                   <span className="inline-flex items-center gap-1">
                                     <Clock size={11} className="shrink-0 text-muted-foreground/70" />
-                                    <span>Due: {new Date(t.deadline).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</span>
+                                    <span>Due: {formatSafeDate(t.deadline)}</span>
                                   </span>
                                 )}
                               </div>
@@ -1655,7 +1655,7 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                                 <>
                                   <span>•</span>
                                   <span className="text-amber-600 dark:text-amber-400 font-medium">
-                                    Next Hearing: {new Date(c.nextHearing).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                                    Next Hearing: {formatSafeDate(c.nextHearing)}
                                   </span>
                                 </>
                               )}
@@ -1697,7 +1697,7 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                         {allTimeRecentLogs.map((log) => {
                           const { time, relative } = formatLogTime(log.createdAt);
                           const logDate = log.createdAt
-                            ? new Date(log.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+                            ? formatSafeDate(log.createdAt)
                             : "";
                           return (
                             <div
@@ -2139,6 +2139,7 @@ function ClientDetailReportView({
   const [drilldownType, setDrilldownType] = useState<DrilldownType>("tasks");
   const [drilldownTitle, setDrilldownTitle] = useState("");
   const [drilldownSubtitle, setDrilldownSubtitle] = useState("");
+  const [selectedVisit, setSelectedVisit] = useState<any | null>(null);
   const navigate = useNavigate();
 
   if (isLoading) {
@@ -2232,7 +2233,7 @@ function ClientDetailReportView({
             <p><strong>Contact:</strong> {client.phone} | {client.email || "N/A"}</p>
           </div>
           <div className="text-right">
-            <p><strong>Report Date:</strong> {new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" })}</p>
+            <p><strong>Report Date:</strong> {formatSafeDate(new Date())}</p>
             <p><strong>Total Recorded Office Visits:</strong> {metrics.totalVisits}</p>
           </div>
         </div>
@@ -2340,7 +2341,12 @@ function ClientDetailReportView({
               </thead>
               <tbody className="divide-y divide-border/60">
                 {client.visits.map((v, idx) => (
-                  <tr key={v._id || idx} className="hover:bg-muted/15">
+                  <tr
+                    key={v._id || idx}
+                    onClick={() => setSelectedVisit(v)}
+                    className="hover:bg-muted/15 cursor-pointer transition-colors"
+                    title="Click to view full visit details"
+                  >
                     <td className="py-2.5 px-3 font-mono text-muted-foreground">
                       {formatSafeDate(v.visitedAt, "—")}
                     </td>
@@ -2479,6 +2485,62 @@ function ClientDetailReportView({
             </form>
           </div>
         </div>
+      )}
+
+      {/* Visit Detail Inspection Dialog */}
+      {selectedVisit && (
+        <Dialog open={Boolean(selectedVisit)} onOpenChange={(o) => (!o ? setSelectedVisit(null) : null)}>
+          <DialogContent className="max-w-md rounded-xl p-6 shadow-lift border-border bg-card">
+            <DialogHeader className="border-b border-border pb-3">
+              <DialogTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <Calendar className="size-4 text-primary" />
+                <span>Office Visit Details</span>
+              </DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                In-person law-firm consultation record for {client.name}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-3 text-xs">
+              <div className="grid grid-cols-2 gap-3 p-3 rounded-lg border border-border bg-muted/20">
+                <div>
+                  <span className="text-[11px] text-muted-foreground block font-medium">Visit Date &amp; Time</span>
+                  <span className="font-semibold text-foreground">
+                    {formatSafeDate(selectedVisit.visitedAt, "—")}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[11px] text-muted-foreground block font-medium">Handled By</span>
+                  <span className="font-semibold text-foreground">
+                    {selectedVisit.handledBy ? (typeof selectedVisit.handledBy === "object" ? selectedVisit.handledBy.name : selectedVisit.handledBy) : "Partner / Staff"}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[11px] text-muted-foreground block font-medium mb-1">Purpose / Matter Discussed</span>
+                <div className="p-3 rounded-lg border border-border bg-background font-medium text-foreground">
+                  {selectedVisit.purpose}
+                </div>
+              </div>
+
+              {selectedVisit.notes && (
+                <div>
+                  <span className="text-[11px] text-muted-foreground block font-medium mb-1">Consultation Notes &amp; Action Points</span>
+                  <div className="p-3 rounded-lg border border-border bg-muted/10 text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                    {selectedVisit.notes}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="border-t border-border pt-3">
+              <Button size="sm" variant="outline" onClick={() => setSelectedVisit(null)} className="text-xs">
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

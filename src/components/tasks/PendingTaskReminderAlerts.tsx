@@ -10,6 +10,7 @@ import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import { api } from "@/services/api";
 import { toast } from "sonner";
 import { notifications } from "@/platform";
+import { formatSafeDateTime } from "@/lib/dates";
 
 export interface PendingReminderItem {
   taskId: string;
@@ -306,14 +307,7 @@ export function PendingTaskReminderAlerts() {
       const isOverdue = date.getTime() < Date.now();
       return (
         <span className={isOverdue ? "text-destructive font-semibold" : "text-foreground"}>
-          {date.toLocaleDateString("en-IN", {
-            weekday: "short",
-            day: "numeric",
-            month: "short",
-            year: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
+          {formatSafeDateTime(date)}
           {isOverdue && " (Overdue)"}
         </span>
       );

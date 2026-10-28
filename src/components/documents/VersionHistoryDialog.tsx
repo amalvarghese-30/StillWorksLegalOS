@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DocumentPreviewModal } from "@/components/documents/DocumentPreviewModal";
+import { formatSafeDate } from "@/lib/dates";
 
 interface VersionHistoryDialogProps {
   open: boolean;
@@ -95,7 +96,7 @@ export function VersionHistoryDialog({ open, onClose, documentId, documentName }
                           ? version.uploadedBy
                           : version.uploadedBy?.name || 'Unknown'}
                       </p>
-                      <p>{new Date(version.createdAt).toLocaleDateString("en-IN", { year: 'numeric', month: 'short', day: 'numeric' })}</p>
+                      <p>{formatSafeDate(version.createdAt)}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">

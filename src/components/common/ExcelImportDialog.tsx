@@ -164,6 +164,8 @@ export function ExcelImportDialog({
   const [recordsToUpdateCount, setRecordsToUpdateCount] = useState(0);
   const [unchangedCount, setUnchangedCount] = useState(0);
   const [errorCount, setErrorCount] = useState(0);
+  const [serverErrors, setServerErrors] = useState<Array<{ id: string; message: string }>>([]);
+  const [importResults, setImportResults] = useState<{ updatedCount: number; unchangedCount: number; failedCount: number } | null>(null);
 
   const entityName = entity === "clients" ? "Clients" : entity === "cases" ? "Cases" : "Tasks";
 
@@ -175,6 +177,8 @@ export function ExcelImportDialog({
     setRecordsToUpdateCount(0);
     setUnchangedCount(0);
     setErrorCount(0);
+    setServerErrors([]);
+    setImportResults(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -496,13 +500,11 @@ export function ExcelImportDialog({
     }
 
     setIsProcessing(true);
+    setServerErrors([]);
+    setImportResults(null);
     try {
       const endpoint = `/${entity}/import-excel`;
       const res: any = await api.post(endpoint, { rows: parsedRows });
-
-      toast.success(
-        `Import Successful: ${res.updatedCount || parsedRows.length} record(s) updated, ${res.unchangedCount || unchangedCount} unchanged.`
-      );
 
       // Invalidate relevant caches immediately
       if (entity === "clients") {
@@ -512,6 +514,34 @@ export function ExcelImportDialog({
       } else if (entity === "tasks") {
         queryClient.invalidateQueries({ queryKey: taskKeys.all });
       }
+
+      const errors: Array<{ id: string; message: string }> = Array.isArray(res.errors) ? res.errors : [];
+      const updated = typeof res.updatedCount === "number" ? res.updatedCount : 0;
+      const unchanged = typeof res.unchangedCount === "number" ? res.unchangedCount : unchangedCount;
+
+      if (errors.length > 0) {
+        setServerErrors(errors);
+        setImportResults({
+          updatedCount: updated,
+          unchangedCount: unchanged,
+          failedCount: errors.length,
+        });
+        if (updated > 0) {
+          toast.warning(
+            `Partial Import: ${updated} record(s) updated, but ${errors.length} failed. Please review errors below.`
+          );
+        } else {
+          toast.error(
+            `Import Failed: All ${errors.length} record(s) failed validation.`
+          );
+        }
+        onImportSuccess?.();
+        return;
+      }
+
+      toast.success(
+        `Import Successful: ${updated || parsedRows.length} record(s) updated, ${unchanged} unchanged.`
+      );
 
       onImportSuccess?.();
       handleClose();
@@ -600,11 +630,36 @@ export function ExcelImportDialog({
                 <span className="text-[11px] font-medium text-muted-foreground block">Unchanged Records</span>
                 <span className="text-xl font-bold text-foreground num mt-0.5 block">{unchangedCount}</span>
               </div>
-              <div className={`rounded-xl border p-3 text-center ${errorCount > 0 ? "border-rose-500/30 bg-rose-500/5 text-rose-600 dark:text-rose-400" : "border-border bg-card text-muted-foreground"}`}>
+              <div className={`rounded-xl border p-3 text-center ${errorCount > 0 || serverErrors.length > 0 ? "border-rose-500/30 bg-rose-500/5 text-rose-600 dark:text-rose-400" : "border-border bg-card text-muted-foreground"}`}>
                 <span className="text-[11px] font-medium block">Errors / Invalid Rows</span>
-                <span className="text-xl font-bold num mt-0.5 block">{errorCount}</span>
+                <span className="text-xl font-bold num mt-0.5 block">{errorCount + serverErrors.length}</span>
               </div>
             </div>
+
+            {/* Server Validation Errors Detail Banner */}
+            {serverErrors.length > 0 && (
+              <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 space-y-2.5 animate-in fade-in-50">
+                <div className="flex items-start gap-2.5 text-destructive text-xs">
+                  <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-semibold block">
+                      Synchronization Warning: {importResults?.updatedCount ?? 0} updated, {serverErrors.length} failed
+                    </span>
+                    <p className="mt-0.5 text-[11px] text-destructive/90 leading-relaxed">
+                      The records below could not be updated by the server. Please check the reported errors, update your file, and re-import:
+                    </p>
+                  </div>
+                </div>
+                <div className="max-h-36 overflow-y-auto rounded-lg border border-destructive/20 bg-background/80 p-2 text-xs divide-y divide-border/60">
+                  {serverErrors.map((err, i) => (
+                    <div key={i} className="py-1.5 px-2 flex items-center justify-between gap-3 text-[11px]">
+                      <span className="font-mono font-medium text-foreground shrink-0">{err.id}</span>
+                      <span className="text-destructive font-medium text-right">{err.message}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Diff Preview Table */}
             {diffs.length > 0 ? (

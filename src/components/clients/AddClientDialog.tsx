@@ -189,6 +189,13 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
   const [tagInput, setTagInput] = useState("");
   const [subtaskInput, setSubtaskInput] = useState<Record<number, string>>({});
   const [isCreatingCase, setIsCreatingCase] = useState(false);
+  const [isCaseTitleManuallyEdited, setIsCaseTitleManuallyEdited] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setIsCaseTitleManuallyEdited(false);
+    }
+  }, [open]);
 
   const { data: rawCategories = [] } = useCategories();
   const { data: categoryTree = [], isLoading: isCategoriesLoading, isError: isCategoriesError } = useCategoryTree();
@@ -238,7 +245,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
       const clientName = form.name.trim();
       const catLabel = nextVal === "__other__" ? (prev.customCategory.trim() || "Custom Matter") : nextVal;
       // Auto-fill title like (Client Name - Main Category)
-      const newTitle = catLabel ? (clientName ? `${clientName} - ${catLabel}` : catLabel) : prev.title;
+      const autoTitle = catLabel ? (clientName ? `${clientName} - ${catLabel}` : catLabel) : (clientName || "");
       return {
         ...prev,
         mainCategory: nextVal,
@@ -246,7 +253,8 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
         selectedSubCategories: [],
         categoryPath: [],
         customCategory: nextVal !== "__other__" ? "" : prev.customCategory,
-        title: newTitle || prev.title,
+        title: isCaseTitleManuallyEdited && prev.title.trim() ? prev.title : (autoTitle || prev.title),
+        nextHearing: isHeirshipCategory(nextVal) ? prev.nextHearing : "",
       };
     });
     if (fieldErrors.caseTitle) {
@@ -553,6 +561,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
     if (key === "name" && typeof value === "string") {
       const nextName = value.trim();
       setCaseForm((prev) => {
+        if (isCaseTitleManuallyEdited && prev.title.trim()) return prev;
         if (!prev.mainCategory) return prev;
         const catLabel = prev.mainCategory === "__other__" ? (prev.customCategory.trim() || "Custom Matter") : prev.mainCategory;
         return {
@@ -735,7 +744,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
             caseForm.countCaseNumber.trim() ||
             caseForm.courtCaseId.trim() ||
             undefined,
-          nextHearing: caseForm.nextHearing
+          nextHearing: isHeirshipCategory(caseForm.mainCategory) && caseForm.nextHearing
             ? (toSafeIso(caseForm.nextHearing) ?? undefined)
             : undefined,
           localPath: caseForm.localPath.trim() || undefined,
@@ -1006,7 +1015,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                 caseForm.countCaseNumber.trim() ||
                 caseForm.courtCaseId.trim() ||
                 undefined,
-              nextHearing: caseForm.nextHearing
+              nextHearing: isHeirshipCategory(caseForm.mainCategory) && caseForm.nextHearing
                 ? (toSafeIso(caseForm.nextHearing) ?? undefined)
                 : undefined,
               localPath: caseForm.localPath.trim() || undefined,
@@ -1639,9 +1648,11 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                           const val = e.target.value;
                           updateCase("subCategory", val);
                           updateCase("categoryPath", val ? [val] : []);
-                          const clientName = form.name.trim();
-                          if (clientName && val && val !== "__other__") {
-                            updateCase("title", `${clientName} - ${val}`);
+                          if (!isCaseTitleManuallyEdited) {
+                            const clientName = form.name.trim();
+                            if (clientName && val && val !== "__other__") {
+                              updateCase("title", `${clientName} - ${val}`);
+                            }
                           }
                         }}
                         className="h-10 w-full rounded-md border border-border bg-card px-3 text-xs sm:text-sm outline-none transition-colors focus:border-primary"
@@ -1670,7 +1681,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                           const val = e.target.value;
                           const newPath = val ? [caseForm.subCategory, val] : [caseForm.subCategory];
                           updateCase("categoryPath", newPath);
-                          if (val) {
+                          if (!isCaseTitleManuallyEdited && val) {
                             const clientName = form.name.trim();
                             if (clientName) {
                               updateCase("title", `${clientName} - ${val}`);
@@ -1700,9 +1711,11 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                         onChange={(e) => {
                           const val = e.target.value;
                           updateCase("customCategory", val);
-                          const clientName = form.name.trim();
-                          if (clientName && val.trim()) {
-                            updateCase("title", `${clientName} - ${val.trim()}`);
+                          if (!isCaseTitleManuallyEdited) {
+                            const clientName = form.name.trim();
+                            if (clientName && val.trim()) {
+                              updateCase("title", `${clientName} - ${val.trim()}`);
+                            }
                           }
                         }}
                         placeholder="Enter manual category name (e.g. Real Estate Joint Venture)..."
@@ -1727,7 +1740,15 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                   <Input
                     id="case-title"
                     value={caseForm.title}
-                    onChange={(e) => updateCase("title", e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val.trim() === "") {
+                        setIsCaseTitleManuallyEdited(false);
+                      } else {
+                        setIsCaseTitleManuallyEdited(true);
+                      }
+                      updateCase("title", val);
+                    }}
                     placeholder={
                       form.name.trim()
                         ? `${form.name.trim()} - ${caseForm.mainCategory || "Main Category"}`
