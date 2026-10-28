@@ -15,7 +15,7 @@ import { ApprovalRequest } from "../models/ApprovalRequest.js";
 import { requireAuth } from "../middleware/auth.js";
 import { canAccessCase, canAccessClient, canAccessTask, canAccessDocument, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
 import { resolveTaskClientName, resolveTaskAssigneeName } from "../utils/taskHelpers.js";
-import { validateSnoozePayload } from "../utils/snoozeValidation.js";
+import { validateSnoozePayload, validatePostponePayload } from "../utils/snoozeValidation.js";
 import { dispatchRejectionNotifications } from "../services/rejectionNotifications.js";
 import { recordTaskAuditAndAdminNotification } from "../utils/auditNotificationHelper.js";
 
@@ -669,11 +669,14 @@ router.get("/pending-reminders", async (req: Request, res: Response) => {
         const pendingHours = Math.max(2, Math.floor((now - startTime) / (60 * 60 * 1000)));
         const slot = Math.floor(pendingHours / 2);
 
-        // Check if snoozed or dismissed for current user
+        // Check if snoozed, postponed or dismissed for current user
         const state = stateMap.get(taskIdStr);
         if (state) {
-          if (state.snoozedUntil && new Date(state.snoozedUntil).getTime() > now) {
-            return null; // Suppressed by active snooze
+          if (
+            (state.postponedUntil && new Date(state.postponedUntil).getTime() > now) ||
+            (state.snoozedUntil && new Date(state.snoozedUntil).getTime() > now)
+          ) {
+            return null; // Suppressed by active postpone or snooze
           }
           if (state.dismissed) {
             if (state.dismissedSlot == null || state.dismissedSlot === slot) {
@@ -693,6 +696,9 @@ router.get("/pending-reminders", async (req: Request, res: Response) => {
           status: t.status,
           pendingHours,
           slot,
+          postponedUntil: state?.postponedUntil ? new Date(state.postponedUntil).toISOString() : null,
+          postponeReason: state?.postponeReason || null,
+          snoozedUntil: state?.snoozedUntil ? new Date(state.snoozedUntil).toISOString() : null,
         };
       })
       .filter(Boolean);
@@ -703,6 +709,117 @@ router.get("/pending-reminders", async (req: Request, res: Response) => {
     res.status(500).json({ message: "Internal server error" });
   }
 });
+
+// ---------------------------------------------------------------------------
+// POST /api/tasks/reminders/postpone-bulk & /bulk-postpone — bulk postpone
+// ---------------------------------------------------------------------------
+
+async function handleBulkPostponeReminders(req: Request, res: Response) {
+  try {
+    const rawTaskIds = req.body?.taskIds;
+    if (!Array.isArray(rawTaskIds) || rawTaskIds.length === 0) {
+      res.status(400).json({ message: "taskIds must be a non-empty array of task IDs" });
+      return;
+    }
+
+    const validation = validatePostponePayload(req.body);
+    if (!validation.valid) {
+      res.status(400).json({
+        message: validation.error,
+        field: validation.field,
+      });
+      return;
+    }
+
+    const { targetUntil, reason } = validation;
+    const userId = new Types.ObjectId(req.userId!);
+    const userRole = req.user?.role || "employee";
+    const userPermissions = req.user?.permissions;
+
+    let updatedCount = 0;
+    const failedIds: Array<{ taskId: string; reason: string }> = [];
+    const successfulTaskIds: string[] = [];
+
+    for (const rawId of rawTaskIds) {
+      const taskIdStr = String(rawId || "").trim();
+      if (!taskIdStr || !Types.ObjectId.isValid(taskIdStr)) {
+        failedIds.push({ taskId: taskIdStr, reason: "Invalid task ID format" });
+        continue;
+      }
+
+      const task = await Task.findById(taskIdStr);
+      if (!task || task.isDeleted) {
+        failedIds.push({ taskId: taskIdStr, reason: "Task not found" });
+        continue;
+      }
+
+      const hasAccess = await canAccessTask(req.userId!, userRole, taskIdStr, userPermissions);
+      if (!hasAccess) {
+        failedIds.push({ taskId: taskIdStr, reason: "Forbidden: Not authorized to manage this task" });
+        continue;
+      }
+
+      await TaskReminderState.findOneAndUpdate(
+        { taskId: task._id, userId },
+        {
+          $set: {
+            postponedUntil: targetUntil,
+            postponedAt: new Date(),
+            postponeReason: reason || null,
+            snoozedUntil: targetUntil,
+            dismissed: false,
+            dismissedSlot: null,
+          },
+        },
+        { upsert: true, new: true }
+      );
+
+      successfulTaskIds.push(taskIdStr);
+      updatedCount++;
+    }
+
+    if (successfulTaskIds.length > 0) {
+      try {
+        await AuditLog.create({
+          userId,
+          userName: req.user?.name ?? "Unknown",
+          action: "update",
+          resource: "task",
+          resourceId: successfulTaskIds.join(","),
+          resourceName: `${successfulTaskIds.length} tasks bulk postponed`,
+          details: `Bulk postponed ${successfulTaskIds.length} reminders until ${targetUntil!.toISOString()}${reason ? ` (Reason: ${reason})` : ""}`,
+          ip: req.ip,
+          userAgent: req.headers["user-agent"],
+          metadata: {
+            subAction: "bulk_postpone_reminders",
+            updatedCount,
+            successfulTaskIds,
+            failedIds,
+            postponedUntil: targetUntil!.toISOString(),
+            reason: reason || null,
+          },
+        });
+      } catch (auditErr) {
+        console.error("[tasks] Failed to create bulk audit log:", auditErr);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Successfully postponed ${updatedCount} reminder(s) until ${targetUntil!.toISOString()}`,
+      updatedCount,
+      failedCount: failedIds.length,
+      failedIds,
+      postponedUntil: targetUntil!.toISOString(),
+    });
+  } catch (err: any) {
+    console.error("[tasks] Bulk postpone error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+}
+
+router.post("/reminders/postpone-bulk", handleBulkPostponeReminders);
+router.post("/reminders/bulk-postpone", handleBulkPostponeReminders);
 
 // ---------------------------------------------------------------------------
 // GET /api/tasks/:id (with authorization)
@@ -3363,5 +3480,150 @@ async function handleSnoozeReminder(req: Request, res: Response) {
 
 router.post("/:id/reminders/snooze", requireResourceAccess("task"), handleSnoozeReminder);
 router.post("/:id/snooze-reminder", requireResourceAccess("task"), handleSnoozeReminder);
+
+// ---------------------------------------------------------------------------
+// POST /api/tasks/:id/reminders/postpone & /:id/postpone-reminder
+// ---------------------------------------------------------------------------
+
+async function handlePostponeReminder(req: Request, res: Response) {
+  try {
+    const taskId = String(req.params["id"] || req.params["taskId"] || "");
+    if (!taskId || !Types.ObjectId.isValid(taskId)) {
+      res.status(400).json({ message: "Invalid task ID" });
+      return;
+    }
+
+    const task = await Task.findById(taskId);
+    if (!task) {
+      res.status(404).json({ message: "Task not found" });
+      return;
+    }
+
+    const validation = validatePostponePayload(req.body);
+    if (!validation.valid) {
+      res.status(400).json({
+        message: validation.error,
+        field: validation.field,
+      });
+      return;
+    }
+
+    const { targetUntil, reason } = validation;
+
+    const state = await TaskReminderState.findOneAndUpdate(
+      { taskId: task._id, userId: new Types.ObjectId(req.userId!) },
+      {
+        $set: {
+          postponedUntil: targetUntil,
+          postponedAt: new Date(),
+          postponeReason: reason || null,
+          snoozedUntil: targetUntil,
+          dismissed: false,
+          dismissedSlot: null,
+        },
+      },
+      { upsert: true, new: true }
+    );
+
+    try {
+      await AuditLog.create({
+        userId: new Types.ObjectId(req.userId!),
+        userName: req.user?.name ?? "Unknown",
+        action: "update",
+        resource: "task",
+        resourceId: task._id.toString(),
+        resourceName: task.title,
+        details: `Postponed 2-hour pending reminder until ${targetUntil!.toISOString()}${reason ? ` (Reason: ${reason})` : ""}`,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+        metadata: {
+          subAction: "postpone_reminder",
+          postponedUntil: targetUntil!.toISOString(),
+          reason: reason || null,
+        },
+      });
+    } catch (auditErr) {
+      console.error("[tasks] Failed to create audit log on postpone reminder:", auditErr);
+    }
+
+    res.json({
+      success: true,
+      message: `Reminder postponed until ${targetUntil!.toISOString()}`,
+      postponedUntil: targetUntil!.toISOString(),
+      reason: reason || null,
+    });
+  } catch (err: any) {
+    console.error("[tasks] Postpone reminder error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+}
+
+router.post("/:id/reminders/postpone", requireResourceAccess("task"), handlePostponeReminder);
+router.post("/:id/postpone-reminder", requireResourceAccess("task"), handlePostponeReminder);
+
+// ---------------------------------------------------------------------------
+// PATCH /api/tasks/:id/deadline — update planned deadline
+// ---------------------------------------------------------------------------
+
+router.patch("/:id/deadline", requireResourceAccess("task"), async (req: Request, res: Response) => {
+  try {
+    const taskId = req.params["id"];
+    const task = await Task.findById(taskId);
+    if (!task) {
+      res.status(404).json({ message: "Task not found" });
+      return;
+    }
+
+    let parsedDeadline: Date | null = null;
+    if (req.body.deadline !== null && req.body.deadline !== undefined && req.body.deadline !== "") {
+      const d = new Date(req.body.deadline);
+      if (isNaN(d.getTime())) {
+        res.status(400).json({ message: "Invalid deadline date format" });
+        return;
+      }
+      parsedDeadline = d;
+    }
+
+    const oldDeadlineStr = task.deadline ? new Date(task.deadline).toISOString() : "None";
+    task.deadline = parsedDeadline;
+    task.updatedBy = new Types.ObjectId(req.userId!);
+    await task.save();
+
+    try {
+      await AuditLog.create({
+        userId: new Types.ObjectId(req.userId!),
+        userName: req.user?.name ?? "Unknown",
+        action: "update",
+        resource: "task",
+        resourceId: task._id.toString(),
+        resourceName: task.title,
+        details: `Updated task deadline from ${oldDeadlineStr} to ${parsedDeadline ? parsedDeadline.toISOString() : "None"}`,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+        metadata: {
+          subAction: "update_task_deadline",
+          oldDeadline: oldDeadlineStr,
+          newDeadline: parsedDeadline ? parsedDeadline.toISOString() : null,
+        },
+      });
+    } catch (auditErr) {
+      console.error("[tasks] Audit log error for deadline update:", auditErr);
+    }
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("task:updated", taskRealtimePayload(task));
+    }
+
+    res.json({
+      success: true,
+      message: "Task deadline updated successfully",
+      task,
+    });
+  } catch (err: any) {
+    console.error("[tasks] Update deadline error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+});
 
 export default router;

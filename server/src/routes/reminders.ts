@@ -4,6 +4,7 @@ import { Reminder, type ReminderStatus } from "../models/Reminder.js";
 import { Task } from "../models/Task.js";
 import { CalendarEvent } from "../models/CalendarEvent.js";
 import { requireAuth } from "../middleware/auth.js";
+import { validatePostponePayload } from "../utils/snoozeValidation.js";
 
 const router = Router();
 
@@ -152,6 +153,42 @@ router.post("/:id/snooze", async (req: Request, res: Response) => {
     res.json({ reminder });
   } catch (err) {
     console.error("[reminders] Snooze error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/reminders/:id/postpone
+// ---------------------------------------------------------------------------
+
+router.post("/:id/postpone", async (req: Request, res: Response) => {
+  try {
+    const reminder = await Reminder.findOne({ _id: req.params["id"], userId: req.userId });
+    if (!reminder) {
+      res.status(404).json({ message: "Reminder not found" });
+      return;
+    }
+
+    const validation = validatePostponePayload(req.body);
+    if (!validation.valid) {
+      res.status(400).json({ message: validation.error, field: validation.field });
+      return;
+    }
+
+    const { targetUntil, reason } = validation;
+    reminder.status = "snoozed";
+    reminder.snoozedUntil = targetUntil;
+    reminder.postponedUntil = targetUntil;
+    if (reason) reminder.postponeReason = reason;
+    await reminder.save();
+
+    res.json({
+      success: true,
+      message: `Reminder postponed until ${targetUntil!.toISOString()}`,
+      reminder,
+    });
+  } catch (err) {
+    console.error("[reminders] Postpone error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 });

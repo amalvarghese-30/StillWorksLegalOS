@@ -6370,6 +6370,247 @@ const { NotificationService } = await import("../services/notifications.js");
     assert(!r9C.includes("/api/api/"), "S41-27: Never generates /api/api/ on trailing slash base");
   }
 
+  // --- SUITE 42: Redesigned 2-Hour Reminder System, Postpone Until, Planned Dates & Bulk Actions ---
+  {
+    console.log(`\n--- SUITE 42: Redesigned 2-Hour Reminder System, Postpone Until, Planned Dates & Bulk Actions ---`);
+
+    // 1. Setup users: advocate A and advocate B
+    const userA = await createUser({ name: "Advocate S42 Alpha" });
+    const tokenA = await createToken(userA);
+    const userB = await createUser({ name: "Advocate S42 Beta" });
+    const tokenB = await createToken(userB);
+
+    // 2. Create pending tasks for user A created > 2 hours ago
+    const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    const originalDeadline = new Date(Date.now() + 48 * 60 * 60 * 1000);
+
+    const task1 = await Task.create({
+      title: "S42 Revenue Followup 1",
+      status: "pending",
+      assignedTo: userA._id,
+      assignedUsers: [userA._id],
+      createdBy: userA._id,
+      deadline: originalDeadline,
+      createdAt: threeHoursAgo,
+      startedAt: threeHoursAgo,
+    });
+
+    const task2 = await Task.create({
+      title: "S42 Heirship Notice 2",
+      status: "pending",
+      assignedTo: userA._id,
+      assignedUsers: [userA._id],
+      createdBy: userA._id,
+      deadline: originalDeadline,
+      createdAt: threeHoursAgo,
+      startedAt: threeHoursAgo,
+    });
+
+    const taskB = await Task.create({
+      title: "S42 User B Private Matter",
+      status: "pending",
+      assignedTo: userB._id,
+      assignedUsers: [userB._id],
+      createdBy: userB._id,
+      createdAt: threeHoursAgo,
+      startedAt: threeHoursAgo,
+    });
+
+    // 3. User A queries pending reminders
+    const preRemindersRes = await request(app)
+      .get("/api/tasks/pending-reminders")
+      .set("Authorization", `Bearer ${tokenA}`);
+    assert(preRemindersRes.status === 200, "S42-01a: GET /api/tasks/pending-reminders returns 200");
+    const preList = preRemindersRes.body?.pendingReminders || [];
+    assert(preList.some((r: any) => r.taskId === task1._id.toString()), "S42-01b: Pending task 1 appears in 2h reminders before postponement");
+    assert(preList.some((r: any) => r.taskId === task2._id.toString()), "S42-01c: Pending task 2 appears in 2h reminders before postponement");
+    assert(!preList.some((r: any) => r.taskId === taskB._id.toString()), "S42-01d: User B's task does NOT appear in User A's pending reminders (user isolation)");
+
+    // 4. Single Postpone with quick preset (Tomorrow)
+    const postponePresetRes = await request(app)
+      .post(`/api/tasks/${task1._id}/reminders/postpone`)
+      .set("Authorization", `Bearer ${tokenA}`)
+      .send({ preset: "tomorrow", reason: "Client visiting tomorrow morning" });
+    assert(postponePresetRes.status === 200, "S42-02a: POST /api/tasks/:id/reminders/postpone with preset succeeds (200)");
+    assert(Boolean(postponePresetRes.body?.postponedUntil), "S42-02b: Returns postponedUntil timestamp");
+
+    // 5. Verify persistence in TaskReminderState
+    const state1 = await TaskReminderState.findOne({ taskId: task1._id, userId: userA._id });
+    assert(Boolean(state1?.postponedUntil), "S42-03a: TaskReminderState persisted postponedUntil in DB");
+    assert(state1?.postponeReason === "Client visiting tomorrow morning", "S42-03b: TaskReminderState persisted postponeReason");
+    assert(Boolean(state1?.postponedAt), "S42-03c: TaskReminderState persisted postponedAt timestamp");
+
+    // 6. Verify task status and deadline are completely untouched
+    const freshTask1 = await Task.findById(task1._id);
+    assert(freshTask1?.status === "pending", "S42-04a: Postponing reminder does NOT change task status (remains pending)");
+    assert(
+      new Date(freshTask1!.deadline!).getTime() === originalDeadline.getTime(),
+      "S42-04b: Postponing reminder does NOT alter contractual task deadline"
+    );
+
+    // 7. Postpone with arbitrary future date (e.g. Nov 28, 2026 - weeks/months ahead)
+    const futureDate = new Date("2026-11-28T10:00:00.000Z");
+    const customPostponeRes = await request(app)
+      .post(`/api/tasks/${task2._id}/reminders/postpone`)
+      .set("Authorization", `Bearer ${tokenA}`)
+      .send({
+        postponeUntil: futureDate.toISOString(),
+        reason: "Revenue hearing scheduled for late November 2026",
+      });
+    assert(customPostponeRes.status === 200, "S42-05a: Postpone to custom future date (Nov 28, 2026) succeeds (200)");
+    assert(customPostponeRes.body?.postponedUntil === futureDate.toISOString(), "S42-05b: Returns exact future postponement timestamp");
+
+    // 8. Verify suppression in GET /api/tasks/pending-reminders
+    const postRemindersRes = await request(app)
+      .get("/api/tasks/pending-reminders")
+      .set("Authorization", `Bearer ${tokenA}`);
+    const postList = postRemindersRes.body?.pendingReminders || [];
+    assert(!postList.some((r: any) => r.taskId === task1._id.toString()), "S42-06a: Postponed task 1 is suppressed from pending reminders");
+    assert(!postList.some((r: any) => r.taskId === task2._id.toString()), "S42-06b: Postponed task 2 is suppressed from pending reminders");
+
+    // 9. Reject postpone in past
+    const pastRes = await request(app)
+      .post(`/api/tasks/${task1._id}/reminders/postpone`)
+      .set("Authorization", `Bearer ${tokenA}`)
+      .send({ postponeUntil: new Date(Date.now() - 3600000).toISOString() });
+    assert(pastRes.status === 400, "S42-07a: Postpone in the past is rejected with 400");
+    assert(pastRes.body?.message?.includes("future"), "S42-07b: Error message specifies future date required");
+
+    // 10. Update task deadline separately via PATCH /api/tasks/:id/deadline
+    const newDeadline = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const deadlineRes = await request(app)
+      .patch(`/api/tasks/${task1._id}/deadline`)
+      .set("Authorization", `Bearer ${tokenA}`)
+      .send({ deadline: newDeadline.toISOString() });
+    assert(deadlineRes.status === 200, "S42-08a: PATCH /api/tasks/:id/deadline succeeds (200)");
+    const updatedTask1 = await Task.findById(task1._id);
+    assert(
+      Math.abs(new Date(updatedTask1!.deadline!).getTime() - newDeadline.getTime()) < 1000,
+      "S42-08b: Underlying task deadline modified in database"
+    );
+
+    // Verify deadline change audit log
+    const deadlineAudit = await AuditLog.findOne({
+      resourceId: task1._id.toString(),
+      "metadata.subAction": "update_task_deadline",
+    });
+    assert(Boolean(deadlineAudit), "S42-08c: Audit log recorded for task deadline update");
+
+    // 11. Update case follow-up / nextHearing via PATCH /api/cases/:id/follow-up
+    const testCase = await Case.create({
+      title: "S42 Land Title Case",
+      category: "Property",
+      status: "Active",
+      createdBy: userA._id,
+      assignedStaff: [userA._id],
+      members: [userA._id],
+    });
+
+    const hearingDate = new Date("2026-11-20T10:00:00.000Z");
+    const caseFollowUpRes = await request(app)
+      .patch(`/api/cases/${testCase._id}/follow-up`)
+      .set("Authorization", `Bearer ${tokenA}`)
+      .send({
+        nextHearing: hearingDate.toISOString(),
+        hearingRemarks: "Revenue commissioner argument date",
+      });
+    assert(caseFollowUpRes.status === 200, "S42-09a: PATCH /api/cases/:id/follow-up succeeds (200)");
+    const updatedCase = await Case.findById(testCase._id);
+    assert(Boolean(updatedCase?.nextHearing), "S42-09b: Case nextHearing persisted in DB");
+
+    // 12. Bulk Postpone POST /api/tasks/reminders/postpone-bulk
+    const task3 = await Task.create({
+      title: "S42 Bulk Task 3",
+      status: "pending",
+      assignedTo: userA._id,
+      assignedUsers: [userA._id],
+      createdBy: userA._id,
+      createdAt: threeHoursAgo,
+      startedAt: threeHoursAgo,
+    });
+    const task4 = await Task.create({
+      title: "S42 Bulk Task 4",
+      status: "pending",
+      assignedTo: userA._id,
+      assignedUsers: [userA._id],
+      createdBy: userA._id,
+      createdAt: threeHoursAgo,
+      startedAt: threeHoursAgo,
+    });
+
+    const bulkPostponeDate = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
+    const bulkRes = await request(app)
+      .post("/api/tasks/reminders/postpone-bulk")
+      .set("Authorization", `Bearer ${tokenA}`)
+      .send({
+        taskIds: [task3._id.toString(), task4._id.toString()],
+        postponeUntil: bulkPostponeDate.toISOString(),
+        reason: "Bulk client meeting scheduled for next week",
+      });
+    assert(bulkRes.status === 200, "S42-10a: POST /api/tasks/reminders/postpone-bulk succeeds (200)");
+    assert(bulkRes.body?.updatedCount === 2, "S42-10b: Bulk postpone updatedCount is 2");
+
+    // Verify states updated in DB
+    const state3 = await TaskReminderState.findOne({ taskId: task3._id, userId: userA._id });
+    const state4 = await TaskReminderState.findOne({ taskId: task4._id, userId: userA._id });
+    assert(Boolean(state3?.postponedUntil), "S42-10c: Bulk postponed task 3 state persisted in DB");
+    assert(Boolean(state4?.postponedUntil), "S42-10d: Bulk postponed task 4 state persisted in DB");
+
+    // 13. Bulk postpone partial failure handling & unauthorized filtering
+    const partialBulkRes = await request(app)
+      .post("/api/tasks/reminders/postpone-bulk")
+      .set("Authorization", `Bearer ${tokenA}`)
+      .send({
+        taskIds: [
+          task3._id.toString(), // Valid
+          "507f1f77bcf86cd799439011", // Non-existent task ID
+          taskB._id.toString(), // Task belonging to user B (unauthorized for A)
+        ],
+        preset: "tomorrow",
+      });
+    assert(partialBulkRes.status === 200, "S42-11a: Partial bulk postpone responds with 200");
+    assert(partialBulkRes.body?.updatedCount === 1, "S42-11b: Exactly 1 authorized task updated");
+    assert(partialBulkRes.body?.failedCount === 2, "S42-11c: Exactly 2 invalid/unauthorized tasks reported failed");
+
+    // 14. Reactivation when postponement expires
+    await TaskReminderState.updateOne(
+      { taskId: task3._id, userId: userA._id },
+      { $set: { postponedUntil: new Date(Date.now() - 60000), snoozedUntil: new Date(Date.now() - 60000) } }
+    );
+    const reactivatedRes = await request(app)
+      .get("/api/tasks/pending-reminders")
+      .set("Authorization", `Bearer ${tokenA}`);
+    const reactivatedList = reactivatedRes.body?.pendingReminders || [];
+    assert(
+      reactivatedList.some((r: any) => r.taskId === task3._id.toString()),
+      "S42-12: Task reappears in pending reminders once postponement timestamp has passed"
+    );
+
+    // 15. Completed task exclusion from reminders
+    await Task.findByIdAndUpdate(task3._id, { $set: { status: "completed" } });
+    const completedRemindersRes = await request(app)
+      .get("/api/tasks/pending-reminders")
+      .set("Authorization", `Bearer ${tokenA}`);
+    const completedList = completedRemindersRes.body?.pendingReminders || [];
+    assert(
+      !completedList.some((r: any) => r.taskId === task3._id.toString()),
+      "S42-13: Completed task is strictly excluded from pending reminders"
+    );
+
+    // 16. Existing Snooze and Dismiss preserved
+    const snoozeRes = await request(app)
+      .post(`/api/tasks/${task4._id}/reminders/snooze`)
+      .set("Authorization", `Bearer ${tokenA}`)
+      .send({ hours: 2 });
+    assert(snoozeRes.status === 200, "S42-14a: Existing POST /:id/reminders/snooze remains working (200)");
+
+    const dismissRes = await request(app)
+      .post(`/api/tasks/${task4._id}/reminders/dismiss`)
+      .set("Authorization", `Bearer ${tokenA}`)
+      .send({ slot: 1 });
+    assert(dismissRes.status === 200, "S42-14b: Existing POST /:id/reminders/dismiss remains working (200)");
+  }
+
 
   try {
     if (mongoose.connection.readyState === 1) {

@@ -115,3 +115,121 @@ export function validateSnoozePayload(
     error: `Missing snooze duration. Please provide 'hours' (${MIN_HOURS} to ${MAX_HOURS}) or 'snoozeUntil' (future ISO timestamp within ${MAX_HOURS} hours).`,
   };
 }
+
+export interface PostponeValidationResult {
+  valid: boolean;
+  targetUntil?: Date;
+  reason?: string;
+  error?: string;
+  field?: string;
+}
+
+export function validatePostponePayload(
+  payload: unknown,
+  serverNow: Date = new Date()
+): PostponeValidationResult {
+  if (!payload || typeof payload !== "object") {
+    return { valid: false, error: "Invalid request payload. Expected JSON object." };
+  }
+
+  const body = payload as Record<string, unknown>;
+  const nowMs = serverNow.getTime();
+
+  let rawUntil = body["postponeUntil"] ?? body["until"] ?? body["targetUntil"] ?? body["date"];
+  const rawPreset = body["preset"] ?? body["quickChoice"];
+  const rawReason = typeof body["reason"] === "string" ? body["reason"].trim() : undefined;
+
+  if (rawReason && rawReason.length > 500) {
+    return {
+      valid: false,
+      error: "Reason exceeds maximum length of 500 characters.",
+      field: "reason",
+    };
+  }
+
+  // Handle quick presets if until date not explicitly provided
+  if (!rawUntil && typeof rawPreset === "string") {
+    const preset = rawPreset.toLowerCase().trim();
+    if (preset === "later_today" || preset === "today") {
+      const later = new Date(nowMs + 4 * 60 * 60 * 1000);
+      rawUntil = later.toISOString();
+    } else if (preset === "tomorrow") {
+      const tomorrow = new Date(serverNow);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(10, 0, 0, 0);
+      if (tomorrow.getTime() <= nowMs) {
+        tomorrow.setDate(tomorrow.getDate() + 1);
+      }
+      rawUntil = tomorrow.toISOString();
+    } else if (preset === "next_week") {
+      const nextWeek = new Date(serverNow);
+      nextWeek.setDate(nextWeek.getDate() + 7);
+      nextWeek.setHours(10, 0, 0, 0);
+      rawUntil = nextWeek.toISOString();
+    }
+  }
+
+  if (!rawUntil) {
+    return {
+      valid: false,
+      error: "Missing postpone destination. Please provide 'postponeUntil' timestamp or a preset.",
+      field: "postponeUntil",
+    };
+  }
+
+  let parsedDate: Date;
+  if (rawUntil instanceof Date) {
+    parsedDate = rawUntil;
+  } else if (typeof rawUntil === "string") {
+    const trimmed = rawUntil.trim();
+    if (!trimmed) {
+      return {
+        valid: false,
+        error: "Invalid postponeUntil. Must be a non-empty date string.",
+        field: "postponeUntil",
+      };
+    }
+    parsedDate = new Date(trimmed);
+  } else if (typeof rawUntil === "number") {
+    parsedDate = new Date(rawUntil);
+  } else {
+    return {
+      valid: false,
+      error: "Invalid postponeUntil date type.",
+      field: "postponeUntil",
+    };
+  }
+
+  const parsedMs = parsedDate.getTime();
+  if (isNaN(parsedMs)) {
+    return {
+      valid: false,
+      error: "Invalid calendar date in postponeUntil.",
+      field: "postponeUntil",
+    };
+  }
+
+  if (parsedMs <= nowMs) {
+    return {
+      valid: false,
+      error: "postponeUntil must be strictly in the future.",
+      field: "postponeUntil",
+    };
+  }
+
+  // Maximum allowable postpone is 10 years in the future
+  const maxPostponeMs = nowMs + 10 * 365 * 24 * 60 * 60 * 1000;
+  if (parsedMs > maxPostponeMs) {
+    return {
+      valid: false,
+      error: "postponeUntil cannot exceed 10 years in the future.",
+      field: "postponeUntil",
+    };
+  }
+
+  return {
+    valid: true,
+    targetUntil: parsedDate,
+    ...(rawReason ? { reason: rawReason } : {}),
+  };
+}

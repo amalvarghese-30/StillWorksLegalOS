@@ -1597,6 +1597,86 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
 });
 
 // ---------------------------------------------------------------------------
+// PATCH /api/cases/:id/follow-up — update case follow-up / next hearing date
+// ---------------------------------------------------------------------------
+
+router.patch("/:id/follow-up", requireResourceAccess("case"), async (req: Request, res: Response) => {
+  try {
+    const caseId = req.params["id"];
+    const caseRecord = await Case.findById(caseId);
+    if (!caseRecord) {
+      res.status(404).json({ message: "Case not found" });
+      return;
+    }
+
+    const { nextHearing, hearingRemarks, hearingStatus } = req.body;
+    let parsedNextHearing: Date | null = null;
+    if (nextHearing) {
+      parsedNextHearing = parseFlexibleDate(nextHearing);
+      if (!parsedNextHearing) {
+        res.status(400).json({ message: "Invalid follow-up or hearing date format" });
+        return;
+      }
+    }
+
+    const oldHearingStr = caseRecord.nextHearing ? new Date(caseRecord.nextHearing).toISOString() : "None";
+    caseRecord.nextHearing = parsedNextHearing;
+    caseRecord.updatedBy = new mongoose.Types.ObjectId(req.userId!);
+    await caseRecord.save();
+
+    if (parsedNextHearing) {
+      try {
+        await syncCaseNextHearingToCalendar({
+          caseRecord,
+          nextHearingDate: parsedNextHearing,
+          remarks: typeof hearingRemarks === "string" ? hearingRemarks : undefined,
+          status: hearingStatus,
+          userId: req.userId!,
+        });
+      } catch (calErr: any) {
+        console.warn("[cases] Calendar sync error for follow-up update:", calErr);
+      }
+    }
+
+    try {
+      await AuditLog.create({
+        userId: req.userId,
+        userName: req.user?.name ?? "Unknown",
+        action: "update",
+        resource: "case",
+        resourceId: caseRecord._id.toString(),
+        resourceName: caseRecord.title,
+        details: `Updated case follow-up / hearing date from ${oldHearingStr} to ${parsedNextHearing ? parsedNextHearing.toISOString() : "None"}${hearingRemarks ? ` (Remarks: ${hearingRemarks})` : ""}`,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+        metadata: {
+          subAction: "update_case_follow_up",
+          oldHearing: oldHearingStr,
+          newHearing: parsedNextHearing ? parsedNextHearing.toISOString() : null,
+          remarks: hearingRemarks || null,
+        },
+      });
+    } catch (auditErr) {
+      console.error("[cases] Audit log error on follow-up update:", auditErr);
+    }
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("case:updated", { caseId: caseRecord._id, nextHearing: parsedNextHearing });
+    }
+
+    res.json({
+      success: true,
+      message: "Case follow-up date updated successfully",
+      case: caseRecord,
+    });
+  } catch (err: any) {
+    console.error("[cases] Follow-up update error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // POST /api/cases/import-excel — batch update cases from validated Excel import
 // ---------------------------------------------------------------------------
 

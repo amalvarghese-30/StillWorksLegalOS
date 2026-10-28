@@ -390,8 +390,11 @@ export class NotificationScheduler {
       }).lean();
 
       if (reminderState) {
-        if (reminderState.snoozedUntil && new Date(reminderState.snoozedUntil).getTime() > now.getTime()) {
-          continue; // Suppressed by active snooze
+        if (
+          (reminderState.postponedUntil && new Date(reminderState.postponedUntil).getTime() > now.getTime()) ||
+          (reminderState.snoozedUntil && new Date(reminderState.snoozedUntil).getTime() > now.getTime())
+        ) {
+          continue; // Suppressed by active postpone or snooze
         }
         if (reminderState.dismissed) {
           if (reminderState.dismissedSlot == null || reminderState.dismissedSlot === slot) {

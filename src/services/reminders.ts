@@ -94,6 +94,20 @@ export function useSnoozeReminder() {
   });
 }
 
+export function usePostponeReminder() {
+  const qc = useQueryClient();
+  return useMutation<
+    { success: boolean; message: string; reminder: ReminderRecord },
+    Error,
+    { id: string; postponeUntil?: string; preset?: string; reason?: string }
+  >({
+    mutationFn: ({ id, ...data }) => api.post(`/reminders/${id}/postpone`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: reminderKeys.all });
+    },
+  });
+}
+
 export function useCompleteReminder() {
   const qc = useQueryClient();
   return useMutation<{ reminder: ReminderRecord }, Error, string>({

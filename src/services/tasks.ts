@@ -527,5 +527,71 @@ export function useTaskAuditLogs(taskId?: string | null) {
   });
 }
 
+export interface PostponeTaskReminderPayload {
+  postponeUntil?: string;
+  preset?: "later_today" | "tomorrow" | "next_week";
+  reason?: string;
+}
+
+export function usePostponeTaskReminder() {
+  const qc = useQueryClient();
+  return useMutation<
+    { success: boolean; message: string; postponedUntil: string; reason?: string | null },
+    Error,
+    { taskId: string; data: PostponeTaskReminderPayload }
+  >({
+    mutationFn: ({ taskId, data }) => api.post(`/tasks/${taskId}/reminders/postpone`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: taskKeys.all });
+      qc.invalidateQueries({ queryKey: ["tasks", "pending-reminders"] });
+    },
+  });
+}
+
+export interface BulkPostponeTasksPayload {
+  taskIds: string[];
+  postponeUntil?: string;
+  preset?: "later_today" | "tomorrow" | "next_week";
+  reason?: string;
+}
+
+export interface BulkPostponeResult {
+  success: boolean;
+  message: string;
+  updatedCount: number;
+  failedCount: number;
+  failedIds: Array<{ taskId: string; reason: string }>;
+  postponedUntil: string;
+}
+
+export function useBulkPostponeTaskReminders() {
+  const qc = useQueryClient();
+  return useMutation<BulkPostponeResult, Error, BulkPostponeTasksPayload>({
+    mutationFn: (data) => api.post("/tasks/reminders/postpone-bulk", data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: taskKeys.all });
+      qc.invalidateQueries({ queryKey: ["tasks", "pending-reminders"] });
+    },
+  });
+}
+
+export function useUpdateTaskDeadline() {
+  const qc = useQueryClient();
+  return useMutation<
+    { success: boolean; message: string; task: TaskRecord },
+    Error,
+    { taskId: string; deadline: string | null }
+  >({
+    mutationFn: ({ taskId, deadline }) => api.patch(`/tasks/${taskId}/deadline`, { deadline }),
+    onSuccess: (res, vars) => {
+      if (res?.task) updateTaskInQueryCache(qc, res.task);
+      qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
+      qc.invalidateQueries({ queryKey: taskKeys.all });
+      qc.invalidateQueries({ queryKey: ["calendar"] });
+    },
+  });
+}
+
+
 
 

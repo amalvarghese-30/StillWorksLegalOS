@@ -25,6 +25,8 @@ export interface IReminder extends Document {
   acknowledgedAt?: Date;
   completedAt?: Date;
   snoozedUntil?: Date;
+  postponedUntil?: Date;
+  postponeReason?: string;
   deliveryId?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -63,6 +65,8 @@ const ReminderSchema = new Schema<IReminder>(
     acknowledgedAt: { type: Date },
     completedAt: { type: Date },
     snoozedUntil: { type: Date, index: true },
+    postponedUntil: { type: Date, index: true },
+    postponeReason: { type: String, trim: true },
     deliveryId: { type: String },
   },
   {
