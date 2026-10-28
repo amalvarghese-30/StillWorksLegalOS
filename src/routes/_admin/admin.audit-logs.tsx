@@ -265,9 +265,9 @@ function AuditLogsPage() {
 
       {/* Filter and Search Bar */}
       <div className="flex flex-col gap-3 rounded-2xl border border-border/80 bg-card p-4 shadow-soft">
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-center">
           {/* Main Search Input */}
-          <div className="relative flex-1">
+          <div className="relative col-span-1 sm:col-span-2 lg:col-span-5">
             <Search
               size={16}
               className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground"
@@ -283,7 +283,7 @@ function AuditLogsPage() {
           </div>
 
           {/* Action Filter */}
-          <div className="w-full sm:w-44">
+          <div className="col-span-1 sm:col-span-1 lg:col-span-3">
             <select
               value={selectedAction}
               onChange={(e) => {
@@ -301,7 +301,7 @@ function AuditLogsPage() {
           </div>
 
           {/* Resource Filter */}
-          <div className="w-full sm:w-44">
+          <div className="col-span-1 sm:col-span-1 lg:col-span-2">
             <select
               value={selectedResource}
               onChange={(e) => {
@@ -319,7 +319,7 @@ function AuditLogsPage() {
           </div>
 
           {/* Sort By Dropdown */}
-          <div className="w-full sm:w-40">
+          <div className="col-span-1 sm:col-span-2 lg:col-span-2">
             <select
               value={sortBy}
               onChange={(e) => {
@@ -341,7 +341,7 @@ function AuditLogsPage() {
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2 border-t border-border/50 text-xs">
           <div className="flex flex-wrap items-center gap-3">
             {/* Start Date */}
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 w-full sm:w-auto">
               <span className="text-muted-foreground whitespace-nowrap">From:</span>
               <input
                 type="date"
@@ -351,12 +351,12 @@ function AuditLogsPage() {
                   setTodayOnly(undefined);
                   setCurrentPage(1);
                 }}
-                className="rounded-lg border border-border/80 bg-background/50 px-2.5 py-1 text-xs text-foreground outline-none focus:border-primary min-w-[140px]"
+                className="w-full sm:w-auto rounded-lg border border-border/80 bg-background/50 px-2.5 py-1 text-xs text-foreground outline-none focus:border-primary"
               />
             </div>
 
             {/* End Date */}
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 w-full sm:w-auto">
               <span className="text-muted-foreground whitespace-nowrap">To:</span>
               <input
                 type="date"
@@ -366,12 +366,12 @@ function AuditLogsPage() {
                   setTodayOnly(undefined);
                   setCurrentPage(1);
                 }}
-                className="rounded-lg border border-border/80 bg-background/50 px-2.5 py-1 text-xs text-foreground outline-none focus:border-primary min-w-[140px]"
+                className="w-full sm:w-auto rounded-lg border border-border/80 bg-background/50 px-2.5 py-1 text-xs text-foreground outline-none focus:border-primary"
               />
             </div>
 
             {/* IP Filter Input */}
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 w-full sm:w-auto">
               <span className="text-muted-foreground whitespace-nowrap">IP:</span>
               <input
                 type="text"
@@ -381,7 +381,7 @@ function AuditLogsPage() {
                   setIpFilter(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="w-32 rounded-lg border border-border/80 bg-background/50 px-2.5 py-1 text-xs text-foreground font-mono outline-none focus:border-primary"
+                className="w-full sm:w-32 rounded-lg border border-border/80 bg-background/50 px-2.5 py-1 text-xs text-foreground font-mono outline-none focus:border-primary"
               />
             </div>
           </div>

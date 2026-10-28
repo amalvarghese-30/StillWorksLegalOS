@@ -780,8 +780,8 @@ function ClientProfile() {
                   />
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1 rounded-md border border-border bg-muted/40 p-0.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-1 rounded-md border border-border bg-muted/40 p-0.5">
                     {["All", "Active", "Urgent", "On Hold", "Closed"].map((st) => (
                       <button
                         key={st}
@@ -889,7 +889,7 @@ function ClientProfile() {
                                   <div className="text-[11px] font-normal text-muted-foreground">{c.courtCaseId}</div>
                                 )}
                               </td>
-                              <td className="px-4 py-3 min-w-[200px]">
+                              <td className="px-4 py-3 min-w-0">
                                 <Link
                                   to="/cases/$caseId"
                                   params={{ caseId: c._id }}

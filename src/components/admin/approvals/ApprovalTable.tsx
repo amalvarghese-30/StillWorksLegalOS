@@ -116,14 +116,14 @@ export function ApprovalTable({
 }: ApprovalTableProps) {
   return (
     <div className="w-full">
-      {/* Desktop Table View (>= md) */}
-      <div className="hidden md:block rounded-xl border border-border/80 bg-card overflow-hidden shadow-soft">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm border-collapse">
+      {/* Desktop Table View (>= lg) */}
+      <div className="hidden lg:block rounded-xl border border-border/80 bg-card overflow-hidden shadow-soft">
+        <div className="w-full">
+          <table className="w-full text-left text-sm border-collapse table-fixed">
             <thead>
               <tr className="border-b border-border bg-muted/40 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {onToggleSelectAll && (
-                  <th scope="col" className="w-10 px-4 py-3 text-center">
+                  <th scope="col" className="w-10 px-3 py-3 text-center">
                     <input
                       type="checkbox"
                       checked={allSelected}
@@ -133,25 +133,25 @@ export function ApprovalTable({
                     />
                   </th>
                 )}
-                <th scope="col" className="px-4 py-3 min-w-[240px]">
+                <th scope="col" className="px-3 py-3 w-[30%]">
                   Request
                 </th>
-                <th scope="col" className="px-3 py-3 w-32">
+                <th scope="col" className="px-2 py-3 w-[12%]">
                   Type
                 </th>
-                <th scope="col" className="px-3 py-3 min-w-[140px]">
+                <th scope="col" className="px-2 py-3 w-[16%]">
                   Submitted By
                 </th>
-                <th scope="col" className="px-3 py-3 min-w-[140px]">
+                <th scope="col" className="px-2 py-3 w-[15%]">
                   Submitted On
                 </th>
-                <th scope="col" className="px-3 py-3 w-24">
+                <th scope="col" className="px-2 py-3 w-[9%]">
                   Priority
                 </th>
-                <th scope="col" className="px-3 py-3 w-28">
+                <th scope="col" className="px-2 py-3 w-[8%]">
                   Status
                 </th>
-                <th scope="col" className="px-4 py-3 text-right w-36">
+                <th scope="col" className="px-3 py-3 text-right w-[10%]">
                   Actions
                 </th>
               </tr>
@@ -350,8 +350,8 @@ export function ApprovalTable({
         </div>
       </div>
 
-      {/* Mobile / Tablet List View (< md) */}
-      <div className="md:hidden space-y-3">
+      {/* Mobile / Tablet List View (< lg) */}
+      <div className="lg:hidden space-y-3">
         {approvals.map((a) => {
           const Icon = iconForKind(a.kind);
           const isSelected = selectedItem?._id === a._id;

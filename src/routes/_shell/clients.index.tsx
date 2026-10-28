@@ -472,7 +472,7 @@ function ClientsPage() {
                               <div className="text-[11px] font-normal text-muted-foreground">{c.courtCaseId}</div>
                             )}
                           </td>
-                          <td className="px-4 py-3.5 sm:px-6 min-w-[200px]">
+                          <td className="px-4 py-3.5 sm:px-6 min-w-0">
                             <Link
                               to="/cases/$caseId"
                               params={{ caseId: c._id }}

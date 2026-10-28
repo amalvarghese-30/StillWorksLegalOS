@@ -7,7 +7,6 @@ import {
   Clock,
   Laptop,
   Globe,
-  CornerDownRight,
   Shield,
   Layers,
 } from "lucide-react";
@@ -76,16 +75,34 @@ export function AuditLogTable({
   if (isLoading) {
     return (
       <div className="overflow-hidden rounded-2xl border border-border/80 bg-card shadow-soft">
-        <div className="divide-y divide-border/60">
+        {/* Desktop skeleton */}
+        <div className="hidden lg:block divide-y divide-border/60">
           {[1, 2, 3, 4, 5, 6].map((i) => (
             <div key={i} className="flex items-center gap-4 p-4 animate-pulse">
-              <div className="h-4 w-32 rounded bg-muted/60" />
-              <div className="size-8 rounded-full bg-muted/60" />
               <div className="h-4 w-28 rounded bg-muted/60" />
+              <div className="size-7 rounded-full bg-muted/60" />
+              <div className="h-4 w-24 rounded bg-muted/60" />
               <div className="h-6 w-20 rounded-full bg-muted/50" />
               <div className="h-4 flex-1 rounded bg-muted/50" />
               <div className="h-4 w-24 rounded bg-muted/40" />
-              <div className="h-4 w-28 rounded bg-muted/40" />
+              <div className="h-4 w-20 rounded bg-muted/40" />
+              <div className="h-6 w-12 rounded bg-muted/40" />
+            </div>
+          ))}
+        </div>
+        {/* Mobile/tablet card skeleton */}
+        <div className="lg:hidden divide-y divide-border/60">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="p-4 space-y-3 animate-pulse">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="size-7 rounded-full bg-muted/60" />
+                  <div className="h-3.5 w-24 rounded bg-muted/60" />
+                </div>
+                <div className="h-5 w-16 rounded-full bg-muted/50" />
+              </div>
+              <div className="h-4 w-3/4 rounded bg-muted/50" />
+              <div className="h-3 w-1/2 rounded bg-muted/40" />
             </div>
           ))}
         </div>
@@ -120,17 +137,22 @@ export function AuditLogTable({
 
   return (
     <div className="overflow-hidden rounded-2xl border border-border/80 bg-card shadow-soft">
-      <div className="overflow-x-auto touch-scroll">
-        <table className="w-full min-w-[960px] border-collapse text-left">
+      {/* ─────────────────────────────────────────────────────────────
+          1. DESKTOP RESPONSIVE TABLE VIEW (>= lg: 1024px and above)
+          Uses full available width without hardcoded min-w-[960px].
+          Balanced column proportions; Record & Details wraps naturally.
+         ───────────────────────────────────────────────────────────── */}
+      <div className="hidden lg:block w-full">
+        <table className="w-full border-collapse text-left table-fixed">
           <thead>
             <tr className="border-b border-border/70 bg-muted/30 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-              <th className="py-3.5 pl-4 pr-3">Timestamp (IST)</th>
-              <th className="px-3 py-3.5">User / Actor</th>
-              <th className="px-3 py-3.5">Action</th>
-              <th className="px-3 py-3.5">Record & Details</th>
-              <th className="px-3 py-3.5">IP Address</th>
-              <th className="px-3 py-3.5">Client / Device</th>
-              <th className="py-3.5 pl-3 pr-4 text-right">Details</th>
+              <th scope="col" className="py-3.5 pl-4 pr-2 w-[15%]">Timestamp (IST)</th>
+              <th scope="col" className="px-2 py-3.5 w-[14%]">User / Actor</th>
+              <th scope="col" className="px-2 py-3.5 w-[12%]">Action</th>
+              <th scope="col" className="px-3 py-3.5 w-[33%]">Record &amp; Details</th>
+              <th scope="col" className="px-2 py-3.5 w-[12%]">IP Address</th>
+              <th scope="col" className="px-2 py-3.5 w-[9%]">Client</th>
+              <th scope="col" className="py-3.5 pl-2 pr-4 text-right w-[5%]">Details</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/50 text-xs">
@@ -145,7 +167,7 @@ export function AuditLogTable({
 
               const formattedIp =
                 log.ip === "::1" || log.ip === "127.0.0.1"
-                  ? "127.0.0.1 (Local)"
+                  ? "127.0.0.1"
                   : log.ip || "—";
 
               return (
@@ -160,36 +182,37 @@ export function AuditLogTable({
                   )}
                 >
                   {/* Timestamp */}
-                  <td className="py-3 pl-4 pr-3 align-middle">
+                  <td className="py-3 pl-4 pr-2 align-top">
                     <div className="flex flex-col">
-                      <span className="font-semibold text-foreground whitespace-nowrap">
+                      <span className="font-semibold text-foreground text-xs leading-snug">
                         {formatAuditIST(log.createdAt)}
                       </span>
                       {relativeTime && (
                         <span className="flex items-center gap-1 text-[10px] text-muted-foreground font-mono mt-0.5">
-                          <Clock size={10} /> {relativeTime}
+                          <Clock size={10} className="shrink-0" />
+                          <span className="truncate">{relativeTime}</span>
                         </span>
                       )}
                     </div>
                   </td>
 
-                  {/* User */}
-                  <td className="px-3 py-3 align-middle">
-                    <div className="flex items-center gap-2.5">
+                  {/* User / Actor */}
+                  <td className="px-2 py-3 align-top">
+                    <div className="flex items-start gap-2 min-w-0">
                       <div
                         className={cn(
-                          "grid size-7 shrink-0 place-items-center rounded-full border text-[11px] font-bold",
+                          "grid size-6 shrink-0 place-items-center rounded-full border text-[10px] font-bold mt-0.5",
                           getUserColor(log.userName)
                         )}
                       >
                         {getUserInitials(log.userName)}
                       </div>
-                      <div className="min-w-0">
-                        <p className="font-semibold text-foreground truncate max-w-[140px]">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-foreground text-xs truncate" title={log.userName}>
                           {log.userName}
                         </p>
                         {log.sequence != null && (
-                          <span className="text-[10px] font-mono text-muted-foreground">
+                          <span className="inline-block text-[10px] font-mono text-muted-foreground/80">
                             #{log.sequence}
                           </span>
                         )}
@@ -198,37 +221,37 @@ export function AuditLogTable({
                   </td>
 
                   {/* Action Badge */}
-                  <td className="px-3 py-3 align-middle whitespace-nowrap">
+                  <td className="px-2 py-3 align-top">
                     <span
                       className={cn(
-                        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+                        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold",
                         actionBadge.className
                       )}
                     >
-                      <ActionIcon size={12} strokeWidth={2.2} />
-                      {actionBadge.label}
+                      <ActionIcon size={11} strokeWidth={2.2} className="shrink-0" />
+                      <span className="truncate">{actionBadge.label}</span>
                     </span>
                   </td>
 
-                  {/* Record & Details */}
-                  <td className="px-3 py-3 align-middle">
-                    <div className="flex flex-col gap-1 max-w-[340px]">
+                  {/* Record & Details — Fluid width, wraps naturally without truncation */}
+                  <td className="px-3 py-3 align-top">
+                    <div className="flex flex-col gap-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span
                           className={cn(
-                            "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                            "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider shrink-0",
                             resourceBadge.className
                           )}
                         >
-                          <ResourceIcon size={10} />
+                          <ResourceIcon size={9} />
                           {resourceBadge.label}
                         </span>
-                        <span className="font-semibold text-foreground truncate text-xs">
+                        <span className="font-semibold text-foreground text-xs break-words">
                           {log.resourceName ?? log.resource}
                         </span>
                       </div>
                       {log.details ? (
-                        <p className="text-[11px] text-muted-foreground truncate leading-relaxed">
+                        <p className="text-[11px] text-muted-foreground leading-relaxed break-words line-clamp-2">
                           {log.details}
                         </p>
                       ) : null}
@@ -236,37 +259,40 @@ export function AuditLogTable({
                   </td>
 
                   {/* IP Address */}
-                  <td className="px-3 py-3 align-middle whitespace-nowrap">
-                    <div className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-muted/30 px-2 py-1 font-mono text-[11px] text-muted-foreground">
-                      <Globe size={11} className="text-muted-foreground/60" />
-                      <span>{formattedIp}</span>
+                  <td className="px-2 py-3 align-top">
+                    <div className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/30 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground max-w-full">
+                      <Globe size={10} className="text-muted-foreground/60 shrink-0" />
+                      <span className="truncate" title={formattedIp}>{formattedIp}</span>
                       {log.ip && log.ip !== "—" && (
                         <button
                           type="button"
                           onClick={(e) => handleCopyIp(e, log.ip!)}
                           title="Copy IP address"
-                          className="text-muted-foreground hover:text-foreground transition-colors ml-0.5"
+                          className="text-muted-foreground hover:text-foreground transition-colors ml-0.5 shrink-0"
                         >
                           {copiedIp === log.ip ? (
-                            <Check size={11} className="text-emerald-500" />
+                            <Check size={10} className="text-emerald-500" />
                           ) : (
-                            <Copy size={11} />
+                            <Copy size={10} />
                           )}
                         </button>
                       )}
                     </div>
                   </td>
 
-                  {/* Device / Client */}
-                  <td className="px-3 py-3 align-middle whitespace-nowrap">
-                    <span className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-card px-2 py-1 text-[11px] font-medium text-muted-foreground">
-                      <Laptop size={12} className="text-muted-foreground/60" />
-                      {device.summary}
+                  {/* Client / Device */}
+                  <td className="px-2 py-3 align-top">
+                    <span
+                      className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-card px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground max-w-full truncate"
+                      title={device.summary}
+                    >
+                      <Laptop size={10} className="text-muted-foreground/60 shrink-0" />
+                      <span className="truncate">{device.summary}</span>
                     </span>
                   </td>
 
-                  {/* View Details Button */}
-                  <td className="py-3 pl-3 pr-4 align-middle text-right whitespace-nowrap">
+                  {/* View Details CTA */}
+                  <td className="py-3 pl-2 pr-4 align-top text-right">
                     <button
                       type="button"
                       onClick={(e) => {
@@ -274,13 +300,13 @@ export function AuditLogTable({
                         onSelectLog(log);
                       }}
                       className={cn(
-                        "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-all",
+                        "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-semibold transition-all",
                         isSelected
                           ? "border-primary bg-primary text-primary-foreground shadow-sm"
                           : "border-border/80 bg-background text-foreground hover:border-primary/50 hover:bg-primary/5"
                       )}
                     >
-                      <Eye size={12} />
+                      <Eye size={11} />
                       <span>View</span>
                     </button>
                   </td>
@@ -289,6 +315,150 @@ export function AuditLogTable({
             })}
           </tbody>
         </table>
+      </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          2. TABLET & MOBILE RESPONSIVE STACKED CARD VIEW (< lg)
+          Zero horizontal scrolling on tablet, small laptops, and phones.
+          Displays all information cleanly in grouped, accessible cards.
+         ───────────────────────────────────────────────────────────── */}
+      <div className="lg:hidden divide-y divide-border/60">
+        {logs.map((log) => {
+          const actionBadge = getActionBadge(log.action);
+          const ActionIcon = actionBadge.icon;
+          const resourceBadge = getResourceBadge(log.resource);
+          const ResourceIcon = resourceBadge.icon;
+          const device = parseDeviceClient(log.userAgent);
+          const isSelected = selectedLogId === log._id;
+          const relativeTime = formatRelativeTime(log.createdAt);
+
+          const formattedIp =
+            log.ip === "::1" || log.ip === "127.0.0.1"
+              ? "127.0.0.1"
+              : log.ip || "—";
+
+          return (
+            <article
+              key={log._id}
+              onClick={() => onSelectLog(log)}
+              className={cn(
+                "p-3.5 sm:p-4 space-y-2.5 transition-colors cursor-pointer",
+                isSelected
+                  ? "bg-primary/5 hover:bg-primary/10"
+                  : "hover:bg-muted/30"
+              )}
+            >
+              {/* Row 1: Actor, Action badge & Timestamp */}
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div
+                    className={cn(
+                      "grid size-6 shrink-0 place-items-center rounded-full border text-[10px] font-bold",
+                      getUserColor(log.userName)
+                    )}
+                  >
+                    {getUserInitials(log.userName)}
+                  </div>
+                  <span className="font-semibold text-xs text-foreground truncate max-w-[150px]">
+                    {log.userName}
+                  </span>
+                  {log.sequence != null && (
+                    <span className="text-[10px] font-mono text-muted-foreground/80">
+                      #{log.sequence}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold",
+                      actionBadge.className
+                    )}
+                  >
+                    <ActionIcon size={10} strokeWidth={2.2} />
+                    <span>{actionBadge.label}</span>
+                  </span>
+
+                  <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                    {formatAuditIST(log.createdAt)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Row 2: Resource badge & details */}
+              <div className="space-y-1 min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider shrink-0",
+                      resourceBadge.className
+                    )}
+                  >
+                    <ResourceIcon size={9} />
+                    {resourceBadge.label}
+                  </span>
+                  <span className="font-semibold text-foreground text-xs break-words">
+                    {log.resourceName ?? log.resource}
+                  </span>
+                </div>
+                {log.details && (
+                  <p className="text-[11px] text-muted-foreground leading-relaxed break-words">
+                    {log.details}
+                  </p>
+                )}
+              </div>
+
+              {/* Row 3: IP address, device chip & View button */}
+              <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/40 text-[11px]">
+                <div className="flex items-center gap-2 flex-wrap min-w-0">
+                  {/* IP Address */}
+                  <div className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/30 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                    <Globe size={10} className="text-muted-foreground/60 shrink-0" />
+                    <span>{formattedIp}</span>
+                    {log.ip && log.ip !== "—" && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleCopyIp(e, log.ip!)}
+                        title="Copy IP"
+                        className="text-muted-foreground hover:text-foreground transition-colors ml-0.5"
+                      >
+                        {copiedIp === log.ip ? (
+                          <Check size={10} className="text-emerald-500" />
+                        ) : (
+                          <Copy size={10} />
+                        )}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Device */}
+                  <span className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-card px-1.5 py-0.5 text-[10px] text-muted-foreground truncate max-w-[140px]">
+                    <Laptop size={10} className="text-muted-foreground/60 shrink-0" />
+                    <span className="truncate">{device.summary}</span>
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectLog(log);
+                  }}
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-semibold transition-all shrink-0",
+                    isSelected
+                      ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                      : "border-border/80 bg-background text-foreground hover:border-primary/50 hover:bg-primary/5"
+                  )}
+                >
+                  <Eye size={11} />
+                  <span>View Details</span>
+                </button>
+              </div>
+            </article>
+          );
+        })}
       </div>
     </div>
   );

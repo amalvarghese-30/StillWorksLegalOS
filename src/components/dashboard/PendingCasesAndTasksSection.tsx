@@ -376,11 +376,10 @@ export function PendingCasesAndTasksSection({
             <p className="mt-1 text-xs text-muted-foreground">All caught up in this view!</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            {/* Table structure for desktop, responsive cards for mobile */}
-            <div className="min-w-[960px] space-y-2">
+          <div className="w-full">
+            {/* Desktop View (>= xl) */}
+            <div className="hidden xl:block space-y-2">
               {filteredItems.map((item) => {
-                // Calculate overdue duration or days left
                 let deadlineSubtitle = "";
                 if (item.deadline) {
                   const deadlineDate = new Date(item.deadline);
@@ -420,7 +419,7 @@ export function PendingCasesAndTasksSection({
                         }
                       }
                     }}
-                    className="group grid grid-cols-[80px_minmax(200px,1.5fr)_160px_140px_130px_120px_85px_100px_40px] items-center gap-3 rounded-lg border border-border/60 bg-background/50 hover:bg-muted/40 px-3.5 py-3 transition-all duration-150 hover:border-primary/40 cursor-pointer text-xs"
+                    className="group grid grid-cols-[70px_minmax(180px,1.4fr)_140px_130px_120px_110px_75px_95px_32px] items-center gap-2.5 rounded-lg border border-border/60 bg-background/50 hover:bg-muted/40 px-3.5 py-3 transition-all duration-150 hover:border-primary/40 cursor-pointer text-xs"
                   >
                     {/* 1. Type badge */}
                     <div>
@@ -580,6 +579,123 @@ export function PendingCasesAndTasksSection({
                       <span className="grid size-7 place-items-center rounded-md text-muted-foreground group-hover:text-primary group-hover:bg-primary/10 transition-colors">
                         <ChevronRight size={16} />
                       </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Tablet & Mobile Card View (< xl) */}
+            <div className="xl:hidden space-y-2.5">
+              {filteredItems.map((item) => {
+                let deadlineSubtitle = "";
+                if (item.deadline) {
+                  const deadlineDate = new Date(item.deadline);
+                  if (!isNaN(deadlineDate.getTime())) {
+                    const diffDays = Math.ceil(
+                      (deadlineDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+                    );
+                    if (diffDays < 0) {
+                      deadlineSubtitle = `${Math.abs(diffDays)}d overdue`;
+                    } else if (diffDays === 0) {
+                      deadlineSubtitle = "Due today";
+                    } else {
+                      deadlineSubtitle = `${diffDays}d left`;
+                    }
+                  }
+                }
+
+                return (
+                  <div
+                    key={item.id}
+                    onClick={() => {
+                      if (item.type === "task" && item.rawTask) {
+                        onSelectTask(item.rawTask);
+                      } else if (item.type === "case" && item.rawCase) {
+                        navigate({ to: "/cases/$caseId", params: { caseId: item.rawCase._id } });
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    className="group rounded-xl border border-border/70 bg-card p-3.5 space-y-2.5 transition-all hover:border-primary/40 hover:bg-muted/20 cursor-pointer shadow-soft"
+                  >
+                    {/* Header: Type, Case number, Priority, Status */}
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={cn(
+                            "inline-block rounded px-2 py-0.5 text-[10px] font-bold uppercase",
+                            item.type === "task"
+                              ? "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200"
+                              : "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200",
+                          )}
+                        >
+                          {item.type}
+                        </span>
+                        {item.caseNumber && (
+                          <span className="font-mono text-[10px] text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 px-1.5 py-0.5 rounded border border-blue-200/50">
+                            {item.caseNumber}
+                          </span>
+                        )}
+                        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                          {item.priority}
+                        </span>
+                      </div>
+
+                      <span
+                        className={cn(
+                          "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                          item.status === "Overdue" || item.status === "Urgent"
+                            ? "bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300"
+                            : "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300",
+                        )}
+                      >
+                        {item.status}
+                      </span>
+                    </div>
+
+                    {/* Title & Description */}
+                    <div>
+                      <p className="font-semibold text-xs text-foreground group-hover:text-primary transition-colors">
+                        {item.title}
+                      </p>
+                      {item.description && (
+                        <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">
+                          {item.description}
+                        </p>
+                      )}
+                      {item.clientName && (
+                        <p className="text-[11px] text-muted-foreground font-medium mt-1">
+                          Client: {item.clientName}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Footer: Assigned info & Deadline */}
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-border/40 text-[11px]">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <EmployeeAvatar
+                          name={item.assignedTo?.name || "Unassigned"}
+                          avatarUrl={item.assignedTo?.avatarUrl}
+                          size="xs"
+                        />
+                        <span className="truncate text-muted-foreground">{item.assignedTo?.name || "Unassigned"}</span>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0 font-mono text-[11px]">
+                        <Calendar size={11} className="text-muted-foreground" />
+                        <span>{formatSafeDate(item.deadline, "No date")}</span>
+                        {deadlineSubtitle && (
+                          <span
+                            className={cn(
+                              "text-[10px] font-semibold ml-1",
+                              item.isOverdue ? "text-rose-600 dark:text-rose-400" : "text-amber-600 dark:text-amber-400",
+                            )}
+                          >
+                            ({deadlineSubtitle})
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );

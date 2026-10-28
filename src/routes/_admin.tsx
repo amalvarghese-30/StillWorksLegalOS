@@ -64,7 +64,7 @@ function AdminLayout() {
     user.permissions[requiredPerm] === false;
 
   return (
-    <div className="app-canvas min-h-screen">
+    <div className="app-canvas min-h-screen overflow-x-hidden">
       <SkipLink />
       <CallReminderAlerts />
       <PendingTaskReminderAlerts />

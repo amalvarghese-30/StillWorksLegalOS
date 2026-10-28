@@ -1,37 +1,28 @@
 import React, { useState, useMemo } from "react";
 import {
-  Briefcase,
-  CheckSquare,
-  Calendar,
-  FileText,
-  Search,
-  ExternalLink,
-  Clock,
-  User,
-  Shield,
-  X,
-  Plus,
-} from "lucide-react";
-import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { StatusPill, toneForStatus } from "@/components/common/StatusPill";
+import {
+  CheckSquare,
+  Briefcase,
+  Calendar,
+  FileText,
+  Search,
+  ExternalLink,
+  Plus,
+} from "lucide-react";
+import { StatusPill } from "@/components/common/StatusPill";
 import { formatSafeDate } from "@/lib/dates";
-
-export type DrilldownType = "tasks" | "cases" | "visits" | "documents";
 
 interface ReportDrilldownDialogProps {
   open: boolean;
   onClose: () => void;
   title: string;
-  subtitle?: string;
-  type: DrilldownType;
+  type: "tasks" | "cases" | "visits" | "documents";
   tasks?: any[];
   cases?: any[];
   visits?: any[];
@@ -41,11 +32,29 @@ interface ReportDrilldownDialogProps {
   onRecordVisit?: () => void;
 }
 
+function toneForStatus(status: string): "amber" | "emerald" | "rose" | "blue" | "default" {
+  switch (status?.toLowerCase()) {
+    case "completed":
+    case "approved":
+    case "closed":
+      return "emerald";
+    case "in_progress":
+    case "active":
+      return "blue";
+    case "overdue":
+    case "rejected":
+      return "rose";
+    case "pending":
+    case "on_hold":
+    default:
+      return "amber";
+  }
+}
+
 export function ReportDrilldownDialog({
   open,
   onClose,
   title,
-  subtitle,
   type,
   tasks = [],
   cases = [],
@@ -55,59 +64,74 @@ export function ReportDrilldownDialog({
   onOpenCase,
   onRecordVisit,
 }: ReportDrilldownDialogProps) {
-  const [search, setSearch] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   const filteredTasks = useMemo(() => {
-    if (!search.trim()) return tasks;
-    const q = search.toLowerCase().trim();
+    if (type !== "tasks") return [];
     return tasks.filter((t) => {
-      const titleMatch = t.title?.toLowerCase().includes(q);
-      const descMatch = t.description?.toLowerCase().includes(q);
-      const caseMatch = typeof t.caseId === "object" ? t.caseId?.title?.toLowerCase().includes(q) : false;
-      const clientMatch = typeof t.clientId === "object" ? t.clientId?.name?.toLowerCase().includes(q) : false;
-      const staffMatch = Array.isArray(t.assignedUsers)
-        ? t.assignedUsers.some((u: any) => u.name?.toLowerCase().includes(q))
-        : t.assignedTo?.name?.toLowerCase().includes(q);
-      return titleMatch || descMatch || caseMatch || clientMatch || staffMatch;
+      const matchSearch =
+        !searchTerm.trim() ||
+        (t.title && t.title.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (t.caseName && t.caseName.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (t.caseId?.title && t.caseId.title.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (t.assignedTo?.name && t.assignedTo.name.toLowerCase().includes(searchTerm.toLowerCase()));
+
+      const matchStatus =
+        statusFilter === "all" ||
+        (statusFilter === "pending" && t.status !== "completed") ||
+        (statusFilter === "completed" && t.status === "completed") ||
+        t.status === statusFilter;
+
+      return matchSearch && matchStatus;
     });
-  }, [tasks, search]);
+  }, [tasks, type, searchTerm, statusFilter]);
 
   const filteredCases = useMemo(() => {
-    if (!search.trim()) return cases;
-    const q = search.toLowerCase().trim();
+    if (type !== "cases") return [];
     return cases.filter((c) => {
-      const titleMatch = c.title?.toLowerCase().includes(q);
-      const numMatch = c.number?.toLowerCase().includes(q);
-      const courtMatch = c.court?.toLowerCase().includes(q);
-      const practiceMatch = (c.mainCategory || c.practice || "")?.toLowerCase().includes(q);
-      const staffMatch = Array.isArray(c.assignedUsers)
-        ? c.assignedUsers.some((u: any) => u.name?.toLowerCase().includes(q))
-        : c.assignedTo?.name?.toLowerCase().includes(q);
-      return titleMatch || numMatch || courtMatch || practiceMatch || staffMatch;
+      const matchSearch =
+        !searchTerm.trim() ||
+        (c.title && c.title.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (c.number && c.number.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (c.court && c.court.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (c.assignedTo?.name && c.assignedTo.name.toLowerCase().includes(searchTerm.toLowerCase()));
+
+      const matchStatus =
+        statusFilter === "all" ||
+        (statusFilter === "active" && c.status?.toLowerCase() === "active") ||
+        (statusFilter === "closed" && c.status?.toLowerCase() === "closed") ||
+        c.status === statusFilter;
+
+      return matchSearch && matchStatus;
     });
-  }, [cases, search]);
+  }, [cases, type, searchTerm, statusFilter]);
 
   const filteredVisits = useMemo(() => {
-    if (!search.trim()) return visits;
-    const q = search.toLowerCase().trim();
+    if (type !== "visits") return [];
     return visits.filter((v) => {
-      const purposeMatch = v.purpose?.toLowerCase().includes(q);
-      const notesMatch = v.notes?.toLowerCase().includes(q);
-      const handledMatch = typeof v.handledBy === "object" ? v.handledBy?.name?.toLowerCase().includes(q) : String(v.handledBy || "").toLowerCase().includes(q);
-      return purposeMatch || notesMatch || handledMatch;
+      return (
+        !searchTerm.trim() ||
+        (v.purpose && v.purpose.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (v.notes && v.notes.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (v.handledBy &&
+          (typeof v.handledBy === "object" ? v.handledBy.name : String(v.handledBy))
+            .toLowerCase()
+            .includes(searchTerm.toLowerCase()))
+      );
     });
-  }, [visits, search]);
+  }, [visits, type, searchTerm]);
 
   const filteredDocuments = useMemo(() => {
-    if (!search.trim()) return documents;
-    const q = search.toLowerCase().trim();
+    if (type !== "documents") return [];
     return documents.filter((d) => {
-      const nameMatch = d.name?.toLowerCase().includes(q);
-      const kindMatch = d.kind?.toLowerCase().includes(q);
-      const caseMatch = typeof d.caseId === "object" ? d.caseId?.title?.toLowerCase().includes(q) : false;
-      return nameMatch || kindMatch || caseMatch;
+      return (
+        !searchTerm.trim() ||
+        (d.name && d.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (d.kind && d.kind.toLowerCase().includes(searchTerm.toLowerCase()))
+      );
     });
-  }, [documents, search]);
+  }, [documents, type, searchTerm]);
 
   const totalCount =
     type === "tasks"
@@ -118,55 +142,69 @@ export function ReportDrilldownDialog({
       ? visits.length
       : documents.length;
 
-  const currentDisplayCount =
-    type === "tasks"
-      ? filteredTasks.length
-      : type === "cases"
-      ? filteredCases.length
-      : type === "visits"
-      ? filteredVisits.length
-      : filteredDocuments.length;
-
   return (
     <Dialog open={open} onOpenChange={(o) => (!o ? onClose() : null)}>
-      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col rounded-2xl p-6 shadow-lift border-border bg-card">
+      <DialogContent className="w-[calc(100vw-1.5rem)] sm:w-full max-w-4xl max-h-[85vh] flex flex-col rounded-2xl p-4 sm:p-6 shadow-lift border-border bg-card">
         <DialogHeader className="border-b border-border pb-3 shrink-0">
-          <div className="flex items-center justify-between">
-            <DialogTitle className="flex items-center gap-2.5 text-base font-bold text-foreground">
-              {type === "tasks" && <CheckSquare className="size-5 text-amber-500" />}
-              {type === "cases" && <Briefcase className="size-5 text-primary" />}
-              {type === "visits" && <Calendar className="size-5 text-emerald-500" />}
-              {type === "documents" && <FileText className="size-5 text-blue-500" />}
-              <span>{title}</span>
-              <span className="rounded-full bg-primary/10 text-primary px-2.5 py-0.5 text-xs font-semibold num">
-                {totalCount} matching {type}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-foreground min-w-0">
+              {type === "tasks" && <CheckSquare className="size-5 text-amber-500 shrink-0" />}
+              {type === "cases" && <Briefcase className="size-5 text-primary shrink-0" />}
+              {type === "visits" && <Calendar className="size-5 text-emerald-500 shrink-0" />}
+              {type === "documents" && <FileText className="size-5 text-blue-500 shrink-0" />}
+              <span className="truncate">{title}</span>
+              <span className="rounded-full bg-primary/10 text-primary px-2 py-0.5 text-xs font-semibold num shrink-0">
+                {totalCount}
               </span>
             </DialogTitle>
           </div>
-          {subtitle && <DialogDescription className="text-xs text-muted-foreground">{subtitle}</DialogDescription>}
 
-          {/* Search bar inside drilldown */}
-          <div className="mt-3 flex items-center justify-between gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
-              <Input
-                placeholder={`Search ${type}...`}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="h-8 pl-8 text-xs rounded-md bg-muted/30 border-border/70"
+          {/* Search & Filter Toolbar */}
+          <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-[180px]">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="search"
+                placeholder={`Search ${type}…`}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full rounded-lg border border-border bg-background/50 pl-8 pr-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary"
               />
             </div>
+
+            {(type === "tasks" || type === "cases") && (
+              <div className="flex items-center gap-2">
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="rounded-lg border border-border bg-background/50 px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"
+                >
+                  <option value="all">All Statuses</option>
+                  {type === "tasks" ? (
+                    <>
+                      <option value="pending">Pending</option>
+                      <option value="in_progress">In Progress</option>
+                      <option value="completed">Completed</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="active">Active</option>
+                      <option value="closed">Closed</option>
+                    </>
+                  )}
+                </select>
+              </div>
+            )}
+
             {type === "visits" && onRecordVisit && (
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  onClose();
-                  onRecordVisit();
-                }}
-                className="h-8 text-xs gap-1.5 rounded-md"
+                onClick={onRecordVisit}
+                className="gap-1 h-8 text-xs rounded-lg"
               >
-                <Plus className="size-3.5" /> Record Visit
+                <Plus size={13} />
+                <span>Record Visit</span>
               </Button>
             )}
           </div>
@@ -183,89 +221,101 @@ export function ReportDrilldownDialog({
                 <p className="text-[11px] mt-0.5">No tasks match the active filters or scope.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto rounded-xl border border-border">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-border bg-muted/40 text-muted-foreground font-semibold text-[11px]">
-                      <th className="py-2.5 px-3">Task Title &amp; Description</th>
-                      <th className="py-2.5 px-3">Related Case</th>
-                      <th className="py-2.5 px-3">Assigned To</th>
-                      <th className="py-2.5 px-3">Assigned By</th>
-                      <th className="py-2.5 px-3">Deadline</th>
-                      <th className="py-2.5 px-3">Priority</th>
-                      <th className="py-2.5 px-3">Status</th>
-                      <th className="py-2.5 px-3 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/60">
-                    {filteredTasks.map((t) => {
-                      const caseTitle = typeof t.caseId === "object" && t.caseId ? t.caseId.title : t.caseName || "—";
-                      const caseNum = typeof t.caseId === "object" && t.caseId ? t.caseId.number : null;
-                      const assignees = Array.isArray(t.assignedUsers) && t.assignedUsers.length > 0
-                        ? t.assignedUsers.map((u: any) => u.name).join(", ")
-                        : t.assignedTo?.name || "Unassigned";
-                      const assignedBy = typeof t.assignedBy === "object" && t.assignedBy?.name
-                        ? t.assignedBy.name
-                        : t.createdBy?.name || "Administrator";
+              <div>
+                {/* Desktop View */}
+                <div className="hidden md:block rounded-xl border border-border">
+                  <table className="w-full text-left text-xs table-fixed">
+                    <thead>
+                      <tr className="border-b border-border bg-muted/40 text-muted-foreground font-semibold text-[11px]">
+                        <th className="py-2.5 px-3 w-[30%]">Task Title</th>
+                        <th className="py-2.5 px-3 w-[22%]">Related Case</th>
+                        <th className="py-2.5 px-3 w-[16%]">Assigned To</th>
+                        <th className="py-2.5 px-3 w-[14%]">Deadline</th>
+                        <th className="py-2.5 px-3 w-[10%]">Status</th>
+                        <th className="py-2.5 px-3 text-right w-[8%]">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/60">
+                      {filteredTasks.map((t) => {
+                        const caseTitle = typeof t.caseId === "object" && t.caseId ? t.caseId.title : t.caseName || "—";
+                        const caseNum = typeof t.caseId === "object" && t.caseId ? t.caseId.number : null;
+                        const assignees = Array.isArray(t.assignedUsers) && t.assignedUsers.length > 0
+                          ? t.assignedUsers.map((u: any) => u.name).join(", ")
+                          : t.assignedTo?.name || "Unassigned";
 
-                      return (
-                        <tr
-                          key={t._id}
-                          onClick={() => onOpenTask?.(t)}
-                          className="hover:bg-muted/30 cursor-pointer transition-colors"
-                        >
-                          <td className="py-2.5 px-3 max-w-[200px]">
-                            <p className="font-semibold text-foreground truncate">{t.title}</p>
-                            {t.description && (
-                              <p className="text-[11px] text-muted-foreground line-clamp-1">{t.description}</p>
-                            )}
-                          </td>
-                          <td className="py-2.5 px-3 text-muted-foreground max-w-[140px]">
-                            <p className="truncate text-foreground font-medium">{caseTitle}</p>
-                            {caseNum && <p className="font-mono text-[10px] text-muted-foreground">{caseNum}</p>}
-                          </td>
-                          <td className="py-2.5 px-3 text-foreground font-medium whitespace-nowrap">
-                            {assignees}
-                          </td>
-                          <td className="py-2.5 px-3 text-muted-foreground whitespace-nowrap">
-                            {assignedBy}
-                          </td>
-                          <td className="py-2.5 px-3 font-mono text-muted-foreground whitespace-nowrap">
-                            {formatSafeDate(t.deadline)}
-                          </td>
-                          <td className="py-2.5 px-3 whitespace-nowrap">
-                            <span
-                              className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                                t.priority === "High"
-                                  ? "bg-rose-500/15 text-rose-600 dark:text-rose-400"
-                                  : t.priority === "Medium"
-                                  ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
-                                  : "bg-muted text-muted-foreground"
-                              }`}
-                            >
-                              {t.priority || "Medium"}
-                            </span>
-                          </td>
-                          <td className="py-2.5 px-3 whitespace-nowrap">
-                            <StatusPill tone={toneForStatus(t.status)} className="capitalize text-[10px]">
-                              {(t.status || "pending").replace(/_/g, " ")}
-                            </StatusPill>
-                          </td>
-                          <td className="py-2.5 px-3 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => onOpenTask?.(t)}
-                              className="h-7 text-xs text-primary px-2"
-                            >
-                              Open <ExternalLink className="size-3 ml-1" />
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                        return (
+                          <tr
+                            key={t._id}
+                            onClick={() => onOpenTask?.(t)}
+                            className="hover:bg-muted/30 cursor-pointer transition-colors"
+                          >
+                            <td className="py-2.5 px-3 align-top">
+                              <p className="font-semibold text-foreground break-words">{t.title}</p>
+                              {t.description && (
+                                <p className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">{t.description}</p>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 align-top text-muted-foreground">
+                              <p className="break-words text-foreground font-medium">{caseTitle}</p>
+                              {caseNum && <p className="font-mono text-[10px] text-muted-foreground">{caseNum}</p>}
+                            </td>
+                            <td className="py-2.5 px-3 align-top text-foreground font-medium">
+                              <span className="truncate block">{assignees}</span>
+                            </td>
+                            <td className="py-2.5 px-3 align-top font-mono text-muted-foreground whitespace-nowrap">
+                              {formatSafeDate(t.deadline)}
+                            </td>
+                            <td className="py-2.5 px-3 align-top">
+                              <StatusPill tone={toneForStatus(t.status)} className="capitalize text-[10px]">
+                                {(t.status || "pending").replace(/_/g, " ")}
+                              </StatusPill>
+                            </td>
+                            <td className="py-2.5 px-3 align-top text-right" onClick={(e) => e.stopPropagation()}>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => onOpenTask?.(t)}
+                                className="h-7 text-xs text-primary px-2"
+                              >
+                                Open <ExternalLink className="size-3 ml-1" />
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile / Tablet View */}
+                <div className="md:hidden space-y-2">
+                  {filteredTasks.map((t) => {
+                    const caseTitle = typeof t.caseId === "object" && t.caseId ? t.caseId.title : t.caseName || "—";
+                    const assignees = Array.isArray(t.assignedUsers) && t.assignedUsers.length > 0
+                      ? t.assignedUsers.map((u: any) => u.name).join(", ")
+                      : t.assignedTo?.name || "Unassigned";
+
+                    return (
+                      <div
+                        key={t._id}
+                        onClick={() => onOpenTask?.(t)}
+                        className="rounded-xl border border-border/80 bg-card p-3 space-y-2 cursor-pointer hover:bg-muted/30 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="font-semibold text-xs text-foreground">{t.title}</p>
+                          <StatusPill tone={toneForStatus(t.status)} className="capitalize text-[10px] shrink-0">
+                            {(t.status || "pending").replace(/_/g, " ")}
+                          </StatusPill>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground truncate">Case: {caseTitle}</p>
+                        <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1 border-t border-border/40">
+                          <span>Assigned: {assignees}</span>
+                          <span className="font-mono">{formatSafeDate(t.deadline)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )
           )}
@@ -279,75 +329,101 @@ export function ReportDrilldownDialog({
                 <p className="text-[11px] mt-0.5">No active matters matching the criteria.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto rounded-xl border border-border">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-border bg-muted/40 text-muted-foreground font-semibold text-[11px]">
-                      <th className="py-2.5 px-3">Matter No</th>
-                      <th className="py-2.5 px-3">Case Title</th>
-                      <th className="py-2.5 px-3">Practice / Category</th>
-                      <th className="py-2.5 px-3">Court</th>
-                      <th className="py-2.5 px-3">Assigned To</th>
-                      <th className="py-2.5 px-3">Status</th>
-                      <th className="py-2.5 px-3">Next Hearing</th>
-                      <th className="py-2.5 px-3 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/60">
-                    {filteredCases.map((c) => {
-                      const assignees = Array.isArray(c.assignedUsers) && c.assignedUsers.length > 0
-                        ? c.assignedUsers.map((u: any) => u.name).join(", ")
-                        : c.assignedTo?.name || "Unassigned";
+              <div>
+                {/* Desktop View */}
+                <div className="hidden md:block rounded-xl border border-border">
+                  <table className="w-full text-left text-xs table-fixed">
+                    <thead>
+                      <tr className="border-b border-border bg-muted/40 text-muted-foreground font-semibold text-[11px]">
+                        <th className="py-2.5 px-3 w-[15%]">Matter No</th>
+                        <th className="py-2.5 px-3 w-[30%]">Case Title</th>
+                        <th className="py-2.5 px-3 w-[18%]">Practice Area</th>
+                        <th className="py-2.5 px-3 w-[15%]">Assigned To</th>
+                        <th className="py-2.5 px-3 w-[12%]">Status</th>
+                        <th className="py-2.5 px-3 text-right w-[10%]">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/60">
+                      {filteredCases.map((c) => {
+                        const assignees = Array.isArray(c.assignedUsers) && c.assignedUsers.length > 0
+                          ? c.assignedUsers.map((u: any) => u.name).join(", ")
+                          : c.assignedTo?.name || "Unassigned";
 
-                      return (
-                        <tr
-                          key={c._id}
-                          onClick={() => onOpenCase?.(c._id)}
-                          className="hover:bg-muted/30 cursor-pointer transition-colors"
-                        >
-                          <td className="py-2.5 px-3 font-mono font-medium text-primary whitespace-nowrap">
-                            {c.number}
-                          </td>
-                          <td className="py-2.5 px-3 max-w-[200px]">
-                            <p className="font-semibold text-foreground truncate">{c.title}</p>
-                            {c.parties?.[0]?.name && (
-                              <p className="text-[11px] text-muted-foreground truncate">
-                                Client: {c.parties[0].name}
-                              </p>
-                            )}
-                          </td>
-                          <td className="py-2.5 px-3 text-muted-foreground whitespace-nowrap">
-                            {c.mainCategory || c.practice || "General Legal"}
-                          </td>
-                          <td className="py-2.5 px-3 text-muted-foreground whitespace-nowrap">
-                            {c.court || "—"}
-                          </td>
-                          <td className="py-2.5 px-3 text-foreground font-medium whitespace-nowrap">
-                            {assignees}
-                          </td>
-                          <td className="py-2.5 px-3 whitespace-nowrap">
-                            <StatusPill tone={toneForStatus(c.status)} className="capitalize text-[10px]">
-                              {c.status}
-                            </StatusPill>
-                          </td>
-                          <td className="py-2.5 px-3 font-mono text-muted-foreground whitespace-nowrap">
-                            {formatSafeDate(c.nextHearing)}
-                          </td>
-                          <td className="py-2.5 px-3 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => onOpenCase?.(c._id)}
-                              className="h-7 text-xs text-primary px-2"
-                            >
-                              View <ExternalLink className="size-3 ml-1" />
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                        return (
+                          <tr
+                            key={c._id}
+                            onClick={() => onOpenCase?.(c._id)}
+                            className="hover:bg-muted/30 cursor-pointer transition-colors"
+                          >
+                            <td className="py-2.5 px-3 font-mono font-medium text-primary whitespace-nowrap">
+                              {c.number}
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <p className="font-semibold text-foreground break-words">{c.title}</p>
+                              {c.parties?.[0]?.name && (
+                                <p className="text-[11px] text-muted-foreground truncate">
+                                  Client: {c.parties[0].name}
+                                </p>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-muted-foreground">
+                              <span className="truncate block">{c.mainCategory || c.practice || "General Legal"}</span>
+                            </td>
+                            <td className="py-2.5 px-3 text-foreground font-medium">
+                              <span className="truncate block">{assignees}</span>
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <StatusPill tone={toneForStatus(c.status)} className="capitalize text-[10px]">
+                                {c.status}
+                              </StatusPill>
+                            </td>
+                            <td className="py-2.5 px-3 text-right" onClick={(e) => e.stopPropagation()}>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => onOpenCase?.(c._id)}
+                                className="h-7 text-xs text-primary px-2"
+                              >
+                                View <ExternalLink className="size-3 ml-1" />
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile / Tablet View */}
+                <div className="md:hidden space-y-2">
+                  {filteredCases.map((c) => {
+                    const assignees = Array.isArray(c.assignedUsers) && c.assignedUsers.length > 0
+                      ? c.assignedUsers.map((u: any) => u.name).join(", ")
+                      : c.assignedTo?.name || "Unassigned";
+
+                    return (
+                      <div
+                        key={c._id}
+                        onClick={() => onOpenCase?.(c._id)}
+                        className="rounded-xl border border-border/80 bg-card p-3 space-y-2 cursor-pointer hover:bg-muted/30 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <span className="font-mono text-[10px] text-primary block">{c.number}</span>
+                            <p className="font-semibold text-xs text-foreground mt-0.5">{c.title}</p>
+                          </div>
+                          <StatusPill tone={toneForStatus(c.status)} className="capitalize text-[10px] shrink-0">
+                            {c.status}
+                          </StatusPill>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1 border-t border-border/40">
+                          <span>{c.practice || "General"}</span>
+                          <span>{assignees}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )
           )}
@@ -361,35 +437,25 @@ export function ReportDrilldownDialog({
                 <p className="text-[11px] mt-0.5">Use "+ Record Visit" to record client office attendance.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto rounded-xl border border-border">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-border bg-muted/40 text-muted-foreground font-semibold text-[11px]">
-                      <th className="py-2.5 px-3">Date &amp; Time</th>
-                      <th className="py-2.5 px-3">Purpose</th>
-                      <th className="py-2.5 px-3">Handled By</th>
-                      <th className="py-2.5 px-3">Notes / Summary</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/60">
-                    {filteredVisits.map((v, idx) => (
-                      <tr key={v._id || idx} className="hover:bg-muted/20">
-                        <td className="py-2.5 px-3 font-mono text-muted-foreground whitespace-nowrap">
-                          {formatSafeDate(v.visitedAt, "—")}
-                        </td>
-                        <td className="py-2.5 px-3 font-semibold text-foreground">
-                          {v.purpose}
-                        </td>
-                        <td className="py-2.5 px-3 text-muted-foreground whitespace-nowrap">
-                          {typeof v.handledBy === "object" ? v.handledBy?.name : v.handledBy || "Partner / Staff"}
-                        </td>
-                        <td className="py-2.5 px-3 text-muted-foreground">
-                          {v.notes || "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="space-y-2">
+                {filteredVisits.map((v, idx) => (
+                  <div
+                    key={v._id || idx}
+                    className="rounded-xl border border-border bg-card p-3 space-y-1.5"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-xs text-foreground">{v.purpose}</span>
+                      <span className="font-mono text-[11px] text-muted-foreground">{formatSafeDate(v.visitedAt, "—")}</span>
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      <span>Handled by: </span>
+                      <span className="font-medium text-foreground">
+                        {typeof v.handledBy === "object" ? v.handledBy?.name : v.handledBy || "Partner / Staff"}
+                      </span>
+                    </div>
+                    {v.notes && <p className="text-[11px] text-muted-foreground bg-muted/30 p-2 rounded-lg">{v.notes}</p>}
+                  </div>
+                ))}
               </div>
             )
           )}
@@ -403,45 +469,23 @@ export function ReportDrilldownDialog({
                 <p className="text-[11px] mt-0.5">No associated documents found for this client scope.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto rounded-xl border border-border">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-border bg-muted/40 text-muted-foreground font-semibold text-[11px]">
-                      <th className="py-2.5 px-3">Document Name</th>
-                      <th className="py-2.5 px-3">Kind / Type</th>
-                      <th className="py-2.5 px-3">Related Matter</th>
-                      <th className="py-2.5 px-3">Uploaded By</th>
-                      <th className="py-2.5 px-3">Upload Date</th>
-                      <th className="py-2.5 px-3">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/60">
-                    {filteredDocuments.map((d) => (
-                      <tr key={d._id} className="hover:bg-muted/20">
-                        <td className="py-2.5 px-3 font-semibold text-foreground">
-                          {d.name}
-                        </td>
-                        <td className="py-2.5 px-3 uppercase text-[10px] text-muted-foreground whitespace-nowrap">
-                          {d.kind || "PDF"}
-                        </td>
-                        <td className="py-2.5 px-3 text-muted-foreground whitespace-nowrap">
-                          {typeof d.caseId === "object" ? d.caseId?.title : "—"}
-                        </td>
-                        <td className="py-2.5 px-3 text-muted-foreground whitespace-nowrap">
-                          {typeof d.uploadedBy === "object" ? d.uploadedBy?.name : "Staff"}
-                        </td>
-                        <td className="py-2.5 px-3 font-mono text-muted-foreground whitespace-nowrap">
-                          {formatSafeDate(d.createdAt)}
-                        </td>
-                        <td className="py-2.5 px-3 whitespace-nowrap">
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground">
-                            {d.state || "Active"}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="space-y-2">
+                {filteredDocuments.map((d) => (
+                  <div
+                    key={d._id}
+                    className="rounded-xl border border-border bg-card p-3 flex items-center justify-between gap-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-semibold text-xs text-foreground truncate">{d.name}</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        {d.kind || "Document"} · {formatSafeDate(d.createdAt)}
+                      </p>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground shrink-0">
+                      {d.state || "Active"}
+                    </span>
+                  </div>
+                ))}
               </div>
             )
           )}
