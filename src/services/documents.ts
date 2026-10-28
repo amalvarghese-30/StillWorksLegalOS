@@ -164,6 +164,7 @@ export function useDeleteDocument() {
     mutationFn: (id) => api.delete(`/documents/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: docKeys.all });
+      qc.invalidateQueries({ queryKey: ["clients"] });
     },
   });
 }

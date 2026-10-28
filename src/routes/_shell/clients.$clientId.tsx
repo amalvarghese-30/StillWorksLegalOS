@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useMemo, useEffect, type ComponentType, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard, FileBadge, Home, Users, Briefcase, Plus,
   Phone, Mail, MapPin, Loader2, Edit3, ChevronDown,
@@ -36,6 +37,7 @@ import { MobileSectionNav } from "@/components/layout/MobileSectionNav";
 import {
   useClient, useUpdateClient, useDeleteClient,
   useClientCases, useClientDocuments, useClientDeletionPreview,
+  clientKeys,
   type ClientRecord, type ClientDocument,
 } from "@/services/clients";
 import { useAuth } from "@/lib/auth";
@@ -45,7 +47,7 @@ import { EditCaseDialog } from "@/components/cases/EditCaseDialog";
 import { AddTaskDialog } from "@/components/tasks/AddTaskDialog";
 import { UploadDocumentDialog } from "@/components/documents/UploadDocumentDialog";
 import { DocumentInlinePreview } from "@/components/documents/DocumentInlinePreview";
-import { downloadDocument } from "@/services/documents";
+import { downloadDocument, useDeleteDocument, docKeys } from "@/services/documents";
 import { DocumentPreviewModal } from "@/components/documents/DocumentPreviewModal";
 import { formatSafeDate, formatSafeDateTime } from "@/lib/dates";
 import { useTasks, type TaskRecord } from "@/services/tasks";
@@ -429,6 +431,32 @@ function ClientProfile() {
   const [showAddSubClientDialog, setShowAddSubClientDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<ClientDocument | null>(null);
+  const [documentToDelete, setDocumentToDelete] = useState<ClientDocument | null>(null);
+  const [isDeletingDoc, setIsDeletingDoc] = useState(false);
+
+  const qc = useQueryClient();
+  const deleteDocMutation = useDeleteDocument();
+
+  const handleConfirmDeleteDoc = async () => {
+    if (!documentToDelete) return;
+    setIsDeletingDoc(true);
+    try {
+      await deleteDocMutation.mutateAsync(documentToDelete._id);
+      toast.success(`Document "${documentToDelete.name}" deleted permanently.`);
+      if (previewDoc?._id === documentToDelete._id) {
+        setPreviewDoc(null);
+      }
+      setDocumentToDelete(null);
+      qc.invalidateQueries({ queryKey: clientKeys.documents(clientId) });
+      qc.invalidateQueries({ queryKey: docKeys.all });
+    } catch (err: any) {
+      console.error("[clients] Failed to delete document:", err);
+      const msg = err?.data?.message || err?.message || "Failed to delete document. Please try again.";
+      toast.error(msg);
+    } finally {
+      setIsDeletingDoc(false);
+    }
+  };
 
   const {
     data: casesData,
@@ -1333,13 +1361,14 @@ function ClientProfile() {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                           <Button
                             variant="ghost"
                             size="sm"
                             className="h-8 rounded-md px-2 text-muted-foreground hover:text-foreground"
                             onClick={() => setPreviewDoc(d)}
                             title="Preview document"
+                            aria-label={`Preview ${d.name}`}
                           >
                             <Eye size={15} />
                           </Button>
@@ -1349,8 +1378,19 @@ function ClientProfile() {
                             className="h-8 rounded-md px-2 text-muted-foreground hover:text-foreground"
                             onClick={() => downloadDocument(d._id)}
                             title="Download document"
+                            aria-label={`Download ${d.name}`}
                           >
                             <Download size={15} />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 rounded-md px-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                            onClick={() => setDocumentToDelete(d)}
+                            title="Delete document"
+                            aria-label={`Delete ${d.name}`}
+                          >
+                            <Trash2 size={15} />
                           </Button>
                         </div>
                       </li>
@@ -1739,6 +1779,48 @@ function ClientProfile() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* ── Document Deletion Confirmation Dialog ── */}
+      <AlertDialog open={!!documentToDelete} onOpenChange={(open) => !open && setDocumentToDelete(null)}>
+        <AlertDialogContent className="w-[calc(100vw-1.5rem)] sm:w-full max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive flex items-center gap-2">
+              <Trash2 size={18} /> Delete Document?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-helper text-muted-foreground space-y-2">
+              <span>You are about to permanently delete this document from LegalOS. This action cannot be undone.</span>
+              {documentToDelete && (
+                <span className="block font-medium text-foreground bg-muted/60 p-2.5 rounded border border-border text-xs break-all mt-2">
+                  {documentToDelete.name}
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col-reverse sm:flex-row gap-2 sm:gap-0 sm:space-x-2 pt-2">
+            <AlertDialogCancel disabled={isDeletingDoc} className="w-full sm:w-auto">
+              Cancel
+            </AlertDialogCancel>
+            <Button
+              variant="destructive"
+              disabled={isDeletingDoc}
+              onClick={handleConfirmDeleteDoc}
+              className="w-full sm:w-auto gap-1.5"
+            >
+              {isDeletingDoc ? (
+                <>
+                  <Loader2 size={15} className="animate-spin" />
+                  <span>Deleting…</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 size={15} />
+                  <span>Delete Document</span>
+                </>
+              )}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {previewDoc && (
         <DocumentPreviewModal
           open={!!previewDoc}
@@ -1747,6 +1829,15 @@ function ClientProfile() {
           documentName={previewDoc.name}
           documentMimeType={previewDoc.mimeType}
           documentSize={previewDoc.sizeFormatted ?? previewDoc.size}
+          canDelete={true}
+          onDeleteSuccess={() => {
+            setPreviewDoc(null);
+            qc.invalidateQueries({ queryKey: clientKeys.documents(clientId) });
+            qc.invalidateQueries({ queryKey: docKeys.all });
+          }}
+          onDeleted={(delId) => {
+            if (documentToDelete?._id === delId) setDocumentToDelete(null);
+          }}
         />
       )}
 

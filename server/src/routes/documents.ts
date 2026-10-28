@@ -1350,9 +1350,17 @@ router.delete("/:id", requireResourceAccess("document"), async (req: Request, re
 
     const filePath = document.storagePath || document.nasPath;
     if (filePath) {
-      await deletePath(filePath).catch((err) => {
-        console.warn("[documents] Could not delete file from disk:", err);
-      });
+      try {
+        await deletePath(filePath);
+      } catch (storageErr: any) {
+        console.error("[documents] Could not delete file from disk:", storageErr);
+        if (storageErr?.code !== "ENOENT") {
+          res.status(500).json({
+            message: "Failed to delete physical file from storage. Document record preserved.",
+          });
+          return;
+        }
+      }
     }
 
     await FileIntegrity.deleteMany({ documentId: document._id }).catch(() => {});
