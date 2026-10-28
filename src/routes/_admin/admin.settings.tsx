@@ -19,6 +19,7 @@ import { DesktopUpdateSettings } from "@/components/settings/DesktopUpdateSettin
 import { useUpdateProfile, useUpdateFirm, useUpdatePreferences } from "@/services/admin";
 import { validatePhone, sanitizePhone } from "@/lib/validation";
 import { MobileSectionNav } from "@/components/layout/MobileSectionNav";
+import { UserAvatar } from "@/components/common/UserAvatar";
 import { isElectron } from "@/platform";
 import { APP_VERSION } from "@/version";
 
@@ -335,17 +336,12 @@ function SettingsPage() {
                   {/* Profile Picture Avatar Section */}
                   <div className="flex flex-col sm:flex-row items-center gap-5 sm:col-span-2 pb-4 border-b border-border/60">
                     <div className="relative group">
-                      {user?.avatarUrl ? (
-                        <img
-                          src={user.avatarUrl}
-                          alt={user.name}
-                          className="size-20 rounded-full object-cover border-2 border-primary/20 shadow-soft"
-                        />
-                      ) : (
-                        <span className="grid size-20 place-items-center rounded-full bg-primary/10 font-display text-xl font-bold text-primary border-2 border-primary/20">
-                          {user?.initials ?? "AD"}
-                        </span>
-                      )}
+                      <UserAvatar
+                        avatarUrl={user?.avatarUrl}
+                        name={user?.name}
+                        initials={user?.initials ?? "AD"}
+                        className="size-20 border-2 border-primary/20 shadow-soft text-xl font-bold"
+                      />
                     </div>
                     <div className="space-y-1.5 text-center sm:text-left">
                       <h4 className="text-helper font-semibold text-foreground">Profile Picture</h4>

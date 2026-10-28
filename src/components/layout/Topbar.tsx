@@ -20,6 +20,7 @@ import { Sidebar } from "./Sidebar";
 import { QuickActionsMenu } from "./QuickActionsMenu";
 import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
 import { NotificationCenter } from "./NotificationCenter";
+import { UserAvatar } from "@/components/common/UserAvatar";
 import { useAuth } from "@/lib/auth";
 import { useSearch } from "@/lib/search";
 import { useCreateDirectChat } from "@/services/chat";
@@ -290,17 +291,12 @@ export function Topbar() {
           New Case
         </Button>
         {/* User Avatar */}
-        {user?.avatarUrl ? (
-          <img
-            src={user.avatarUrl}
-            alt={user.name}
-            className="size-8 sm:size-10 rounded-full object-cover border border-border shrink-0"
-          />
-        ) : (
-          <span className="grid size-8 sm:size-10 place-items-center rounded-full bg-primary/12 font-display text-xs sm:text-helper font-semibold text-primary shrink-0">
-            {user?.initials ?? "SW"}
-          </span>
-        )}
+        <UserAvatar
+          avatarUrl={user?.avatarUrl}
+          name={user?.name}
+          initials={user?.initials ?? "SW"}
+          className="size-8 sm:size-10 text-xs sm:text-helper"
+        />
       </div>
 
       {/* Add Case Dialog */}

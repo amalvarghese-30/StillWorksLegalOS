@@ -4,6 +4,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { EMOJI_PICKER_EMOJIS } from "./helpers";
 import { uploadChatAttachment, type ChatMessage, type ChatMember } from "@/services/chat";
+import { resolveAvatarUrl } from "@/lib/avatarUrl";
 import { toast } from "sonner";
 
 interface MessageComposerProps {
@@ -398,11 +399,14 @@ export function MessageComposer({
                       }`}
                     >
                       {/* Avatar initials circle or photo */}
-                      {member.avatarUrl ? (
+                      {resolveAvatarUrl(member.avatarUrl) ? (
                         <img
-                          src={member.avatarUrl}
+                          src={resolveAvatarUrl(member.avatarUrl)}
                           alt={member.name}
                           className="size-8 rounded-full object-cover shrink-0"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLElement).style.display = "none";
+                          }}
                         />
                       ) : (
                         <div

@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import type { ApprovalItem } from "@/services/admin";
 import { downloadDocument } from "@/services/documents";
+import { resolveAvatarUrl } from "@/lib/avatarUrl";
 import { toast } from "sonner";
 import { iconForKind, priorityBadge, agingBadge } from "./ApprovalTable";
 import { Link } from "@tanstack/react-router";
@@ -251,11 +252,14 @@ export function ApprovalDetailDrawer({
                     Submitted By
                   </span>
                   <div className="flex items-center gap-2.5 pt-1">
-                    {item.submittedBy?.avatarUrl ? (
+                    {resolveAvatarUrl(item.submittedBy?.avatarUrl) ? (
                       <img
-                        src={item.submittedBy.avatarUrl}
-                        alt={item.submittedBy.name}
+                        src={resolveAvatarUrl(item.submittedBy?.avatarUrl)}
+                        alt={item.submittedBy?.name || "User"}
                         className="size-8 rounded-full object-cover shrink-0"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLElement).style.display = "none";
+                        }}
                       />
                     ) : (
                       <div className="size-8 rounded-full bg-primary/10 text-primary grid place-items-center text-xs font-bold shrink-0">

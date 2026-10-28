@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { resolveAvatarUrl } from "@/lib/avatarUrl";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -295,11 +296,14 @@ function ChatRow({
           >
             {/* Avatar with initials or group icon */}
             <span className="relative grid size-11 shrink-0 place-items-center rounded-full bg-primary/12 text-helper font-semibold text-primary transition-transform group-hover:scale-105 overflow-hidden">
-              {isDirect && (group.avatarUrl || other?.avatarUrl) ? (
+              {isDirect && resolveAvatarUrl(group.avatarUrl || other?.avatarUrl) ? (
                 <img
-                  src={group.avatarUrl || other?.avatarUrl}
+                  src={resolveAvatarUrl(group.avatarUrl || other?.avatarUrl)}
                   alt={group.name}
                   className="size-full object-cover rounded-full"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLElement).style.display = "none";
+                  }}
                 />
               ) : isDirect ? (
                 computeInitials(group.name)

@@ -1,6 +1,7 @@
 import React from "react";
 import { MessageSquare, Send, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { resolveAvatarUrl } from "@/lib/avatarUrl";
 import { toast } from "sonner";
 import type { TaskRecord } from "@/services/tasks";
 
@@ -61,17 +62,23 @@ export function TaskRemarksThread({
               >
                 <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground mb-1.5 flex-wrap">
                   <div className="flex items-center gap-2">
-                    {isMe && user?.avatarUrl ? (
+                    {isMe && resolveAvatarUrl(user?.avatarUrl) ? (
                       <img
-                        src={user.avatarUrl}
+                        src={resolveAvatarUrl(user.avatarUrl)}
                         alt={authorName}
                         className="size-6 rounded-full object-cover shrink-0"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLElement).style.display = "none";
+                        }}
                       />
-                    ) : (r as any).authorAvatar ? (
+                    ) : resolveAvatarUrl((r as any).authorAvatar) ? (
                       <img
-                        src={(r as any).authorAvatar}
+                        src={resolveAvatarUrl((r as any).authorAvatar)}
                         alt={authorName}
                         className="size-6 rounded-full object-cover shrink-0"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLElement).style.display = "none";
+                        }}
                       />
                     ) : (
                       <span className="grid size-6 place-items-center rounded-full bg-primary/15 text-[10px] font-bold text-primary">

@@ -18,6 +18,7 @@ import { useSearch } from "@/lib/search";
 import { useCreateDirectChat } from "@/services/chat";
 import { useNavigate } from "@tanstack/react-router";
 import { useTheme } from "@/lib/theme";
+import { UserAvatar } from "@/components/common/UserAvatar";
 import { APP_VERSION } from "@/version";
 
 export function AdminTopbar() {
@@ -241,17 +242,12 @@ export function AdminTopbar() {
           <span className="block truncate text-helper font-medium">{user?.name}</span>
           <span className="block truncate text-caption text-muted-foreground">Administrator</span>
         </span>
-        {user?.avatarUrl ? (
-          <img
-            src={user.avatarUrl}
-            alt={user.name}
-            className="size-8 sm:size-10 rounded-full object-cover border border-border shrink-0"
-          />
-        ) : (
-          <span className="grid size-8 sm:size-10 place-items-center rounded-full bg-primary/12 font-display text-xs sm:text-helper font-semibold text-primary shrink-0">
-            {user?.initials ?? "SW"}
-          </span>
-        )}
+        <UserAvatar
+          avatarUrl={user?.avatarUrl}
+          name={user?.name}
+          initials={user?.initials ?? "AD"}
+          className="size-8 sm:size-10 text-xs sm:text-helper"
+        />
       </div>
     </header>
   );

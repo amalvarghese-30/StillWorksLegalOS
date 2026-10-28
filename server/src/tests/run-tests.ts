@@ -6261,6 +6261,115 @@ const { NotificationService } = await import("../services/notifications.js");
     assert(createAdminTaskRes.body.task.mainCategory === "OFFICE ADMIN WORK", "S40-32: Saved task preserves 'OFFICE ADMIN WORK'");
   }
 
+  // --- SUITE 41: Avatar URL Resolution & Electron Desktop Safety ---
+  {
+    console.log(`\n--- SUITE 41: Avatar URL Resolution & Electron Desktop Safety ---`);
+
+    const VALID_AVATAR_FILENAME_REGEX = /^avatar_[a-zA-Z0-9_\-]+\.(jpg|jpeg|png|webp)$/i;
+
+    function getNormalizedApiPrefix(customApiBase?: string): string {
+      let base = customApiBase || "https://api-legalos.stillworks.in/api";
+      base = (base || "").trim().replace(/\/+$/, "");
+      if (!base) return "";
+      return base.endsWith("/api") ? base : `${base}/api`;
+    }
+
+    function resolveAvatarUrl(avatarRef?: string | null, customApiBase?: string): string {
+      if (!avatarRef || typeof avatarRef !== "string") return "";
+      const trimmed = avatarRef.trim();
+      if (!trimmed) return "";
+      if (/^(https?:|data:image\/|blob:)/i.test(trimmed)) return trimmed;
+      if (
+        trimmed.toLowerCase().startsWith("file:") ||
+        trimmed.includes("..") ||
+        trimmed.includes("\\")
+      ) {
+        return "";
+      }
+      const [cleanPath, query] = trimmed.split("?");
+      if (!cleanPath) return "";
+      let pathWithoutLeadingSlash = cleanPath.replace(/^\/+/, "");
+      if (pathWithoutLeadingSlash.toLowerCase().startsWith("api/auth/avatar/")) {
+        pathWithoutLeadingSlash = pathWithoutLeadingSlash.slice("api/auth/avatar/".length);
+      } else if (pathWithoutLeadingSlash.toLowerCase().startsWith("auth/avatar/")) {
+        pathWithoutLeadingSlash = pathWithoutLeadingSlash.slice("auth/avatar/".length);
+      } else if (pathWithoutLeadingSlash.toLowerCase().startsWith("avatars/")) {
+        pathWithoutLeadingSlash = pathWithoutLeadingSlash.slice("avatars/".length);
+      }
+      if (pathWithoutLeadingSlash.includes("/") || !pathWithoutLeadingSlash) return "";
+      if (!VALID_AVATAR_FILENAME_REGEX.test(pathWithoutLeadingSlash)) return "";
+      const apiPrefix = getNormalizedApiPrefix(customApiBase);
+      if (!apiPrefix) return "";
+      const encodedFilename = encodeURIComponent(pathWithoutLeadingSlash);
+      const queryString = query ? `?${query}` : "";
+      return `${apiPrefix}/auth/avatar/${encodedFilename}${queryString}`;
+    }
+
+    // 1. Server-relative path
+    const r1 = resolveAvatarUrl("/api/auth/avatar/avatar_6adcdb3e3379dae16bbfa521_1793193135460.jpg", "https://api-legalos.stillworks.in/api");
+    assert(r1 === "https://api-legalos.stillworks.in/api/auth/avatar/avatar_6adcdb3e3379dae16bbfa521_1793193135460.jpg", "S41-01: Server-relative path resolves to absolute API URL");
+
+    const r1Query = resolveAvatarUrl("/api/auth/avatar/avatar_6adcdb3e3379dae16bbfa521_1793193135460.jpg?v=1793193135460", "https://api-legalos.stillworks.in/api");
+    assert(r1Query === "https://api-legalos.stillworks.in/api/auth/avatar/avatar_6adcdb3e3379dae16bbfa521_1793193135460.jpg?v=1793193135460", "S41-02: Server-relative path preserves query parameters");
+
+    // 2. Filename-only legacy value
+    const r2 = resolveAvatarUrl("avatar_6adcdb3e3379dae16bbfa521_1793193135460.jpg", "https://api-legalos.stillworks.in/api");
+    assert(r2 === "https://api-legalos.stillworks.in/api/auth/avatar/avatar_6adcdb3e3379dae16bbfa521_1793193135460.jpg", "S41-03: Filename-only legacy value resolves to absolute endpoint");
+
+    // 3. Recognized legacy Avatars/ path
+    const r3 = resolveAvatarUrl("Avatars/avatar_6adcdb3e3379dae16bbfa521_1793193135460.jpg", "https://api-legalos.stillworks.in/api");
+    assert(r3 === "https://api-legalos.stillworks.in/api/auth/avatar/avatar_6adcdb3e3379dae16bbfa521_1793193135460.jpg", "S41-04: Legacy Avatars/ path resolves correctly");
+
+    const r3Slash = resolveAvatarUrl("/Avatars/avatar_6adcdb3e3379dae16bbfa521_1793193135460.jpg", "https://api-legalos.stillworks.in/api");
+    assert(r3Slash === "https://api-legalos.stillworks.in/api/auth/avatar/avatar_6adcdb3e3379dae16bbfa521_1793193135460.jpg", "S41-05: Leading-slash /Avatars/ path resolves correctly");
+
+    // 4. Already absolute HTTPS URL
+    const r4 = resolveAvatarUrl("https://cdn.example.com/avatars/user.jpg", "https://api-legalos.stillworks.in/api");
+    assert(r4 === "https://cdn.example.com/avatars/user.jpg", "S41-06: Absolute HTTPS URL preserved unchanged");
+
+    const r4Data = resolveAvatarUrl("data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==", "https://api-legalos.stillworks.in/api");
+    assert(r4Data.startsWith("data:image/png;base64,"), "S41-07: data:image URIs preserved unchanged");
+
+    const r4Blob = resolveAvatarUrl("blob:http://localhost:5174/8a01f592", "https://api-legalos.stillworks.in/api");
+    assert(r4Blob === "blob:http://localhost:5174/8a01f592", "S41-08: blob: URLs preserved unchanged");
+
+    // 5. Missing, empty, or whitespace value
+    assert(resolveAvatarUrl("") === "", "S41-09: Empty string returns empty string");
+    assert(resolveAvatarUrl(null) === "", "S41-10: null returns empty string");
+    assert(resolveAvatarUrl(undefined) === "", "S41-11: undefined returns empty string");
+    assert(resolveAvatarUrl("   ") === "", "S41-12: Whitespace returns empty string");
+
+    // 6. Unsupported or malformed filename
+    assert(resolveAvatarUrl("malformed.exe", "https://api-legalos.stillworks.in/api") === "", "S41-13: .exe files rejected");
+    assert(resolveAvatarUrl("../../etc/passwd", "https://api-legalos.stillworks.in/api") === "", "S41-14: Path traversal rejected");
+    assert(resolveAvatarUrl("file:///C:/Users/avatar.jpg", "https://api-legalos.stillworks.in/api") === "", "S41-15: file:/// scheme rejected");
+    assert(resolveAvatarUrl("file://avatar_123.jpg", "https://api-legalos.stillworks.in/api") === "", "S41-16: file:// relative scheme rejected");
+    assert(resolveAvatarUrl("..\\..\\Windows\\avatar_123.jpg", "https://api-legalos.stillworks.in/api") === "", "S41-17: Windows backslash traversal rejected");
+    assert(resolveAvatarUrl("non_avatar_photo.jpg", "https://api-legalos.stillworks.in/api") === "", "S41-18: Non-avatar prefix rejected");
+
+    // 7. Configured development API base
+    const r7 = resolveAvatarUrl("/api/auth/avatar/avatar_6adcdb3e3379dae16bbfa521_1793193135460.jpg", "http://localhost:5174/api");
+    assert(r7 === "http://localhost:5174/api/auth/avatar/avatar_6adcdb3e3379dae16bbfa521_1793193135460.jpg", "S41-19: Local development API base resolves correctly");
+
+    // 8. Packaged Electron environment
+    const r8 = resolveAvatarUrl("avatar_6adcdb3e3379dae16bbfa521_1793193135460.jpg", "https://api-legalos.stillworks.in/api");
+    assert(r8 === "https://api-legalos.stillworks.in/api/auth/avatar/avatar_6adcdb3e3379dae16bbfa521_1793193135460.jpg", "S41-20: Electron environment resolves to production API base");
+    assert(!r8.startsWith("file://"), "S41-21: Electron avatar URL is never file://");
+
+    // 9. Server URL with and without trailing /api, ensuring /api/api/ is never generated
+    const r9A = resolveAvatarUrl("/api/auth/avatar/avatar_123.jpg", "https://api-legalos.stillworks.in/api");
+    assert(r9A === "https://api-legalos.stillworks.in/api/auth/avatar/avatar_123.jpg", "S41-22: With trailing /api produces single /api");
+    assert(!r9A.includes("/api/api/"), "S41-23: Never generates /api/api/ with /api base");
+
+    const r9B = resolveAvatarUrl("/api/auth/avatar/avatar_123.jpg", "https://api-legalos.stillworks.in");
+    assert(r9B === "https://api-legalos.stillworks.in/api/auth/avatar/avatar_123.jpg", "S41-24: Without trailing /api correctly appends /api");
+    assert(!r9B.includes("/api/api/"), "S41-25: Never generates /api/api/ without /api base");
+
+    const r9C = resolveAvatarUrl("avatar_123.jpg", "http://localhost:3001/");
+    assert(r9C === "http://localhost:3001/api/auth/avatar/avatar_123.jpg", "S41-26: Strips trailing slash before appending /api");
+    assert(!r9C.includes("/api/api/"), "S41-27: Never generates /api/api/ on trailing slash base");
+  }
+
 
   try {
     if (mongoose.connection.readyState === 1) {

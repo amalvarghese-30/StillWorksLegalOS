@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useEmployees, type EmployeeRecord } from "@/services/admin";
 import { useTaskOptions } from "@/services/tasks";
+import { resolveAvatarUrl } from "@/lib/avatarUrl";
 import { cn } from "@/lib/utils";
 
 export interface AssigneeOption {
@@ -358,11 +359,14 @@ export function AssigneeMultiSelect({
                     {selected && <Check size={11} strokeWidth={3} />}
                   </span>
 
-                  {emp.avatarUrl || emp.avatar ? (
+                  {resolveAvatarUrl(emp.avatarUrl || emp.avatar) ? (
                     <img
-                      src={emp.avatarUrl || emp.avatar}
+                      src={resolveAvatarUrl(emp.avatarUrl || emp.avatar)}
                       alt={emp.name}
                       className="size-6 shrink-0 rounded-full object-cover"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLElement).style.display = "none";
+                      }}
                     />
                   ) : (
                     <div className="size-6 shrink-0 rounded-full bg-primary/20 text-primary font-bold text-[10px] grid place-items-center">

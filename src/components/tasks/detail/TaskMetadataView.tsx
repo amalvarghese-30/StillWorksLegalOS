@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatSafeDateTime } from "@/lib/dates";
+import { resolveAvatarUrl } from "@/lib/avatarUrl";
 import { openLocalPath } from "@/platform/localPath";
 import type { TaskRecord } from "@/services/tasks";
 
@@ -51,11 +52,14 @@ export function TaskMetadataView({
                   key={u._id}
                   className="inline-flex items-center gap-1.5 rounded bg-secondary/80 px-2 py-0.5 text-xs font-semibold text-secondary-foreground"
                 >
-                  {(u.avatarUrl || (u as any).avatar) && (
+                  {resolveAvatarUrl(u.avatarUrl || (u as any).avatar) && (
                     <img
-                      src={u.avatarUrl || (u as any).avatar}
+                      src={resolveAvatarUrl(u.avatarUrl || (u as any).avatar)}
                       alt={u.name}
                       className="size-4 rounded-full object-cover shrink-0"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLElement).style.display = "none";
+                      }}
                     />
                   )}
                   {u.name}
@@ -63,11 +67,14 @@ export function TaskMetadataView({
               ))
             ) : (
               <span className="inline-flex items-center gap-1.5">
-                {(activeTask.assignedTo?.avatarUrl || (activeTask.assignedTo as any)?.avatar) && (
+                {resolveAvatarUrl(activeTask.assignedTo?.avatarUrl || (activeTask.assignedTo as any)?.avatar) && (
                   <img
-                    src={activeTask.assignedTo?.avatarUrl || (activeTask.assignedTo as any)?.avatar}
+                    src={resolveAvatarUrl(activeTask.assignedTo?.avatarUrl || (activeTask.assignedTo as any)?.avatar)}
                     alt={activeTask.assignedTo.name}
                     className="size-4 rounded-full object-cover shrink-0"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLElement).style.display = "none";
+                    }}
                   />
                 )}
                 <strong className="text-foreground">{activeTask.assignedTo?.name || "Unassigned"}</strong>

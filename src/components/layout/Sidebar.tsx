@@ -31,6 +31,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { buttonVariants } from "@/components/ui/button";
+import { UserAvatar } from "@/components/common/UserAvatar";
 
 const primary = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true, permission: "dashboard" as const },
@@ -131,17 +132,12 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
 
       <div className="mt-4 rounded-md border border-border/70 bg-card/70 p-3">
         <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
-          {user?.avatarUrl ? (
-            <img
-              src={user.avatarUrl}
-              alt={user.name}
-              className="size-10 rounded-full object-cover border border-border/80 shrink-0"
-            />
-          ) : (
-            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-primary/12 font-display text-helper font-semibold text-primary">
-              {user?.initials ?? "SW"}
-            </span>
-          )}
+          <UserAvatar
+            avatarUrl={user?.avatarUrl}
+            name={user?.name}
+            initials={user?.initials ?? "SW"}
+            className="size-10 text-helper"
+          />
           <div className="min-w-0">
             <p className="truncate text-helper font-medium">{user?.name ?? "Signed out"}</p>
             <p className="truncate text-caption text-muted-foreground">{user?.title ?? "—"}</p>

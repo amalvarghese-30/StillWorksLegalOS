@@ -15,6 +15,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import type { ApprovalItem } from "@/services/admin";
+import { resolveAvatarUrl } from "@/lib/avatarUrl";
 import { StatusPill } from "@/components/common/StatusPill";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -233,11 +234,14 @@ export function ApprovalTable({
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2">
-                        {a.submittedBy?.avatarUrl ? (
+                        {resolveAvatarUrl(a.submittedBy?.avatarUrl) ? (
                           <img
-                            src={a.submittedBy.avatarUrl}
-                            alt={a.submittedBy.name}
+                            src={resolveAvatarUrl(a.submittedBy?.avatarUrl)}
+                            alt={a.submittedBy?.name || "User"}
                             className="size-6 rounded-full object-cover shrink-0"
+                            onError={(e) => {
+                              (e.currentTarget as HTMLElement).style.display = "none";
+                            }}
                           />
                         ) : (
                           <div className="size-6 rounded-full bg-primary/10 text-primary grid place-items-center text-[10px] font-bold shrink-0">

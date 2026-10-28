@@ -5,6 +5,7 @@ import { MessageContextMenuContent } from "./MessageContextMenu";
 import { MessageTail, ReadReceipt, highlightMentions, formatTime, type ReadState } from "./helpers";
 import { downloadChatAttachment, type ChatMessage } from "@/services/chat";
 import { downloadBlob } from "@/services/api";
+import { resolveAvatarUrl } from "@/lib/avatarUrl";
 import { toast } from "sonner";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "🙏"];
@@ -342,11 +343,14 @@ export function MessageBubble({
               {/* Sender name for group chats */}
               {!isMine && isGroup && showSender && (
                 <div className="flex items-center gap-1.5 mb-1">
-                  {message.sender.avatarUrl ? (
+                  {resolveAvatarUrl(message.sender.avatarUrl) ? (
                     <img
-                      src={message.sender.avatarUrl}
+                      src={resolveAvatarUrl(message.sender.avatarUrl)}
                       alt={message.sender.name}
                       className="size-4.5 rounded-full object-cover shrink-0"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLElement).style.display = "none";
+                      }}
                     />
                   ) : (
                     <span className="grid size-4.5 place-items-center rounded-full bg-primary/15 text-[9px] font-bold text-primary shrink-0">

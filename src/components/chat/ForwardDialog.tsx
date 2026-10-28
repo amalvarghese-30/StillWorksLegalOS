@@ -7,6 +7,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { computeInitials } from "./helpers";
+import { resolveAvatarUrl } from "@/lib/avatarUrl";
 import type { ChatGroup, ChatMessage } from "@/services/chat";
 
 interface ForwardDialogProps {
@@ -58,8 +59,15 @@ export function ForwardDialog({
                   className="flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-accent"
                 >
                   <span className="relative grid size-9 shrink-0 place-items-center rounded-full bg-primary/12 text-sm font-semibold text-primary overflow-hidden">
-                    {isDirect && (g.avatarUrl || other?.avatarUrl) ? (
-                      <img src={g.avatarUrl || other?.avatarUrl} alt={g.name} className="size-full object-cover rounded-full" />
+                    {isDirect && resolveAvatarUrl(g.avatarUrl || other?.avatarUrl) ? (
+                      <img
+                        src={resolveAvatarUrl(g.avatarUrl || other?.avatarUrl)}
+                        alt={g.name}
+                        className="size-full object-cover rounded-full"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLElement).style.display = "none";
+                        }}
+                      />
                     ) : isDirect ? (
                       computeInitials(g.name)
                     ) : (

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { resolveAvatarUrl } from "@/lib/avatarUrl";
 import { cn } from "@/lib/utils";
 
 interface EmployeeAvatarProps {
@@ -67,13 +68,20 @@ export function EmployeeAvatar({
 }: EmployeeAvatarProps) {
   const [imgError, setImgError] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
+  const resolvedUrl = resolveAvatarUrl(avatarUrl);
+
+  // Reset image load and error state whenever avatarUrl changes
+  useEffect(() => {
+    setImgError(false);
+    setImgLoaded(false);
+  }, [resolvedUrl]);
 
   const initials = getInitials(name);
   const palette = getPalette(name);
   const sizeClass = SIZE_MAP[size] || SIZE_MAP.md;
   const statusSizeClass = STATUS_SIZE_MAP[size] || STATUS_SIZE_MAP.md;
 
-  const hasValidImage = Boolean(avatarUrl && !imgError);
+  const hasValidImage = Boolean(resolvedUrl && !imgError);
 
   const statusTone =
     status === "online"
@@ -91,10 +99,10 @@ export function EmployeeAvatar({
           hasValidImage ? "bg-muted/40 border-border" : cn(palette)
         )}
       >
-        {avatarUrl && !imgError ? (
+        {hasValidImage ? (
           <>
             <img
-              src={avatarUrl}
+              src={resolvedUrl}
               alt={name}
               className={cn(
                 "h-full w-full object-cover rounded-full transition-opacity duration-200",
