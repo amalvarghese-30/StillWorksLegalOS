@@ -48,7 +48,7 @@ const { Category } = await import("../models/Category.js");
 const { TaskReminderState } = await import("../models/TaskReminderState.js");
 const { seedCategories } = await import("../scripts/seedCategories.js");
 const { ChatGroup, ChatMessage } = await import("../models/Chat.js");
-const { getLocalPath } = await import("../services/storage.js");
+const { getLocalPath, StorageService } = await import("../services/storage.js");
 const { DocumentModel } = await import("../models/Document.js");
 const { AuditLog } = await import("../models/AuditLog.js");
 const { processDueReminders } = await import("../services/reminderScheduler.js");
@@ -56,9 +56,16 @@ const { syncCallReminders, deleteCallReminders } = await import("../services/rem
 const { validateMimeType } = await import("../services/nas.js");
 const { presenceService } = await import("../services/presence.js");
 const { requireAuth } = await import("../middleware/auth.js");
+const { default: helmet } = await import("helmet");
 
 function buildApp() {
   const app = express();
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+      crossOriginEmbedderPolicy: false,
+    }),
+  );
   app.use(express.json());
 
   const httpServer = createServer(app);
@@ -6368,6 +6375,40 @@ const { NotificationService } = await import("../services/notifications.js");
     const r9C = resolveAvatarUrl("avatar_123.jpg", "http://localhost:3001/");
     assert(r9C === "http://localhost:3001/api/auth/avatar/avatar_123.jpg", "S41-26: Strips trailing slash before appending /api");
     assert(!r9C.includes("/api/api/"), "S41-27: Never generates /api/api/ on trailing slash base");
+
+    // 10. Live HTTP endpoint: Strict CORP and CORS headers on avatar endpoint
+    const avatarTestUser = await createUser({ name: "Avatar Live User" });
+    const avatarTestToken = await createToken(avatarTestUser);
+    const testAvatarFilename = `avatar_${avatarTestUser._id}_${Date.now()}.jpg`;
+    const avatarLogicalPath = `Avatars/${testAvatarFilename}`;
+    const fakeImg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+    const { Readable } = await import("node:stream");
+    await StorageService.save(avatarLogicalPath, Readable.from(fakeImg));
+
+    // Valid avatar request returns 200 with Cross-Origin-Resource-Policy: cross-origin
+    const avatarRes = await request(app).get(`/api/auth/avatar/${testAvatarFilename}`);
+    assert(avatarRes.status === 200, "S41-28: Avatar GET returns HTTP 200");
+    assert(avatarRes.headers["content-type"] === "image/jpeg", "S41-29: Content-Type is image/jpeg");
+    assert(avatarRes.headers["cross-origin-resource-policy"] === "cross-origin", "S41-30: Avatar response has Cross-Origin-Resource-Policy: cross-origin");
+    assert(avatarRes.headers["access-control-allow-origin"] === "*", "S41-31: Avatar response allows cross-origin access");
+
+    // Invalid avatar filename rejection
+    const invalidRes = await request(app).get("/api/auth/avatar/malformed.exe");
+    assert(invalidRes.status === 400, "S41-32: Malformed avatar filename rejected with 400");
+
+    // Non-existent avatar returns 404
+    const notFoundRes = await request(app).get("/api/auth/avatar/avatar_000000000000000000000000_9999999999.jpg");
+    assert(notFoundRes.status === 404, "S41-33: Nonexistent avatar returns 404");
+
+    // Normal protected API endpoint preserves strict default security policy (does NOT have cross-origin)
+    const meRes = await request(app)
+      .get("/api/auth/me")
+      .set("Authorization", `Bearer ${avatarTestToken}`);
+    assert(meRes.status === 200, "S41-34: /api/auth/me returns 200");
+    assert(meRes.headers["cross-origin-resource-policy"] !== "cross-origin", "S41-35: General API endpoints retain strict same-origin CORP policy");
+
+    // Cleanup avatar
+    await StorageService.delete(avatarLogicalPath).catch(() => {});
   }
 
   // --- SUITE 42: Redesigned 2-Hour Reminder System, Postpone Until, Planned Dates & Bulk Actions ---
@@ -6698,6 +6739,21 @@ const { NotificationService } = await import("../services/notifications.js");
       .get(`/api/chat/groups/${directGroupId}/messages`)
       .set("Authorization", `Bearer ${tokenC}`);
     assert(bolaRes.status === 403, "S43-13: Non-member denied access to conversation with 403 (BOLA protection)");
+
+    // 10. Users directory endpoint authorization
+    const usersNoAuthRes = await request(app).get("/api/chat/users");
+    assert(usersNoAuthRes.status === 401, "S43-14: GET /api/chat/users without auth returns 401");
+
+    const usersAuthRes = await request(app)
+      .get("/api/chat/users")
+      .set("Authorization", `Bearer ${tokenChatA}`);
+    assert(usersAuthRes.status === 200, "S43-15: GET /api/chat/users with auth returns 200");
+    assert(Array.isArray(usersAuthRes.body?.users), "S43-16: Returns users array for contacts");
+
+    const usersDeniedRes = await request(app)
+      .get("/api/chat/users")
+      .set("Authorization", `Bearer ${tokenRestricted}`);
+    assert(usersDeniedRes.status === 403, "S43-17: User without chat permission gets 403 on /api/chat/users");
   }
 
 

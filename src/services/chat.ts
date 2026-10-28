@@ -120,11 +120,14 @@ export function useChatGroups(options?: { enabled?: boolean }) {
   });
 }
 
-export function useChatMessages(groupId: string | undefined) {
+export function useChatMessages(
+  groupId: string | undefined,
+  options?: { enabled?: boolean },
+) {
   return useQuery<ChatMessagesResponse>({
     queryKey: chatKeys.messages(groupId!),
     queryFn: () => api.get(`/chat/groups/${groupId}/messages`),
-    enabled: !!groupId,
+    enabled: Boolean(groupId) && (options?.enabled ?? true),
     retry: (failureCount, error) => {
       if ((error as any)?.status === 401 || (error as any)?.status === 403) return false;
       return failureCount < 2;

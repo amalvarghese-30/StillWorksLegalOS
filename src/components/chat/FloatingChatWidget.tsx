@@ -78,29 +78,27 @@ import { toast } from "sonner";
 export function FloatingChatWidget() {
   const { user, ready } = useAuth();
   const location = useLocation();
-
-  if (!ready || !user) return null;
-  const isAdmin = user.role === "admin";
-  const hasChatPermission = isAdmin || user.permissions?.chat !== false;
-  if (!hasChatPermission) return null;
-
-  const pathname = location.pathname;
-  if (pathname === "/login" || pathname === "/chat") return null;
-
-  return <FloatingChatWidgetInner user={user} isAdmin={isAdmin} />;
-}
-
-function FloatingChatWidgetInner({
-  user,
-  isAdmin,
-}: {
-  user: NonNullable<ReturnType<typeof useAuth>["user"]>;
-  isAdmin: boolean;
-}) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { socket, status: connStatus } = useSocket();
   const { onlineIds } = usePresence();
+
+  const pathname = location.pathname;
+  const isAdmin = user?.role === "admin";
+  const hasChatPermission = isAdmin || user?.permissions?.chat !== false;
+
+  // Strict gating conditions:
+  // 1. Authentication initialization complete (ready === true)
+  // 2. Authenticated user exists
+  // 3. User is permitted to use Chat
+  // 4. Current route is not login and not the dedicated /chat page
+  const isChatEnabled = Boolean(
+    ready &&
+    user &&
+    hasChatPermission &&
+    pathname !== "/login" &&
+    pathname !== "/chat"
+  );
 
   const {
     isOpen,
@@ -133,7 +131,7 @@ function FloatingChatWidgetInner({
   const prevGroupRef = useRef<string | null>(null);
 
   // ── Chat Groups Data ─────────────────────────────────────────────────────
-  const { data: groupsData, isLoading: groupsLoading } = useChatGroups();
+  const { data: groupsData, isLoading: groupsLoading } = useChatGroups({ enabled: isChatEnabled });
   const groups: ChatGroup[] = groupsData?.groups ?? [];
   const activeGroup = groups.find((g) => g._id === activeGroupId) ?? null;
 
@@ -146,6 +144,7 @@ function FloatingChatWidgetInner({
   // ── Messages Data ────────────────────────────────────────────────────────
   const { data: messagesData, isLoading: messagesLoading } = useChatMessages(
     activeGroupId ?? undefined,
+    { enabled: isChatEnabled && Boolean(activeGroupId) },
   );
   const latestMessages = messagesData?.messages ?? [];
   const allMessages = useMemo(
@@ -157,7 +156,7 @@ function FloatingChatWidgetInner({
   const hasOlder = !!effectiveCursor;
 
   // ── Users Data for Contacts / Mentions ───────────────────────────────────
-  const { data: usersData } = useChatUsers();
+  const { data: usersData } = useChatUsers({ enabled: isChatEnabled });
   const allUsers: UserForContact[] = usersData?.users ?? [];
 
   // ── Mutations ────────────────────────────────────────────────────────────
@@ -509,6 +508,8 @@ function FloatingChatWidgetInner({
       search: activeGroupId ? { groupId: activeGroupId } : {},
     });
   };
+
+  if (!isChatEnabled) return null;
 
   return (
     <>
