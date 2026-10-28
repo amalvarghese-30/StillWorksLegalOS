@@ -102,7 +102,7 @@ export function TaskHistorySection({
                       </span>
                     </div>
                     <p className="text-[11px] text-muted-foreground mt-0.5">
-                      Assigned by{" "}
+                      Assigned By:{" "}
                       <strong className="text-foreground/90">
                         {typeof h.assignedBy === "object" ? h.assignedBy?.name : "Staff Member"}
                       </strong>
@@ -130,7 +130,7 @@ export function TaskHistorySection({
                   </span>
                 </div>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Assigned by{" "}
+                  Assigned By:{" "}
                   <strong className="text-foreground/90">
                     {typeof activeTask.assignedBy === "object"
                       ? activeTask.assignedBy?.name

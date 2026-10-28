@@ -1032,7 +1032,7 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
         <div className="flex flex-wrap items-center gap-2">
           {/* Assigned on Date */}
           <div className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-xs">
-            <span className="text-muted-foreground">Assigned:</span>
+            <span className="text-muted-foreground">Assigned Today:</span>
             <span className="font-semibold text-foreground">{metrics.assignedTodayCount}</span>
           </div>
 

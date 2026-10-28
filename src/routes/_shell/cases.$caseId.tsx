@@ -1115,7 +1115,7 @@ function CaseWorkspace() {
                             {typeof h.toUser === "object" ? h.toUser?.name : "—"}
                           </p>
                           <p className="text-muted-foreground mt-0.5">
-                            By {typeof h.assignedBy === "object" ? h.assignedBy?.name : "Admin"} •{" "}
+                            Assigned By: {typeof h.assignedBy === "object" ? h.assignedBy?.name : "Admin"} •{" "}
                             {formatDate(h.timestamp)}
                           </p>
                           {h.note && (
