@@ -196,6 +196,37 @@ async function runSmokeTests() {
     logFail("dist/index.html does not exist");
   }
 
+  // 8. Frontend Dialog Hook & Component Integrity Audit
+  console.log("\n[Suite 5] Frontend Dialog Hook & Component Integrity Audit");
+  const addClientDialogPath = path.resolve(process.cwd(), "src/components/clients/AddClientDialog.tsx");
+  if (fs.existsSync(addClientDialogPath)) {
+    const content = fs.readFileSync(addClientDialogPath, "utf8");
+    const reactImportMatch = content.match(/import\s*\{([^}]+)\}\s*from\s*["']react["']/);
+    if (!reactImportMatch) {
+      logFail("AddClientDialog.tsx missing named imports from 'react'");
+    } else {
+      const imports = reactImportMatch[1].split(",").map((s) => s.trim());
+      if (imports.includes("useEffect")) {
+        logPass("AddClientDialog.tsx properly imports useEffect from 'react'");
+      } else {
+        logFail("AddClientDialog.tsx is missing useEffect import (ReferenceError regression)");
+      }
+      if (imports.includes("useState") && imports.includes("useMemo")) {
+        logPass("AddClientDialog.tsx properly imports useState and useMemo from 'react'");
+      } else {
+        logFail("AddClientDialog.tsx is missing useState or useMemo import");
+      }
+    }
+
+    if (content.includes("setIsCaseTitleManuallyEdited(false)")) {
+      logPass("AddClientDialog.tsx preserves isCaseTitleManuallyEdited reset behavior on open");
+    } else {
+      logFail("AddClientDialog.tsx is missing isCaseTitleManuallyEdited reset");
+    }
+  } else {
+    logFail("src/components/clients/AddClientDialog.tsx does not exist");
+  }
+
   console.log("\n==================================================");
   console.log(`Smoke Test Results: ${passed} Passed, ${failed} Failed`);
   console.log("==================================================\n");
