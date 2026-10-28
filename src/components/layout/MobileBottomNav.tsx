@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useRouterState, useLocation, useSearch } from "@tanstack/react-router";
 import {
   LayoutDashboard,
-  Briefcase,
+  Users,
   CheckSquare,
   MessageCircle,
   MoreHorizontal,
@@ -38,10 +38,10 @@ export function MobileBottomNav() {
       isActive: pathname === "/",
     },
     {
-      to: "/cases",
-      label: "Cases",
-      icon: Briefcase,
-      isActive: pathname.startsWith("/cases"),
+      to: "/clients",
+      label: "Clients",
+      icon: Users,
+      isActive: pathname.startsWith("/clients"),
     },
     {
       to: "/tasks",

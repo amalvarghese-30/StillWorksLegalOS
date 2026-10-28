@@ -6,11 +6,9 @@ import {
   ScrollText,
   Settings,
   ShieldAlert,
-  Briefcase,
   Users,
   MessageCircle,
   CheckSquare,
-  FolderClosed,
   CalendarDays,
   LogOut,
   BarChart3,
@@ -53,11 +51,9 @@ const adminNav: NavItem[] = [
 
 const firmNav: NavItem[] = [
   { to: "/", label: "Dashboard", icon: Gauge, permission: "dashboard" },
-  { to: "/cases", label: "Cases", icon: Briefcase, permission: "cases" },
   { to: "/clients", label: "Clients", icon: Users, permission: "clients" },
   { to: "/tasks", label: "Tasks", icon: CheckSquare, permission: "tasks" },
   { to: "/calendar", label: "Calendar", icon: CalendarDays, permission: "calendar" },
-  { to: "/documents", label: "Documents", icon: FolderClosed, permission: "documents" },
   { to: "/reports", label: "Reports", icon: BarChart3, permission: "reports" },
   { to: "/settings", label: "Settings", icon: Settings },
 ];

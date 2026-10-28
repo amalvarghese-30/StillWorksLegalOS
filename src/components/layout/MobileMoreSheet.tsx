@@ -9,7 +9,6 @@ import {
 } from "@/components/ui/sheet";
 import {
   Users,
-  FolderClosed,
   CalendarDays,
   BarChart3,
   Settings,
@@ -64,13 +63,6 @@ export function MobileMoreSheet({ open, onOpenChange }: MobileMoreSheetProps) {
       desc: "Client directory & contacts",
       icon: Users,
       show: isAdmin || permissions["clients"] !== false,
-    },
-    {
-      to: "/documents",
-      label: "Documents",
-      desc: "Storage, filings & legal drafts",
-      icon: FolderClosed,
-      show: isAdmin || permissions["documents"] !== false,
     },
     {
       to: "/calendar",

@@ -1,10 +1,8 @@
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import {
   LayoutDashboard,
-  Briefcase,
   Users,
   CheckSquare,
-  FolderClosed,
   CalendarDays,
   MessageCircle,
   BarChart3,
@@ -35,10 +33,8 @@ import { UserAvatar } from "@/components/common/UserAvatar";
 
 const primary = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true, permission: "dashboard" as const },
-  { to: "/cases", label: "Cases", icon: Briefcase, permission: "cases" as const },
   { to: "/clients", label: "Clients", icon: Users, permission: "clients" as const },
   { to: "/tasks", label: "Tasks", icon: CheckSquare, permission: "tasks" as const },
-  { to: "/documents", label: "Documents", icon: FolderClosed, permission: "documents" as const },
   { to: "/calendar", label: "Calendar", icon: CalendarDays, permission: "calendar" as const },
   { to: "/chat", label: "Chat", icon: MessageCircle, permission: "chat" as const },
   { to: "/reports", label: "Reports", icon: BarChart3, permission: "reports" as const },

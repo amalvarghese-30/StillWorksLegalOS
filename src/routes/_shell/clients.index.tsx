@@ -1,31 +1,53 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { Plus, Search, Mail, Phone, ShieldCheck, Briefcase, Loader2, UserCheck, Calendar } from "lucide-react";
+import {
+  Plus,
+  Search,
+  Mail,
+  Phone,
+  ShieldCheck,
+  Briefcase,
+  Loader2,
+  UserCheck,
+  Calendar,
+  Users,
+  ChevronRight,
+  Eye,
+  Filter,
+} from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StatusPill } from "@/components/common/StatusPill";
 import { Button } from "@/components/ui/button";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSocketEvent } from "@/lib/socket";
 import { useClients, clientKeys, type ClientRecord } from "@/services/clients";
+import { useCases, caseKeys, type CaseRecord } from "@/services/cases";
 import { AddClientDialog } from "@/components/clients/AddClientDialog";
+import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
 import { formatSafeDate } from "@/lib/dates";
 import { ExportImportMenu } from "@/components/common/ExportImportMenu";
 import { ExcelImportDialog } from "@/components/common/ExcelImportDialog";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_shell/clients/")({
   head: () => ({
     meta: [
-      { title: "Clients · S & S Legal-Tech LLP" },
+      { title: "Clients & Cases · S & S Legal-Tech LLP" },
       {
         name: "description",
-        content: "Client profiles with verification status, matters and relationships in one place.",
+        content: "Client profiles, linked cases, and legal relationships in one centralized workspace.",
       },
-      { property: "og:title", content: "Clients · S & S Legal-Tech LLP" },
+      { property: "og:title", content: "Clients & Cases · S & S Legal-Tech LLP" },
       {
         property: "og:description",
-        content: "Client profiles with verification status, matters and relationships.",
+        content: "Client profiles, linked cases, and legal relationships in one centralized workspace.",
       },
     ],
+  }),
+  validateSearch: (search: Record<string, unknown>): { view?: "clients" | "cases"; search?: string; status?: string } => ({
+    ...(search["view"] === "cases" ? { view: "cases" } : { view: "clients" }),
+    ...(typeof search["search"] === "string" ? { search: search["search"] } : {}),
+    ...(typeof search["status"] === "string" ? { status: search["status"] } : {}),
   }),
   component: ClientsPage,
 });
@@ -41,31 +63,36 @@ function toneForTag(tag: string): "primary" | "indigo" | "violet" | "success" | 
   return map[tag] ?? "muted";
 }
 
-function toneForKYC(kyc: string): "primary" | "success" | "warning" | "destructive" {
-  const map: Record<string, "primary" | "success" | "warning" | "destructive"> = {
-    Verified: "success",
-    Pending: "warning",
-    Rejected: "destructive",
+function toneForCaseStatus(s: string): "primary" | "success" | "warning" | "muted" | "destructive" | "indigo" | "violet" {
+  const map: Record<string, "primary" | "success" | "warning" | "muted" | "destructive" | "indigo" | "violet"> = {
+    Active: "success",
+    Urgent: "destructive",
+    "On Hold": "warning",
+    Closed: "muted",
   };
-  return map[kyc] ?? "warning";
+  return map[s] ?? "primary";
 }
 
 function ClientCard({ c }: { c: ClientRecord }) {
   return (
-    <Link to="/clients/$clientId" params={{ clientId: c._id }}>
-      <article className="lift rounded-xl sm:rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-soft transition-colors hover:border-primary/30">
-        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
-          <span className="gradient-primary grid size-12 shrink-0 place-items-center rounded-full font-display font-semibold text-primary-foreground">
-            {c.name.slice(0, 1)}
-          </span>
-          <div className="min-w-0">
-            <h2 className="truncate font-semibold">{c.name}</h2>
-            <p className="truncate text-caption text-muted-foreground">
-              {c.type} · Since {formatSafeDate(c.createdAt, "—")}
-            </p>
+    <article className="lift group flex flex-col justify-between rounded-xl sm:rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-soft transition-all duration-150 hover:border-primary/40">
+      <div>
+        <Link to="/clients/$clientId" params={{ clientId: c._id }}>
+          <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
+            <span className="gradient-primary grid size-12 shrink-0 place-items-center rounded-full font-display font-semibold text-primary-foreground shadow-xs">
+              {c.name.slice(0, 1)}
+            </span>
+            <div className="min-w-0">
+              <h2 className="truncate font-semibold text-foreground group-hover:text-primary transition-colors">
+                {c.name}
+              </h2>
+              <p className="truncate text-caption text-muted-foreground">
+                {c.type} · Since {formatSafeDate(c.createdAt, "—")}
+              </p>
+            </div>
+            <StatusPill tone={toneForTag(c.tag)}>{c.tag}</StatusPill>
           </div>
-          <StatusPill tone={toneForTag(c.tag)}>{c.tag}</StatusPill>
-        </div>
+        </Link>
 
         <ul className="mt-5 space-y-2 text-helper text-muted-foreground">
           <li className="flex items-center gap-2">
@@ -102,11 +129,13 @@ function ClientCard({ c }: { c: ClientRecord }) {
             )}
           </div>
         )}
+      </div>
 
-        <div className="mt-5 flex items-center justify-between border-t border-border pt-4">
-          <span className="flex items-center gap-2 text-helper">
-            <Briefcase size={16} strokeWidth={1.75} className="text-muted-foreground" />
-            <span className="num font-medium">{c.subClients?.length ?? 0}</span> sub-clients
+      <div className="mt-5 border-t border-border pt-4">
+        <div className="flex items-center justify-between">
+          <span className="flex items-center gap-2 text-helper text-muted-foreground">
+            <Users size={16} strokeWidth={1.75} />
+            <span className="num font-medium text-foreground">{c.subClients?.length ?? 0}</span> sub-clients
           </span>
           <span className="flex items-center gap-1.5">
             <ShieldCheck
@@ -114,23 +143,65 @@ function ClientCard({ c }: { c: ClientRecord }) {
               strokeWidth={1.75}
               className={c.kyc === "Verified" ? "text-success" : "text-warning"}
             />
-            <span className="text-helper">{c.kyc === "Verified" ? "Verified" : "Pending Verification"}</span>
+            <span className="text-helper">{c.kyc === "Verified" ? "Verified" : "Pending"}</span>
           </span>
         </div>
-      </article>
-    </Link>
+
+        {/* Direct access to this client's cases */}
+        <div className="mt-3.5 flex items-center justify-between border-t border-border/50 pt-2.5">
+          <span className="text-caption text-muted-foreground">Cases & matters</span>
+          <Link
+            to="/clients/$clientId"
+            params={{ clientId: c._id }}
+            search={{ tab: "cases" }}
+            className="inline-flex items-center gap-1 text-caption font-semibold text-primary hover:underline transition-colors"
+          >
+            <Briefcase size={13} />
+            View Cases <ChevronRight size={13} />
+          </Link>
+        </div>
+      </div>
+    </article>
   );
 }
 
+const CASE_STATUS_FILTERS = ["All", "Active", "Urgent", "On Hold", "Closed"] as const;
+
 function ClientsPage() {
-  const [search, setSearch] = useState("");
-  const [showAddDialog, setShowAddDialog] = useState(false);
+  const searchParams = Route.useSearch();
+  const [viewMode, setViewMode] = useState<"clients" | "cases">(searchParams.view || "clients");
+  const [clientSearch, setClientSearch] = useState(searchParams.search || "");
+  const [caseSearch, setCaseSearch] = useState("");
+  const [caseStatusFilter, setCaseStatusFilter] = useState<string>(searchParams.status || "All");
+
+  const [showAddClientDialog, setShowAddClientDialog] = useState(false);
+  const [showAddCaseDialog, setShowAddCaseDialog] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
+
   const queryClient = useQueryClient();
-  const { data, isLoading, isError, error } = useClients(
-    search.trim() ? { search } : {},
+  const navigate = useNavigate();
+
+  const {
+    data: clientsData,
+    isLoading: isClientsLoading,
+    isError: isClientsError,
+    error: clientsError,
+  } = useClients(clientSearch.trim() ? { search: clientSearch } : {});
+
+  const {
+    data: casesData,
+    isLoading: isCasesLoading,
+    isError: isCasesError,
+    error: casesError,
+  } = useCases(
+    {
+      search: caseSearch.trim() || undefined,
+      status: caseStatusFilter === "All" ? undefined : caseStatusFilter,
+    } as any,
+    { enabled: true }
   );
 
+  // Socket sync
   useSocketEvent("client:created", () => {
     queryClient.invalidateQueries({ queryKey: clientKeys.all });
   });
@@ -140,105 +211,354 @@ function ClientsPage() {
   useSocketEvent("client:deleted", () => {
     queryClient.invalidateQueries({ queryKey: clientKeys.all });
   });
+  useSocketEvent("case:created", () => {
+    queryClient.invalidateQueries({ queryKey: caseKeys.all });
+  });
+  useSocketEvent("case:updated", () => {
+    queryClient.invalidateQueries({ queryKey: caseKeys.all });
+  });
+  useSocketEvent("case:deleted", () => {
+    queryClient.invalidateQueries({ queryKey: caseKeys.all });
+  });
+
+  const totalClients = clientsData?.total ?? 0;
+  const totalCases = casesData?.total ?? casesData?.cases?.length ?? 0;
 
   return (
     <div>
       <PageHeader
-        breadcrumb={[{ label: "S & S", to: "/" }, { label: "Clients" }]}
-        title="Clients"
-        subtitle={`${data?.total ?? "—"} relationships — individuals, corporates and their sub-clients.`}
+        breadcrumb={[{ label: "S & S", to: "/" }, { label: "Clients & Cases" }]}
+        title="Clients & Cases"
+        subtitle={
+          viewMode === "clients"
+            ? `${totalClients} client profiles — individuals, corporates, and their legal matters.`
+            : `${totalCases} active and scheduled legal cases across all client portfolios.`
+        }
         actions={
-          <div className="flex items-center gap-2">
-            <ExportImportMenu
-              entityType="clients"
-              data={data?.clients || []}
-              onImportClick={() => setShowImportDialog(true)}
-            />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              className="rounded-md gap-1.5 shadow-2xs border-border text-foreground hover:bg-muted"
+              onClick={() => setShowAddCaseDialog(true)}
+            >
+              <Briefcase size={16} strokeWidth={1.75} />
+              Add Case
+            </Button>
             <Button
               className="gradient-primary rounded-md text-primary-foreground shadow-soft transition-transform duration-200 hover:-translate-y-0.5"
-              onClick={() => setShowAddDialog(true)}
+              onClick={() => setShowAddClientDialog(true)}
             >
               <Plus size={17} strokeWidth={2} />
-              Add client
+              Add Client
             </Button>
+            <ExportImportMenu
+              entityType={viewMode === "cases" ? "cases" : "clients"}
+              data={viewMode === "cases" ? (casesData?.cases || []) : (clientsData?.clients || [])}
+              onImportClick={() => setShowImportDialog(true)}
+            />
           </div>
         }
       />
 
-      <label className="mb-6 flex items-center gap-3 rounded-pill border border-border bg-card px-4 py-2.5 shadow-soft">
-        <Search size={18} strokeWidth={1.75} className="shrink-0 text-muted-foreground" />
-        <input
-          type="search"
-          aria-label="Search clients"
-          placeholder="Search clients by name, phone, PAN, Aadhar…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="min-w-0 flex-1 bg-transparent text-helper outline-none"
-        />
-      </label>
+      {/* View Switcher Tabs */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
+        <div className="inline-flex rounded-lg border border-border bg-muted/40 p-1 shadow-2xs">
+          <button
+            type="button"
+            onClick={() => setViewMode("clients")}
+            className={cn(
+              "flex items-center gap-2 rounded-md px-3.5 py-1.5 text-helper font-medium transition-colors",
+              viewMode === "clients"
+                ? "bg-card text-foreground shadow-xs font-semibold"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <Users size={16} />
+            Clients Directory ({totalClients})
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("cases")}
+            className={cn(
+              "flex items-center gap-2 rounded-md px-3.5 py-1.5 text-helper font-medium transition-colors",
+              viewMode === "cases"
+                ? "bg-card text-foreground shadow-xs font-semibold"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <Briefcase size={16} />
+            All Client Cases ({totalCases})
+          </button>
+        </div>
 
-      {/* Loading */}
-      {isLoading && (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="rounded-lg border border-border bg-card p-6 shadow-soft">
-              <div className="flex items-center gap-3">
-                <div className="size-12 animate-pulse rounded-full bg-muted" />
-                <div className="flex-1 space-y-2">
-                  <div className="h-4 w-32 animate-pulse rounded bg-muted" />
-                  <div className="h-3 w-24 animate-pulse rounded bg-muted" />
+        {viewMode === "cases" && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-caption text-muted-foreground mr-1 flex items-center gap-1">
+              <Filter size={13} /> Status:
+            </span>
+            {CASE_STATUS_FILTERS.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setCaseStatusFilter(s)}
+                className={cn(
+                  "rounded-pill px-2.5 py-1 text-caption font-medium transition-colors",
+                  caseStatusFilter === s
+                    ? "bg-primary text-primary-foreground shadow-xs"
+                    : "bg-muted/70 text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── CLIENTS DIRECTORY VIEW ── */}
+      {viewMode === "clients" && (
+        <>
+          <label className="mb-6 flex items-center gap-3 rounded-pill border border-border bg-card px-4 py-2.5 shadow-soft">
+            <Search size={18} strokeWidth={1.75} className="shrink-0 text-muted-foreground" />
+            <input
+              type="search"
+              aria-label="Search clients"
+              placeholder="Search clients by name, phone, PAN, Aadhar…"
+              value={clientSearch}
+              onChange={(e) => setClientSearch(e.target.value)}
+              className="min-w-0 flex-1 bg-transparent text-helper outline-none"
+            />
+          </label>
+
+          {/* Loading */}
+          {isClientsLoading && (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="rounded-lg border border-border bg-card p-6 shadow-soft">
+                  <div className="flex items-center gap-3">
+                    <div className="size-12 animate-pulse rounded-full bg-muted" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-4 w-32 animate-pulse rounded bg-muted" />
+                      <div className="h-3 w-24 animate-pulse rounded bg-muted" />
+                    </div>
+                  </div>
+                  <div className="mt-5 space-y-2">
+                    <div className="h-3 w-48 animate-pulse rounded bg-muted" />
+                    <div className="h-3 w-40 animate-pulse rounded bg-muted" />
+                  </div>
                 </div>
-              </div>
-              <div className="mt-5 space-y-2">
-                <div className="h-3 w-48 animate-pulse rounded bg-muted" />
-                <div className="h-3 w-40 animate-pulse rounded bg-muted" />
+              ))}
+            </div>
+          )}
+
+          {/* Error */}
+          {isClientsError && !isClientsLoading && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-8 text-center">
+              <p className="font-medium text-destructive">Failed to load clients</p>
+              <p className="mt-1 text-helper text-muted-foreground">
+                {clientsError instanceof Error ? clientsError.message : "Could not connect to the server."}
+              </p>
+            </div>
+          )}
+
+          {/* Empty */}
+          {!isClientsLoading && !isClientsError && clientsData?.clients.length === 0 && (
+            <div className="rounded-lg border border-border bg-card p-16 text-center shadow-soft">
+              <Users size={36} className="mx-auto text-muted-foreground/60 mb-2" />
+              <p className="text-title font-semibold">No clients found</p>
+              <p className="mt-2 text-helper text-muted-foreground">
+                {clientSearch ? "No clients match your search keywords." : "Add your first client to get started."}
+              </p>
+              <Button
+                className="mt-4 gradient-primary rounded-md text-primary-foreground"
+                onClick={() => setShowAddClientDialog(true)}
+              >
+                <Plus size={16} /> Add client
+              </Button>
+            </div>
+          )}
+
+          {/* Data */}
+          {!isClientsLoading && !isClientsError && clientsData && (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {clientsData.clients.map((c) => (
+                <ClientCard key={c._id} c={c} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── ALL CLIENT CASES VIEW ── */}
+      {viewMode === "cases" && (
+        <>
+          <label className="mb-6 flex items-center gap-3 rounded-pill border border-border bg-card px-4 py-2.5 shadow-soft">
+            <Search size={18} strokeWidth={1.75} className="shrink-0 text-muted-foreground" />
+            <input
+              type="search"
+              aria-label="Search cases"
+              placeholder="Search cases by case number, title, client party, counsel, or court…"
+              value={caseSearch}
+              onChange={(e) => setCaseSearch(e.target.value)}
+              className="min-w-0 flex-1 bg-transparent text-helper outline-none"
+            />
+          </label>
+
+          {/* Loading */}
+          {isCasesLoading && (
+            <div className="flex justify-center py-16">
+              <Loader2 size={32} className="animate-spin text-muted-foreground" />
+            </div>
+          )}
+
+          {/* Error */}
+          {isCasesError && !isCasesLoading && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-8 text-center">
+              <p className="font-medium text-destructive">Failed to load cases</p>
+              <p className="mt-1 text-helper text-muted-foreground">
+                {casesError instanceof Error ? casesError.message : "Could not connect to the server."}
+              </p>
+            </div>
+          )}
+
+          {/* Empty */}
+          {!isCasesLoading && !isCasesError && (!casesData?.cases || casesData.cases.length === 0) && (
+            <div className="rounded-lg border border-border bg-card p-16 text-center shadow-soft">
+              <Briefcase size={36} className="mx-auto text-muted-foreground/60 mb-2" />
+              <p className="text-title font-semibold">No cases found</p>
+              <p className="mt-2 text-helper text-muted-foreground">
+                {caseSearch || caseStatusFilter !== "All"
+                  ? "No cases match the selected filter criteria."
+                  : "Create your first legal matter or link one to an existing client."}
+              </p>
+              <Button
+                className="mt-4 gradient-primary rounded-md text-primary-foreground gap-1.5"
+                onClick={() => setShowAddCaseDialog(true)}
+              >
+                <Plus size={16} /> Add Case
+              </Button>
+            </div>
+          )}
+
+          {/* Cases List */}
+          {!isCasesLoading && !isCasesError && casesData?.cases && casesData.cases.length > 0 && (
+            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-helper">
+                  <thead className="border-b border-border bg-muted/40 text-caption font-semibold uppercase tracking-wider text-muted-foreground">
+                    <tr>
+                      <th className="px-4 py-3 sm:px-6">Case #</th>
+                      <th className="px-4 py-3 sm:px-6">Matter Title & Forum</th>
+                      <th className="px-4 py-3 sm:px-6">Client / Parties</th>
+                      <th className="px-4 py-3 sm:px-6">Status</th>
+                      <th className="px-4 py-3 sm:px-6">Assigned To</th>
+                      <th className="px-4 py-3 sm:px-6">Next Hearing</th>
+                      <th className="px-4 py-3 sm:px-6 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {casesData.cases.map((c) => {
+                      const clientParty = c.parties?.find((p) => p.type === "client") || c.parties?.[0];
+                      const clientPartyId =
+                        clientParty?.clientId && typeof clientParty.clientId === "object"
+                          ? (clientParty.clientId as any)._id
+                          : clientParty?.clientId;
+
+                      return (
+                        <tr key={c._id} className="transition-colors hover:bg-muted/30">
+                          <td className="px-4 py-3.5 sm:px-6 font-mono text-xs font-semibold text-foreground whitespace-nowrap">
+                            <div>{c.number}</div>
+                            {c.courtCaseId && (
+                              <div className="text-[11px] font-normal text-muted-foreground">{c.courtCaseId}</div>
+                            )}
+                          </td>
+                          <td className="px-4 py-3.5 sm:px-6 min-w-[200px]">
+                            <Link
+                              to="/cases/$caseId"
+                              params={{ caseId: c._id }}
+                              className="font-medium text-foreground hover:text-primary transition-colors block truncate max-w-sm"
+                            >
+                              {c.title}
+                            </Link>
+                            <p className="text-caption text-muted-foreground truncate max-w-sm">
+                              {c.court ? `${c.court} · ` : ""}
+                              {c.mainCategory || c.practice || c.category || "General Legal"}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3.5 sm:px-6 whitespace-nowrap">
+                            {clientParty ? (
+                              clientPartyId ? (
+                                <Link
+                                  to="/clients/$clientId"
+                                  params={{ clientId: String(clientPartyId) }}
+                                  className="font-medium text-primary hover:underline"
+                                >
+                                  {clientParty.name}
+                                </Link>
+                              ) : (
+                                <span className="text-foreground">{clientParty.name}</span>
+                              )
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3.5 sm:px-6 whitespace-nowrap">
+                            <StatusPill tone={toneForCaseStatus(c.status)}>{c.status}</StatusPill>
+                          </td>
+                          <td className="px-4 py-3.5 sm:px-6 whitespace-nowrap text-muted-foreground">
+                            {c.assignedTo?.name || "Unassigned"}
+                          </td>
+                          <td className="px-4 py-3.5 sm:px-6 whitespace-nowrap text-muted-foreground">
+                            {formatSafeDate(c.nextHearing, "Not scheduled")}
+                          </td>
+                          <td className="px-4 py-3.5 sm:px-6 text-right whitespace-nowrap">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="rounded-md gap-1 h-8 px-2.5 text-caption"
+                              onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: c._id } })}
+                            >
+                              <Eye size={14} /> View
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
 
-      {/* Error */}
-      {isError && !isLoading && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-8 text-center">
-          <p className="font-medium text-destructive">Failed to load clients</p>
-          <p className="mt-1 text-helper text-muted-foreground">
-            {error instanceof Error ? error.message : "Could not connect to the server."}
-          </p>
-        </div>
+      {/* Add Client Dialog */}
+      {showAddClientDialog && (
+        <AddClientDialog open={showAddClientDialog} onClose={() => setShowAddClientDialog(false)} />
       )}
 
-      {/* Empty */}
-      {!isLoading && !isError && data?.clients.length === 0 && (
-        <div className="rounded-lg border border-border bg-card p-16 text-center shadow-soft">
-          <p className="text-title font-semibold">No clients yet</p>
-          <p className="mt-2 text-helper text-muted-foreground">
-            {search ? "No clients match your search. Try different keywords." : "Add your first client to get started."}
-          </p>
-        </div>
+      {/* Add Case Dialog */}
+      {showAddCaseDialog && (
+        <AddCaseDialog
+          open={showAddCaseDialog}
+          onClose={() => setShowAddCaseDialog(false)}
+          onCaseCreated={() => {
+            queryClient.invalidateQueries({ queryKey: caseKeys.all });
+            queryClient.invalidateQueries({ queryKey: clientKeys.all });
+          }}
+        />
       )}
 
-      {/* Data */}
-      {!isLoading && !isError && data && (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {data.clients.map((c) => (
-            <ClientCard key={c._id} c={c} />
-          ))}
-        </div>
-      )}
-
-      {showAddDialog && (
-        <AddClientDialog open={showAddDialog} onClose={() => setShowAddDialog(false)} />
-      )}
-
+      {/* Excel Import Dialog */}
       {showImportDialog && (
         <ExcelImportDialog
           open={showImportDialog}
           onClose={() => setShowImportDialog(false)}
-          entityType="clients"
-          existingRecords={data?.clients || []}
+          entityType={viewMode === "cases" ? "cases" : "clients"}
+          existingRecords={viewMode === "cases" ? (casesData?.cases || []) : (clientsData?.clients || [])}
           onImportSuccess={() => {
             queryClient.invalidateQueries({ queryKey: clientKeys.all });
+            queryClient.invalidateQueries({ queryKey: caseKeys.all });
           }}
         />
       )}

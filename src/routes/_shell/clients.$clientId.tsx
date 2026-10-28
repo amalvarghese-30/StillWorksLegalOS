@@ -5,7 +5,7 @@ import {
   Phone, Mail, MapPin, Loader2, Edit3, ChevronDown,
   Building2, FileText, Trash2, Archive,
   Download, Eye, RefreshCw, ExternalLink, CheckSquare, AlertTriangle,
-  Activity,
+  Activity, List, LayoutGrid, Search, Filter,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
@@ -13,6 +13,7 @@ import { StatusPill, toneForStatus } from "@/components/common/StatusPill";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,6 +41,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { EditClientDialog } from "@/components/clients/EditClientDialog";
 import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
+import { EditCaseDialog } from "@/components/cases/EditCaseDialog";
 import { AddTaskDialog } from "@/components/tasks/AddTaskDialog";
 import { UploadDocumentDialog } from "@/components/documents/UploadDocumentDialog";
 import { DocumentInlinePreview } from "@/components/documents/DocumentInlinePreview";
@@ -47,6 +49,7 @@ import { downloadDocument } from "@/services/documents";
 import { DocumentPreviewModal } from "@/components/documents/DocumentPreviewModal";
 import { formatSafeDate, formatSafeDateTime } from "@/lib/dates";
 import { useTasks, type TaskRecord } from "@/services/tasks";
+import { type CaseRecord } from "@/services/cases";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import { toast } from "sonner";
 
@@ -58,6 +61,9 @@ export const Route = createFileRoute("/_shell/clients/$clientId")({
       { property: "og:title", content: "Client profile · S & S Legal-Tech LLP" },
       { property: "og:description", content: "Client details, Identity Verification, property, and sub-client records." },
     ],
+  }),
+  validateSearch: (search: Record<string, unknown>): { tab?: string } => ({
+    ...(typeof search["tab"] === "string" ? { tab: search["tab"] } : {}),
   }),
   component: ClientProfile,
 });
@@ -389,11 +395,25 @@ function SubClientModal({
 
 function ClientProfile() {
   const { clientId } = Route.useParams();
+  const searchParams = Route.useSearch();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const { data, isLoading, isError } = useClient(clientId);
   const record = data?.client;
-  const [active, setActive] = useState("overview");
+  const [active, setActive] = useState(searchParams.tab || "overview");
+
+  useEffect(() => {
+    if (searchParams.tab) {
+      setActive(searchParams.tab);
+    }
+  }, [searchParams.tab]);
+
+  // State for cases management inside client profile
+  const [caseSearch, setCaseSearch] = useState("");
+  const [caseStatusFilter, setCaseStatusFilter] = useState("All");
+  const [caseViewMode, setCaseViewMode] = useState<"table" | "cards">("table");
+  const [editingCase, setEditingCase] = useState<CaseRecord | null>(null);
+  const [taskCaseId, setTaskCaseId] = useState<string | undefined>(undefined);
 
   const navigate = useNavigate();
   const deleteClient = useDeleteClient();
@@ -501,6 +521,26 @@ function ClientProfile() {
     { id: "subclients" as const, label: "Sub-clients", icon: Users, badge: record?.subClients?.length ? record.subClients.length : null },
     { id: "activity" as const, label: "Activity", icon: Activity, badge: activityItems.length },
   ], [casesData?.cases?.length, tasksData?.tasks?.length, docsData?.documents?.length, record?.kyc, record?.propertyDetails?.address, record?.subClients?.length, activityItems.length]);
+
+  const filteredClientCases = useMemo(() => {
+    let list = casesData?.cases || [];
+    if (caseStatusFilter !== "All") {
+      list = list.filter((c) => c.status === caseStatusFilter);
+    }
+    if (caseSearch.trim()) {
+      const q = caseSearch.toLowerCase().trim();
+      list = list.filter(
+        (c) =>
+          c.title?.toLowerCase().includes(q) ||
+          c.number?.toLowerCase().includes(q) ||
+          c.courtCaseId?.toLowerCase().includes(q) ||
+          c.court?.toLowerCase().includes(q) ||
+          c.practice?.toLowerCase().includes(q) ||
+          c.assignedTo?.name?.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [casesData?.cases, caseStatusFilter, caseSearch]);
 
   const handleDeleteClient = async () => {
     setIsDeleting(true);
@@ -689,19 +729,103 @@ function ClientProfile() {
           {/* ── Cases ── */}
           {active === "cases" && (
             <SectionCard
-              title="Linked Cases"
-              description="Matters and proceedings where this client is an active party."
+              title="Associated Cases & Legal Matters"
+              description="Matters, court proceedings, and legal filings linked to this client."
               icon={Briefcase}
               action={
                 <Button
                   size="sm"
-                  className="rounded-md gap-1.5"
+                  className="rounded-md gap-1.5 gradient-primary text-primary-foreground shadow-xs"
                   onClick={() => setShowAddCaseDialog(true)}
                 >
                   <Plus size={14} /> Add Case
                 </Button>
               }
             >
+              {/* Summary stat cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                <div className="rounded-lg border border-border bg-card p-3 shadow-2xs">
+                  <p className="text-caption text-muted-foreground font-medium">Total Matters</p>
+                  <p className="num text-xl font-bold text-foreground mt-0.5">{casesData?.cases?.length ?? 0}</p>
+                </div>
+                <div className="rounded-lg border border-border bg-card p-3 shadow-2xs">
+                  <p className="text-caption text-emerald-600 dark:text-emerald-400 font-medium">Active Matters</p>
+                  <p className="num text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                    {casesData?.cases?.filter((c) => c.status === "Active").length ?? 0}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-border bg-card p-3 shadow-2xs">
+                  <p className="text-caption text-rose-600 dark:text-rose-400 font-medium">Urgent Matters</p>
+                  <p className="num text-xl font-bold text-rose-600 dark:text-rose-400 mt-0.5">
+                    {casesData?.cases?.filter((c) => c.status === "Urgent" || c.priority === "High").length ?? 0}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-border bg-card p-3 shadow-2xs">
+                  <p className="text-caption text-muted-foreground font-medium">Closed / Resolved</p>
+                  <p className="num text-xl font-bold text-muted-foreground mt-0.5">
+                    {casesData?.cases?.filter((c) => c.status === "Closed").length ?? 0}
+                  </p>
+                </div>
+              </div>
+
+              {/* Toolbar: Search, Status Filter, View Toggle */}
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div className="relative flex-1 min-w-[200px] max-w-sm">
+                  <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                  <Input
+                    placeholder="Search cases by number, title, court, counsel..."
+                    value={caseSearch}
+                    onChange={(e) => setCaseSearch(e.target.value)}
+                    className="pl-9 h-8 text-xs rounded-md"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 rounded-md border border-border bg-muted/40 p-0.5">
+                    {["All", "Active", "Urgent", "On Hold", "Closed"].map((st) => (
+                      <button
+                        key={st}
+                        type="button"
+                        onClick={() => setCaseStatusFilter(st)}
+                        className={cn(
+                          "rounded px-2.5 py-1 text-caption font-medium transition-colors",
+                          caseStatusFilter === st
+                            ? "bg-card text-foreground shadow-2xs font-semibold"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        {st}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="hidden sm:inline-flex rounded-md border border-border bg-muted/40 p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setCaseViewMode("table")}
+                      className={cn(
+                        "rounded p-1 transition-colors",
+                        caseViewMode === "table" ? "bg-card text-foreground shadow-2xs" : "text-muted-foreground hover:text-foreground"
+                      )}
+                      title="Table View"
+                    >
+                      <List size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCaseViewMode("cards")}
+                      className={cn(
+                        "rounded p-1 transition-colors",
+                        caseViewMode === "cards" ? "bg-card text-foreground shadow-2xs" : "text-muted-foreground hover:text-foreground"
+                      )}
+                      title="Cards View"
+                    >
+                      <LayoutGrid size={16} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               {isCasesLoading ? (
                 <div className="flex justify-center py-12">
                   <Loader2 size={28} className="animate-spin text-muted-foreground" />
@@ -718,12 +842,14 @@ function ClientProfile() {
                     <RefreshCw size={14} /> Retry
                   </Button>
                 </div>
-              ) : !casesData?.cases || casesData.cases.length === 0 ? (
+              ) : filteredClientCases.length === 0 ? (
                 <div className="rounded-lg border border-dashed p-12 text-center">
                   <Briefcase size={32} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
-                  <p className="mt-4 font-medium">No cases linked to this client</p>
+                  <p className="mt-4 font-medium">No cases found</p>
                   <p className="mt-1 text-helper text-muted-foreground">
-                    Create a case linked to this client or add this client to an existing matter.
+                    {caseSearch || caseStatusFilter !== "All"
+                      ? "No cases match the selected filter criteria."
+                      : "Create a case linked to this client or add this client to an existing matter."}
                   </p>
                   <Button
                     size="sm"
@@ -731,43 +857,185 @@ function ClientProfile() {
                     className="mt-4 gap-1.5 rounded-md"
                     onClick={() => setShowAddCaseDialog(true)}
                   >
-                    <Plus size={14} /> Add first case
+                    <Plus size={14} /> Add Case
                   </Button>
+                </div>
+              ) : caseViewMode === "table" ? (
+                <div className="overflow-hidden rounded-lg border border-border bg-card">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-helper">
+                      <thead className="border-b border-border bg-muted/40 text-caption font-semibold uppercase tracking-wider text-muted-foreground">
+                        <tr>
+                          <th className="px-4 py-2.5">Case #</th>
+                          <th className="px-4 py-2.5">Matter Title & Forum</th>
+                          <th className="px-4 py-2.5">Category / Practice</th>
+                          <th className="px-4 py-2.5">Client Role</th>
+                          <th className="px-4 py-2.5">Status</th>
+                          <th className="px-4 py-2.5">Assigned To</th>
+                          <th className="px-4 py-2.5">Next Hearing</th>
+                          <th className="px-4 py-2.5 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/60">
+                        {filteredClientCases.map((c) => {
+                          const clientParty = c.parties?.find(
+                            (p) => p.clientId === clientId || p.name?.toLowerCase() === record.name.toLowerCase()
+                          );
+                          return (
+                            <tr key={c._id} className="transition-colors hover:bg-muted/30">
+                              <td className="px-4 py-3 font-mono text-xs font-semibold text-foreground whitespace-nowrap">
+                                <div>{c.number}</div>
+                                {c.courtCaseId && (
+                                  <div className="text-[11px] font-normal text-muted-foreground">{c.courtCaseId}</div>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 min-w-[200px]">
+                                <Link
+                                  to="/cases/$caseId"
+                                  params={{ caseId: c._id }}
+                                  className="font-medium text-foreground hover:text-primary transition-colors block truncate max-w-xs"
+                                >
+                                  {c.title}
+                                </Link>
+                                {c.court && <span className="text-caption text-muted-foreground block truncate">{c.court}</span>}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
+                                {c.practice || (c as any).category || "General Practice"}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                {clientParty?.role ? (
+                                  <span className="inline-block rounded-md bg-muted px-2 py-0.5 text-caption font-medium text-foreground">
+                                    {clientParty.role}
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground text-caption">—</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <StatusPill tone={toneForStatus(c.status)}>{c.status}</StatusPill>
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
+                                {c.assignedTo?.name || "Unassigned"}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
+                                {formatDate(c.nextHearing)}
+                              </td>
+                              <td className="px-4 py-3 text-right whitespace-nowrap">
+                                <div className="flex items-center justify-end gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 px-2 text-caption gap-1 text-primary hover:text-primary"
+                                    asChild
+                                  >
+                                    <Link to="/cases/$caseId" params={{ caseId: c._id }}>
+                                      <Eye size={13} /> View
+                                    </Link>
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 px-2 text-caption gap-1 text-muted-foreground hover:text-foreground"
+                                    onClick={() => setEditingCase(c as unknown as CaseRecord)}
+                                  >
+                                    <Edit3 size={13} /> Edit
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 px-2 text-caption gap-1 text-muted-foreground hover:text-foreground"
+                                    onClick={() => {
+                                      setTaskCaseId(c._id);
+                                      setShowAddTaskDialog(true);
+                                    }}
+                                  >
+                                    <CheckSquare size={13} /> Task
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               ) : (
                 <div className="grid gap-4 sm:grid-cols-2">
-                  {casesData.cases.map((c) => (
-                    <div
-                      key={c._id}
-                      className="group flex flex-col justify-between rounded-lg border border-border p-4 transition-colors hover:border-primary/50 hover:bg-muted/30"
-                    >
-                      <div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-mono text-caption text-muted-foreground font-semibold">
-                            {c.number}
-                          </span>
-                          <StatusPill tone={toneForStatus(c.status)}>
-                            {c.status}
-                          </StatusPill>
+                  {filteredClientCases.map((c) => {
+                    const clientParty = c.parties?.find(
+                      (p) => p.clientId === clientId || p.name?.toLowerCase() === record.name.toLowerCase()
+                    );
+                    return (
+                      <div
+                        key={c._id}
+                        className="group flex flex-col justify-between rounded-lg border border-border p-4 transition-colors hover:border-primary/50 hover:bg-muted/30"
+                      >
+                        <div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-mono text-caption text-muted-foreground font-semibold">
+                              {c.number}
+                            </span>
+                            <StatusPill tone={toneForStatus(c.status)}>{c.status}</StatusPill>
+                          </div>
+                          <Link
+                            to="/cases/$caseId"
+                            params={{ caseId: c._id }}
+                            className="mt-2 block font-semibold text-foreground group-hover:text-primary transition-colors"
+                          >
+                            {c.title}
+                          </Link>
+                          <p className="mt-1 text-caption text-muted-foreground">
+                            {c.court ? `${c.court} · ` : ""}
+                            {c.practice || (c as any).category || "General Practice"}
+                          </p>
+                          {clientParty?.role && (
+                            <span className="mt-2 inline-block rounded-md bg-muted px-2 py-0.5 text-caption font-medium text-foreground">
+                              Role: {clientParty.role}
+                            </span>
+                          )}
                         </div>
-                        <Link
-                          to="/cases/$caseId"
-                          params={{ caseId: c._id }}
-                          className="mt-2 block font-semibold text-foreground group-hover:text-primary transition-colors"
-                        >
-                          {c.title}
-                        </Link>
-                        <p className="mt-1 text-caption text-muted-foreground">
-                          {c.practice || "General Practice"}
-                        </p>
-                      </div>
 
-                      <div className="mt-4 border-t border-border/60 pt-3 text-caption flex items-center justify-between text-muted-foreground">
-                        <span>Assigned To: {c.assignedTo?.name || "Unassigned"}</span>
-                        <span>Hearing: {formatDate(c.nextHearing)}</span>
+                        <div className="mt-4 border-t border-border/60 pt-3 flex flex-col gap-2">
+                          <div className="text-caption flex items-center justify-between text-muted-foreground">
+                            <span>Assigned To: {c.assignedTo?.name || "Unassigned"}</span>
+                            <span>Hearing: {formatDate(c.nextHearing)}</span>
+                          </div>
+                          <div className="flex items-center justify-end gap-1.5 pt-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-caption gap-1 text-primary hover:text-primary"
+                              asChild
+                            >
+                              <Link to="/cases/$caseId" params={{ caseId: c._id }}>
+                                <Eye size={13} /> View
+                              </Link>
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-caption gap-1 text-muted-foreground hover:text-foreground"
+                              onClick={() => setEditingCase(c as unknown as CaseRecord)}
+                            >
+                              <Edit3 size={13} /> Edit
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-caption gap-1 text-muted-foreground hover:text-foreground"
+                              onClick={() => {
+                                setTaskCaseId(c._id);
+                                setShowAddTaskDialog(true);
+                              }}
+                            >
+                              <CheckSquare size={13} /> Task
+                            </Button>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </SectionCard>
@@ -1241,13 +1509,43 @@ function ClientProfile() {
         onClose={() => setShowAddCaseDialog(false)}
         preselectedClientId={record._id}
         preselectedClientName={record.name}
+        onCaseCreated={() => {
+          refetchCases();
+        }}
       />
 
       <AddTaskDialog
         open={showAddTaskDialog}
-        onClose={() => setShowAddTaskDialog(false)}
+        onClose={() => {
+          setShowAddTaskDialog(false);
+          setTaskCaseId(undefined);
+        }}
+        initialCaseId={taskCaseId}
         initialClientId={record._id}
       />
+
+      {editingCase && (
+        <EditCaseDialog
+          open={!!editingCase}
+          onClose={() => {
+            setEditingCase(null);
+            refetchCases();
+          }}
+          record={{
+            ...editingCase,
+            description: (editingCase as any).description || "",
+            notes: (editingCase as any).notes || [],
+            timeline: (editingCase as any).timeline || [],
+            tags: (editingCase as any).tags || [],
+            progress: (editingCase as any).progress ?? 0,
+            priority: (editingCase as any).priority || "Medium",
+            court: (editingCase as any).court || "",
+            practice: (editingCase as any).practice || "General",
+            parties: (editingCase as any).parties || [],
+          } as unknown as CaseRecord}
+          caseId={editingCase._id}
+        />
+      )}
 
       <UploadDocumentDialog
         open={showUploadDocDialog}
