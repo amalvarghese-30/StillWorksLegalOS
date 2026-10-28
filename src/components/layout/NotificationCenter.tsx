@@ -27,6 +27,7 @@ import { useNotifications, type Notification } from "@/lib/notifications";
 import { notifications, getNotificationPermissionStatus, isElectron } from "@/platform";
 import { toast } from "sonner";
 import { useNavigate } from "@tanstack/react-router";
+import { floatingChatStore } from "@/lib/floatingChat";
 
 // Format relative timestamps
 function formatTimeAgo(isoString: string): string {
@@ -383,10 +384,7 @@ export function NotificationCenter() {
       navigate({ to: "/calendar" });
     } else if (type.startsWith("CHAT") || type === "COMMENT_MENTION" || relatedModel === "chatgroup") {
       const gid = n.metadata?.["groupId"] || (relatedModel === "chatgroup" ? relatedId : undefined);
-      navigate({
-        to: "/chat",
-        search: { groupId: typeof gid === "string" ? gid : undefined },
-      });
+      floatingChatStore.open(typeof gid === "string" ? gid : undefined);
     } else if (type === "APPROVAL_REQUEST" || type === "APPROVAL_REQUESTED" || type === "TASK_APPROVAL_REQUIRED") {
       if (effectiveTaskId) {
         navigate({ to: "/tasks", search: { taskId: effectiveTaskId } as any });

@@ -4,24 +4,16 @@ import {
   LayoutDashboard,
   Users,
   CheckSquare,
-  MessageCircle,
+  CalendarDays,
   MoreHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useChatGroups } from "@/services/chat";
 import { MobileMoreSheet } from "./MobileMoreSheet";
 
 export function MobileBottomNav() {
   const [moreOpen, setMoreOpen] = useState(false);
   const location = useLocation();
   const search = useSearch({ strict: false }) as Record<string, string | undefined>;
-
-  // Total unread count for chat badge
-  const { data: chatData } = useChatGroups();
-  const totalUnread = (chatData?.groups ?? []).reduce(
-    (sum, g) => sum + (g.unreadCount || 0),
-    0
-  );
 
   const pathname = location.pathname;
 
@@ -50,11 +42,10 @@ export function MobileBottomNav() {
       isActive: pathname.startsWith("/tasks"),
     },
     {
-      to: "/chat",
-      label: "Chat",
-      icon: MessageCircle,
-      isActive: pathname.startsWith("/chat"),
-      badge: totalUnread > 0 ? (totalUnread > 99 ? "99+" : String(totalUnread)) : null,
+      to: "/calendar",
+      label: "Calendar",
+      icon: CalendarDays,
+      isActive: pathname.startsWith("/calendar"),
     },
   ];
 

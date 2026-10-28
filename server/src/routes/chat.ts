@@ -9,11 +9,12 @@ import { User } from "../models/User.js";
 import { NotificationService } from "../services/notifications.js";
 import { uploadStream, downloadStream, getLocalPath } from "../services/storage.js";
 import { formatBytes } from "../services/nas.js";
-import { requireAuth, requireAdmin } from "../middleware/auth.js";
+import { requireAuth, requireAdmin, requireAdminOrPermission } from "../middleware/auth.js";
 import rateLimit from "express-rate-limit";
 
 const router = Router();
 router.use(requireAuth);
+router.use(requireAdminOrPermission("chat"));
 
 // ---------------------------------------------------------------------------
 // Limits (Phase 3 — Chat Security)

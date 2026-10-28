@@ -42,6 +42,7 @@ interface ChatHeaderProps {
   onClearChat?: () => void;
   onLeaveGroup?: () => void;
   onBack?: () => void;
+  showBackOnDesktop?: boolean;
   searchQuery?: string;
   onSearchChange?: (q: string) => void;
   matchCount?: number;
@@ -65,6 +66,7 @@ export function ChatHeader({
   onClearChat,
   onLeaveGroup,
   onBack,
+  showBackOnDesktop = false,
   searchQuery = "",
   onSearchChange,
   matchCount = 0,
@@ -95,7 +97,7 @@ export function ChatHeader({
           <Button
             variant="ghost"
             size="icon"
-            className="size-9 shrink-0 rounded-full md:hidden mr-0.5"
+            className={`size-9 shrink-0 rounded-full mr-0.5 ${showBackOnDesktop ? "" : "md:hidden"}`}
             onClick={onBack}
             aria-label="Back to conversations"
           >

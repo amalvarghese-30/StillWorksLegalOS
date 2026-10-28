@@ -36,7 +36,6 @@ const primary = [
   { to: "/clients", label: "Clients", icon: Users, permission: "clients" as const },
   { to: "/tasks", label: "Tasks", icon: CheckSquare, permission: "tasks" as const },
   { to: "/calendar", label: "Calendar", icon: CalendarDays, permission: "calendar" as const },
-  { to: "/chat", label: "Chat", icon: MessageCircle, permission: "chat" as const },
   { to: "/reports", label: "Reports", icon: BarChart3, permission: "reports" as const },
 ];
 

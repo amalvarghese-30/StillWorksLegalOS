@@ -6611,6 +6611,95 @@ const { NotificationService } = await import("../services/notifications.js");
     assert(dismissRes.status === 200, "S42-14b: Existing POST /:id/reminders/dismiss remains working (200)");
   }
 
+  // --- SUITE 43: Chat System Integrity, Authorization Gates & Real-Time Messaging ---
+  {
+    console.log(`\n--- SUITE 43: Chat System Integrity, Authorization Gates & Real-Time Messaging ---`);
+
+    const advocateChatUserA = await createUser({
+      name: "Advocate S43 Alpha",
+      permissions: { chat: true, dashboard: true },
+    });
+    const tokenChatA = await createToken(advocateChatUserA);
+
+    const advocateChatUserB = await createUser({
+      name: "Advocate S43 Beta",
+      permissions: { chat: true, dashboard: true },
+    });
+    const tokenChatB = await createToken(advocateChatUserB);
+
+    const restrictedUser = await createUser({
+      name: "Restricted S43 Staff",
+      permissions: { chat: false, dashboard: true },
+    });
+    const tokenRestricted = await createToken(restrictedUser);
+
+    // 1. Unauthenticated request rejected
+    const unauthRes = await request(app).get("/api/chat/groups");
+    assert(unauthRes.status === 401, "S43-01: GET /api/chat/groups without auth returns 401");
+
+    // 2. User with chat permission retrieves groups
+    const groupsRes = await request(app)
+      .get("/api/chat/groups")
+      .set("Authorization", `Bearer ${tokenChatA}`);
+    assert(groupsRes.status === 200, "S43-02: User with chat permission retrieves groups (200)");
+    assert(Array.isArray(groupsRes.body?.groups), "S43-03: Response contains groups array");
+
+    // 3. User with chat permission explicitly disabled gets 403
+    const restrictedRes = await request(app)
+      .get("/api/chat/groups")
+      .set("Authorization", `Bearer ${tokenRestricted}`);
+    assert(restrictedRes.status === 403, "S43-04: User without chat permission gets 403 Forbidden");
+
+    // 4. Create direct chat between User A and User B
+    const directChatRes = await request(app)
+      .post("/api/chat/groups")
+      .set("Authorization", `Bearer ${tokenChatA}`)
+      .send({ memberIds: [advocateChatUserB._id.toString()], type: "direct" });
+    assert(directChatRes.status === 201 || directChatRes.status === 200, "S43-05: Direct chat created successfully (201/200)");
+    const directGroupId = directChatRes.body?.group?._id;
+    assert(Boolean(directGroupId), "S43-06: Direct chat returns valid group ID");
+
+    // 5. User A sends message in direct chat
+    const sendMsgRes = await request(app)
+      .post(`/api/chat/groups/${directGroupId}/messages`)
+      .set("Authorization", `Bearer ${tokenChatA}`)
+      .send({ text: "Hello from LegalOS floating chat!" });
+    assert(sendMsgRes.status === 201, "S43-07: Send message in direct chat returns 201 Created");
+    const msgId = sendMsgRes.body?._id || sendMsgRes.body?.message?._id;
+    assert(Boolean(msgId), "S43-08: Message persisted with ID");
+
+    // 6. User B fetches messages from the chat
+    const getMsgsRes = await request(app)
+      .get(`/api/chat/groups/${directGroupId}/messages`)
+      .set("Authorization", `Bearer ${tokenChatB}`);
+    assert(getMsgsRes.status === 200, "S43-09: Recipient User B retrieves messages (200)");
+    assert(
+      (getMsgsRes.body?.messages || []).some((m: any) => m._id === msgId),
+      "S43-10: Sent message appears in recipient message list"
+    );
+
+    // 7. Mark as read
+    const markReadRes = await request(app)
+      .post(`/api/chat/groups/${directGroupId}/read`)
+      .set("Authorization", `Bearer ${tokenChatB}`);
+    assert(markReadRes.status === 200, "S43-11: Mark conversation read returns 200");
+
+    // 8. Add emoji reaction
+    const reactionRes = await request(app)
+      .post(`/api/chat/groups/${directGroupId}/reactions`)
+      .set("Authorization", `Bearer ${tokenChatB}`)
+      .send({ messageId: msgId, emoji: "👍" });
+    assert(reactionRes.status === 200, "S43-12: Adding reaction returns 200");
+
+    // 9. BOLA isolation: Third user (User C) cannot access User A & B's conversation
+    const userC = await createUser({ name: "Unrelated S43 Advocate" });
+    const tokenC = await createToken(userC);
+    const bolaRes = await request(app)
+      .get(`/api/chat/groups/${directGroupId}/messages`)
+      .set("Authorization", `Bearer ${tokenC}`);
+    assert(bolaRes.status === 403, "S43-13: Non-member denied access to conversation with 403 (BOLA protection)");
+  }
+
 
   try {
     if (mongoose.connection.readyState === 1) {

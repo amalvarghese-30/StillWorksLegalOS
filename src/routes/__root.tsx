@@ -9,6 +9,7 @@ import { AuthProvider } from "../lib/auth";
 import { ThemeProvider } from "../lib/theme";
 import { SocketProvider } from "../lib/socket";
 import { PresenceProvider } from "../lib/presence";
+import { FloatingChatWidget } from "../components/chat/FloatingChatWidget";
 import { Toaster } from "sonner";
 
 function NotFoundComponent() {
@@ -93,6 +94,7 @@ function RootComponent() {
           <SocketProvider>
             <PresenceProvider>
               <Outlet />
+              <FloatingChatWidget />
               <Toaster
                 position="top-right"
                 richColors

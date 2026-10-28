@@ -46,7 +46,6 @@ const adminNav: NavItem[] = [
   { to: "/admin/approvals", label: "Approvals", icon: ShieldCheck, permission: "approvals" },
   { to: "/admin/audit-logs", label: "Audit Logs", icon: ScrollText, permission: "auditLogs" },
   { to: "/admin/settings", label: "Firm Settings", icon: Settings, permission: "settings" },
-  { to: "/chat", label: "Chat", icon: MessageCircle, permission: "chat" },
 ];
 
 const firmNav: NavItem[] = [

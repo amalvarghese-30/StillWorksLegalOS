@@ -16,6 +16,7 @@ import { NotificationCenter } from "./NotificationCenter";
 import { useAuth } from "@/lib/auth";
 import { useSearch } from "@/lib/search";
 import { useCreateDirectChat } from "@/services/chat";
+import { floatingChatStore } from "@/lib/floatingChat";
 import { useNavigate } from "@tanstack/react-router";
 import { useTheme } from "@/lib/theme";
 import { UserAvatar } from "@/components/common/UserAvatar";
@@ -40,7 +41,7 @@ export function AdminTopbar() {
       { userId },
       {
         onSuccess: (res) => {
-          navigate({ to: "/chat", search: { groupId: res.group._id } });
+          floatingChatStore.open(res.group._id);
         },
       }
     );

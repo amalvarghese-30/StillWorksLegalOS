@@ -24,6 +24,7 @@ import { UserAvatar } from "@/components/common/UserAvatar";
 import { useAuth } from "@/lib/auth";
 import { useSearch } from "@/lib/search";
 import { useCreateDirectChat } from "@/services/chat";
+import { floatingChatStore } from "@/lib/floatingChat";
 import { useNavigate } from "@tanstack/react-router";
 import { useTheme } from "@/lib/theme";
 import { APP_VERSION } from "@/version";
@@ -48,7 +49,7 @@ export function Topbar() {
       { userId },
       {
         onSuccess: (res) => {
-          navigate({ to: "/chat", search: { groupId: res.group._id } });
+          floatingChatStore.open(res.group._id);
         },
       }
     );
