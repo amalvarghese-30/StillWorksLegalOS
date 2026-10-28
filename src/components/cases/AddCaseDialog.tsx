@@ -21,7 +21,7 @@ import { Label } from "@/components/ui/label";
 import { useCreateCase, type CaseRecord } from "@/services/cases";
 import { useClients } from "@/services/clients";
 import { useTaskOptions, type ChecklistItem } from "@/services/tasks";
-import { useCategoryTree, useCategories, extractCategoryName } from "@/services/categories";
+import { useCategoryTree, useCategories, extractCategoryName, isOtherWorkCategory, isHeirshipCategory } from "@/services/categories";
 import { DiscardConfirmationDialog } from "@/components/ui/discard-confirmation-dialog";
 import { AssigneeMultiSelect } from "@/components/common/AssigneeMultiSelect";
 import { toSafeIso } from "@/lib/dates";
@@ -145,14 +145,67 @@ export function AddCaseDialog({
 
   const normalizedTree = useMemo(() => {
     const rawObj = categoryTree && typeof categoryTree === "object" ? (categoryTree as Record<string, unknown>) : null;
-    if (Array.isArray(categoryTree)) return categoryTree;
-    if (Array.isArray(rawObj?.tree)) return rawObj.tree as any[];
-    if (Array.isArray(rawObj?.data)) return rawObj.data as any[];
-    return [];
+    let list: Array<{ name?: string; children?: unknown[] }> = [];
+    if (Array.isArray(categoryTree)) list = categoryTree as Array<{ name?: string; children?: unknown[] }>;
+    else if (Array.isArray(rawObj?.tree)) list = rawObj.tree as Array<{ name?: string; children?: unknown[] }>;
+    else if (Array.isArray(rawObj?.data)) list = rawObj.data as Array<{ name?: string; children?: unknown[] }>;
+    return list.filter((c) => !isOtherWorkCategory(c?.name));
   }, [categoryTree]);
 
   const selectedParent = normalizedTree.find((c) => c?.name === form.mainCategory);
   const availableSubCategories = selectedParent?.children ?? [];
+
+  const primaryClientName = useMemo(() => {
+    return parties.find((p) => p.role === "Primary Client")?.name || preselectedClientName || "";
+  }, [parties, preselectedClientName]);
+
+  const handleSelectMainCategory = (catName: string) => {
+    const isSelected = form.mainCategory === catName;
+    const nextVal = isSelected ? "" : catName;
+    setForm((prev) => {
+      const client = primaryClientName.trim();
+      const catLabel = nextVal === "__other__" ? (prev.customCategory.trim() || "Custom Matter") : nextVal;
+      const newTitle = catLabel ? (client ? `${client} - ${catLabel}` : catLabel) : prev.title;
+      return {
+        ...prev,
+        mainCategory: nextVal,
+        subCategory: "",
+        selectedSubCategories: [],
+        customCategory: nextVal !== "__other__" ? "" : prev.customCategory,
+        title: newTitle || prev.title,
+      };
+    });
+  };
+
+  const handleClientSelect = (selectedClient: { name: string; _id: string }) => {
+    setParties((prev) => {
+      const existingIndex = prev.findIndex((p) => p.role === "Primary Client");
+      if (existingIndex >= 0) {
+        return prev.map((p, i) =>
+          i === existingIndex
+            ? { ...p, name: selectedClient.name, clientId: selectedClient._id }
+            : p
+        );
+      }
+      return [
+        {
+          name: selectedClient.name,
+          role: "Primary Client",
+          type: "client",
+          clientId: selectedClient._id,
+        },
+        ...prev,
+      ];
+    });
+    setForm((prev) => {
+      const catLabel = prev.mainCategory === "__other__" ? (prev.customCategory.trim() || "Custom Matter") : prev.mainCategory;
+      const newTitle = catLabel ? `${selectedClient.name} - ${catLabel}` : selectedClient.name;
+      return {
+        ...prev,
+        title: newTitle,
+      };
+    });
+  };
 
   const staffList = taskOptions?.staff ?? [];
 
@@ -555,9 +608,10 @@ export function AddCaseDialog({
         onCaseCreated(result.case);
       }
       handleForceClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to create case:", err);
-      toast.error(err?.message || "Failed to create case");
+      const msg = err instanceof Error ? err.message : "Failed to create case";
+      toast.error(msg);
     }
   };
 
@@ -592,390 +646,354 @@ export function AddCaseDialog({
             {/* ── CASE SECTION ── */}
             <div className="px-6 py-5 space-y-4">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Case</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Case Information</span>
                 <div className="flex-1 h-px bg-border/60" />
               </div>
 
-            {/* Client Name / Title */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="case-title" className="text-xs font-medium text-foreground">
-                  Client Name / Case Title <span className="text-destructive">*</span>
-                </Label>
-                {clientsData?.clients && clientsData.clients.length > 0 && (
-                  <span className="text-[11px] text-muted-foreground">
-                    Select existing or type client name
-                  </span>
-                )}
-              </div>
-              <div className="relative">
-                <Input
-                  id="case-title"
-                  value={form.title}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    update("title", val);
-                  }}
-                  placeholder="e.g. Ramesh Sharma / Apex Enterprises"
-                  required
-                  className="h-11 rounded-md"
-                />
-              </div>
-              {/* Optional Quick Pick from existing clients */}
-              {clientsData?.clients && clientsData.clients.length > 0 && (
-                <div className="flex items-center gap-2 pt-0.5">
-                  <span className="text-[11px] text-muted-foreground whitespace-nowrap">Quick fill client:</span>
-                  <select
-                    className="h-7 text-xs rounded border border-border bg-card px-2 text-muted-foreground outline-none focus:border-primary max-w-xs truncate"
-                    onChange={(e) => {
-                      const selId = e.target.value;
-                      if (!selId) return;
-                      const selectedClient = clientsData.clients.find((c) => c._id === selId);
-                      if (selectedClient) {
-                        update("title", selectedClient.name);
-                        // Also automatically add / update the Primary Client party
-                        setParties((prev) => {
-                          const existingIndex = prev.findIndex((p) => p.role === "Primary Client");
-                          if (existingIndex >= 0) {
-                            return prev.map((p, i) =>
-                              i === existingIndex
-                                ? { ...p, name: selectedClient.name, clientId: selectedClient._id }
-                                : p
-                            );
-                          }
-                          return [
-                            {
-                              name: selectedClient.name,
-                              role: "Primary Client",
-                              type: "client",
-                              clientId: selectedClient._id,
-                            },
-                            ...prev,
-                          ];
-                        });
-                      }
-                      e.target.value = "";
-                    }}
-                    defaultValue=""
-                  >
-                    <option value="" disabled>Choose existing client…</option>
-                    {clientsData.clients.map((c) => (
-                      <option key={c._id} value={c._id}>
-                        {c.name} {c.phone ? `(${c.phone})` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </div>
-
-            {/* ── Case Number Identifiers ── */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="case-court-id" className="text-helper">
-                  Court Case / CNR / Filing Number (Optional)
-                </Label>
-                <Input
-                  id="case-court-id"
-                  value={form.courtCaseId}
-                  onChange={(e) => update("courtCaseId", e.target.value)}
-                  placeholder="e.g. CNR: MHCC01-123456-2026 or Special Suit 45/2026"
-                  className="h-11 rounded-md font-mono text-sm"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="case-count-number" className="text-helper">
-                  Count Case Number / Internal Index (Optional)
-                </Label>
-                <Input
-                  id="case-count-number"
-                  value={form.countCaseNumber}
-                  onChange={(e) => update("countCaseNumber", e.target.value)}
-                  placeholder="e.g. Case Count #042 or CR-2026-99"
-                  className="h-11 rounded-md font-mono text-sm"
-                />
-              </div>
-            </div>
-
-
-            {/* ── Status & Priority ── */}
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-foreground">Case Status</Label>
-                <div className="flex rounded-lg border border-border overflow-hidden bg-muted/30">
-                  {(["Active", "Urgent", "On Hold", "Closed"] as const).map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => update("status", s)}
-                      className={`flex-1 px-2 py-2 text-[11px] font-semibold transition-all border-r border-border last:border-r-0 ${form.status === s
-                        ? s === "Urgent" ? "bg-destructive/15 text-destructive"
-                          : s === "On Hold" ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
-                          : s === "Closed" ? "bg-muted text-muted-foreground"
-                          : "bg-primary/15 text-primary"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                        }`}
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-foreground">Priority</Label>
-                <div className="flex rounded-lg border border-border overflow-hidden bg-muted/30">
-                  {(["High", "Medium", "Low"] as const).map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => update("priority", p)}
-                      className={`flex-1 px-2.5 py-2 text-[11px] font-semibold transition-all border-r border-border last:border-r-0 ${form.priority === p
-                          ? p === "High"
-                            ? "bg-destructive/15 text-destructive"
-                            : p === "Medium"
-                              ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
-                              : "bg-muted text-foreground"
-                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                        }`}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* ── Assigned Team / Counsel ── */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-foreground">Assigned Team / Counsel</Label>
-              <AssigneeMultiSelect
-                value={form.assignedTo}
-                onChange={(val) => update("assignedTo", val)}
-                placeholder="Tick employees / counsel to assign..."
-              />
-            </div>
-
-            {/* ── Tags ── */}
-            <div className="space-y-2">
-              <Label htmlFor="case-tags" className="text-xs font-medium text-foreground">Tags</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="case-tags"
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") { e.preventDefault(); addTag(); }
-                  }}
-                  placeholder="Type a tag and press Enter"
-                  className="h-11 flex-1 rounded-md"
-                />
-                <Button type="button" variant="outline" className="rounded-md h-11" onClick={addTag}>
-                  <Plus size={15} />
-                </Button>
-              </div>
-              {tags.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {tags.map((t) => (
-                    <span
-                      key={t}
-                      className="flex items-center gap-1 rounded-pill bg-muted px-3 py-1 text-caption font-medium"
-                    >
-                      {t}
+              {/* ── 1. Main Category / Practice Area (First Option) ── */}
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="case-main-category" className="text-xs font-semibold text-foreground">
+                      1. Select Main Category / Practice Area <span className="text-destructive">*</span>
+                    </Label>
+                    {isCategoriesLoading && (
+                      <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                        <Loader2 size={11} className="animate-spin" /> Loading categories...
+                      </span>
+                    )}
+                    {isCategoriesError && (
+                      <span className="text-[11px] text-destructive">
+                        Failed to load categories
+                      </span>
+                    )}
+                  </div>
+                  {normalizedTree.length > 0 ? (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {normalizedTree.map((c) => {
+                        const isSelected = form.mainCategory === c.name;
+                        return (
+                          <button
+                            key={c.name}
+                            type="button"
+                            onClick={() => handleSelectMainCategory(c.name)}
+                            className={`rounded-lg border px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-all ${
+                              isSelected
+                                ? "border-primary bg-primary/10 text-primary shadow-xs ring-1 ring-primary/40 font-bold"
+                                : "border-border/80 bg-background text-foreground/80 hover:border-primary/50 hover:bg-muted/50"
+                            }`}
+                          >
+                            {c.name}
+                          </button>
+                        );
+                      })}
                       <button
                         type="button"
-                        onClick={() => removeTag(t)}
-                        className="ml-0.5 grid size-4 place-items-center rounded-full text-muted-foreground hover:text-destructive"
-                        aria-label={`Remove tag ${t}`}
+                        onClick={() => handleSelectMainCategory("__other__")}
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-all ${
+                          form.mainCategory === "__other__"
+                            ? "border-primary bg-primary/10 text-primary shadow-xs ring-1 ring-primary/40 font-bold"
+                            : "border-dashed border-border/80 bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                        }`}
                       >
-                        <X size={11} strokeWidth={2.5} />
+                        + Custom
                       </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-            </div>{/* end CASE section */}
-
-            {/* ── DETAILS SECTION (Category, Court & Hearing, Description) ── */}
-            <div className="px-6 py-5 space-y-4">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Details &amp; Court</span>
-                <div className="flex-1 h-px bg-border/60" />
-                <span className="text-[10px] text-muted-foreground italic">Optional</span>
-              </div>
-
-            {/* ── Category Hierarchy ── */}
-            <div className="space-y-4">
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="case-main-category" className="text-helper">Main Category</Label>
-                  {isCategoriesLoading && (
-                    <span className="text-[11px] text-muted-foreground flex items-center gap-1">
-                      <Loader2 size={11} className="animate-spin" /> Loading categories...
-                    </span>
-                  )}
-                  {isCategoriesError && (
-                    <span className="text-[11px] text-destructive">
-                      Failed to load categories
-                    </span>
-                  )}
-                </div>
-                {normalizedTree.length > 0 ? (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {normalizedTree.map((c) => {
-                      const isSelected = form.mainCategory === c.name;
-                      return (
-                        <button
-                          key={c.name}
-                          type="button"
-                          onClick={() => {
-                            const val = isSelected ? "" : c.name;
-                            update("mainCategory", val);
-                            update("subCategory", "");
-                            update("selectedSubCategories", []);
-                            if (val !== "__other__") update("customCategory", "");
-                          }}
-                          className={`rounded-lg border px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-all ${
-                            isSelected
-                              ? "border-primary bg-primary/10 text-primary shadow-xs ring-1 ring-primary/40 font-bold"
-                              : "border-border/80 bg-background text-foreground/80 hover:border-primary/50 hover:bg-muted/50"
-                          }`}
-                        >
-                          {c.name}
-                        </button>
-                      );
-                    })}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const val = form.mainCategory === "__other__" ? "" : "__other__";
-                        update("mainCategory", val);
-                        update("subCategory", "");
-                        update("selectedSubCategories", []);
-                      }}
-                      className={`rounded-lg border px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-all ${
-                        form.mainCategory === "__other__"
-                          ? "border-primary bg-primary/10 text-primary shadow-xs ring-1 ring-primary/40 font-bold"
-                          : "border-dashed border-border/80 bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground"
-                      }`}
+                    </div>
+                  ) : (
+                    <select
+                      id="case-main-category"
+                      value={form.mainCategory}
+                      disabled={isCategoriesLoading}
+                      onChange={(e) => handleSelectMainCategory(e.target.value)}
+                      className="h-11 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary disabled:opacity-50"
                     >
-                      + Custom
-                    </button>
+                      <option value="">
+                        {isCategoriesLoading
+                          ? "Loading categories…"
+                          : isCategoriesError
+                          ? "Error loading categories (Select manual below)"
+                          : "Select main category…"}
+                      </option>
+                      <option value="__other__">+ Custom Category...</option>
+                    </select>
+                  )}
+                </div>
+
+                {/* ── Primary Subcategory (Optional) ── */}
+                {form.mainCategory && form.mainCategory !== "__other__" && availableSubCategories.length > 0 && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="case-sub-category" className="text-helper">Primary Case Subcategory (Optional)</Label>
+                    <select
+                      id="case-sub-category"
+                      value={form.subCategory}
+                      onChange={(e) => update("subCategory", e.target.value)}
+                      className="h-11 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary"
+                    >
+                      <option value="">Select primary subcategory (or configure individual tasks below)…</option>
+                      {availableSubCategories.map((sc) => (
+                        <option key={sc._id || sc.name} value={sc.name}>
+                          {sc.name}
+                        </option>
+                      ))}
+                      <option value="__other__">+ Custom subcategory...</option>
+                    </select>
                   </div>
-                ) : (
-                  <select
-                    id="case-main-category"
-                    value={form.mainCategory}
-                    disabled={isCategoriesLoading}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      update("mainCategory", val);
-                      update("subCategory", "");
-                      update("selectedSubCategories", []);
-                      if (val !== "__other__") update("customCategory", "");
-                    }}
-                    className="h-11 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary disabled:opacity-50"
-                  >
-                    <option value="">
-                      {isCategoriesLoading
-                        ? "Loading categories…"
-                        : isCategoriesError
-                        ? "Error loading categories (Select manual below)"
-                        : "Select main category…"}
-                    </option>
-                    <option value="__other__">+ Other Work / Custom Category...</option>
-                  </select>
+                )}
+
+                {(form.mainCategory === "__other__" || form.subCategory === "__other__") && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="case-custom-category" className="text-helper">
+                      Custom Category / Work Type <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="case-custom-category"
+                      value={form.customCategory}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        update("customCategory", val);
+                        const client = primaryClientName.trim();
+                        if (client && val.trim()) {
+                          update("title", `${client} - ${val.trim()}`);
+                        }
+                      }}
+                      placeholder="Enter manual category name (e.g. Real Estate Joint Venture)..."
+                      className="h-11 rounded-md"
+                      maxLength={100}
+                      required
+                    />
+                  </div>
                 )}
               </div>
 
-              {/* ── Primary Subcategory (Optional) ── */}
-              {form.mainCategory && form.mainCategory !== "__other__" && availableSubCategories.length > 0 && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="case-sub-category" className="text-helper">Primary Case Subcategory (Optional)</Label>
-                  <select
-                    id="case-sub-category"
-                    value={form.subCategory}
-                    onChange={(e) => update("subCategory", e.target.value)}
-                    className="h-11 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary"
-                  >
-                    <option value="">Select primary subcategory (or configure individual tasks below)…</option>
-                    {availableSubCategories.map((sc) => (
-                      <option key={sc._id || sc.name} value={sc.name}>
-                        {sc.name}
-                      </option>
-                    ))}
-                    <option value="__other__">+ Custom subcategory...</option>
-                  </select>
+              {/* ── 2. Client & Case Title (Auto-filled like Client Name - Main Category) ── */}
+              <div className="space-y-1.5 pt-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="case-title" className="text-xs font-semibold text-foreground">
+                    2. Case Title <span className="text-destructive">*</span>
+                  </Label>
+                  {primaryClientName && form.mainCategory && (
+                    <span className="text-[11px] text-muted-foreground">
+                      Auto-filled from Client Name &amp; Category
+                    </span>
+                  )}
                 </div>
-              )}
-            </div>
+                <div className="relative">
+                  <Input
+                    id="case-title"
+                    value={form.title}
+                    onChange={(e) => update("title", e.target.value)}
+                    placeholder={
+                      primaryClientName
+                        ? `${primaryClientName} - ${form.mainCategory || "Main Category"}`
+                        : "Client Name - Main Category"
+                    }
+                    required
+                    className="h-11 rounded-md font-medium"
+                  />
+                </div>
+                {/* Quick Pick from existing clients */}
+                {clientsData?.clients && clientsData.clients.length > 0 && (
+                  <div className="flex items-center gap-2 pt-0.5">
+                    <span className="text-[11px] text-muted-foreground whitespace-nowrap">Client:</span>
+                    <select
+                      className="h-7 text-xs rounded border border-border bg-card px-2 text-muted-foreground outline-none focus:border-primary max-w-xs truncate"
+                      onChange={(e) => {
+                        const selId = e.target.value;
+                        if (!selId) return;
+                        const selectedClient = clientsData.clients.find((c) => c._id === selId);
+                        if (selectedClient) {
+                          handleClientSelect(selectedClient);
+                        }
+                        e.target.value = "";
+                      }}
+                      defaultValue=""
+                    >
+                      <option value="" disabled>Select client to auto-fill title…</option>
+                      {clientsData.clients.map((c) => (
+                        <option key={c._id} value={c._id}>
+                          {c.name} {c.phone ? `(${c.phone})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
 
-            {(form.mainCategory === "__other__" || form.subCategory === "__other__") && (
+              {/* ── Case Number Identifiers ── */}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="case-court-id" className="text-helper">
+                    Court Case / CNR / Filing Number (Optional)
+                  </Label>
+                  <Input
+                    id="case-court-id"
+                    value={form.courtCaseId}
+                    onChange={(e) => update("courtCaseId", e.target.value)}
+                    placeholder="e.g. CNR: MHCC01-123456-2026 or Special Suit 45/2026"
+                    className="h-11 rounded-md font-mono text-sm"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="case-count-number" className="text-helper">
+                    Count Case Number / Internal Index (Optional)
+                  </Label>
+                  <Input
+                    id="case-count-number"
+                    value={form.countCaseNumber}
+                    onChange={(e) => update("countCaseNumber", e.target.value)}
+                    placeholder="e.g. Case Count #042 or CR-2026-99"
+                    className="h-11 rounded-md font-mono text-sm"
+                  />
+                </div>
+              </div>
+
+              {/* ── Hearing Date (Only for Heirship & Court Matters) & Local Path ── */}
+              <div className={`grid gap-4 ${isHeirshipCategory(form.mainCategory) ? "sm:grid-cols-2" : "grid-cols-1"}`}>
+                {isHeirshipCategory(form.mainCategory) && (
+                  <div className="space-y-1.5 animate-in fade-in-50">
+                    <Label htmlFor="case-next-hearing" className="text-helper flex items-center gap-1.5 font-medium">
+                      <Calendar size={14} className="text-primary" />
+                      Initial / Next Hearing Date (DD/MM/YYYY) (Optional)
+                    </Label>
+                    <Input
+                      id="case-next-hearing"
+                      type="date"
+                      value={form.nextHearing}
+                      onChange={(e) => update("nextHearing", e.target.value)}
+                      className="h-11 rounded-md"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Synchronizes with firm calendar and hearing alerts.
+                    </p>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="case-localpath" className="text-helper flex items-center gap-1.5">
+                    <FolderOpen size={14} className="text-muted-foreground" />
+                    Local Folder / Document Path (Optional)
+                  </Label>
+                  <Input
+                    id="case-localpath"
+                    value={form.localPath}
+                    onChange={(e) => update("localPath", e.target.value)}
+                    placeholder="e.g. C:\LegalFiles\Cases\Apex-2026 or /Users/shared/case-files"
+                    className="h-11 rounded-md"
+                  />
+                </div>
+              </div>
+
+              {/* ── Status & Priority ── */}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-foreground">Case Status</Label>
+                  <div className="flex rounded-lg border border-border overflow-hidden bg-muted/30">
+                    {(["Active", "Urgent", "On Hold", "Closed"] as const).map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => update("status", s)}
+                        className={`flex-1 px-2 py-2 text-[11px] font-semibold transition-all border-r border-border last:border-r-0 ${form.status === s
+                          ? s === "Urgent" ? "bg-destructive/15 text-destructive"
+                            : s === "On Hold" ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                            : s === "Closed" ? "bg-muted text-muted-foreground"
+                            : "bg-primary/15 text-primary"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                          }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-foreground">Priority</Label>
+                  <div className="flex rounded-lg border border-border overflow-hidden bg-muted/30">
+                    {(["High", "Medium", "Low"] as const).map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => update("priority", p)}
+                        className={`flex-1 px-2.5 py-2 text-[11px] font-semibold transition-all border-r border-border last:border-r-0 ${form.priority === p
+                            ? p === "High"
+                              ? "bg-destructive/15 text-destructive"
+                              : p === "Medium"
+                                ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                                : "bg-muted text-foreground"
+                            : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                          }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Assigned Team / Counsel ── */}
               <div className="space-y-1.5">
-                <Label htmlFor="case-custom-category" className="text-helper">
-                  Custom Category / Work Type <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="case-custom-category"
-                  value={form.customCategory}
-                  onChange={(e) => update("customCategory", e.target.value)}
-                  placeholder="Enter manual category name (e.g. Other Work / Specific Dispute)..."
-                  className="h-11 rounded-md"
-                  maxLength={100}
-                  required
+                <Label className="text-xs font-medium text-foreground">Assigned Team / Counsel</Label>
+                <AssigneeMultiSelect
+                  value={form.assignedTo}
+                  onChange={(val) => update("assignedTo", val)}
+                  placeholder="Tick employees / counsel to assign..."
                 />
               </div>
-            )}
 
-            {/* ── Next Hearing Date ── */}
-            <div className="space-y-1.5">
-              <Label htmlFor="case-next-hearing" className="text-helper flex items-center gap-1.5">
-                <Calendar size={14} className="text-primary" />
-                Initial / Next Hearing Date (Optional)
-              </Label>
-              <Input
-                id="case-next-hearing"
-                type="date"
-                value={form.nextHearing}
-                onChange={(e) => update("nextHearing", e.target.value)}
-                className="h-11 rounded-md"
-              />
-              <p className="text-xs text-muted-foreground">
-                Enter scheduled hearing date to synchronize with firm calendar and automated hearing reminders.
-              </p>
-            </div>
+              {/* ── File No (instead of Tags) ── */}
+              <div className="space-y-2">
+                <Label htmlFor="case-tags" className="text-xs font-medium text-foreground">File No</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="case-tags"
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { e.preventDefault(); addTag(); }
+                    }}
+                    placeholder="Type File No and press Enter (e.g. FN-2026/01)"
+                    className="h-11 flex-1 rounded-md"
+                  />
+                  <Button type="button" variant="outline" className="rounded-md h-11" onClick={addTag}>
+                    <Plus size={15} className="mr-1" /> Add File No
+                  </Button>
+                </div>
+                {tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {tags.map((t) => (
+                      <span
+                        key={t}
+                        className="flex items-center gap-1 rounded-pill bg-muted px-3 py-1 text-caption font-medium"
+                      >
+                        File No: {t}
+                        <button
+                          type="button"
+                          onClick={() => removeTag(t)}
+                          className="ml-0.5 grid size-4 place-items-center rounded-full text-muted-foreground hover:text-destructive"
+                          aria-label={`Remove file no ${t}`}
+                        >
+                          <X size={11} strokeWidth={2.5} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-            {/* ── Description ── */}
-            <div className="space-y-1.5">
-              <Label htmlFor="case-desc" className="text-helper">Description</Label>
-              <textarea
-                id="case-desc"
-                value={form.description}
-                onChange={(e) => update("description", e.target.value)}
-                placeholder="Brief summary of the matter, facts, or dispute…"
-                rows={2}
-                className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm outline-none transition-colors focus:border-primary resize-none"
-              />
-            </div>
-
-            {/* ── Local File / Folder Path ── */}
-            <div className="space-y-1.5">
-              <Label htmlFor="case-localpath" className="text-helper flex items-center gap-1.5">
-                <FolderOpen size={14} className="text-muted-foreground" />
-                Local Folder / Document Path (Optional)
-              </Label>
-              <Input
-                id="case-localpath"
-                value={form.localPath}
-                onChange={(e) => update("localPath", e.target.value)}
-                placeholder="e.g. C:\LegalFiles\Cases\Apex-2026 or /Users/shared/case-files"
-                className="h-11 rounded-md"
-              />
-              <p className="text-xs text-muted-foreground">
-                In desktop mode, clicking this path will directly open the folder in File Explorer / Finder.
-              </p>
-            </div>
+              {/* ── Description ── */}
+              <div className="space-y-1.5">
+                <Label htmlFor="case-desc" className="text-helper">Description</Label>
+                <textarea
+                  id="case-desc"
+                  value={form.description}
+                  onChange={(e) => update("description", e.target.value)}
+                  placeholder="Brief summary of the matter, facts, or dispute…"
+                  rows={2}
+                  className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm outline-none transition-colors focus:border-primary resize-none"
+                />
+              </div>
+            </div>{/* end CASE section */}
 
             {/* ── Parties ── */}
             <div className="rounded-lg border border-border">
@@ -1065,8 +1083,6 @@ export function AddCaseDialog({
                 </div>
               )}
             </div>
-
-            </div>{/* end DETAILS section */}
 
             {/* ── PARTIES & TASKS SECTION ── */}
             <div className="px-6 py-5 space-y-4">
@@ -1305,21 +1321,7 @@ export function AddCaseDialog({
                               />
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                              <div>
-                                <Label className="text-[11px] text-muted-foreground font-medium">Category</Label>
-                                <select
-                                  value={extractCategoryName(t.category)}
-                                  onChange={(e) => updateTask(idx, "category", e.target.value)}
-                                  className="h-9 w-full rounded-lg border border-border bg-background px-2 text-xs"
-                                >
-                                  {categories.map((c) => (
-                                    <option key={c} value={c}>{c}</option>
-                                  ))}
-                                  <option value="Other Work">Other Work</option>
-                                </select>
-                              </div>
-
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                               <div>
                                 <Label className="text-[11px] text-muted-foreground font-medium">Priority</Label>
                                 <select
@@ -1334,7 +1336,7 @@ export function AddCaseDialog({
                               </div>
 
                               <div>
-                                <Label className="text-[11px] text-muted-foreground font-medium">Deadline</Label>
+                                <Label className="text-[11px] text-muted-foreground font-medium">Deadline (DD/MM/YYYY)</Label>
                                 <Input
                                   type="datetime-local"
                                   value={t.deadline}

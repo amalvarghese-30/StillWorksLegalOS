@@ -32,7 +32,7 @@ import { useCreateClient, type CreateClientPayload, type SubClient } from "@/ser
 import { useCreateCase, type CaseTaskPayload, type CaseParty } from "@/services/cases";
 import { useEmployees } from "@/services/admin";
 import { useTaskOptions, type ChecklistItem } from "@/services/tasks";
-import { useCategoryTree, useCategories, extractCategoryName } from "@/services/categories";
+import { useCategoryTree, useCategories, extractCategoryName, isOtherWorkCategory, isHeirshipCategory } from "@/services/categories";
 import { AssigneeMultiSelect } from "@/components/common/AssigneeMultiSelect";
 import { toSafeIso } from "@/lib/dates";
 import {
@@ -206,10 +206,11 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
 
   const normalizedTree = useMemo(() => {
     const rawObj = categoryTree && typeof categoryTree === "object" ? (categoryTree as Record<string, unknown>) : null;
-    if (Array.isArray(categoryTree)) return categoryTree;
-    if (Array.isArray(rawObj?.tree)) return rawObj.tree as any[];
-    if (Array.isArray(rawObj?.data)) return rawObj.data as any[];
-    return [];
+    let list: any[] = [];
+    if (Array.isArray(categoryTree)) list = categoryTree;
+    else if (Array.isArray(rawObj?.tree)) list = rawObj.tree as any[];
+    else if (Array.isArray(rawObj?.data)) list = rawObj.data as any[];
+    return list.filter((c) => !isOtherWorkCategory(c?.name));
   }, [categoryTree]);
 
   const selectedParent = normalizedTree.find((c) => c?.name === caseForm.mainCategory);
@@ -218,6 +219,32 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
   const updateCase = <K extends keyof CaseFormState>(key: K, value: CaseFormState[K]) => {
     setCaseForm((prev) => ({ ...prev, [key]: value }));
     if (key === "title" && fieldErrors.caseTitle) {
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next.caseTitle;
+        return next;
+      });
+    }
+  };
+
+  const handleSelectMainCategory = (catName: string) => {
+    const isSelected = caseForm.mainCategory === catName;
+    const nextVal = isSelected ? "" : catName;
+    setCaseForm((prev) => {
+      const clientName = form.name.trim();
+      const catLabel = nextVal === "__other__" ? (prev.customCategory.trim() || "Custom Matter") : nextVal;
+      // Auto-fill title like (Client Name - Main Category)
+      const newTitle = catLabel ? (clientName ? `${clientName} - ${catLabel}` : catLabel) : prev.title;
+      return {
+        ...prev,
+        mainCategory: nextVal,
+        subCategory: "",
+        selectedSubCategories: [],
+        customCategory: nextVal !== "__other__" ? "" : prev.customCategory,
+        title: newTitle || prev.title,
+      };
+    });
+    if (fieldErrors.caseTitle) {
       setFieldErrors((prev) => {
         const next = { ...prev };
         delete next.caseTitle;
@@ -507,6 +534,17 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+    if (key === "name" && typeof value === "string") {
+      const nextName = value.trim();
+      setCaseForm((prev) => {
+        if (!prev.mainCategory) return prev;
+        const catLabel = prev.mainCategory === "__other__" ? (prev.customCategory.trim() || "Custom Matter") : prev.mainCategory;
+        return {
+          ...prev,
+          title: nextName ? `${nextName} - ${catLabel}` : catLabel,
+        };
+      });
+    }
     const errorKey = key as keyof FormErrors;
     if (fieldErrors[errorKey]) {
       setFieldErrors((prev) => {
@@ -1071,7 +1109,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="client-phone" className="text-helper">Phone (10-digit Mobile)</Label>
+              <Label htmlFor="client-phone" className="text-helper">Phone (10-digit Mobile) (Optional)</Label>
               <Input
                 id="client-phone"
                 value={form.phone}
@@ -1085,7 +1123,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="client-email" className="text-helper">Email address</Label>
+              <Label htmlFor="client-email" className="text-helper">Email address (Optional)</Label>
               <Input
                 id="client-email"
                 type="email"
@@ -1100,7 +1138,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
             </div>
 
             <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor="client-address" className="text-helper">Official / Residential Address</Label>
+              <Label htmlFor="client-address" className="text-helper">Official / Residential Address (Optional)</Label>
               <Input
                 id="client-address"
                 value={form.address}
@@ -1115,11 +1153,11 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
           <div className="rounded-lg border border-border bg-muted/30 p-4">
             <p className="flex items-center gap-2 text-helper font-medium">
               <FileBadge size={16} strokeWidth={1.75} className="text-muted-foreground" />
-              Identity Verification Details
+              Identity Verification Details <span className="text-caption text-muted-foreground">(Optional)</span>
             </p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label htmlFor="client-aadhar" className="text-helper">Aadhaar Number (12 digits)</Label>
+                <Label htmlFor="client-aadhar" className="text-helper">Aadhaar Number (12 digits) (Optional)</Label>
                 <Input
                   id="client-aadhar"
                   value={form.aadhar}
@@ -1133,7 +1171,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                 )}
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="client-pan" className="text-helper">PAN Number (10 characters)</Label>
+                <Label htmlFor="client-pan" className="text-helper">PAN Number (10 characters) (Optional)</Label>
                 <Input
                   id="client-pan"
                   value={form.pan}
@@ -1194,7 +1232,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
               <div className="space-y-1.5">
                 <Label htmlFor="client-completion" className="text-helper flex items-center gap-1.5">
                   <Calendar size={14} className="text-muted-foreground" />
-                  Promised Completion Date &amp; Time
+                  Promised Completion Date &amp; Time (DD/MM/YYYY) (Optional)
                 </Label>
                 <Input
                   id="client-completion"
@@ -1208,7 +1246,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
               <div className="space-y-1.5">
                 <Label htmlFor="client-notes" className="text-helper flex items-center gap-1.5">
                   <FileText size={14} className="text-muted-foreground" />
-                  Onboarding &amp; Client Notes
+                  Onboarding &amp; Client Notes (Optional)
                 </Label>
                 <Input
                   id="client-notes"
@@ -1376,7 +1414,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label htmlFor={`sc-phone-${idx}`} className="text-helper">Phone</Label>
+                        <Label htmlFor={`sc-phone-${idx}`} className="text-helper">Phone (Optional)</Label>
                         <Input
                           id={`sc-phone-${idx}`}
                           value={sc.phone}
@@ -1391,7 +1429,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                         )}
                       </div>
                       <div className="space-y-1.5">
-                        <Label htmlFor={`sc-email-${idx}`} className="text-helper">Email</Label>
+                        <Label htmlFor={`sc-email-${idx}`} className="text-helper">Email (Optional)</Label>
                         <Input
                           id={`sc-email-${idx}`}
                           value={sc.email}
@@ -1458,27 +1496,138 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
 
             {createInitialCase && (
               <div className="space-y-5 pt-3 border-t border-primary/20 animate-in fade-in-50">
-                {/* ── Matter / Case Title ── */}
+                {/* ── 1. Main Category / Practice Area (First Option) ── */}
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="case-main-category" className="text-helper font-medium">
+                        1. Select Main Category / Practice Area <span className="text-destructive">*</span>
+                      </Label>
+                      {isCategoriesLoading && (
+                        <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                          <Loader2 size={11} className="animate-spin" /> Loading categories...
+                        </span>
+                      )}
+                      {isCategoriesError && (
+                        <span className="text-[11px] text-destructive">Failed to load categories</span>
+                      )}
+                    </div>
+                    {normalizedTree.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {normalizedTree.map((c) => {
+                          const isSelected = caseForm.mainCategory === c.name;
+                          return (
+                            <button
+                              key={c.name}
+                              type="button"
+                              onClick={() => handleSelectMainCategory(c.name)}
+                              className={`rounded-lg border px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-all ${
+                                isSelected
+                                  ? "border-primary bg-primary/10 text-primary shadow-xs ring-1 ring-primary/40 font-bold"
+                                  : "border-border/80 bg-background text-foreground/80 hover:border-primary/50 hover:bg-muted/50"
+                              }`}
+                            >
+                              {c.name}
+                            </button>
+                          );
+                        })}
+                        <button
+                          type="button"
+                          onClick={() => handleSelectMainCategory("__other__")}
+                          className={`rounded-lg border px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-all ${
+                            caseForm.mainCategory === "__other__"
+                              ? "border-primary bg-primary/10 text-primary shadow-xs ring-1 ring-primary/40 font-bold"
+                              : "border-dashed border-border/80 bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                          }`}
+                        >
+                          + Custom
+                        </button>
+                      </div>
+                    ) : (
+                      <select
+                        id="case-main-category"
+                        value={caseForm.mainCategory}
+                        disabled={isCategoriesLoading}
+                        onChange={(e) => handleSelectMainCategory(e.target.value)}
+                        className="h-10 w-full rounded-md border border-border bg-card px-3 text-xs sm:text-sm outline-none transition-colors focus:border-primary disabled:opacity-50"
+                      >
+                        <option value="">
+                          {isCategoriesLoading
+                            ? "Loading categories…"
+                            : isCategoriesError
+                            ? "Error loading categories"
+                            : "Select main category…"}
+                        </option>
+                        <option value="__other__">+ Custom Category...</option>
+                      </select>
+                    )}
+                  </div>
+
+                  {/* Primary Subcategory (Optional) */}
+                  {caseForm.mainCategory && caseForm.mainCategory !== "__other__" && availableSubCategories.length > 0 && (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="case-sub-category" className="text-helper">Primary Case Subcategory (Optional)</Label>
+                      <select
+                        id="case-sub-category"
+                        value={caseForm.subCategory}
+                        onChange={(e) => updateCase("subCategory", e.target.value)}
+                        className="h-10 w-full rounded-md border border-border bg-card px-3 text-xs sm:text-sm outline-none transition-colors focus:border-primary"
+                      >
+                        <option value="">Select primary subcategory (or configure individual tasks below)…</option>
+                        {availableSubCategories.map((sc) => (
+                          <option key={sc._id || sc.name} value={sc.name}>
+                            {sc.name}
+                          </option>
+                        ))}
+                        <option value="__other__">+ Custom subcategory...</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {(caseForm.mainCategory === "__other__" || caseForm.subCategory === "__other__") && (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="case-custom-category" className="text-helper">
+                        Custom Category / Work Type <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id="case-custom-category"
+                        value={caseForm.customCategory}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          updateCase("customCategory", val);
+                          const clientName = form.name.trim();
+                          if (clientName && val.trim()) {
+                            updateCase("title", `${clientName} - ${val.trim()}`);
+                          }
+                        }}
+                        placeholder="Enter manual category name (e.g. Real Estate Joint Venture)..."
+                        className="h-10 rounded-md bg-card text-xs sm:text-sm"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* ── 2. Matter / Case Title (Auto-filled like Client Name - Main Category) ── */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <Label htmlFor="case-title" className="text-helper font-medium">
-                      Case Title / Matter Subject <span className="text-destructive">*</span>
+                      2. Case Title / Matter Subject <span className="text-destructive">*</span>
                     </Label>
-                    {form.name.trim() && (
-                      <button
-                        type="button"
-                        onClick={() => updateCase("title", `${form.name.trim()} - Legal Matter`)}
-                        className="text-[11px] text-primary hover:underline"
-                      >
-                        Use &quot;{form.name.trim()} - Legal Matter&quot;
-                      </button>
+                    {form.name.trim() && caseForm.mainCategory && (
+                      <span className="text-[11px] text-muted-foreground">
+                        Auto-filled from Client Name &amp; Category
+                      </span>
                     )}
                   </div>
                   <Input
                     id="case-title"
                     value={caseForm.title}
                     onChange={(e) => updateCase("title", e.target.value)}
-                    placeholder="e.g. Title Clearance & Search Report or Special Civil Suit 2026"
+                    placeholder={
+                      form.name.trim()
+                        ? `${form.name.trim()} - ${caseForm.mainCategory || "Main Category"}`
+                        : "Client Name - Main Category"
+                    }
                     className={`h-10 rounded-md bg-card text-xs sm:text-sm ${
                       fieldErrors.caseTitle ? "border-destructive focus-visible:ring-destructive" : ""
                     }`}
@@ -1518,145 +1667,28 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                   </div>
                 </div>
 
-                {/* ── Category & Subcategories Hierarchy ── */}
-                <div className="space-y-3">
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="case-main-category" className="text-helper font-medium">Main Category / Practice Area</Label>
-                      {isCategoriesLoading && (
-                        <span className="text-[11px] text-muted-foreground flex items-center gap-1">
-                          <Loader2 size={11} className="animate-spin" /> Loading categories...
-                        </span>
-                      )}
-                      {isCategoriesError && (
-                        <span className="text-[11px] text-destructive">Failed to load categories</span>
-                      )}
-                    </div>
-                    {normalizedTree.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5 pt-1">
-                        {normalizedTree.map((c) => {
-                          const isSelected = caseForm.mainCategory === c.name;
-                          return (
-                            <button
-                              key={c.name}
-                              type="button"
-                              onClick={() => {
-                                const val = isSelected ? "" : c.name;
-                                updateCase("mainCategory", val);
-                                updateCase("subCategory", "");
-                                updateCase("selectedSubCategories", []);
-                                if (val !== "__other__") updateCase("customCategory", "");
-                              }}
-                              className={`rounded-lg border px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-all ${
-                                isSelected
-                                  ? "border-primary bg-primary/10 text-primary shadow-xs ring-1 ring-primary/40 font-bold"
-                                  : "border-border/80 bg-background text-foreground/80 hover:border-primary/50 hover:bg-muted/50"
-                              }`}
-                            >
-                              {c.name}
-                            </button>
-                          );
-                        })}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const val = caseForm.mainCategory === "__other__" ? "" : "__other__";
-                            updateCase("mainCategory", val);
-                            updateCase("subCategory", "");
-                            updateCase("selectedSubCategories", []);
-                          }}
-                          className={`rounded-lg border px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-all ${
-                            caseForm.mainCategory === "__other__"
-                              ? "border-primary bg-primary/10 text-primary shadow-xs ring-1 ring-primary/40 font-bold"
-                              : "border-dashed border-border/80 bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground"
-                          }`}
-                        >
-                          + Custom
-                        </button>
-                      </div>
-                    ) : (
-                      <select
-                        id="case-main-category"
-                        value={caseForm.mainCategory}
-                        disabled={isCategoriesLoading}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          updateCase("mainCategory", val);
-                          updateCase("subCategory", "");
-                          updateCase("selectedSubCategories", []);
-                          if (val !== "__other__") updateCase("customCategory", "");
-                        }}
-                        className="h-10 w-full rounded-md border border-border bg-card px-3 text-xs sm:text-sm outline-none transition-colors focus:border-primary disabled:opacity-50"
-                      >
-                        <option value="">
-                          {isCategoriesLoading
-                            ? "Loading categories…"
-                            : isCategoriesError
-                            ? "Error loading categories"
-                            : "Select main category…"}
-                        </option>
-                        <option value="__other__">+ Other Work / Custom Category...</option>
-                      </select>
-                    )}
-                  </div>
-
-                  {/* Primary Subcategory (Optional) */}
-                  {caseForm.mainCategory && caseForm.mainCategory !== "__other__" && availableSubCategories.length > 0 && (
-                    <div className="space-y-1.5">
-                      <Label htmlFor="case-sub-category" className="text-helper">Primary Case Subcategory (Optional)</Label>
-                      <select
-                        id="case-sub-category"
-                        value={caseForm.subCategory}
-                        onChange={(e) => updateCase("subCategory", e.target.value)}
-                        className="h-10 w-full rounded-md border border-border bg-card px-3 text-xs sm:text-sm outline-none transition-colors focus:border-primary"
-                      >
-                        <option value="">Select primary subcategory (or configure individual tasks below)…</option>
-                        {availableSubCategories.map((sc) => (
-                          <option key={sc._id || sc.name} value={sc.name}>
-                            {sc.name}
-                          </option>
-                        ))}
-                        <option value="__other__">+ Custom subcategory...</option>
-                      </select>
-                    </div>
-                  )}
-
-                  {(caseForm.mainCategory === "__other__" || caseForm.subCategory === "__other__") && (
-                    <div className="space-y-1.5">
-                      <Label htmlFor="case-custom-category" className="text-helper">
-                        Custom Category / Work Type <span className="text-destructive">*</span>
+                {/* ── Hearing Date (Only visible for Heirship & Court Matters) & Local Folder Path ── */}
+                <div className={`grid gap-3 ${isHeirshipCategory(caseForm.mainCategory) ? "sm:grid-cols-2" : "grid-cols-1"}`}>
+                  {isHeirshipCategory(caseForm.mainCategory) && (
+                    <div className="space-y-1.5 animate-in fade-in-50">
+                      <Label htmlFor="case-next-hearing" className="text-helper flex items-center gap-1.5 font-medium">
+                        <Calendar size={14} className="text-primary" />
+                        Initial / Next Hearing Date (DD/MM/YYYY) (Optional)
                       </Label>
                       <Input
-                        id="case-custom-category"
-                        value={caseForm.customCategory}
-                        onChange={(e) => updateCase("customCategory", e.target.value)}
-                        placeholder="Enter manual category name (e.g. Real Estate Joint Venture)..."
+                        id="case-next-hearing"
+                        type="date"
+                        value={caseForm.nextHearing}
+                        onChange={(e) => updateCase("nextHearing", e.target.value)}
                         className="h-10 rounded-md bg-card text-xs sm:text-sm"
                       />
                     </div>
                   )}
-                </div>
-
-                {/* ── Hearing Date & Local Folder Path ── */}
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="case-next-hearing" className="text-helper flex items-center gap-1.5">
-                      <Calendar size={14} className="text-primary" />
-                      Initial / Next Hearing Date (Optional)
-                    </Label>
-                    <Input
-                      id="case-next-hearing"
-                      type="date"
-                      value={caseForm.nextHearing}
-                      onChange={(e) => updateCase("nextHearing", e.target.value)}
-                      className="h-10 rounded-md bg-card text-xs sm:text-sm"
-                    />
-                  </div>
 
                   <div className="space-y-1.5">
                     <Label htmlFor="case-localpath" className="text-helper flex items-center gap-1.5">
                       <FolderOpen size={14} className="text-muted-foreground" />
-                      Local Folder Path (Desktop)
+                      Local Folder Path (Desktop) (Optional)
                     </Label>
                     <Input
                       id="case-localpath"
@@ -1744,9 +1776,9 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                   />
                 </div>
 
-                {/* ── Case Tags ── */}
+                {/* ── Case Tags / File No ── */}
                 <div className="space-y-1.5">
-                  <Label htmlFor="case-tags" className="text-helper">Tags</Label>
+                  <Label htmlFor="case-tags" className="text-helper">File No</Label>
                   <div className="flex gap-2">
                     <Input
                       id="case-tags"
@@ -1758,11 +1790,11 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                           addTag();
                         }
                       }}
-                      placeholder="Type a tag and press Enter"
+                      placeholder="Type File No and press Enter (e.g. FN-2026/01)"
                       className="h-9 flex-1 rounded-md bg-card text-xs"
                     />
                     <Button type="button" variant="outline" className="rounded-md h-9 px-3 text-xs" onClick={addTag}>
-                      <Plus size={14} className="mr-1" /> Add
+                      <Plus size={14} className="mr-1" /> Add File No
                     </Button>
                   </div>
                   {caseForm.tags.length > 0 && (
@@ -1772,12 +1804,12 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                           key={t}
                           className="flex items-center gap-1 rounded-pill bg-muted px-2.5 py-0.5 text-caption font-medium text-foreground"
                         >
-                          {t}
+                          File No: {t}
                           <button
                             type="button"
                             onClick={() => removeTag(t)}
                             className="ml-0.5 grid size-3.5 place-items-center rounded-full text-muted-foreground hover:text-destructive"
-                            aria-label={`Remove tag ${t}`}
+                            aria-label={`Remove file no ${t}`}
                           >
                             <X size={10} strokeWidth={2.5} />
                           </button>
@@ -2077,21 +2109,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                                   />
                                 </div>
 
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                  <div>
-                                    <Label className="text-[11px] text-muted-foreground font-medium">Category</Label>
-                                    <select
-                                      value={extractCategoryName(t.category)}
-                                      onChange={(e) => updateTask(tIdx, "category", e.target.value)}
-                                      className="h-9 w-full rounded-lg border border-border bg-background px-2 text-xs"
-                                    >
-                                      {categories.map((c) => (
-                                        <option key={c} value={c}>{c}</option>
-                                      ))}
-                                      <option value="Other Work">Other Work</option>
-                                    </select>
-                                  </div>
-
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                   <div>
                                     <Label className="text-[11px] text-muted-foreground font-medium">Priority</Label>
                                     <select
@@ -2106,7 +2124,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                                   </div>
 
                                   <div>
-                                    <Label className="text-[11px] text-muted-foreground font-medium">Deadline</Label>
+                                    <Label className="text-[11px] text-muted-foreground font-medium">Deadline (DD/MM/YYYY)</Label>
                                     <Input
                                       type="datetime-local"
                                       value={t.deadline}

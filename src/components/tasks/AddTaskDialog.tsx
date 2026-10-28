@@ -15,7 +15,7 @@ import { useAuth } from "@/lib/auth";
 import { AssigneeMultiSelect } from "@/components/common/AssigneeMultiSelect";
 import { toast } from "sonner";
 import { useCreateTask, useTaskOptions, type CreateTaskPayload } from "@/services/tasks";
-import { useCategories, useCategoryTree } from "@/services/categories";
+import { useCategories, useCategoryTree, isOtherWorkCategory } from "@/services/categories";
 import { useCases } from "@/services/cases";
 import { useClients } from "@/services/clients";
 import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
@@ -115,7 +115,7 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
   const { data: casesData } = useCases({ limit: "100" });
   const { data: clientsData } = useClients({ limit: "100" });
 
-  const categoryTree = Array.isArray(treeData) ? treeData : ((treeData as any)?.tree ?? []);
+  const categoryTree = (Array.isArray(treeData) ? treeData : ((treeData as any)?.tree ?? [])).filter((cat: any) => !isOtherWorkCategory(cat?.name));
 
   const [form, setForm] = useState<FormState>({
     ...EMPTY_FORM,
@@ -641,7 +641,7 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
                         ? "Error loading categories (Select manual below)"
                         : "Select main category…"}
                     </option>
-                    <option value="__other__">+ Other Work / Custom Category...</option>
+                    <option value="__other__">+ Custom Category...</option>
                   </select>
                 )}
               </div>

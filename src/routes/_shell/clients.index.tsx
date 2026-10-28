@@ -59,7 +59,7 @@ function ClientCard({ c }: { c: ClientRecord }) {
           <div className="min-w-0">
             <h2 className="truncate font-semibold">{c.name}</h2>
             <p className="truncate text-caption text-muted-foreground">
-              {c.type} · Since {formatSafeDate(c.createdAt, "—", { year: "numeric", month: "short" })}
+              {c.type} · Since {formatSafeDate(c.createdAt, "—")}
             </p>
           </div>
           <StatusPill tone={toneForTag(c.tag)}>{c.tag}</StatusPill>
@@ -94,11 +94,7 @@ function ClientCard({ c }: { c: ClientRecord }) {
               <span className="flex items-center gap-1.5 text-muted-foreground ml-auto">
                 <Calendar size={13} className="text-amber-600 dark:text-amber-400" />
                 <span>
-                  Due:{" "}
-                  {formatSafeDate(c.promisedCompletionDate, "—", {
-                    day: "numeric",
-                    month: "short",
-                  })}
+                  Due: {formatSafeDate(c.promisedCompletionDate, "—")}
                 </span>
               </span>
             )}

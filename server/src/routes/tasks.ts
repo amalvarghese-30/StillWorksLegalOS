@@ -511,8 +511,8 @@ router.get("/", async (req: Request, res: Response) => {
         .populate("assignedBy", "name email")
         .populate("createdBy", "name email")
         .populate("updatedBy", "name email")
-        .populate("caseId", "title number")
-        .populate("clientId", "name")
+        .populate("caseId", "title number parties")
+        .populate("clientId", "name phone")
         .populate("assignmentHistory.fromUser", "name email")
         .populate("assignmentHistory.toUser", "name email")
         .populate("assignmentHistory.assignedBy", "name email")
@@ -525,10 +525,26 @@ router.get("/", async (req: Request, res: Response) => {
       const assignedUsers = Array.isArray(t.assignedUsers) && t.assignedUsers.length > 0
         ? t.assignedUsers
         : (t.assignedTo ? [t.assignedTo] : []);
+      
+      let resolvedClientName = t.clientId?.name || t.clientName;
+      let resolvedClientPhone = t.clientId?.phone;
+      if (!resolvedClientName && t.callReminder?.clientName) {
+        resolvedClientName = t.callReminder.clientName;
+        resolvedClientPhone = resolvedClientPhone || t.callReminder.phone;
+      }
+      if (!resolvedClientName && t.caseId && typeof t.caseId === "object" && Array.isArray(t.caseId.parties)) {
+        const primary = t.caseId.parties.find((p: any) => p.role === "Primary Client" || p.type === "client") || t.caseId.parties[0];
+        if (primary) {
+          resolvedClientName = primary.name || primary.partyName;
+        }
+      }
+
       return {
         ...t,
         assignedUsers,
         assignedTo: t.assignedTo || (assignedUsers.length > 0 ? assignedUsers[0] : null),
+        clientName: resolvedClientName || undefined,
+        clientPhone: resolvedClientPhone || undefined,
       };
     });
 

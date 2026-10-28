@@ -23,8 +23,29 @@ export const BASELINE_CATEGORIES: string[] = [
   "Intellectual Property",
   "Tax",
   "Employment",
-  "Other Work",
 ];
+
+export function isOtherWorkCategory(name?: string | null): boolean {
+  if (!name) return false;
+  const n = name.trim().toLowerCase();
+  return (
+    n === "other work" ||
+    n === "other works" ||
+    n === "+ other work / custom category..." ||
+    n.startsWith("other work")
+  );
+}
+
+export function isHeirshipCategory(name?: string | null): boolean {
+  if (!name) return false;
+  const n = name.trim().toLowerCase();
+  return (
+    n === "heirship & court matters" ||
+    n.includes("heirship") ||
+    n.includes("hership") ||
+    n.includes("court matters")
+  );
+}
 
 export function extractCategoryName(c: unknown): string {
   if (typeof c === "string") return c.trim();
@@ -228,37 +249,6 @@ export const BASELINE_CATEGORY_TREE: CategoryNode[] = [
       { _id: "b-reg-lic", name: "Leave and Licence Registration", slug: "leave-and-licence-registration", level: 2, categoryType: "both" },
     ],
   },
-  {
-    _id: "baseline-other-works",
-    name: "OTHER WORKS",
-    slug: "other-works",
-    level: 1,
-    categoryType: "both",
-    children: [
-      { _id: "b-oth-aff", name: "Affidavits", slug: "affidavits", level: 2, categoryType: "both" },
-      { _id: "b-oth-und", name: "Undertakings", slug: "undertakings", level: 2, categoryType: "both" },
-      { _id: "b-oth-ind", name: "Indemnity Bonds", slug: "indemnity-bonds", level: 2, categoryType: "both" },
-      { _id: "b-oth-not", name: "Legal Notices", slug: "legal-notices", level: 2, categoryType: "both" },
-      { _id: "b-oth-msedcl", name: "MSEDCL Name Transfer", slug: "msedcl-name-transfer", level: 2, categoryType: "both" },
-      { _id: "b-oth-nmmc", name: "NMMC Transfer", slug: "nmmc-transfer", level: 2, categoryType: "both" },
-      { _id: "b-oth-gas", name: "MAHANAGAR GAS", slug: "mahanagar-gas", level: 2, categoryType: "both" },
-      { _id: "b-oth-water", name: "WATER TAX", slug: "water-tax", level: 2, categoryType: "both" },
-      { _id: "b-oth-soc-noc", name: "Society NOC", slug: "society-noc", level: 2, categoryType: "both" },
-      { _id: "b-oth-soc-share", name: "Society Share Transfer", slug: "society-share-transfer", level: 2, categoryType: "both" },
-      { _id: "b-oth-bank-noc", name: "Bank NOC", slug: "bank-noc", level: 2, categoryType: "both" },
-    ],
-  },
-  {
-    _id: "baseline-other-work",
-    name: "Other Work",
-    slug: "other-work",
-    level: 1,
-    categoryType: "both",
-    children: [
-      { _id: "b-custom-matter", name: "Custom Matters & Consultation", slug: "custom-matters-and-consultation", level: 2, categoryType: "both" },
-      { _id: "b-rect-other", name: "Rectification Deed", slug: "rectification-deed", level: 2, categoryType: "both" },
-    ],
-  },
 ];
 
 export async function fetchCategoryTree(): Promise<CategoryNode[]> {
@@ -273,12 +263,12 @@ export async function fetchCategoryTree(): Promise<CategoryNode[]> {
       ? rawObj?.data
       : [];
     if (list.length > 0) {
-      return list as CategoryNode[];
+      return (list as CategoryNode[]).filter((c) => !isOtherWorkCategory(c?.name));
     }
   } catch (err) {
     console.error("Failed to fetch category tree, falling back to master baseline:", err);
   }
-  return BASELINE_CATEGORY_TREE;
+  return BASELINE_CATEGORY_TREE.filter((c) => !isOtherWorkCategory(c?.name));
 }
 
 export function useCategoryTree() {
@@ -286,6 +276,6 @@ export function useCategoryTree() {
     queryKey: ["categories", "tree"],
     queryFn: fetchCategoryTree,
     staleTime: 1000 * 60 * 15,
-    initialData: BASELINE_CATEGORY_TREE,
+    initialData: () => BASELINE_CATEGORY_TREE.filter((c) => !isOtherWorkCategory(c?.name)),
   });
 }

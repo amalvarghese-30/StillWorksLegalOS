@@ -43,6 +43,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
+import { formatSafeDate, formatSafeDateTime } from "@/lib/dates";
 import { useAuth } from "@/lib/auth";
 import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
@@ -103,12 +104,7 @@ function formatReadableDate(dateStr: string): string {
     const [year, month, day] = dateStr.split("-").map(Number);
     if (!year || !month || !day) return dateStr;
     const d = new Date(year, month - 1, day);
-    return d.toLocaleDateString("en-IN", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
+    return formatSafeDate(d);
   } catch {
     return dateStr;
   }
@@ -1939,7 +1935,7 @@ function EmployeeDetailReportView({
                       </span>
                     </td>
                     <td className="py-2.5 px-3 text-muted-foreground">
-                      {t.deadline ? new Date(t.deadline).toLocaleDateString("en-IN") : "—"}
+                      {formatSafeDate(t.deadline)}
                     </td>
                     <td className="py-2.5 px-3">
                       <span className="capitalize text-[11px] font-medium text-foreground">
@@ -1995,7 +1991,7 @@ function EmployeeDetailReportView({
                     <td className="py-2.5 px-3 text-muted-foreground">{c.practice || "General"}</td>
                     <td className="py-2.5 px-3 text-muted-foreground">{c.court || "—"}</td>
                     <td className="py-2.5 px-3 text-muted-foreground">
-                      {c.nextHearing ? new Date(c.nextHearing).toLocaleDateString("en-IN") : "—"}
+                      {formatSafeDate(c.nextHearing)}
                     </td>
                     <td className="py-2.5 px-3">
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-foreground">

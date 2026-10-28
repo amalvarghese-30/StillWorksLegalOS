@@ -83,10 +83,11 @@ export interface TaskRecord {
   rejectedByName?: string;
   localPath?: string;
   assignmentHistory?: AssignmentHistoryEntry[];
-  caseId?: string | { _id: string; title: string; number?: string } | null;
+  caseId?: string | { _id: string; title: string; number?: string; parties?: Array<{ name?: string; role?: string; type?: string; clientId?: any }> } | null;
   caseName?: string;
   clientId?: string | { _id: string; name: string; phone?: string } | null;
   clientName?: string;
+  clientPhone?: string;
   checklist: ChecklistItem[];
   documents?: Array<{
     _id: string;

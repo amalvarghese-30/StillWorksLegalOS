@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useMemo, useEffect } from "react";
-import { Plus, PhoneCall, ListTodo, CalendarDays, CheckCircle2, Circle, Clock, Loader2, ChevronLeft, ChevronRight, Search, Briefcase, Filter, X, SlidersHorizontal, UserCheck, AlertCircle, Check, Edit2, PhoneForwarded, PhoneMissed } from "lucide-react";
+import { Plus, PhoneCall, ListTodo, CalendarDays, CheckCircle2, Circle, Clock, Loader2, ChevronLeft, ChevronRight, Search, Briefcase, Filter, X, SlidersHorizontal, UserCheck, AlertCircle, Check, Edit2, PhoneForwarded, PhoneMissed, Users, ChevronDown } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
 import { StatusPill, toneForStatus } from "@/components/common/StatusPill";
@@ -10,41 +10,61 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useSocketEvent } from "@/lib/socket";
 import { useTasks, useTask, useUpdateTask, useToggleChecklistItem, taskKeys, type TaskRecord } from "@/services/tasks";
 import { useEmployees } from "@/services/admin";
+import { useClients } from "@/services/clients";
 import { extractCategoryName } from "@/services/categories";
 import { AddTaskDialog } from "@/components/tasks/AddTaskDialog";
 import { QuickCallDialog } from "@/components/tasks/QuickCallDialog";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import { EditCallDialog } from "@/components/tasks/EditCallDialog";
+import { UpcomingClientDashboard } from "@/components/tasks/UpcomingClientDashboard";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
+import { formatSafeDate } from "@/lib/dates";
 
 export const Route = createFileRoute("/_shell/tasks")({
   head: () => ({
     meta: [
-      { title: "Tasks · S & S Legal-Tech LLP" },
+      { title: "Upcoming Tasks · S & S Legal-Tech LLP" },
       {
         name: "description",
         content: "A calm reminders-style task list: overdue, due today, upcoming and call reminders.",
       },
-      { property: "og:title", content: "Tasks · S & S Legal-Tech LLP" },
+      { property: "og:title", content: "Upcoming Tasks · S & S Legal-Tech LLP" },
       {
         property: "og:description",
-        content: "Overdue, due today, upcoming work and call reminders in one calm list.",
+        content: "Tasks grouped by client with upcoming deadlines.",
       },
     ],
   }),
-  validateSearch: (search: Record<string, unknown>): { taskId?: string; search?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { taskId?: string; search?: string; tab?: string } => ({
     ...(typeof search["taskId"] === "string" ? { taskId: search["taskId"] } : {}),
     ...(typeof search["search"] === "string" ? { search: search["search"] } : {}),
+    ...(typeof search["tab"] === "string" ? { tab: search["tab"] } : {}),
   }),
   component: TasksPage,
 });
 
 const BUCKETS = ["Overdue", "Due Today", "Upcoming", "In Review", "Completed"] as const;
 const VIEWS = [
-  { id: "list", label: "List", icon: ListTodo },
+  { id: "upcoming", label: "Upcoming", icon: Users },
+  { id: "list", label: "All Tasks", icon: ListTodo },
   { id: "calendar", label: "Calendar", icon: CalendarDays },
 ];
+
+const DATE_RANGE_LABELS: Record<string, string> = {
+  this_month: "This Month",
+  this_week: "This Week",
+  next_7_days: "Next 7 Days",
+  next_30_days: "Next 30 Days",
+  all: "All Upcoming",
+};
 
 function getBucket(task: TaskRecord): string {
   if (task.status === "completed") return "Completed";
@@ -71,7 +91,7 @@ function formatDeadline(iso: string | null): string {
   if (diffDays === -1) return "Yesterday";
   if (diffDays === 0) return "Today";
   if (diffDays === 1) return "Tomorrow";
-  return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  return formatSafeDate(d);
 }
 
 function getTaskCaseDisplay(task: TaskRecord): string | null {
@@ -211,7 +231,8 @@ function TasksPage() {
   const navigate = useNavigate();
   const routeSearch = Route.useSearch();
   const { data: deepTaskData } = useTask(routeSearch.taskId);
-  const [view, setView] = useState("list");
+  const [view, setView] = useState<string>(routeSearch.tab || "upcoming");
+  const [dateRange, setDateRange] = useState<string>("this_month");
   const [search, setSearch] = useState(routeSearch.search ?? "");
   const [statusFilter, setStatusFilter] = useState<string>("All");
   const [priorityFilter, setPriorityFilter] = useState<string>("All");
@@ -255,10 +276,22 @@ function TasksPage() {
     }
   };
 
+  const handleCompleteTask = async (task: TaskRecord) => {
+    try {
+      await updateTask.mutateAsync({
+        id: task._id,
+        data: { status: "completed" },
+      });
+      toast.success(`Task "${task.title}" marked as completed`);
+    } catch {
+      toast.error("Failed to mark task as completed");
+    }
+  };
+
   const apiFilters = useMemo(() => {
     const f: Record<string, string> = {
       page: String(page),
-      limit: String(limit),
+      limit: view === "upcoming" ? "200" : String(limit),
     };
     if (search.trim()) f["search"] = search.trim();
     if (statusFilter !== "All") {
@@ -276,11 +309,13 @@ function TasksPage() {
     if (dueFrom) f["dueFrom"] = dueFrom;
     if (dueTo) f["dueTo"] = dueTo;
     return f;
-  }, [page, limit, search, statusFilter, priorityFilter, categoryFilter, selectedStaff, dueFrom, dueTo, isAdmin]);
+  }, [page, limit, view, search, statusFilter, priorityFilter, categoryFilter, selectedStaff, dueFrom, dueTo, isAdmin]);
 
   const { data, isLoading, isError, error } = useTasks(apiFilters);
   const { data: empData } = useEmployees();
   const employees = empData?.employees ?? [];
+  const { data: clientsData } = useClients({ limit: 1000 });
+  const clients = clientsData?.clients ?? [];
 
   useSocketEvent("task:created", () => {
     queryClient.invalidateQueries({ queryKey: taskKeys.all });
@@ -363,6 +398,80 @@ function TasksPage() {
     return { total, overdue, dueToday, inProgress, inReview, completed, calls };
   }, [data?.stats, allTasks]);
 
+  const upcomingTasks = useMemo(() => {
+    return allTasks.filter((t) => {
+      if (getBucket(t) !== "Upcoming") return false;
+
+      if (search.trim()) {
+        const q = search.toLowerCase().trim();
+        const titleMatch = t.title.toLowerCase().includes(q);
+        const descMatch = t.description?.toLowerCase().includes(q);
+        const clientMatch =
+          t.clientName?.toLowerCase().includes(q) ||
+          (typeof t.clientId === "object" && t.clientId?.name?.toLowerCase().includes(q));
+        const caseMatch =
+          t.caseName?.toLowerCase().includes(q) ||
+          (typeof t.caseId === "object" &&
+            (t.caseId?.title?.toLowerCase().includes(q) || t.caseId?.number?.toLowerCase().includes(q)));
+        const staffMatch =
+          (typeof t.assignedTo === "object" && t.assignedTo?.name?.toLowerCase().includes(q)) ||
+          (t.assignedUsers && t.assignedUsers.some((u) => u.name.toLowerCase().includes(q)));
+        if (!titleMatch && !descMatch && !clientMatch && !caseMatch && !staffMatch) {
+          return false;
+        }
+      }
+
+      if (priorityFilter !== "All" && t.priority !== priorityFilter) {
+        return false;
+      }
+
+      if (categoryFilter !== "All") {
+        const catStr = extractCategoryName(t.category);
+        if (catStr !== categoryFilter && t.category !== categoryFilter) {
+          return false;
+        }
+      }
+
+      if (isAdmin && selectedStaff.length > 0) {
+        const assignedId = typeof t.assignedTo === "object" && t.assignedTo ? (t.assignedTo as any)._id : t.assignedTo;
+        const matchesStaff =
+          selectedStaff.includes(String(assignedId)) ||
+          selectedStaff.includes(typeof t.assignedTo === "object" ? t.assignedTo?.name || "" : "") ||
+          (t.assignedUsers && t.assignedUsers.some((u) => selectedStaff.includes(String(u._id)) || selectedStaff.includes(u.name)));
+        if (!matchesStaff) return false;
+      }
+
+      if (dateRange === "this_month") {
+        if (!t.deadline) return true;
+        const dl = new Date(t.deadline);
+        const now = new Date();
+        return dl.getMonth() === now.getMonth() && dl.getFullYear() === now.getFullYear();
+      }
+      if (dateRange === "this_week") {
+        if (!t.deadline) return true;
+        const dl = new Date(t.deadline);
+        const now = new Date();
+        const endOfWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        return dl >= now && dl <= endOfWeek;
+      }
+      if (dateRange === "next_7_days") {
+        if (!t.deadline) return true;
+        const dl = new Date(t.deadline);
+        const now = new Date();
+        const next7 = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        return dl >= now && dl <= next7;
+      }
+      if (dateRange === "next_30_days") {
+        if (!t.deadline) return true;
+        const dl = new Date(t.deadline);
+        const now = new Date();
+        const next30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+        return dl >= now && dl <= next30;
+      }
+      return true;
+    });
+  }, [allTasks, search, priorityFilter, categoryFilter, selectedStaff, isAdmin, dateRange]);
+
   const tasks = allTasks;
 
   const toggleStaff = (idOrName: string) => {
@@ -431,21 +540,97 @@ function TasksPage() {
     <div>
       <PageHeader
         breadcrumb={[{ label: "S & S", to: "/" }, { label: "Tasks" }]}
-        title="Tasks"
+        title={view === "upcoming" ? "Upcoming Tasks" : "Tasks"}
         subtitle={
-          isAdmin
+          view === "upcoming"
+            ? "Tasks grouped by client with upcoming deadlines"
+            : isAdmin
             ? `${tasks.length} deliverables visible across practice · ${stats.overdue} overdue · ${stats.calls} call reminders.`
             : `Your assigned deliverables · ${tasks.length} visible · ${stats.overdue} overdue · ${stats.calls} call reminders.`
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-pill border border-border bg-card p-1 shadow-soft">
+              {VIEWS.map((v) => (
+                <button
+                  key={v.id}
+                  onClick={() => {
+                    setView(v.id);
+                    navigate({ search: (prev) => ({ ...prev, tab: v.id }) });
+                  }}
+                  className={`flex min-h-8 sm:min-h-9 items-center gap-1.5 rounded-pill px-2.5 sm:px-3 text-xs font-medium transition-all duration-200 ${
+                    view === v.id
+                      ? "gradient-primary text-primary-foreground shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <v.icon size={14} strokeWidth={1.75} />
+                  <span>{v.label}</span>
+                </button>
+              ))}
+            </div>
+
+            <Button
+              variant={showFilterPanel || activeFilterCount > 0 ? "default" : "outline"}
+              size="sm"
+              onClick={() => setShowFilterPanel(!showFilterPanel)}
+              className="h-8 sm:h-9 gap-1.5 rounded-md px-3 text-xs font-medium"
+            >
+              <Filter size={14} />
+              <span>Filter</span>
+              {activeFilterCount > 0 && (
+                <span className="ml-1 rounded-full bg-primary-foreground/20 px-1.5 py-0.2 text-[10px] font-bold">
+                  {activeFilterCount}
+                </span>
+              )}
+            </Button>
+
+            {view === "upcoming" && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 sm:h-9 gap-1.5 rounded-md px-3 text-xs font-medium bg-card hover:bg-muted/50"
+                  >
+                    <CalendarDays size={14} className="text-muted-foreground" />
+                    <span>{DATE_RANGE_LABELS[dateRange] || "This Month"}</span>
+                    <ChevronDown size={14} className="text-muted-foreground" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44 text-xs">
+                  <DropdownMenuItem onClick={() => setDateRange("this_month")}>
+                    <Check size={14} className={`mr-2 ${dateRange === "this_month" ? "opacity-100" : "opacity-0"}`} />
+                    This Month
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setDateRange("this_week")}>
+                    <Check size={14} className={`mr-2 ${dateRange === "this_week" ? "opacity-100" : "opacity-0"}`} />
+                    This Week
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setDateRange("next_7_days")}>
+                    <Check size={14} className={`mr-2 ${dateRange === "next_7_days" ? "opacity-100" : "opacity-0"}`} />
+                    Next 7 Days
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setDateRange("next_30_days")}>
+                    <Check size={14} className={`mr-2 ${dateRange === "next_30_days" ? "opacity-100" : "opacity-0"}`} />
+                    Next 30 Days
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setDateRange("all")}>
+                    <Check size={14} className={`mr-2 ${dateRange === "all" ? "opacity-100" : "opacity-0"}`} />
+                    All Upcoming
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+
             <Button
               variant="outline"
               className="rounded-md shadow-soft transition-transform duration-200 hover:-translate-y-0.5 text-xs sm:text-helper"
               onClick={() => setShowQuickCall(true)}
             >
               <PhoneCall size={16} strokeWidth={1.75} />
-              <span>Call reminder</span>
+              <span className="hidden sm:inline">Call reminder</span>
             </Button>
             <Button
               className="gradient-primary rounded-md text-primary-foreground shadow-soft transition-transform duration-200 hover:-translate-y-0.5 text-xs sm:text-helper"
@@ -458,8 +643,9 @@ function TasksPage() {
         }
       />
 
-      {/* ── Interactive Stat Cards (Clickable quick filters) ── */}
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      {/* ── Interactive Stat Cards (Clickable quick filters, shown in All Tasks list view) ── */}
+      {view !== "upcoming" && (
+        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <button
           type="button"
           onClick={() => setStatusFilter(statusFilter === "All" ? "All" : "All")}
@@ -544,27 +730,12 @@ function TasksPage() {
           <span className="mt-1 text-[11px] text-muted-foreground">Client calls</span>
         </button>
       </div>
+      )}
 
-      {/* ── Search & Filter Controls ── */}
+      {/* ── Search & Filter Controls (Shown in All Tasks list view) ── */}
+      {view !== "upcoming" && (
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-pill border border-border bg-card p-1 shadow-soft">
-            {VIEWS.map((v) => (
-              <button
-                key={v.id}
-                onClick={() => setView(v.id)}
-                className={`flex min-h-9 sm:min-h-10 items-center gap-1.5 sm:gap-2 rounded-pill px-2.5 sm:px-3.5 text-xs sm:text-helper font-medium transition-all duration-200 ${
-                  view === v.id
-                    ? "gradient-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <v.icon size={15} strokeWidth={1.75} />
-                <span>{v.label}</span>
-              </button>
-            ))}
-          </div>
-
           <Button
             variant={showFilterPanel || activeFilterCount > 0 ? "default" : "outline"}
             size="sm"
@@ -614,6 +785,7 @@ function TasksPage() {
           )}
         </label>
       </div>
+      )}
 
       {/* ── Expandable Filter Panel ── */}
       {showFilterPanel && (
@@ -763,8 +935,8 @@ function TasksPage() {
         </div>
       )}
 
-      {/* Empty */}
-      {!isLoading && !isError && tasks.length === 0 && (
+      {/* Empty (when not in upcoming view) */}
+      {!isLoading && !isError && view !== "upcoming" && tasks.length === 0 && (
         <div className="rounded-lg border border-border bg-card p-16 text-center shadow-soft">
           <p className="text-title font-semibold">No tasks yet</p>
           <p className="mt-2 text-helper text-muted-foreground">
@@ -773,8 +945,16 @@ function TasksPage() {
         </div>
       )}
 
-      {/* Data */}
-      {!isLoading && !isError && tasks.length > 0 && view === "calendar" ? (
+      {/* View Content */}
+      {!isLoading && !isError && view === "upcoming" ? (
+        <UpcomingClientDashboard
+          tasks={upcomingTasks}
+          clients={clients}
+          onSelectTask={setSelectedTask}
+          onCompleteTask={handleCompleteTask}
+          isAdmin={isAdmin}
+        />
+      ) : !isLoading && !isError && tasks.length > 0 && view === "calendar" ? (
         <div className="space-y-6">
           {/* Calendar header */}
           <div className="flex items-center justify-between">

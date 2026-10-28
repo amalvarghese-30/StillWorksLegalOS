@@ -59,11 +59,7 @@ function toneForStatus(s: string): "primary" | "success" | "warning" | "muted" |
 }
 
 function formatDate(iso: string | null | undefined): string {
-  return formatSafeDate(iso, "Not scheduled", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  return formatSafeDate(iso, "Not scheduled");
 }
 
 function CaseCard({

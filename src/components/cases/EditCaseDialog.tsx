@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { useUpdateCase, type CaseRecord, type CreateCasePayload } from "@/services/cases";
 import { useEmployees } from "@/services/admin";
-import { useCategories, extractCategoryName } from "@/services/categories";
+import { useCategories, extractCategoryName, isOtherWorkCategory, isHeirshipCategory } from "@/services/categories";
 import { useAuth } from "@/lib/auth";
 import { DiscardConfirmationDialog } from "@/components/ui/discard-confirmation-dialog";
 import { AssigneeMultiSelect } from "@/components/common/AssigneeMultiSelect";
@@ -315,27 +315,29 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
                 </div>
               </div>
 
-              {/* Next Hearing Date */}
-              <div className="space-y-1.5 pt-1">
-                <Label
-                  htmlFor="case-next-hearing"
-                  className="text-xs font-semibold text-foreground flex items-center gap-1.5"
-                >
-                  <CalendarDays size={14} className="text-primary" />
-                  Next Hearing Date
-                </Label>
-                <Input
-                  id="case-next-hearing"
-                  type="date"
-                  value={nextHearing}
-                  onChange={(e) => setNextHearing(e.target.value)}
-                  className="h-10 rounded-md"
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  Whenever this date is updated, it automatically synchronizes with the firm
-                  calendar.
-                </p>
-              </div>
+              {/* Next Hearing Date (Only for Heirship & Court Matters) */}
+              {isHeirshipCategory(record.mainCategory || category) && (
+                <div className="space-y-1.5 pt-1 animate-in fade-in-50">
+                  <Label
+                    htmlFor="case-next-hearing"
+                    className="text-xs font-semibold text-foreground flex items-center gap-1.5"
+                  >
+                    <CalendarDays size={14} className="text-primary" />
+                    Next Hearing Date (DD/MM/YYYY) (Optional)
+                  </Label>
+                  <Input
+                    id="case-next-hearing"
+                    type="date"
+                    value={nextHearing}
+                    onChange={(e) => setNextHearing(e.target.value)}
+                    className="h-10 rounded-md"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Whenever this date is updated, it automatically synchronizes with the firm
+                    calendar.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* ── SECTION 2: DETAILS & DOCUMENTS ── */}
@@ -354,7 +356,7 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
                 </Label>
                 {categories.length > 0 ? (
                   <div className="flex flex-wrap gap-1.5">
-                    {categories.map((c) => {
+                    {categories.filter((c) => !isOtherWorkCategory(c)).map((c) => {
                       const isSelected = category === c;
                       return (
                         <button
@@ -379,7 +381,7 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
                     onChange={(e) => setCategory(e.target.value)}
                     className="h-11 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   >
-                    {categories.map((c) => (
+                    {categories.filter((c) => !isOtherWorkCategory(c)).map((c) => (
                       <option key={c} value={c}>
                         {c}
                       </option>
@@ -474,20 +476,20 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
                 />
               </div>
 
-              {/* Tags */}
+              {/* File No */}
               <div className="space-y-1.5">
                 <Label
                   htmlFor="case-tags"
                   className="text-xs font-semibold text-foreground flex items-center gap-1.5"
                 >
                   <Tag size={14} className="text-muted-foreground" />
-                  Tags (comma-separated)
+                  File No (comma-separated)
                 </Label>
                 <Input
                   id="case-tags"
                   value={tags}
                   onChange={(e) => setTags(e.target.value)}
-                  placeholder="Civil, Urgent, Injunction"
+                  placeholder="e.g. FN-101, FN-102"
                   className="h-11 rounded-md"
                 />
               </div>

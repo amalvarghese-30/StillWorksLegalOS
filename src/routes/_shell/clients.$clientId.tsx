@@ -67,7 +67,7 @@ export const Route = createFileRoute("/_shell/clients/$clientId")({
 // ---------------------------------------------------------------------------
 
 function formatDate(iso: string | null | undefined): string {
-  return formatSafeDate(iso, "—", { day: "numeric", month: "short", year: "numeric" });
+  return formatSafeDate(iso, "—");
 }
 
 const kycTone: Record<string, string> = { Verified: "success", Pending: "warning", Rejected: "destructive" };
@@ -854,7 +854,7 @@ function ClientProfile() {
                               <span className={`font-medium ${priorityColor}`}>{task.priority}</span>
                             )}
                             {task.deadline && (
-                              <span>Due: {formatSafeDate(task.deadline, "—", { day: "numeric", month: "short", year: "numeric" })}</span>
+                              <span>Due: {formatSafeDate(task.deadline, "—")}</span>
                             )}
                             {task.assignedTo && (
                               <span>

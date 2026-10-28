@@ -450,7 +450,7 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
               <div className="space-y-1.5">
                 <Label htmlFor="client-phone" className="text-helper font-medium flex items-center gap-1.5">
                   <Phone size={13} className="text-muted-foreground" />
-                  Phone (10-digit Mobile)
+                  Phone (10-digit Mobile) (Optional)
                 </Label>
                 <Input
                   id="client-phone"
@@ -470,7 +470,7 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
               <div className="space-y-1.5">
                 <Label htmlFor="client-email" className="text-helper font-medium flex items-center gap-1.5">
                   <Mail size={13} className="text-muted-foreground" />
-                  Email Address
+                  Email Address (Optional)
                 </Label>
                 <Input
                   id="client-email"
@@ -492,7 +492,7 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
             <div className="space-y-1.5">
               <Label htmlFor="client-address" className="text-helper font-medium flex items-center gap-1.5">
                 <MapPin size={13} className="text-muted-foreground" />
-                Physical / Office Address
+                Physical / Office Address (Optional)
               </Label>
               <Input
                 id="client-address"
@@ -514,7 +514,7 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label htmlFor="client-aadhar" className="text-helper font-medium">Aadhaar Number (12 digits)</Label>
+                <Label htmlFor="client-aadhar" className="text-helper font-medium">Aadhaar Number (12 digits) (Optional)</Label>
                 <Input
                   id="client-aadhar"
                   value={aadhar}
@@ -531,7 +531,7 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
                 )}
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="client-pan" className="text-helper font-medium">PAN Number (10 characters)</Label>
+                <Label htmlFor="client-pan" className="text-helper font-medium">PAN Number (10 characters) (Optional)</Label>
                 <Input
                   id="client-pan"
                   value={pan}
@@ -591,7 +591,7 @@ export function EditClientDialog({ open, onClose, record }: EditClientDialogProp
               <div className="space-y-1.5">
                 <Label htmlFor="client-completion" className="text-helper font-medium flex items-center gap-1.5">
                   <Calendar size={13} className="text-muted-foreground" />
-                  Promised Completion Date &amp; Time
+                  Promised Completion Date &amp; Time (DD/MM/YYYY) (Optional)
                 </Label>
                 <Input
                   id="client-completion"

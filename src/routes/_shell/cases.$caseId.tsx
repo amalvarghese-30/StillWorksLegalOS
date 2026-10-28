@@ -38,6 +38,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import { formatSafeDate, formatSafeDateTime } from "@/lib/dates";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -127,12 +128,7 @@ const sections = [
 
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return "Not scheduled";
-  return new Date(iso).toLocaleDateString("en-IN", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  return formatSafeDate(iso, "Not scheduled");
 }
 
 function formatRelative(iso: string): string {
@@ -1261,11 +1257,7 @@ function CaseWorkspace() {
                               )}
                               <span>
                                 Recorded by {h.recordedBy?.name || "System"} on{" "}
-                                {new Date(h.createdAt).toLocaleDateString("en-IN", {
-                                  day: "numeric",
-                                  month: "short",
-                                  year: "numeric",
-                                })}
+                                {formatSafeDate(h.createdAt)}
                               </span>
                             </div>
                           </div>

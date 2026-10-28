@@ -76,7 +76,7 @@ export function toSafeIso(val: unknown): string | null {
 }
 
 /**
- * Safely formats a date into Indian standard legal display format (e.g. "15 Oct 2026").
+ * Safely formats a date into Indian standard legal display format (DD/MM/YYYY).
  * Never displays "Invalid Date".
  */
 export function formatSafeDate(
@@ -88,28 +88,34 @@ export function formatSafeDate(
   const d = parseFlexibleDate(val);
   if (!d) return fallback;
 
-  return d.toLocaleDateString(
-    "en-IN",
-    options ?? { day: "numeric", month: "short", year: "numeric" }
-  );
+  // If caller specifically requested only month/year without day (e.g. for month overview header)
+  if (options && !options.day && (options.month || options.year)) {
+    return d.toLocaleDateString("en-IN", options);
+  }
+
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
 }
 
 /**
- * Safely formats a date with time (e.g. "15 Oct 2026, 02:30 PM").
+ * Safely formats a date with time in DD/MM/YYYY, hh:mm AM/PM.
  */
 export function formatSafeDateTime(val: unknown, fallback = "—"): string {
   if (!val) return fallback;
   const d = parseFlexibleDate(val);
   if (!d) return fallback;
 
-  return d.toLocaleString("en-IN", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const year = d.getFullYear();
+  const time = d.toLocaleTimeString("en-IN", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: true,
   });
+  return `${day}/${month}/${year}, ${time}`;
 }
 
 /**
