@@ -982,14 +982,15 @@ function TasksPage() {
             </div>
           </div>
 
-          {/* Calendar grid wrapper for mobile responsiveness */}
-          <div className="overflow-x-auto touch-scroll rounded-lg border border-border bg-card shadow-soft">
-            <div className="min-w-[620px]">
+          {/* Calendar grid */}
+          <div className="rounded-lg border border-border bg-card shadow-soft p-1 sm:p-3 overflow-hidden">
+            <div>
               {/* Weekday headers */}
-              <div className="grid grid-cols-7 border-b border-border bg-muted/50">
+              <div className="grid grid-cols-7 border-b border-border bg-muted/40 text-center font-medium text-muted-foreground rounded-t-md">
                 {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-                  <div key={day} className="px-2 py-3 text-center text-caption font-medium text-muted-foreground">
-                    {day}
+                  <div key={day} className="py-2 px-0.5 sm:px-2 text-[11px] sm:text-caption">
+                    <span className="hidden sm:inline">{day}</span>
+                    <span className="sm:hidden">{day.slice(0, 1)}</span>
                   </div>
                 ))}
               </div>
@@ -998,32 +999,33 @@ function TasksPage() {
               <div className="grid grid-cols-7">
                 {calendarDays.map((day, i) => {
                   if (!day) {
-                    return <div key={"empty-" + i} className="min-h-[100px] border-r border-b border-border p-2" />;
+                    return <div key={"empty-" + i} className="min-h-[58px] sm:min-h-[100px] border-r border-b border-border/50 bg-muted/15 p-1 sm:p-2" />;
                   }
                   const dayTasks = getTasksForDay(day);
                   const isToday = day.toDateString() === new Date().toDateString();
                   return (
                     <div
                       key={day.toISOString()}
-                      className={`min-h-[100px] p-2 border-r border-b border-border ${
+                      className={`min-h-[58px] sm:min-h-[100px] p-1 sm:p-2 border-r border-b border-border/50 transition-colors ${
                         isToday ? "bg-primary/5" : ""
                       }`}
                     >
                       <div className="flex items-center justify-between mb-1">
                         <span
-                          className={`num text-caption font-medium ${
-                            isToday ? "text-primary font-semibold" : "text-foreground"
+                          className={`num text-[11px] sm:text-caption font-medium ${
+                            isToday ? "text-primary font-bold" : "text-foreground"
                           }`}
                         >
                           {day.getDate()}
                         </span>
                         {dayTasks.length > 0 && (
-                          <StatusPill tone="primary" className="text-caption">
+                          <span className="text-[10px] sm:text-caption font-semibold px-1 sm:px-1.5 py-0.2 rounded-full bg-primary/10 text-primary">
                             {dayTasks.length}
-                          </StatusPill>
+                          </span>
                         )}
                       </div>
-                      <div className="space-y-1">
+                      {/* Desktop task pills */}
+                      <div className="hidden sm:block space-y-1">
                         {dayTasks.slice(0, 3).map((t) => (
                           <div
                             key={t._id}
@@ -1040,6 +1042,21 @@ function TasksPage() {
                           </div>
                         )}
                       </div>
+                      {/* Mobile task indicator dots */}
+                      {dayTasks.length > 0 && (
+                        <div className="sm:hidden flex flex-wrap gap-0.5 mt-1">
+                          {dayTasks.slice(0, 3).map((t) => (
+                            <button
+                              key={t._id}
+                              type="button"
+                              onClick={() => setSelectedTask(t)}
+                              className="size-1.5 rounded-full bg-primary"
+                              title={t.title}
+                              aria-label={t.title}
+                            />
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

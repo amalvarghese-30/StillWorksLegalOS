@@ -861,19 +861,20 @@ function ClientProfile() {
                   </Button>
                 </div>
               ) : caseViewMode === "table" ? (
-                <div className="overflow-hidden rounded-lg border border-border bg-card">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-helper">
+                <>
+                  {/* Desktop Table View */}
+                  <div className="hidden lg:block overflow-hidden rounded-lg border border-border bg-card">
+                    <table className="w-full table-fixed text-left text-helper">
                       <thead className="border-b border-border bg-muted/40 text-caption font-semibold uppercase tracking-wider text-muted-foreground">
                         <tr>
-                          <th className="px-4 py-2.5">Case #</th>
-                          <th className="px-4 py-2.5">Matter Title & Forum</th>
-                          <th className="px-4 py-2.5">Category / Practice</th>
-                          <th className="px-4 py-2.5">Client Role</th>
-                          <th className="px-4 py-2.5">Status</th>
-                          <th className="px-4 py-2.5">Assigned To</th>
-                          <th className="px-4 py-2.5">Next Hearing</th>
-                          <th className="px-4 py-2.5 text-right">Actions</th>
+                          <th className="px-3.5 py-2.5 w-[13%]">Case #</th>
+                          <th className="px-3.5 py-2.5 w-[25%]">Matter Title & Forum</th>
+                          <th className="px-3.5 py-2.5 w-[14%]">Category / Practice</th>
+                          <th className="px-3.5 py-2.5 w-[11%]">Client Role</th>
+                          <th className="px-3.5 py-2.5 w-[10%]">Status</th>
+                          <th className="px-3.5 py-2.5 w-[12%]">Assigned To</th>
+                          <th className="px-3.5 py-2.5 w-[10%]">Next Hearing</th>
+                          <th className="px-3.5 py-2.5 text-right w-[15%]">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border/60">
@@ -883,26 +884,26 @@ function ClientProfile() {
                           );
                           return (
                             <tr key={c._id} className="transition-colors hover:bg-muted/30">
-                              <td className="px-4 py-3 font-mono text-xs font-semibold text-foreground whitespace-nowrap">
-                                <div>{c.number}</div>
+                              <td className="px-3.5 py-3 font-mono text-xs font-semibold text-foreground">
+                                <div className="break-all">{c.number}</div>
                                 {c.courtCaseId && (
-                                  <div className="text-[11px] font-normal text-muted-foreground">{c.courtCaseId}</div>
+                                  <div className="text-[11px] font-normal text-muted-foreground truncate">{c.courtCaseId}</div>
                                 )}
                               </td>
-                              <td className="px-4 py-3 min-w-0">
+                              <td className="px-3.5 py-3 min-w-0">
                                 <Link
                                   to="/cases/$caseId"
                                   params={{ caseId: c._id }}
-                                  className="font-medium text-foreground hover:text-primary transition-colors block truncate max-w-xs"
+                                  className="font-medium text-foreground hover:text-primary transition-colors block break-words"
                                 >
                                   {c.title}
                                 </Link>
-                                {c.court && <span className="text-caption text-muted-foreground block truncate">{c.court}</span>}
+                                {c.court && <span className="text-caption text-muted-foreground block break-words mt-0.5">{c.court}</span>}
                               </td>
-                              <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
+                              <td className="px-3.5 py-3 text-muted-foreground break-words">
                                 {c.practice || (c as any).category || "General Practice"}
                               </td>
-                              <td className="px-4 py-3 whitespace-nowrap">
+                              <td className="px-3.5 py-3">
                                 {clientParty?.role ? (
                                   <span className="inline-block rounded-md bg-muted px-2 py-0.5 text-caption font-medium text-foreground">
                                     {clientParty.role}
@@ -911,16 +912,16 @@ function ClientProfile() {
                                   <span className="text-muted-foreground text-caption">—</span>
                                 )}
                               </td>
-                              <td className="px-4 py-3 whitespace-nowrap">
+                              <td className="px-3.5 py-3">
                                 <StatusPill tone={toneForStatus(c.status)}>{c.status}</StatusPill>
                               </td>
-                              <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
+                              <td className="px-3.5 py-3 text-muted-foreground truncate">
                                 {c.assignedTo?.name || "Unassigned"}
                               </td>
-                              <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
+                              <td className="px-3.5 py-3 text-muted-foreground">
                                 {formatDate(c.nextHearing)}
                               </td>
-                              <td className="px-4 py-3 text-right whitespace-nowrap">
+                              <td className="px-3.5 py-3 text-right">
                                 <div className="flex items-center justify-end gap-1">
                                   <Button
                                     variant="ghost"
@@ -959,7 +960,88 @@ function ClientProfile() {
                       </tbody>
                     </table>
                   </div>
-                </div>
+
+                  {/* Tablet / Mobile Stacked Cards (When in Table Mode on Narrow Viewports) */}
+                  <div className="lg:hidden space-y-3">
+                    {filteredClientCases.map((c) => {
+                      const clientParty = c.parties?.find(
+                        (p) => p.clientId === clientId || p.name?.toLowerCase() === record.name.toLowerCase()
+                      );
+                      return (
+                        <div
+                          key={c._id}
+                          className="rounded-xl border border-border bg-card p-4 shadow-soft space-y-3"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <span className="font-mono text-xs font-semibold text-primary">{c.number}</span>
+                              <Link
+                                to="/cases/$caseId"
+                                params={{ caseId: c._id }}
+                                className="font-semibold text-foreground hover:text-primary transition-colors block text-sm mt-0.5 break-words"
+                              >
+                                {c.title}
+                              </Link>
+                              {c.court && <p className="text-caption text-muted-foreground mt-0.5">{c.court}</p>}
+                            </div>
+                            <StatusPill tone={toneForStatus(c.status)}>{c.status}</StatusPill>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border/60">
+                            <div>
+                              <span className="text-[10px] text-muted-foreground uppercase block font-medium">Practice</span>
+                              <span className="text-foreground truncate block">{c.practice || "General Practice"}</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-muted-foreground uppercase block font-medium">Client Role</span>
+                              <span className="text-foreground truncate block">{clientParty?.role || "—"}</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-muted-foreground uppercase block font-medium">Assigned To</span>
+                              <span className="text-foreground truncate block">{c.assignedTo?.name || "Unassigned"}</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-muted-foreground uppercase block font-medium">Next Hearing</span>
+                              <span className="text-foreground truncate block">{formatDate(c.nextHearing)}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-end gap-1.5 pt-2 border-t border-border/40">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2.5 text-caption gap-1 text-primary hover:text-primary"
+                              asChild
+                            >
+                              <Link to="/cases/$caseId" params={{ caseId: c._id }}>
+                                <Eye size={13} /> View
+                              </Link>
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2.5 text-caption gap-1 text-muted-foreground hover:text-foreground"
+                              onClick={() => setEditingCase(c as unknown as CaseRecord)}
+                            >
+                              <Edit3 size={13} /> Edit
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2.5 text-caption gap-1 text-muted-foreground hover:text-foreground"
+                              onClick={() => {
+                                setTaskCaseId(c._id);
+                                setShowAddTaskDialog(true);
+                              }}
+                            >
+                              <CheckSquare size={13} /> Task
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
               ) : (
                 <div className="grid gap-4 sm:grid-cols-2">
                   {filteredClientCases.map((c) => {

@@ -321,30 +321,49 @@ function CalendarPage() {
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto touch-scroll rounded-lg border border-border bg-card p-4 shadow-soft sm:p-6">
-              <div className="grid min-w-[640px] grid-cols-7 gap-2 pb-3 text-caption font-medium text-muted-foreground">
-                {WEEKDAYS.map((d) => <div key={d} className="px-2">{d}</div>)}
+            <div className="rounded-lg border border-border bg-card p-2 sm:p-6 shadow-soft">
+              <div className="grid grid-cols-7 gap-1 sm:gap-2 pb-2 sm:pb-3 text-caption font-medium text-muted-foreground text-center">
+                {WEEKDAYS.map((d) => (
+                  <div key={d} className="px-0.5 sm:px-2 text-[11px] sm:text-caption">
+                    <span className="hidden sm:inline">{d}</span>
+                    <span className="sm:hidden">{d.slice(0, 1)}</span>
+                  </div>
+                ))}
               </div>
-              <div className="grid min-w-[640px] grid-cols-7 gap-2">
+              <div className="grid grid-cols-7 gap-1 sm:gap-2">
                 {days.map((d, i) => {
                   const inMonth = d.month === "current";
                   const dateStr = d.dateStr;
                   const isToday = dateStr === todayStr;
+                  const isSelected = selectedDate === dateStr;
                   const dayEvents = inMonth ? (eventsByDayKey[dateStr] ?? []) : [];
                   return (
                     <div
                       key={i}
                       onClick={() => inMonth && setSelectedDate(dateStr)}
-                      className={`min-h-24 rounded-md border p-2 transition-all duration-150 sm:min-h-28 ${
-                        inMonth ? "border-border bg-card hover:bg-accent/60 hover:border-primary/50 cursor-pointer shadow-soft" : "border-transparent bg-muted/40 cursor-default"
+                      className={`min-h-[58px] sm:min-h-24 sm:p-2 p-1 rounded-md border transition-all duration-150 ${
+                        isSelected
+                          ? "border-primary bg-primary/10 shadow-sm"
+                          : inMonth
+                          ? "border-border bg-card hover:bg-accent/60 hover:border-primary/50 cursor-pointer shadow-soft"
+                          : "border-transparent bg-muted/40 cursor-default"
                       }`}
                     >
-                      <span className={`num inline-flex size-6 items-center justify-center rounded-full text-caption ${
-                        isToday ? "gradient-primary font-semibold text-primary-foreground" : inMonth ? "text-foreground" : "text-muted-foreground/40"
-                      }`}>
-                        {d.day}
-                      </span>
-                      <div className="mt-1.5 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className={`num inline-flex size-5 sm:size-6 items-center justify-center rounded-full text-[11px] sm:text-caption ${
+                          isToday ? "gradient-primary font-semibold text-primary-foreground" : inMonth ? "text-foreground font-medium" : "text-muted-foreground/40"
+                        }`}>
+                          {d.day}
+                        </span>
+                        {dayEvents.length > 0 && (
+                          <span className="sm:hidden text-[9px] font-bold num text-primary px-1 rounded-full bg-primary/10">
+                            {dayEvents.length}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Desktop event pills */}
+                      <div className="hidden sm:block mt-1.5 space-y-1">
                         {dayEvents.slice(0, 3).map((e) => (
                           <p key={e._id} className={`truncate rounded-sm px-1.5 py-0.5 text-[11px] font-medium ${getEventCls(e.type)}`}>
                             {e.allDay ? e.title : `${new Date(e.start).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }).slice(0, 5)} ${e.title}`}
@@ -355,6 +374,24 @@ function CalendarPage() {
                             +{dayEvents.length - 3} more
                           </p>
                         )}
+                      </div>
+
+                      {/* Mobile event indicator dots */}
+                      <div className="sm:hidden mt-1 flex flex-wrap gap-0.5 justify-center">
+                        {dayEvents.slice(0, 3).map((e) => (
+                          <span
+                            key={e._id}
+                            className={`size-1.5 rounded-full ${
+                              e.type === "hearing"
+                                ? "bg-amber-500"
+                                : e.type === "task"
+                                ? "bg-indigo-500"
+                                : e.type === "call_reminder"
+                                ? "bg-violet-500"
+                                : "bg-primary"
+                            }`}
+                          />
+                        ))}
                       </div>
                     </div>
                   );

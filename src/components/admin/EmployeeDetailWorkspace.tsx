@@ -40,6 +40,7 @@ import { useCases, type CaseRecord } from "@/services/cases";
 import { useTasks, type TaskRecord } from "@/services/tasks";
 import { useDailyEmployeeReport } from "@/services/reports";
 import { useCreateDirectChat } from "@/services/chat";
+import { useFloatingChat } from "@/lib/floatingChat";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import { usePresence } from "@/lib/presence";
 import { cn } from "@/lib/utils";
@@ -165,15 +166,20 @@ export function EmployeeDetailWorkspace({
     setTaskSearch("");
   };
 
-  // Messaging mutation
+  // Messaging mutation & floating chat integration
   const createDirectChat = useCreateDirectChat();
+  const { open: openFloatingChat } = useFloatingChat();
   const handleMessage = () => {
     if (!employee?._id) return;
     createDirectChat.mutate(
       { userId: employee._id },
       {
         onSuccess: (result) => {
-          navigate({ to: "/chat", search: { groupId: result.group._id } });
+          openFloatingChat(result.group._id);
+          toast.success(`Opened conversation with ${employee.name}`);
+        },
+        onError: (err: any) => {
+          toast.error(err?.message || "Failed to start direct conversation");
         },
       }
     );
@@ -335,7 +341,11 @@ export function EmployeeDetailWorkspace({
               disabled={createDirectChat.isPending}
               className="gradient-primary text-primary-foreground rounded-lg h-8 shadow-soft"
             >
-              <MessageSquare size={13} className="mr-1.5" />
+              {createDirectChat.isPending ? (
+                <Loader2 size={13} className="mr-1.5 animate-spin" />
+              ) : (
+                <MessageSquare size={13} className="mr-1.5" />
+              )}
               Direct Message
             </Button>
           )}

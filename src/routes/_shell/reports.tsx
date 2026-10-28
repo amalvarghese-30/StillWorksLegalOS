@@ -570,67 +570,131 @@ function ReportsPage() {
                     <p className="text-sm font-medium text-foreground">No clients found matching search criteria</p>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead>
-                        <tr className="border-b border-border text-muted-foreground font-medium bg-muted/30">
-                          <th className="py-2.5 px-3">Client Name</th>
-                          <th className="py-2.5 px-3">Type / Tag</th>
-                          <th className="py-2.5 px-3">Contact</th>
-                          <th className="py-2.5 px-3 text-center">Active Matters</th>
-                          <th className="py-2.5 px-3 text-center">Pending Tasks</th>
-                          <th className="py-2.5 px-3 text-center">Visits</th>
-                          <th className="py-2.5 px-3">Last Visit</th>
-                          <th className="py-2.5 px-3 text-right no-print">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border/60">
-                        {clientReportsData.clients.map((c) => (
-                          <tr key={c._id} className="hover:bg-muted/20 transition-colors">
-                            <td className="py-2.5 px-3 font-semibold text-foreground">
-                              {c.name}
-                            </td>
-                            <td className="py-2.5 px-3">
-                              <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary mr-1">
-                                {c.type}
-                              </span>
-                              <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground">
-                                {c.tag}
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-3 text-muted-foreground">
-                              <div>{c.phone || "—"}</div>
-                              <div className="text-[10px] truncate max-w-[150px]">{c.email || ""}</div>
-                            </td>
-                            <td className="py-2.5 px-3 text-center font-semibold num">
-                              {c.metrics.activeCases}
-                            </td>
-                            <td className="py-2.5 px-3 text-center font-semibold num">
-                              <span className={c.metrics.pendingTasks > 0 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}>
-                                {c.metrics.pendingTasks}
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-3 text-center font-semibold num">
-                              {c.visitCount}
-                            </td>
-                            <td className="py-2.5 px-3 text-muted-foreground">
-                              {c.lastVisitAt ? formatSafeDate(c.lastVisitAt) : "—"}
-                            </td>
-                            <td className="py-2.5 px-3 text-right no-print">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setDrilldownClientId(c._id)}
-                                className="h-7 text-xs rounded-md"
-                              >
-                                View Report
-                              </Button>
-                            </td>
+                  <>
+                    {/* Desktop / Laptop Table View */}
+                    <div className="hidden md:block overflow-hidden rounded-lg border border-border">
+                      <table className="w-full table-fixed text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-border text-muted-foreground font-medium bg-muted/30">
+                            <th className="py-2.5 px-3 w-[22%]">Client Name</th>
+                            <th className="py-2.5 px-3 w-[15%]">Type / Tag</th>
+                            <th className="py-2.5 px-3 w-[18%]">Contact</th>
+                            <th className="py-2.5 px-3 w-[9%] text-center">Active Matters</th>
+                            <th className="py-2.5 px-3 w-[9%] text-center">Pending Tasks</th>
+                            <th className="py-2.5 px-3 w-[7%] text-center">Visits</th>
+                            <th className="py-2.5 px-3 w-[12%]">Last Visit</th>
+                            <th className="py-2.5 px-3 w-[8%] text-right no-print">Action</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody className="divide-y divide-border/60">
+                          {clientReportsData.clients.map((c) => (
+                            <tr key={c._id} className="hover:bg-muted/20 transition-colors">
+                              <td className="py-2.5 px-3 font-semibold text-foreground break-words">
+                                {c.name}
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary mr-1">
+                                  {c.type}
+                                </span>
+                                <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground">
+                                  {c.tag}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-muted-foreground min-w-0">
+                                <div className="truncate">{c.phone || "—"}</div>
+                                <div className="text-[10px] truncate text-muted-foreground/80">{c.email || ""}</div>
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-semibold num">
+                                {c.metrics.activeCases}
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-semibold num">
+                                <span className={c.metrics.pendingTasks > 0 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}>
+                                  {c.metrics.pendingTasks}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-semibold num">
+                                {c.visitCount}
+                              </td>
+                              <td className="py-2.5 px-3 text-muted-foreground">
+                                {c.lastVisitAt ? formatSafeDate(c.lastVisitAt) : "—"}
+                              </td>
+                              <td className="py-2.5 px-3 text-right no-print">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setDrilldownClientId(c._id)}
+                                  className="h-7 text-xs rounded-md"
+                                >
+                                  View
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Mobile / Tablet Stacked Cards */}
+                    <div className="md:hidden space-y-3">
+                      {clientReportsData.clients.map((c) => (
+                        <div
+                          key={c._id}
+                          className="rounded-xl border border-border bg-card p-3.5 shadow-soft space-y-2.5"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <h4 className="font-semibold text-foreground text-sm leading-tight break-words">{c.name}</h4>
+                              <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary">
+                                  {c.type}
+                                </span>
+                                <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground">
+                                  {c.tag}
+                                </span>
+                              </div>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setDrilldownClientId(c._id)}
+                              className="h-7 text-xs rounded-md shrink-0 no-print"
+                            >
+                              View Report
+                            </Button>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border/60">
+                            <div>
+                              <span className="text-[10px] text-muted-foreground uppercase block font-medium">Contact</span>
+                              <div className="text-foreground truncate mt-0.5">{c.phone || "—"}</div>
+                              {c.email && <div className="text-[10px] text-muted-foreground truncate">{c.email}</div>}
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-muted-foreground uppercase block font-medium">Last Visit</span>
+                              <div className="text-foreground truncate mt-0.5">{c.lastVisitAt ? formatSafeDate(c.lastVisitAt) : "—"}</div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-2 text-center bg-muted/20 rounded-lg p-2 border border-border/40">
+                            <div>
+                              <div className="text-sm font-bold text-foreground num">{c.metrics.activeCases}</div>
+                              <span className="text-[10px] text-muted-foreground block font-medium">Matters</span>
+                            </div>
+                            <div>
+                              <div className={`text-sm font-bold num ${c.metrics.pendingTasks > 0 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}>
+                                {c.metrics.pendingTasks}
+                              </div>
+                              <span className="text-[10px] text-muted-foreground block font-medium">Pending Tasks</span>
+                            </div>
+                            <div>
+                              <div className="text-sm font-bold text-foreground num">{c.visitCount}</div>
+                              <span className="text-[10px] text-muted-foreground block font-medium">Visits</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
               </SectionCard>
             </section>
@@ -1957,55 +2021,99 @@ function EmployeeDetailReportView({
         {tasks.length === 0 ? (
           <div className="p-8 text-center text-xs text-muted-foreground">No tasks matching date filters</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-border text-muted-foreground bg-muted/20 font-medium">
-                  <th className="py-2.5 px-3">Title</th>
-                  <th className="py-2.5 px-3">Case / Matter</th>
-                  <th className="py-2.5 px-3">Client</th>
-                  <th className="py-2.5 px-3">Priority</th>
-                  <th className="py-2.5 px-3">Deadline</th>
-                  <th className="py-2.5 px-3">Status</th>
-                  <th className="py-2.5 px-3 text-right no-print">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/60">
-                {tasks.map((t) => (
-                  <tr key={t._id} className="hover:bg-muted/15">
-                    <td className="py-2.5 px-3 font-medium text-foreground">{t.title}</td>
-                    <td className="py-2.5 px-3 text-muted-foreground">{t.caseId?.title || "—"}</td>
-                    <td className="py-2.5 px-3 text-muted-foreground">{t.clientId?.name || "—"}</td>
-                    <td className="py-2.5 px-3">
+          <>
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-hidden">
+              <table className="w-full table-fixed text-left text-xs">
+                <thead>
+                  <tr className="border-b border-border text-muted-foreground bg-muted/20 font-medium">
+                    <th className="py-2.5 px-3 w-[28%]">Title</th>
+                    <th className="py-2.5 px-3 w-[20%]">Case / Matter</th>
+                    <th className="py-2.5 px-3 w-[18%]">Client</th>
+                    <th className="py-2.5 px-3 w-[10%]">Priority</th>
+                    <th className="py-2.5 px-3 w-[12%]">Deadline</th>
+                    <th className="py-2.5 px-3 w-[12%]">Status</th>
+                    <th className="py-2.5 px-3 text-right no-print">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {tasks.map((t) => (
+                    <tr key={t._id} className="hover:bg-muted/15">
+                      <td className="py-2.5 px-3 font-medium text-foreground break-words">{t.title}</td>
+                      <td className="py-2.5 px-3 text-muted-foreground break-words">{t.caseId?.title || "—"}</td>
+                      <td className="py-2.5 px-3 text-muted-foreground break-words">{t.clientId?.name || "—"}</td>
+                      <td className="py-2.5 px-3">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                          t.priority === "High" ? "bg-rose-500/10 text-rose-600" : "bg-muted text-muted-foreground"
+                        }`}>
+                          {t.priority}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-muted-foreground">
+                        {formatSafeDate(t.deadline)}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <span className="capitalize text-[11px] font-medium text-foreground">
+                          {t.status.replace(/_/g, " ")}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-right no-print">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onOpenTask(t as any)}
+                          className="h-6 text-xs text-primary px-2"
+                        >
+                          Inspect
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile / Tablet Stacked Cards */}
+            <div className="md:hidden divide-y divide-border/60">
+              {tasks.map((t) => (
+                <div key={t._id} className="p-3.5 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-medium text-foreground text-xs leading-snug break-words flex-1">{t.title}</p>
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
                         t.priority === "High" ? "bg-rose-500/10 text-rose-600" : "bg-muted text-muted-foreground"
                       }`}>
                         {t.priority}
                       </span>
-                    </td>
-                    <td className="py-2.5 px-3 text-muted-foreground">
-                      {formatSafeDate(t.deadline)}
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <span className="capitalize text-[11px] font-medium text-foreground">
-                        {t.status.replace(/_/g, " ")}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3 text-right no-print">
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => onOpenTask(t as any)}
-                        className="h-6 text-xs text-primary px-2"
+                        className="h-6 text-xs text-primary px-1.5 no-print"
                       >
                         Inspect
                       </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
+                    <div className="truncate">
+                      <span className="font-medium text-foreground/70">Matter:</span> {t.caseId?.title || "—"}
+                    </div>
+                    <div className="truncate">
+                      <span className="font-medium text-foreground/70">Client:</span> {t.clientId?.name || "—"}
+                    </div>
+                    <div>
+                      <span className="font-medium text-foreground/70">Due:</span> {formatSafeDate(t.deadline)}
+                    </div>
+                    <div>
+                      <span className="font-medium text-foreground/70">Status:</span>{" "}
+                      <span className="capitalize text-foreground font-medium">{t.status.replace(/_/g, " ")}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
 
@@ -2020,42 +2128,75 @@ function EmployeeDetailReportView({
         {cases.length === 0 ? (
           <div className="p-8 text-center text-xs text-muted-foreground">No matters currently assigned</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-border text-muted-foreground bg-muted/20 font-medium">
-                  <th className="py-2.5 px-3">Matter No</th>
-                  <th className="py-2.5 px-3">Title</th>
-                  <th className="py-2.5 px-3">Practice</th>
-                  <th className="py-2.5 px-3">Court</th>
-                  <th className="py-2.5 px-3">Next Hearing</th>
-                  <th className="py-2.5 px-3">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/60">
-                {cases.map((c) => (
-                  <tr
-                    key={c._id}
-                    onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: c._id } })}
-                    className="hover:bg-muted/15 cursor-pointer transition-colors"
-                  >
-                    <td className="py-2.5 px-3 font-mono font-medium text-primary">{c.number}</td>
-                    <td className="py-2.5 px-3 font-medium text-foreground">{c.title}</td>
-                    <td className="py-2.5 px-3 text-muted-foreground">{c.practice || "General"}</td>
-                    <td className="py-2.5 px-3 text-muted-foreground">{c.court || "—"}</td>
-                    <td className="py-2.5 px-3 text-muted-foreground">
-                      {formatSafeDate(c.nextHearing)}
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-foreground">
-                        {c.status}
-                      </span>
-                    </td>
+          <>
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-hidden">
+              <table className="w-full table-fixed text-left text-xs">
+                <thead>
+                  <tr className="border-b border-border text-muted-foreground bg-muted/20 font-medium">
+                    <th className="py-2.5 px-3 w-[15%]">Matter No</th>
+                    <th className="py-2.5 px-3 w-[30%]">Title</th>
+                    <th className="py-2.5 px-3 w-[15%]">Practice</th>
+                    <th className="py-2.5 px-3 w-[15%]">Court</th>
+                    <th className="py-2.5 px-3 w-[13%]">Next Hearing</th>
+                    <th className="py-2.5 px-3 w-[12%]">Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {cases.map((c) => (
+                    <tr
+                      key={c._id}
+                      onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: c._id } })}
+                      className="hover:bg-muted/15 cursor-pointer transition-colors"
+                    >
+                      <td className="py-2.5 px-3 font-mono font-medium text-primary break-all">{c.number}</td>
+                      <td className="py-2.5 px-3 font-medium text-foreground break-words">{c.title}</td>
+                      <td className="py-2.5 px-3 text-muted-foreground">{c.practice || "General"}</td>
+                      <td className="py-2.5 px-3 text-muted-foreground break-words">{c.court || "—"}</td>
+                      <td className="py-2.5 px-3 text-muted-foreground">
+                        {formatSafeDate(c.nextHearing)}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-foreground">
+                          {c.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile / Tablet Stacked Cards */}
+            <div className="md:hidden divide-y divide-border/60">
+              {cases.map((c) => (
+                <div
+                  key={c._id}
+                  onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: c._id } })}
+                  className="p-3.5 space-y-2 hover:bg-muted/15 cursor-pointer transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-mono text-xs font-semibold text-primary">{c.number}</span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-foreground">
+                      {c.status}
+                    </span>
+                  </div>
+                  <p className="font-medium text-foreground text-xs leading-snug break-words">{c.title}</p>
+                  <div className="grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
+                    <div className="truncate">
+                      <span className="font-medium text-foreground/70">Court:</span> {c.court || "—"}
+                    </div>
+                    <div className="truncate">
+                      <span className="font-medium text-foreground/70">Practice:</span> {c.practice || "General"}
+                    </div>
+                    <div className="col-span-2">
+                      <span className="font-medium text-foreground/70">Next Hearing:</span> {formatSafeDate(c.nextHearing)}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
 
@@ -2329,37 +2470,65 @@ function ClientDetailReportView({
         {!client.visits || client.visits.length === 0 ? (
           <div className="p-6 text-center text-xs text-muted-foreground">No law-firm office visits recorded yet</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-border text-muted-foreground bg-muted/20 font-medium">
-                  <th className="py-2.5 px-3">Date & Time</th>
-                  <th className="py-2.5 px-3">Purpose</th>
-                  <th className="py-2.5 px-3">Handled By</th>
-                  <th className="py-2.5 px-3">Notes</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/60">
-                {client.visits.map((v, idx) => (
-                  <tr
-                    key={v._id || idx}
-                    onClick={() => setSelectedVisit(v)}
-                    className="hover:bg-muted/15 cursor-pointer transition-colors"
-                    title="Click to view full visit details"
-                  >
-                    <td className="py-2.5 px-3 font-mono text-muted-foreground">
-                      {formatSafeDate(v.visitedAt, "—")}
-                    </td>
-                    <td className="py-2.5 px-3 font-semibold text-foreground">{v.purpose}</td>
-                    <td className="py-2.5 px-3 text-muted-foreground">
-                      {v.handledBy ? (typeof v.handledBy === "object" ? v.handledBy.name : v.handledBy) : "Partner / Staff"}
-                    </td>
-                    <td className="py-2.5 px-3 text-muted-foreground">{v.notes || "—"}</td>
+          <>
+            {/* Desktop Table */}
+            <div className="hidden md:block overflow-hidden">
+              <table className="w-full table-fixed text-left text-xs">
+                <thead>
+                  <tr className="border-b border-border text-muted-foreground bg-muted/20 font-medium">
+                    <th className="py-2.5 px-3 w-[20%]">Date & Time</th>
+                    <th className="py-2.5 px-3 w-[25%]">Purpose</th>
+                    <th className="py-2.5 px-3 w-[20%]">Handled By</th>
+                    <th className="py-2.5 px-3 w-[35%]">Notes</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {client.visits.map((v, idx) => (
+                    <tr
+                      key={v._id || idx}
+                      onClick={() => setSelectedVisit(v)}
+                      className="hover:bg-muted/15 cursor-pointer transition-colors"
+                      title="Click to view full visit details"
+                    >
+                      <td className="py-2.5 px-3 font-mono text-muted-foreground">
+                        {formatSafeDate(v.visitedAt, "—")}
+                      </td>
+                      <td className="py-2.5 px-3 font-semibold text-foreground break-words">{v.purpose}</td>
+                      <td className="py-2.5 px-3 text-muted-foreground">
+                        {v.handledBy ? (typeof v.handledBy === "object" ? v.handledBy.name : v.handledBy) : "Partner / Staff"}
+                      </td>
+                      <td className="py-2.5 px-3 text-muted-foreground break-words">{v.notes || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile / Tablet Stacked Cards */}
+            <div className="md:hidden divide-y divide-border/60">
+              {client.visits.map((v, idx) => (
+                <div
+                  key={v._id || idx}
+                  onClick={() => setSelectedVisit(v)}
+                  className="p-3.5 space-y-1.5 hover:bg-muted/15 cursor-pointer transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold text-xs text-foreground">{v.purpose}</span>
+                    <span className="font-mono text-[10px] text-muted-foreground">{formatSafeDate(v.visitedAt, "—")}</span>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    <span className="font-medium text-foreground/70">Handled By:</span>{" "}
+                    {v.handledBy ? (typeof v.handledBy === "object" ? v.handledBy.name : v.handledBy) : "Partner / Staff"}
+                  </div>
+                  {v.notes && (
+                    <p className="text-[11px] text-muted-foreground bg-muted/20 p-2 rounded border border-border/40 line-clamp-2">
+                      {v.notes}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
 
@@ -2374,40 +2543,73 @@ function ClientDetailReportView({
         {cases.length === 0 ? (
           <div className="p-6 text-center text-xs text-muted-foreground">No cases linked to this client</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-border text-muted-foreground bg-muted/20 font-medium">
-                  <th className="py-2.5 px-3">Matter No</th>
-                  <th className="py-2.5 px-3">Title</th>
-                  <th className="py-2.5 px-3">Practice</th>
-                  <th className="py-2.5 px-3">Court</th>
-                  <th className="py-2.5 px-3">Assigned To</th>
-                  <th className="py-2.5 px-3">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/60">
-                {cases.map((c) => (
-                  <tr
-                    key={c._id}
-                    onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: c._id } })}
-                    className="hover:bg-muted/15 cursor-pointer transition-colors"
-                  >
-                    <td className="py-2.5 px-3 font-mono font-medium text-primary">{c.number}</td>
-                    <td className="py-2.5 px-3 font-medium text-foreground">{c.title}</td>
-                    <td className="py-2.5 px-3 text-muted-foreground">{c.practice || "General"}</td>
-                    <td className="py-2.5 px-3 text-muted-foreground">{c.court || "—"}</td>
-                    <td className="py-2.5 px-3 text-muted-foreground">{c.assignedTo?.name || "Unassigned"}</td>
-                    <td className="py-2.5 px-3">
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-foreground">
-                        {c.status}
-                      </span>
-                    </td>
+          <>
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-hidden">
+              <table className="w-full table-fixed text-left text-xs">
+                <thead>
+                  <tr className="border-b border-border text-muted-foreground bg-muted/20 font-medium">
+                    <th className="py-2.5 px-3 w-[15%]">Matter No</th>
+                    <th className="py-2.5 px-3 w-[30%]">Title</th>
+                    <th className="py-2.5 px-3 w-[15%]">Practice</th>
+                    <th className="py-2.5 px-3 w-[15%]">Court</th>
+                    <th className="py-2.5 px-3 w-[13%]">Assigned To</th>
+                    <th className="py-2.5 px-3 w-[12%]">Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {cases.map((c) => (
+                    <tr
+                      key={c._id}
+                      onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: c._id } })}
+                      className="hover:bg-muted/15 cursor-pointer transition-colors"
+                    >
+                      <td className="py-2.5 px-3 font-mono font-medium text-primary break-all">{c.number}</td>
+                      <td className="py-2.5 px-3 font-medium text-foreground break-words">{c.title}</td>
+                      <td className="py-2.5 px-3 text-muted-foreground">{c.practice || "General"}</td>
+                      <td className="py-2.5 px-3 text-muted-foreground break-words">{c.court || "—"}</td>
+                      <td className="py-2.5 px-3 text-muted-foreground truncate">{c.assignedTo?.name || "Unassigned"}</td>
+                      <td className="py-2.5 px-3">
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-foreground">
+                          {c.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile / Tablet Stacked Cards */}
+            <div className="md:hidden divide-y divide-border/60">
+              {cases.map((c) => (
+                <div
+                  key={c._id}
+                  onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: c._id } })}
+                  className="p-3.5 space-y-2 hover:bg-muted/15 cursor-pointer transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-mono text-xs font-semibold text-primary">{c.number}</span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-foreground">
+                      {c.status}
+                    </span>
+                  </div>
+                  <p className="font-medium text-foreground text-xs leading-snug break-words">{c.title}</p>
+                  <div className="grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
+                    <div className="truncate">
+                      <span className="font-medium text-foreground/70">Court:</span> {c.court || "—"}
+                    </div>
+                    <div className="truncate">
+                      <span className="font-medium text-foreground/70">Practice:</span> {c.practice || "General"}
+                    </div>
+                    <div className="col-span-2 truncate">
+                      <span className="font-medium text-foreground/70">Assigned To:</span> {c.assignedTo?.name || "Unassigned"}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
 

@@ -30,6 +30,7 @@ import {
 import { useEmployees, type EmployeeRecord } from "@/services/admin";
 import { useEmployeeWorkload } from "@/services/reports";
 import { useCreateDirectChat } from "@/services/chat";
+import { useFloatingChat } from "@/lib/floatingChat";
 import { useAuth } from "@/lib/auth";
 import { usePresence } from "@/lib/presence";
 import { AddEmployeeDialog } from "@/components/admin/AddEmployeeDialog";
@@ -105,14 +106,19 @@ function EmployeesPage() {
     [workloadData]
   );
 
-  // Direct chat mutation
+  // Direct chat mutation & floating widget integration
   const createDirectChat = useCreateDirectChat();
+  const { open: openFloatingChat } = useFloatingChat();
   const handleMessage = (userId: string) => {
     createDirectChat.mutate(
       { userId },
       {
         onSuccess: (result) => {
-          navigate({ to: "/chat", search: { groupId: result.group._id } });
+          openFloatingChat(result.group._id);
+          toast.success("Opened conversation in floating chat");
+        },
+        onError: (err: any) => {
+          toast.error(err?.message || "Failed to start direct conversation");
         },
       }
     );
