@@ -117,7 +117,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             </p>
             <ul className="space-y-1">
               {renderItem({ to: "/admin", label: "Admin Console", icon: ShieldCheck, exact: true })}
-              {canEmployees && renderItem({ to: "/admin/employees", label: "Employees", icon: UserCog })}
+              {canEmployees && renderItem({ to: "/admin/employees", label: "Members", icon: UserCog })}
               {canApprovals && renderItem({ to: "/admin/approvals", label: "Approvals", icon: ShieldAlert })}
               {canAudit && renderItem({ to: "/admin/audit-logs", label: "Audit Logs", icon: ScrollText })}
               {canSettings && renderItem({ to: "/admin/settings", label: "Firm Settings", icon: Settings })}

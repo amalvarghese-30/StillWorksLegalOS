@@ -632,6 +632,121 @@ router.patch("/:id", requireResourceAccess("client"), async (req: Request, res: 
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/clients/import-excel — batch update clients from validated Excel import
+// ---------------------------------------------------------------------------
+
+router.post("/import-excel", async (req: Request, res: Response) => {
+  try {
+    if (req.user!.role !== "admin" && !req.user?.permissions?.clients) {
+      res.status(403).json({ message: "You do not have permission to import clients" });
+      return;
+    }
+
+    const { rows } = req.body as { rows?: Array<{ id: string; updates: Record<string, any> }> };
+    if (!Array.isArray(rows) || rows.length === 0) {
+      res.status(400).json({ message: "No rows provided for import" });
+      return;
+    }
+
+    const ALLOWED_IMPORT_FIELDS = [
+      "name", "type", "tag", "phone", "email", "address",
+      "aadhar", "pan", "notes", "kyc",
+    ];
+
+    let updatedCount = 0;
+    let unchangedCount = 0;
+    const errors: Array<{ id: string; message: string }> = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || !row.id || !Types.ObjectId.isValid(row.id)) {
+        errors.push({ id: row?.id || `Row ${i + 1}`, message: "Invalid client record ID" });
+        continue;
+      }
+
+      const client = await Client.findById(row.id);
+      if (!client) {
+        errors.push({ id: row.id, message: `Client with ID ${row.id} not found` });
+        continue;
+      }
+
+      const safeUpdates: Record<string, any> = {};
+      let hasChanges = false;
+
+      for (const field of ALLOWED_IMPORT_FIELDS) {
+        if (row.updates && row.updates[field] !== undefined) {
+          const newVal = row.updates[field];
+          const currVal = (client as any)[field];
+          if (String(newVal ?? "").trim() !== String(currVal ?? "").trim()) {
+            safeUpdates[field] = newVal;
+            hasChanges = true;
+          }
+        }
+      }
+
+      if (!hasChanges) {
+        unchangedCount++;
+        continue;
+      }
+
+      if (safeUpdates["name"] !== undefined && !String(safeUpdates["name"]).trim()) {
+        errors.push({ id: row.id, message: "Client name cannot be blank" });
+        continue;
+      }
+
+      if (safeUpdates["phone"]) {
+        const cleanPhone = String(safeUpdates["phone"]).replace(/\D/g, "");
+        if (cleanPhone.length !== 10) {
+          errors.push({ id: row.id, message: "Phone must be a valid 10-digit number" });
+          continue;
+        }
+        safeUpdates["phone"] = cleanPhone;
+      }
+
+      if (safeUpdates["email"]) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(String(safeUpdates["email"]).trim())) {
+          errors.push({ id: row.id, message: "Invalid email address format" });
+          continue;
+        }
+      }
+
+      safeUpdates["updatedBy"] = req.userId;
+      Object.assign(client, safeUpdates);
+      await client.save();
+      updatedCount++;
+
+      await AuditLog.create({
+        userId: req.userId,
+        userName: req.user?.name ?? "Unknown",
+        action: "update",
+        resource: "client",
+        resourceId: client._id.toString(),
+        resourceName: client.name,
+        details: "Updated via Excel Import",
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+      });
+    }
+
+    const io = req.app.get("io");
+    if (io && updatedCount > 0) {
+      io.emit("client:updated", { count: updatedCount });
+    }
+
+    res.json({
+      success: true,
+      updatedCount,
+      unchangedCount,
+      errors,
+    });
+  } catch (err) {
+    console.error("[clients] Excel import error:", err);
+    res.status(500).json({ message: "Failed to process client Excel import" });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // POST /api/clients/:id/visits — record law-firm visit
 // ---------------------------------------------------------------------------
 

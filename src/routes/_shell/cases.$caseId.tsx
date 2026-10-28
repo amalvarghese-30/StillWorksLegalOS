@@ -565,7 +565,7 @@ function CaseWorkspace() {
   const handleReassignCase = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetUserId) {
-      toast.error("Please select an assignee");
+      toast.error("Please select a member to assign");
       return;
     }
     try {
@@ -877,7 +877,7 @@ function CaseWorkspace() {
             ["Priority", record.priority],
             ["Category", record.category || record.practice || "General Legal"],
             [
-              "Assigned Counsel",
+              "Assigned To",
               record.assignedUsers && record.assignedUsers.length > 0
                 ? record.assignedUsers.map((u) => u.name).join(", ")
                 : (record.assignedTo?.name ?? "Unassigned"),
@@ -998,7 +998,7 @@ function CaseWorkspace() {
                       typeof record.createdBy === "object" ? record.createdBy?.name : "System",
                     ],
                     [
-                      "Assigned by",
+                      "Assigned By",
                       typeof record.assignedBy === "object"
                         ? record.assignedBy?.name
                         : record.assignedBy || "Direct",
@@ -2012,7 +2012,7 @@ function CaseWorkspace() {
           </DialogHeader>
           <form onSubmit={handleReassignCase} className="mt-4 space-y-4">
             <div className="space-y-1.5">
-              <Label className="text-helper">New Assignee</Label>
+              <Label className="text-helper">Assigned To</Label>
               <select
                 value={targetUserId}
                 onChange={(e) => setTargetUserId(e.target.value)}

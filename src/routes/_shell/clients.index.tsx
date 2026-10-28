@@ -9,6 +9,8 @@ import { useSocketEvent } from "@/lib/socket";
 import { useClients, clientKeys, type ClientRecord } from "@/services/clients";
 import { AddClientDialog } from "@/components/clients/AddClientDialog";
 import { formatSafeDate } from "@/lib/dates";
+import { ExportImportMenu } from "@/components/common/ExportImportMenu";
+import { ExcelImportDialog } from "@/components/common/ExcelImportDialog";
 
 export const Route = createFileRoute("/_shell/clients/")({
   head: () => ({
@@ -123,6 +125,7 @@ function ClientCard({ c }: { c: ClientRecord }) {
 function ClientsPage() {
   const [search, setSearch] = useState("");
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const queryClient = useQueryClient();
   const { data, isLoading, isError, error } = useClients(
     search.trim() ? { search } : {},
@@ -145,13 +148,20 @@ function ClientsPage() {
         title="Clients"
         subtitle={`${data?.total ?? "—"} relationships — individuals, corporates and their sub-clients.`}
         actions={
-          <Button
-            className="gradient-primary rounded-md text-primary-foreground shadow-soft transition-transform duration-200 hover:-translate-y-0.5"
-            onClick={() => setShowAddDialog(true)}
-          >
-            <Plus size={17} strokeWidth={2} />
-            Add client
-          </Button>
+          <div className="flex items-center gap-2">
+            <ExportImportMenu
+              entityType="clients"
+              data={data?.clients || []}
+              onImportClick={() => setShowImportDialog(true)}
+            />
+            <Button
+              className="gradient-primary rounded-md text-primary-foreground shadow-soft transition-transform duration-200 hover:-translate-y-0.5"
+              onClick={() => setShowAddDialog(true)}
+            >
+              <Plus size={17} strokeWidth={2} />
+              Add client
+            </Button>
+          </div>
         }
       />
 
@@ -219,6 +229,17 @@ function ClientsPage() {
 
       {showAddDialog && (
         <AddClientDialog open={showAddDialog} onClose={() => setShowAddDialog(false)} />
+      )}
+
+      {showImportDialog && (
+        <ExcelImportDialog
+          open={showImportDialog}
+          onClose={() => setShowImportDialog(false)}
+          entityType="clients"
+          onImportSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: clientKeys.all });
+          }}
+        />
       )}
     </div>
   );

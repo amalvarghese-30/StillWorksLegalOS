@@ -124,7 +124,7 @@ export function PendingTaskReminderAlerts() {
       notifications.show({
         id: `pending-${item.taskId}`,
         title: `⏳ Pending Work: ${item.taskTitle}`,
-        body: `Client: ${item.clientName} • Assigned: ${item.assignedStaff} • Pending: ${item.pendingHours}h`,
+        body: `Client: ${item.clientName} • Assigned To: ${item.assignedStaff} • Pending: ${item.pendingHours}h`,
       });
       return [...prev, item];
     });
@@ -396,7 +396,7 @@ export function PendingTaskReminderAlerts() {
             {/* Assigned Staff */}
             <div className="flex items-center justify-between gap-2 border-b border-border/50 pb-2">
               <span className="text-muted-foreground font-medium flex items-center gap-1.5 shrink-0">
-                <UserCheck size={13} className="text-emerald-600" /> Assigned Staff:
+                <UserCheck size={13} className="text-emerald-600" /> Assigned To:
               </span>
               <span className="font-semibold text-foreground text-right">{currentAlert.assignedStaff}</span>
             </div>

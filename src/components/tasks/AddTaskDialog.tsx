@@ -16,8 +16,8 @@ import { AssigneeMultiSelect } from "@/components/common/AssigneeMultiSelect";
 import { toast } from "sonner";
 import { useCreateTask, useTaskOptions, type CreateTaskPayload } from "@/services/tasks";
 import { useCategories, useCategoryTree, isOtherWorkCategory } from "@/services/categories";
-import { useCases } from "@/services/cases";
-import { useClients } from "@/services/clients";
+import { useCases, useCase } from "@/services/cases";
+import { useClients, useClient } from "@/services/clients";
 import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
 import { DiscardConfirmationDialog } from "@/components/ui/discard-confirmation-dialog";
 import {
@@ -59,6 +59,7 @@ interface FormState {
   caseId: string;
   clientId: string;
   assignedTo: string[];
+  categoryPath: string[];
   callClientName: string;
   callPhone: string;
   callScheduledAt: string;
@@ -80,6 +81,7 @@ const EMPTY_FORM: FormState = {
   caseId: "",
   clientId: "",
   assignedTo: [],
+  categoryPath: [],
   callClientName: "",
   callPhone: "",
   callScheduledAt: "",
@@ -105,6 +107,18 @@ interface AddTaskDialogProps {
 let checklistCounter = 0;
 function nextId() {
   return `cl_${++checklistCounter}_${Date.now()}`;
+}
+
+function extractAssigneeIds(assignedTo?: (string | { _id?: string })[]): string[] {
+  if (!assignedTo || !Array.isArray(assignedTo)) return [];
+  const ids: string[] = [];
+  for (const item of assignedTo) {
+    const id = typeof item === "string" ? item : item?._id;
+    if (id && typeof id === "string" && !ids.includes(id)) {
+      ids.push(id);
+    }
+  }
+  return ids;
 }
 
 export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }: AddTaskDialogProps) {
@@ -134,11 +148,14 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
   const [manualCase, setManualCase] = useState(false);
   const [showCreateCaseDialog, setShowCreateCaseDialog] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  const [inheritedClientId, setInheritedClientId] = useState<string | null>(null);
   const templateInsertions = useRef<Record<string, string[]>>({});
 
   const isAdmin = user?.role === "admin" || Boolean(user?.permissions?.approvals);
   const selectedCategoryNode = categoryTree.find((n) => n.name === form.mainCategory);
   const subCategories = selectedCategoryNode?.children ?? [];
+  const selectedSubCategoryNode = subCategories.find((n) => n.name === form.subCategory);
+  const nestedSubCategories = selectedSubCategoryNode?.children ?? [];
 
   const createTask = useCreateTask();
   const isPending = createTask.isPending;
@@ -150,12 +167,101 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
   const cases = casesData?.cases ?? [];
   const clients = clientsData?.clients ?? [];
 
+  const { data: specificCaseData } = useCase(form.caseId || undefined);
+
+  const matchedCase = useMemo(() => {
+    if (!form.caseId) return null;
+    return cases.find((c) => c._id === form.caseId) || specificCaseData?.case || null;
+  }, [form.caseId, cases, specificCaseData?.case]);
+
+  const casePrimaryClientId = useMemo(() => {
+    if (!matchedCase) return null;
+    const clientParty = matchedCase.parties?.find(
+      (p) => p.role === "Primary Client" || p.type === "client" || Boolean(p.clientId)
+    );
+    if (!clientParty?.clientId) return null;
+    return typeof clientParty.clientId === "object"
+      ? (clientParty.clientId as any)._id
+      : String(clientParty.clientId);
+  }, [matchedCase]);
+
+  const effectiveClientId = form.clientId || casePrimaryClientId || null;
+
+  const { data: specificClientData } = useClient(effectiveClientId || undefined);
+
+  useEffect(() => {
+    if (casePrimaryClientId && !form.clientId) {
+      setForm((prev) => ({ ...prev, clientId: casePrimaryClientId }));
+    }
+  }, [casePrimaryClientId, form.clientId]);
+
   useEffect(() => {
     if (open) {
       if (initialCaseId) setForm((prev) => ({ ...prev, caseId: initialCaseId }));
       if (initialClientId) setForm((prev) => ({ ...prev, clientId: initialClientId }));
+    } else {
+      setInheritedClientId(null);
     }
   }, [open, initialCaseId, initialClientId]);
+
+  useEffect(() => {
+    if (!open) {
+      setInheritedClientId(null);
+      return;
+    }
+
+    if (!effectiveClientId) {
+      if (inheritedClientId) {
+        setInheritedClientId(null);
+        setForm((prev) => ({
+          ...prev,
+          assignedTo: user?._id ? [user._id] : [],
+        }));
+      }
+      return;
+    }
+
+    if (inheritedClientId === effectiveClientId) {
+      return;
+    }
+
+    const matchedClient =
+      clients.find((c) => c._id === effectiveClientId) || specificClientData?.client;
+    if (!matchedClient) return;
+
+    const rawAssignees = extractAssigneeIds(matchedClient.assignedTo);
+    const dedupedAssignees = Array.from(new Set(rawAssignees));
+
+    const validStaffList = options?.staff ?? [];
+    const validStaffIds =
+      validStaffList.length > 0
+        ? new Set([
+            ...validStaffList.map((s) => s._id),
+            ...(user?._id ? [user._id] : []),
+          ])
+        : null;
+
+    const finalAssignees = validStaffIds
+      ? dedupedAssignees.filter((id) => validStaffIds.has(id))
+      : dedupedAssignees;
+
+    if (finalAssignees.length > 0) {
+      setForm((prev) => ({
+        ...prev,
+        assignedTo: finalAssignees,
+      }));
+    }
+
+    setInheritedClientId(effectiveClientId);
+  }, [
+    open,
+    effectiveClientId,
+    inheritedClientId,
+    clients,
+    specificClientData?.client,
+    options?.staff,
+    user?._id,
+  ]);
 
   // Form dirty check
   const isDirty = useMemo(() => {
@@ -391,19 +497,28 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
         ? ""
         : form.subCategory;
 
+    const nestedSubCat = form.categoryPath && form.categoryPath.length > 0 ? form.categoryPath[0] : "";
+
     const chosenCategory =
       form.customCategory.trim() ||
+      nestedSubCat ||
       chosenSubCategory ||
       (form.mainCategory === "__other__" ? "Other Work" : form.mainCategory) ||
       form.category ||
       "Other Work";
 
+    const fullCategoryPath = [
+      form.mainCategory,
+      ...(form.subCategory ? [form.subCategory] : []),
+      ...(nestedSubCat ? [nestedSubCat] : []),
+    ].filter((p) => p && p !== "__other__");
+
     const payload: CreateTaskPayload = {
       title: cleanTitle,
       ...(form.description && { description: form.description.trim() }),
       mainCategory: form.mainCategory === "__other__" ? "Other Work" : (form.mainCategory || undefined),
-      subCategory: chosenSubCategory || undefined,
-      categoryPath: [form.mainCategory, ...form.selectedSubCategories].filter(Boolean),
+      subCategory: nestedSubCat || form.customCategory.trim() || chosenSubCategory || undefined,
+      categoryPath: fullCategoryPath.length > 0 ? fullCategoryPath : undefined,
       customCategory: form.customCategory.trim() || undefined,
       category: chosenCategory,
       priority: form.priority,
@@ -669,6 +784,7 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
                       onChange={(e) => {
                         update("subCategory", e.target.value);
                         update("selectedSubCategories", e.target.value ? [e.target.value] : []);
+                        update("categoryPath", []);
                       }}
                       className="h-11 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary"
                     >
@@ -680,6 +796,39 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
                       ))}
                     </select>
                   )}
+                </div>
+              )}
+
+              {/* Nested Subcategory (e.g., SPECIAL LEGAL WORK children) */}
+              {form.subCategory && nestedSubCategories.length > 0 && (
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="task-nested-sub-cat" className="text-helper">
+                      Specific Work Type ({form.subCategory})
+                    </Label>
+                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                      Nested Subcategory
+                    </span>
+                  </div>
+                  <select
+                    id="task-nested-sub-cat"
+                    value={form.categoryPath[0] || ""}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      update("categoryPath", val ? [val] : []);
+                      if (val && !form.title.trim()) {
+                        update("title", val);
+                      }
+                    }}
+                    className="h-11 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary"
+                  >
+                    <option value="">Select specific item (optional)…</option>
+                    {nestedSubCategories.map((nsc) => (
+                      <option key={nsc._id || nsc.name} value={nsc.name}>
+                        {nsc.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               )}
 
@@ -742,7 +891,7 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
 
             {/* ── Assignee ── */}
             <div className="space-y-1.5">
-              <Label className="text-helper">Assigned to</Label>
+              <Label className="text-helper">Assigned To</Label>
               <AssigneeMultiSelect
                 value={form.assignedTo}
                 onChange={(val) => update("assignedTo", val)}

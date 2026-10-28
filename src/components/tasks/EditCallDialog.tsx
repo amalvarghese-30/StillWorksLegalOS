@@ -467,7 +467,7 @@ function EditCallDialogInner({ open, onClose, task }: { open: boolean; onClose: 
                 <div className="space-y-1.5">
                   <Label htmlFor="edit-call-assigned" className="text-xs font-medium text-foreground flex items-center gap-1">
                     <User size={13} className="text-muted-foreground" />
-                    Assigned Staff
+                    Assigned To
                   </Label>
                   <select
                     id="edit-call-assigned"

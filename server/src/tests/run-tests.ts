@@ -6030,6 +6030,237 @@ const { NotificationService } = await import("../services/notifications.js");
     assert(unconfiguredWebhookPost.status === 503, "S39-31: POST /api/webhooks/whatsapp returns 503 when unconfigured");
   }
 
+  // ---------------------------------------------------------------------------
+  // SUITE 40: Main Categories, Subcategories, Nested Hierarchy and Idempotency
+  // ---------------------------------------------------------------------------
+  {
+    console.log("\n--- SUITE 40: Main Categories, Subcategories & Nested Hierarchy ---");
+
+    const suiteAdmin = await createUser({
+      name: "Admin S40",
+      email: `admin-s40-${Date.now()}@test.com`,
+      role: "admin",
+      permissions: {
+        dashboard: true, clients: true, cases: true, tasks: true,
+        documents: true, calendar: true, chat: true, reports: true,
+        employees: true, approvals: true, auditLogs: true, settings: true,
+      },
+    });
+    const s40AdminToken = await createToken(suiteAdmin);
+
+    // 1. Seed categories and test idempotency
+    const initialSeed = await seedCategories();
+    assert(initialSeed.total > 0, "S40-01: seedCategories() runs successfully");
+
+    const reSeed = await seedCategories();
+    assert(reSeed.inserted === 0, "S40-02: Second seedCategories() execution is idempotent with 0 duplicate insertions");
+
+    // 2. Fetch category tree from API
+    const treeRes = await request(app)
+      .get("/api/categories/tree")
+      .set("Authorization", `Bearer ${s40AdminToken}`);
+    assert(treeRes.status === 200, "S40-03: GET /api/categories/tree returns 200");
+
+    const tree = treeRes.body.tree || [];
+
+    // Verify LAND / PLOT / REVENUE MATTERS
+    const landCat = tree.find((c: any) => c.name === "LAND / PLOT / REVENUE MATTERS");
+    assert(Boolean(landCat), "S40-04: 'LAND / PLOT / REVENUE MATTERS' exists as main category");
+    assert(landCat?.level === 1, "S40-05: 'LAND / PLOT / REVENUE MATTERS' has level 1");
+    assert(landCat?.categoryType === "legal", "S40-06: 'LAND / PLOT / REVENUE MATTERS' categoryType is 'legal'");
+
+    const expectedLandSubs = [
+      "SEARCH",
+      "TITLE",
+      "DEED",
+      "DOCUMENTS",
+      "OTHER",
+      "7/12 Extract",
+      "Property Card",
+      "Mutation Entry",
+      "NA Permission",
+      "Land Measurement",
+      "Revenue Appeal",
+      "Land Record Correction",
+    ];
+
+    const actualLandSubNames = (landCat?.children || []).map((c: any) => c.name);
+    assert(
+      actualLandSubNames.length === 12,
+      `S40-07: 'LAND / PLOT / REVENUE MATTERS' has exactly 12 direct subcategories (found ${actualLandSubNames.length})`
+    );
+    const allLandSubsPresent = expectedLandSubs.every((sub) => actualLandSubNames.includes(sub));
+    assert(allLandSubsPresent, "S40-08: All 12 required subcategories are present under 'LAND / PLOT / REVENUE MATTERS'");
+
+    // Verify none of the 12 subcategories exist as top-level main categories
+    const noLandSubIsTopLevel = expectedLandSubs.every(
+      (sub) => !tree.some((c: any) => c.name === sub)
+    );
+    assert(noLandSubIsTopLevel, "S40-09: None of the 12 land subcategories exist as top-level main categories");
+
+    // Verify OFFICE ADMIN WORK
+    const adminCat = tree.find((c: any) => c.name === "OFFICE ADMIN WORK");
+    assert(Boolean(adminCat), "S40-10: 'OFFICE ADMIN WORK' exists as main category");
+    assert(adminCat?.level === 1, "S40-11: 'OFFICE ADMIN WORK' has level 1");
+    assert(adminCat?.categoryType === "admin", "S40-12: 'OFFICE ADMIN WORK' categoryType is 'admin'");
+
+    const expectedAdminSubs = [
+      "ITEM PURCHASER",
+      "COMPUTER REPAIRING",
+      "XEROX MACHINE",
+      "OFFICE MAINTAIN",
+      "PRINTING AND STATIONERY",
+      "OFFICE ASSETS MAINTENANCE",
+      "OTHER OFFICE RELATED WORKS",
+      "Office Stationery",
+      "Computer / Printer Maintenance",
+      "Staff Work Allocation",
+      "Software Bug Reporting",
+      "Office Expenses",
+    ];
+
+    const actualAdminSubNames = (adminCat?.children || []).map((c: any) => c.name);
+    assert(
+      actualAdminSubNames.length === 12,
+      `S40-13: 'OFFICE ADMIN WORK' has exactly 12 direct subcategories (found ${actualAdminSubNames.length})`
+    );
+    const allAdminSubsPresent = expectedAdminSubs.every((sub) => actualAdminSubNames.includes(sub));
+    assert(allAdminSubsPresent, "S40-14: All 12 required subcategories are present under 'OFFICE ADMIN WORK' with exact capitalization");
+
+    // Verify none of the admin subcategories exist as top-level main categories
+    const noAdminSubIsTopLevel = expectedAdminSubs.every(
+      (sub) => !tree.some((c: any) => c.name === sub)
+    );
+    assert(noAdminSubIsTopLevel, "S40-15: None of the 12 admin subcategories exist as top-level main categories");
+
+    // Verify HEIRSHIP & COURT MATTERS
+    const heirshipCat = tree.find((c: any) => c.name === "HEIRSHIP & COURT MATTERS");
+    assert(Boolean(heirshipCat), "S40-16: 'HEIRSHIP & COURT MATTERS' exists as main category");
+
+    const expectedHeirshipDirectSubs = [
+      "Application and Report",
+      "No-Claim",
+      "Consent Affidavit",
+      "Court Order / Heirship Certificate",
+      "WILLS & SUCCESSION",
+      "SPECIAL LEGAL WORK",
+    ];
+
+    const actualHeirshipDirectNames = (heirshipCat?.children || []).map((c: any) => c.name);
+    assert(
+      actualHeirshipDirectNames.length === 6,
+      `S40-17: 'HEIRSHIP & COURT MATTERS' has exactly 6 direct subcategories (found ${actualHeirshipDirectNames.length})`
+    );
+    const allHeirshipDirectPresent = expectedHeirshipDirectSubs.every((sub) =>
+      actualHeirshipDirectNames.includes(sub)
+    );
+    assert(allHeirshipDirectPresent, "S40-18: All 6 required direct subcategories exist under 'HEIRSHIP & COURT MATTERS'");
+
+    // Verify SPECIAL LEGAL WORK and its 17 nested children
+    const specialLegalWork = (heirshipCat?.children || []).find(
+      (c: any) => c.name === "SPECIAL LEGAL WORK"
+    );
+    assert(Boolean(specialLegalWork), "S40-19: 'SPECIAL LEGAL WORK' exists under 'HEIRSHIP & COURT MATTERS'");
+    assert(specialLegalWork?.level === 2, "S40-20: 'SPECIAL LEGAL WORK' is at level 2");
+
+    const expectedSpecialNestedSubs = [
+      "SOCIETY WORK",
+      "CONVEYANCE & DEEMED CONVEYANCE",
+      "BANK & LOAN DOCUMENTATION",
+      "FAMILY COURT MATTERS",
+      "CRIMINAL COURT MATTERS",
+      "CONSUMER MATTERS",
+      "BUSINESS & COMMERCIAL AGREEMENTS",
+      "LEGAL NOTICES & REPLIES",
+      "AFFIDAVITS & DECLARATIONS",
+      "GOVERNMENT & AUTHORITY WORK",
+      "Succession Certificate",
+      "Probate",
+      "Letters of Administration",
+      "Civil Court Matters",
+      "RTS Appeal",
+      "Legal Heir",
+      "Court Petition / Application",
+    ];
+
+    const actualSpecialNestedNames = (specialLegalWork?.children || []).map((c: any) => c.name);
+    assert(
+      actualSpecialNestedNames.length === 17,
+      `S40-21: 'SPECIAL LEGAL WORK' has exactly 17 nested subcategories (found ${actualSpecialNestedNames.length})`
+    );
+    const allSpecialNestedPresent = expectedSpecialNestedSubs.every((sub) =>
+      actualSpecialNestedNames.includes(sub)
+    );
+    assert(allSpecialNestedPresent, "S40-22: All 17 required nested subcategories are present under 'SPECIAL LEGAL WORK'");
+
+    // Verify none of the 17 nested subcategories remain as direct children of HEIRSHIP & COURT MATTERS
+    const noneDirectUnderHeirship = expectedSpecialNestedSubs.every(
+      (sub) => !actualHeirshipDirectNames.includes(sub)
+    );
+    assert(noneDirectUnderHeirship, "S40-23: None of the 17 nested subcategories remain direct children of 'HEIRSHIP & COURT MATTERS'");
+
+    // Verify none of the 17 nested subcategories exist as top-level main categories
+    const noneTopLevel = expectedSpecialNestedSubs.every(
+      (sub) => !tree.some((c: any) => c.name === sub)
+    );
+    assert(noneTopLevel, "S40-24: None of the 17 nested subcategories exist as top-level main categories");
+
+    // 3. Create case and tasks under new structure
+    const testClient = await Client.create({
+      name: "S40 Category Client",
+      phone: "9988776655",
+      type: "Individual",
+    });
+
+    const createCaseRes = await request(app)
+      .post("/api/cases")
+      .set("Authorization", `Bearer ${s40AdminToken}`)
+      .send({
+        title: "S40 Land Revenue Dispute",
+        mainCategory: "LAND / PLOT / REVENUE MATTERS",
+        subCategory: "7/12 Extract",
+        parties: [{ name: testClient.name, role: "Primary Client", clientId: testClient._id.toString() }],
+      });
+    assert(createCaseRes.status === 201, "S40-25: Case created under 'LAND / PLOT / REVENUE MATTERS' -> '7/12 Extract' returns 201");
+    assert(createCaseRes.body.case.mainCategory === "LAND / PLOT / REVENUE MATTERS", "S40-26: Saved case preserves mainCategory");
+    assert(createCaseRes.body.case.subCategory === "7/12 Extract", "S40-27: Saved case preserves subCategory");
+
+    const createTaskRes = await request(app)
+      .post("/api/tasks")
+      .set("Authorization", `Bearer ${s40AdminToken}`)
+      .send({
+        title: "Obtain Society NOC and Verification",
+        mainCategory: "HEIRSHIP & COURT MATTERS",
+        subCategory: "SOCIETY WORK",
+        categoryPath: ["HEIRSHIP & COURT MATTERS", "SPECIAL LEGAL WORK", "SOCIETY WORK"],
+        category: "SOCIETY WORK",
+        caseId: createCaseRes.body.case._id,
+        clientId: testClient._id.toString(),
+      });
+    assert(createTaskRes.status === 201, "S40-28: Task created with 3-level category hierarchy returns 201");
+    assert(
+      Array.isArray(createTaskRes.body.task.categoryPath) && createTaskRes.body.task.categoryPath.length === 3,
+      "S40-29: Saved task preserves 3-element categoryPath"
+    );
+    assert(
+      createTaskRes.body.task.categoryPath[1] === "SPECIAL LEGAL WORK" &&
+      createTaskRes.body.task.categoryPath[2] === "SOCIETY WORK",
+      "S40-30: categoryPath correctly stores nested heirship hierarchy"
+    );
+
+    const createAdminTaskRes = await request(app)
+      .post("/api/tasks")
+      .set("Authorization", `Bearer ${s40AdminToken}`)
+      .send({
+        title: "Server & Computer Maintenance Check",
+        mainCategory: "OFFICE ADMIN WORK",
+        subCategory: "COMPUTER REPAIRING",
+        category: "COMPUTER REPAIRING",
+      });
+    assert(createAdminTaskRes.status === 201, "S40-31: Task created under 'OFFICE ADMIN WORK' -> 'COMPUTER REPAIRING' returns 201");
+    assert(createAdminTaskRes.body.task.mainCategory === "OFFICE ADMIN WORK", "S40-32: Saved task preserves 'OFFICE ADMIN WORK'");
+  }
+
 
   try {
     if (mongoose.connection.readyState === 1) {

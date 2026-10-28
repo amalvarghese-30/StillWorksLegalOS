@@ -441,7 +441,7 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                   <Briefcase size={14} className="text-muted-foreground" />
-                  Assigned Counsel / Team
+                  Assigned To
                 </Label>
                 <AssigneeMultiSelect
                   value={assignedTo}

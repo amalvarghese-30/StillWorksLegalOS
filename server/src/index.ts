@@ -697,15 +697,11 @@ io.on("connection", (socket) => {
 async function start() {
   try {
     await connectDB(MONGODB_URI);
-    // Ensure categories from the master Excel taxonomy are seeded if database is empty
+    // Ensure categories from the master Excel taxonomy are seeded and hierarchy is reconciled
     try {
-      const { Category } = await import("./models/Category.js");
-      const catCount = await Category.countDocuments();
-      if (catCount === 0) {
-        console.log("[server] Seeding master category taxonomy into database...");
-        await seedCategories();
-        console.log("[server] Master category taxonomy seeded successfully.");
-      }
+      console.log("[server] Syncing master category taxonomy into database...");
+      await seedCategories();
+      console.log("[server] Master category taxonomy synchronized successfully.");
     } catch (seedErr) {
       console.error("[server] Warning: Category auto-seeding encountered an issue:", seedErr);
     }

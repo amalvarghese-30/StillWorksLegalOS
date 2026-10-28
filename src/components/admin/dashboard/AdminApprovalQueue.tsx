@@ -470,7 +470,7 @@ export function AdminApprovalQueue() {
                 onChange={(e) => setDecisionRemark(e.target.value)}
                 placeholder={
                   decisionAction === "rejected"
-                    ? "Provide actionable feedback for the assignee…"
+                    ? "Provide actionable feedback for the assigned member…"
                     : "Add any approval notes…"
                 }
                 required={decisionAction === "rejected"}

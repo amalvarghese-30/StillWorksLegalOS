@@ -13,6 +13,7 @@ import {
   Info,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -94,6 +95,18 @@ const EMPTY_FORM: FormState = {
   assignedTo: [],
 };
 
+function extractAssigneeIds(assignedTo?: (string | { _id?: string })[]): string[] {
+  if (!assignedTo || !Array.isArray(assignedTo)) return [];
+  const ids: string[] = [];
+  for (const item of assignedTo) {
+    const id = typeof item === "string" ? item : item?._id;
+    if (id && typeof id === "string" && !ids.includes(id)) {
+      ids.push(id);
+    }
+  }
+  return ids;
+}
+
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
@@ -125,6 +138,7 @@ export function AddCaseDialog({
   const [subtaskInput, setSubtaskInput] = useState<Record<number, string>>({});
   const [tagInput, setTagInput] = useState("");
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  const [inheritedClientId, setInheritedClientId] = useState<string | null>(null);
 
   const { data: clientsData } = useClients({ limit: "100" });
   const { data: taskOptions } = useTaskOptions();
@@ -154,6 +168,9 @@ export function AddCaseDialog({
 
   const selectedParent = normalizedTree.find((c) => c?.name === form.mainCategory);
   const availableSubCategories = selectedParent?.children ?? [];
+  const selectedSubCatNode = availableSubCategories.find((sc) => sc.name === form.subCategory);
+  const availableNestedSubCategories = selectedSubCatNode?.children ?? [];
+  const [expandedSubCategoryGroups, setExpandedSubCategoryGroups] = useState<Record<string, boolean>>({ "SPECIAL LEGAL WORK": true });
 
   const primaryClientName = useMemo(() => {
     return parties.find((p) => p.role === "Primary Client")?.name || preselectedClientName || "";
@@ -171,6 +188,7 @@ export function AddCaseDialog({
         mainCategory: nextVal,
         subCategory: "",
         selectedSubCategories: [],
+        categoryPath: [],
         customCategory: nextVal !== "__other__" ? "" : prev.customCategory,
         title: newTitle || prev.title,
       };
@@ -209,6 +227,8 @@ export function AddCaseDialog({
 
   const staffList = taskOptions?.staff ?? [];
 
+  const activeClientId = preselectedClientId || parties.find((p) => p.role === "Primary Client")?.clientId;
+
   useEffect(() => {
     if (open) {
       if (preselectedClientId) {
@@ -225,8 +245,28 @@ export function AddCaseDialog({
       }
       setTasks([]);
       setSubtaskInput({});
+      setInheritedClientId(null);
+    } else {
+      setInheritedClientId(null);
     }
   }, [open, preselectedClientId, preselectedClientName]);
+
+  useEffect(() => {
+    if (!open || !activeClientId) return;
+    if (inheritedClientId === activeClientId) return;
+
+    const foundClient = clientsData?.clients?.find((c) => c._id === activeClientId);
+    if (!foundClient) return;
+
+    const clientAssignees = extractAssigneeIds(foundClient.assignedTo);
+    if (clientAssignees.length > 0) {
+      setForm((prev) => ({
+        ...prev,
+        assignedTo: clientAssignees,
+      }));
+    }
+    setInheritedClientId(activeClientId);
+  }, [open, activeClientId, inheritedClientId, clientsData?.clients]);
 
   const createCase = useCreateCase();
   const isPending = createCase.isPending;
@@ -554,8 +594,18 @@ export function AddCaseDialog({
           category: t.category || t.subCategory || "Other Work",
           priority: t.priority,
           deadline: t.deadline ? toSafeIso(t.deadline) ?? undefined : undefined,
-          assignedTo: t.assignedTo && t.assignedTo.length > 0 ? t.assignedTo : undefined,
-          assignedUsers: t.assignedTo && t.assignedTo.length > 0 ? t.assignedTo : undefined,
+          assignedTo:
+            t.assignedTo && t.assignedTo.length > 0
+              ? t.assignedTo
+              : form.assignedTo && form.assignedTo.length > 0
+              ? form.assignedTo
+              : undefined,
+          assignedUsers:
+            t.assignedTo && t.assignedTo.length > 0
+              ? t.assignedTo
+              : form.assignedTo && form.assignedTo.length > 0
+              ? form.assignedTo
+              : undefined,
           checklist: t.checklist
             .filter((item) => item.text && item.text.trim())
             .map((item) => ({
@@ -574,7 +624,19 @@ export function AddCaseDialog({
         ? form.selectedSubCategories.join(", ")
         : form.subCategory;
 
+      const resolvedPath =
+        form.categoryPath && form.categoryPath.length > 0
+          ? form.categoryPath
+          : form.selectedSubCategories.length > 0
+          ? form.selectedSubCategories
+          : form.subCategory && form.subCategory !== "__other__"
+          ? [form.subCategory]
+          : undefined;
+
+      const nestedDetail = form.categoryPath && form.categoryPath.length > 1 ? form.categoryPath[1] : undefined;
+
       const chosenCategory =
+        nestedDetail ||
         (subCatJoined === "__other__" || form.mainCategory === "__other__"
           ? form.customCategory.trim()
           : subCatJoined) ||
@@ -587,8 +649,8 @@ export function AddCaseDialog({
         description: form.description.trim() || undefined,
         category: chosenCategory,
         mainCategory: form.mainCategory === "__other__" ? (form.customCategory.trim() || "Other Work") : (form.mainCategory || undefined),
-        subCategory: subCatJoined === "__other__" ? (form.customCategory.trim() || undefined) : (subCatJoined || undefined),
-        categoryPath: form.selectedSubCategories.length > 0 ? form.selectedSubCategories : undefined,
+        subCategory: nestedDetail || (subCatJoined === "__other__" ? (form.customCategory.trim() || undefined) : (subCatJoined || undefined)),
+        categoryPath: resolvedPath,
         courtCaseId: form.courtCaseId.trim() || undefined,
         countCaseNumber: form.countCaseNumber.trim() || form.courtCaseId.trim() || undefined,
         nextHearing: form.nextHearing ? (toSafeIso(form.nextHearing) ?? undefined) : undefined,
@@ -726,7 +788,15 @@ export function AddCaseDialog({
                     <select
                       id="case-sub-category"
                       value={form.subCategory}
-                      onChange={(e) => update("subCategory", e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        update("subCategory", val);
+                        update("categoryPath", val ? [val] : []);
+                        const client = primaryClientName.trim();
+                        if (client && val && val !== "__other__") {
+                          update("title", `${client} - ${val}`);
+                        }
+                      }}
                       className="h-11 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary"
                     >
                       <option value="">Select primary subcategory (or configure individual tasks below)…</option>
@@ -736,6 +806,38 @@ export function AddCaseDialog({
                         </option>
                       ))}
                       <option value="__other__">+ Custom subcategory...</option>
+                    </select>
+                  </div>
+                )}
+
+                {/* ── Nested Subcategory (e.g. under SPECIAL LEGAL WORK) ── */}
+                {form.subCategory && form.subCategory !== "__other__" && availableNestedSubCategories.length > 0 && (
+                  <div className="space-y-1.5 pt-1 animate-in fade-in-50">
+                    <Label htmlFor="case-nested-sub-category" className="text-helper">
+                      Specific Legal Work / Matter Detail ({form.subCategory})
+                    </Label>
+                    <select
+                      id="case-nested-sub-category"
+                      value={form.categoryPath?.[1] || ""}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const newPath = val ? [form.subCategory, val] : [form.subCategory];
+                        update("categoryPath", newPath);
+                        if (val) {
+                          const client = primaryClientName.trim();
+                          if (client) {
+                            update("title", `${client} - ${val}`);
+                          }
+                        }
+                      }}
+                      className="h-11 w-full rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary"
+                    >
+                      <option value="">Select specific legal work detail…</option>
+                      {availableNestedSubCategories.map((nsc) => (
+                        <option key={nsc._id || nsc.name} value={nsc.name}>
+                          {nsc.name}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 )}
@@ -933,7 +1035,7 @@ export function AddCaseDialog({
 
               {/* ── Assigned Team / Counsel ── */}
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-foreground">Assigned Team / Counsel</Label>
+                <Label className="text-xs font-medium text-foreground">Assigned To</Label>
                 <AssigneeMultiSelect
                   value={form.assignedTo}
                   onChange={(val) => update("assignedTo", val)}
@@ -1101,7 +1203,7 @@ export function AddCaseDialog({
                     Create Independent Tasks from Subcategories
                   </p>
                   <p className="text-[11px] leading-relaxed opacity-90">
-                    Select subcategories to create separate tasks for this case. Each selected subcategory will be added as an independent task with its own assignees, deadline, instructions, and checklist steps.
+                    Select subcategories to create separate tasks for this case. Each selected subcategory will be added as an independent task with its own assigned members, deadline, instructions, and checklist steps.
                   </p>
                 </div>
               </div>
@@ -1143,7 +1245,15 @@ export function AddCaseDialog({
                       <button
                         type="button"
                         onClick={() => {
-                          const allNames = availableSubCategories.map((s) => s.name);
+                          const allNames: string[] = [];
+                          for (const s of availableSubCategories) {
+                            allNames.push(s.name);
+                            if (s.children && s.children.length > 0) {
+                              for (const c of s.children) {
+                                if (c.name) allNames.push(c.name);
+                              }
+                            }
+                          }
                           setCheckedSubCategoriesForTasks(allNames);
                         }}
                         className="text-[11px] text-primary hover:underline font-medium"
@@ -1161,49 +1271,157 @@ export function AddCaseDialog({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
-                    {availableSubCategories.map((sc) => {
-                      const isChecked = checkedSubCategoriesForTasks.includes(sc.name);
-                      const isAlreadyCreated = tasks.some(
-                        (t) => t.title.toLowerCase() === sc.name.toLowerCase()
-                      );
-                      return (
-                        <label
-                          key={sc._id || sc.name}
-                          className={`flex items-start gap-2.5 rounded-lg border p-2 text-xs cursor-pointer transition-all ${
-                            isAlreadyCreated
-                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 opacity-80"
-                              : isChecked
-                              ? "border-primary bg-primary/10 text-foreground font-semibold shadow-xs"
-                              : "border-border/70 bg-card hover:bg-muted text-muted-foreground hover:text-foreground"
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isChecked || isAlreadyCreated}
-                            disabled={isAlreadyCreated}
-                            onChange={(e) => {
-                              if (isAlreadyCreated) return;
-                              const c = e.target.checked;
-                              setCheckedSubCategoriesForTasks((prev) =>
-                                c ? [...prev, sc.name] : prev.filter((name) => name !== sc.name)
-                              );
-                            }}
-                            className="mt-0.5 size-3.5 rounded border-border text-primary focus:ring-primary shrink-0"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <span className="leading-tight block truncate select-none">
-                              {sc.name}
-                            </span>
-                            {isAlreadyCreated && (
-                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-normal block mt-0.5">
-                                ✓ Added as task
-                              </span>
+                  <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {availableSubCategories
+                        .filter((sc) => !sc.children || sc.children.length === 0)
+                        .map((sc) => {
+                          const isChecked = checkedSubCategoriesForTasks.includes(sc.name);
+                          const isAlreadyCreated = tasks.some(
+                            (t) => t.title.toLowerCase() === sc.name.toLowerCase()
+                          );
+                          return (
+                            <label
+                              key={sc._id || sc.name}
+                              className={`flex items-start gap-2.5 rounded-lg border p-2 text-xs cursor-pointer transition-all ${
+                                isAlreadyCreated
+                                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 opacity-80"
+                                  : isChecked
+                                  ? "border-primary bg-primary/10 text-foreground font-semibold shadow-xs"
+                                  : "border-border/70 bg-card hover:bg-muted text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked || isAlreadyCreated}
+                                disabled={isAlreadyCreated}
+                                onChange={(e) => {
+                                  if (isAlreadyCreated) return;
+                                  const c = e.target.checked;
+                                  setCheckedSubCategoriesForTasks((prev) =>
+                                    c ? [...prev, sc.name] : prev.filter((name) => name !== sc.name)
+                                  );
+                                }}
+                                className="mt-0.5 size-3.5 rounded border-border text-primary focus:ring-primary shrink-0"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <span className="leading-tight block truncate select-none">
+                                  {sc.name}
+                                </span>
+                                {isAlreadyCreated && (
+                                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-normal block mt-0.5">
+                                    ✓ Added as task
+                                  </span>
+                                )}
+                              </div>
+                            </label>
+                          );
+                        })}
+                    </div>
+
+                    {/* Subcategories with Nested Children (e.g. SPECIAL LEGAL WORK) */}
+                    {availableSubCategories
+                      .filter((sc) => sc.children && sc.children.length > 0)
+                      .map((sc) => {
+                        const isExpanded = expandedSubCategoryGroups[sc.name] ?? true;
+                        const isChecked = checkedSubCategoriesForTasks.includes(sc.name);
+                        const isAlreadyCreated = tasks.some(
+                          (t) => t.title.toLowerCase() === sc.name.toLowerCase()
+                        );
+                        return (
+                          <div
+                            key={sc._id || sc.name}
+                            className="rounded-lg border border-primary/20 bg-card p-2.5 space-y-2"
+                          >
+                            <div className="flex items-center justify-between">
+                              <label className="flex items-center gap-2 text-xs font-semibold text-foreground cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked || isAlreadyCreated}
+                                  disabled={isAlreadyCreated}
+                                  onChange={(e) => {
+                                    if (isAlreadyCreated) return;
+                                    const c = e.target.checked;
+                                    setCheckedSubCategoriesForTasks((prev) =>
+                                      c ? [...prev, sc.name] : prev.filter((name) => name !== sc.name)
+                                    );
+                                  }}
+                                  className="size-3.5 rounded border-border text-primary focus:ring-primary"
+                                />
+                                <span>{sc.name}</span>
+                                {isAlreadyCreated && (
+                                  <span className="text-[10px] text-emerald-600 font-normal">
+                                    ✓ Added
+                                  </span>
+                                )}
+                              </label>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpandedSubCategoryGroups((prev) => ({
+                                    ...prev,
+                                    [sc.name]: !isExpanded,
+                                  }))
+                                }
+                                className="flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+                              >
+                                <span>
+                                  {isExpanded ? "Hide" : "Show"} ({sc.children!.length} nested subcategories)
+                                </span>
+                                {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                              </button>
+                            </div>
+
+                            {isExpanded && (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 pt-1 border-t border-border/40">
+                                {sc.children!.map((nsc) => {
+                                  const isChildChecked = checkedSubCategoriesForTasks.includes(nsc.name);
+                                  const isChildCreated = tasks.some(
+                                    (t) => t.title.toLowerCase() === nsc.name.toLowerCase()
+                                  );
+                                  return (
+                                    <label
+                                      key={nsc._id || nsc.name}
+                                      className={`flex items-start gap-2 rounded-md border p-1.5 text-[11px] cursor-pointer transition-all ${
+                                        isChildCreated
+                                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 opacity-80"
+                                          : isChildChecked
+                                          ? "border-primary bg-primary/10 text-foreground font-semibold shadow-xs"
+                                          : "border-border/60 bg-background hover:bg-muted/50 text-muted-foreground hover:text-foreground"
+                                      }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isChildChecked || isChildCreated}
+                                        disabled={isChildCreated}
+                                        onChange={(e) => {
+                                          if (isChildCreated) return;
+                                          const c = e.target.checked;
+                                          setCheckedSubCategoriesForTasks((prev) =>
+                                            c ? [...prev, nsc.name] : prev.filter((name) => name !== nsc.name)
+                                          );
+                                        }}
+                                        className="mt-0.5 size-3 rounded border-border text-primary focus:ring-primary shrink-0"
+                                      />
+                                      <div className="min-w-0 flex-1">
+                                        <span className="leading-tight block truncate select-none">
+                                          {nsc.name}
+                                        </span>
+                                        {isChildCreated && (
+                                          <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-normal block">
+                                            ✓ Added
+                                          </span>
+                                        )}
+                                      </div>
+                                    </label>
+                                  );
+                                })}
+                              </div>
                             )}
                           </div>
-                        </label>
-                      );
-                    })}
+                        );
+                      })}
                   </div>
 
                   <div className="flex items-center justify-end pt-1">
@@ -1349,12 +1567,12 @@ export function AddCaseDialog({
                             {/* Assignee Selector */}
                             <div className="space-y-1.5">
                               <Label className="text-[11px] font-semibold text-foreground">
-                                Assigned Staff &amp; Counsel
+                                Assigned To
                               </Label>
                               <AssigneeMultiSelect
                                 value={Array.isArray(t.assignedTo) ? t.assignedTo : (t.assignedTo ? [t.assignedTo] : [])}
                                 onChange={(val) => updateTask(idx, "assignedTo", val)}
-                                placeholder="Select one or more assignees..."
+                                placeholder="Select one or more members..."
                               />
                             </div>
 

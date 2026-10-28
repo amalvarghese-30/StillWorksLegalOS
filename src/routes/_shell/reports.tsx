@@ -43,6 +43,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
+import { ReportDrilldownDialog, type DrilldownType } from "@/components/reports/ReportDrilldownDialog";
 import { formatSafeDate, formatSafeDateTime } from "@/lib/dates";
 import { useAuth } from "@/lib/auth";
 import { useState, useMemo } from "react";
@@ -1780,6 +1781,11 @@ function EmployeeDetailReportView({
   });
 
   const navigate = useNavigate();
+  const [empDrilldownOpen, setEmpDrilldownOpen] = useState(false);
+  const [empDrilldownType, setEmpDrilldownType] = useState<DrilldownType>("tasks");
+  const [empDrilldownTitle, setEmpDrilldownTitle] = useState("");
+  const [empDrilldownSubtitle, setEmpDrilldownSubtitle] = useState("");
+  const [empCustomTasks, setEmpCustomTasks] = useState<any[] | undefined>(undefined);
 
   if (isLoading) {
     return (
@@ -1877,24 +1883,67 @@ function EmployeeDetailReportView({
         </div>
       </div>
 
-      {/* KPI Cards */}
+      {/* Interactive KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="rounded-xl border border-border bg-card p-4">
-          <p className="text-[11px] text-muted-foreground">Assigned Tasks</p>
+        <button
+          type="button"
+          onClick={() => {
+            setEmpDrilldownType("tasks");
+            setEmpCustomTasks(undefined);
+            setEmpDrilldownTitle(`All Assigned Tasks · ${employee.name}`);
+            setEmpDrilldownSubtitle(`Showing all ${tasks.length} task(s) assigned to ${employee.name}`);
+            setEmpDrilldownOpen(true);
+          }}
+          className="rounded-xl border border-border bg-card p-4 text-left transition-all duration-150 hover:border-primary/40 hover:shadow-xs group cursor-pointer"
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] text-muted-foreground group-hover:text-primary transition-colors font-medium">Assigned Tasks</p>
+            <ArrowUpRight size={14} className="text-muted-foreground opacity-40 group-hover:opacity-100 group-hover:text-primary transition-all" />
+          </div>
           <p className="num text-xl font-bold text-foreground mt-1">{metrics.totalTasks}</p>
-        </div>
-        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-          <p className="text-[11px] text-emerald-600 dark:text-emerald-400">Completed Tasks</p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setEmpDrilldownType("tasks");
+            const completed = tasks.filter((t: any) => t.status === "completed" || t.status === "Closed");
+            setEmpCustomTasks(completed);
+            setEmpDrilldownTitle(`Completed Tasks · ${employee.name}`);
+            setEmpDrilldownSubtitle(`Showing ${completed.length} completed task(s) for ${employee.name}`);
+            setEmpDrilldownOpen(true);
+          }}
+          className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-left transition-all duration-150 hover:border-emerald-500/40 hover:shadow-xs group cursor-pointer"
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">Completed Tasks</p>
+            <ArrowUpRight size={14} className="text-emerald-600 dark:text-emerald-400 opacity-40 group-hover:opacity-100 transition-all" />
+          </div>
           <p className="num text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{metrics.completedTasks}</p>
-        </div>
+        </button>
+
         <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
-          <p className="text-[11px] text-blue-600 dark:text-blue-400">Completion Rate</p>
+          <p className="text-[11px] text-blue-600 dark:text-blue-400 font-medium">Completion Rate</p>
           <p className="num text-xl font-bold text-blue-600 dark:text-blue-400 mt-1">{metrics.completionRate}%</p>
         </div>
-        <div className="rounded-xl border border-border bg-card p-4">
-          <p className="text-[11px] text-muted-foreground">Active Matters</p>
+
+        <button
+          type="button"
+          onClick={() => {
+            setEmpDrilldownType("cases");
+            setEmpCustomTasks(undefined);
+            setEmpDrilldownTitle(`Assigned Matters & Cases · ${employee.name}`);
+            setEmpDrilldownSubtitle(`Showing all ${cases.length} assigned matter(s) for ${employee.name}`);
+            setEmpDrilldownOpen(true);
+          }}
+          className="rounded-xl border border-border bg-card p-4 text-left transition-all duration-150 hover:border-primary/40 hover:shadow-xs group cursor-pointer"
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] text-muted-foreground group-hover:text-primary transition-colors font-medium">Active Matters</p>
+            <ArrowUpRight size={14} className="text-muted-foreground opacity-40 group-hover:opacity-100 group-hover:text-primary transition-all" />
+          </div>
           <p className="num text-xl font-bold text-foreground mt-1">{metrics.activeCases}</p>
-        </div>
+        </button>
       </div>
 
       {/* Tasks Register */}
@@ -1985,7 +2034,11 @@ function EmployeeDetailReportView({
               </thead>
               <tbody className="divide-y divide-border/60">
                 {cases.map((c) => (
-                  <tr key={c._id} className="hover:bg-muted/15">
+                  <tr
+                    key={c._id}
+                    onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: c._id } })}
+                    className="hover:bg-muted/15 cursor-pointer transition-colors"
+                  >
                     <td className="py-2.5 px-3 font-mono font-medium text-primary">{c.number}</td>
                     <td className="py-2.5 px-3 font-medium text-foreground">{c.title}</td>
                     <td className="py-2.5 px-3 text-muted-foreground">{c.practice || "General"}</td>
@@ -2038,6 +2091,27 @@ function EmployeeDetailReportView({
           </div>
         )}
       </div>
+
+      {/* Drilldown Modal for Employee Details */}
+      {empDrilldownOpen && (
+        <ReportDrilldownDialog
+          open={empDrilldownOpen}
+          onClose={() => setEmpDrilldownOpen(false)}
+          type={empDrilldownType}
+          title={empDrilldownTitle}
+          subtitle={empDrilldownSubtitle}
+          tasks={empCustomTasks || (tasks as any[])}
+          cases={cases as any[]}
+          onOpenTask={(task) => {
+            setEmpDrilldownOpen(false);
+            onOpenTask(task);
+          }}
+          onOpenCase={(caseItem) => {
+            setEmpDrilldownOpen(false);
+            navigate({ to: "/cases/$caseId", params: { caseId: caseItem._id } });
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -2060,6 +2134,12 @@ function ClientDetailReportView({
   const [visitPurpose, setVisitPurpose] = useState("");
   const [visitNotes, setVisitNotes] = useState("");
   const recordVisitMutation = useRecordClientVisit();
+
+  const [drilldownOpen, setDrilldownOpen] = useState(false);
+  const [drilldownType, setDrilldownType] = useState<DrilldownType>("tasks");
+  const [drilldownTitle, setDrilldownTitle] = useState("");
+  const [drilldownSubtitle, setDrilldownSubtitle] = useState("");
+  const navigate = useNavigate();
 
   if (isLoading) {
     return (
@@ -2158,24 +2238,75 @@ function ClientDetailReportView({
         </div>
       </div>
 
-      {/* Metrics Row */}
+      {/* Interactive Metrics Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="rounded-xl border border-border bg-card p-4">
-          <p className="text-[11px] text-muted-foreground">Active Matters</p>
+        <button
+          type="button"
+          onClick={() => {
+            setDrilldownType("cases");
+            setDrilldownTitle(`Active Matters — ${client.name}`);
+            setDrilldownSubtitle(`Active and instituted legal proceedings for ${client.name}`);
+            setDrilldownOpen(true);
+          }}
+          className="lift text-left rounded-xl border border-border bg-card p-4 transition-all hover:border-primary/50 hover:bg-muted/10 cursor-pointer group"
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] text-muted-foreground group-hover:text-primary transition-colors font-medium">Active Matters</p>
+            <ArrowUpRight className="size-3.5 text-muted-foreground opacity-40 group-hover:opacity-100 group-hover:text-primary transition-all" />
+          </div>
           <p className="num text-xl font-bold text-foreground mt-1">{metrics.activeCases}</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-4">
-          <p className="text-[11px] text-muted-foreground">Pending Tasks</p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setDrilldownType("tasks");
+            setDrilldownTitle(`Pending Tasks — ${client.name}`);
+            setDrilldownSubtitle(`Operational tasks pending execution or review for ${client.name}`);
+            setDrilldownOpen(true);
+          }}
+          className="lift text-left rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 transition-all hover:border-amber-500/50 hover:bg-amber-500/10 cursor-pointer group"
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] text-amber-600 dark:text-amber-400 group-hover:underline transition-colors font-medium">Pending Tasks</p>
+            <ArrowUpRight className="size-3.5 text-amber-600 dark:text-amber-400 opacity-40 group-hover:opacity-100 transition-all" />
+          </div>
           <p className="num text-xl font-bold text-amber-600 dark:text-amber-400 mt-1">{metrics.pendingTasks}</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-4">
-          <p className="text-[11px] text-muted-foreground">Law-Firm Visits</p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setDrilldownType("visits");
+            setDrilldownTitle(`Law-Firm Office Visits — ${client.name}`);
+            setDrilldownSubtitle(`Log of in-person consultations and law-firm visits for ${client.name}`);
+            setDrilldownOpen(true);
+          }}
+          className="lift text-left rounded-xl border border-border bg-card p-4 transition-all hover:border-primary/50 hover:bg-muted/10 cursor-pointer group"
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] text-muted-foreground group-hover:text-primary transition-colors font-medium">Law-Firm Visits</p>
+            <ArrowUpRight className="size-3.5 text-muted-foreground opacity-40 group-hover:opacity-100 group-hover:text-primary transition-all" />
+          </div>
           <p className="num text-xl font-bold text-foreground mt-1">{metrics.totalVisits}</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-4">
-          <p className="text-[11px] text-muted-foreground">Documents Filed</p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setDrilldownType("documents");
+            setDrilldownTitle(`Documents Filed — ${client.name}`);
+            setDrilldownSubtitle(`Legal filings, pleadings, and uploaded assets for ${client.name}`);
+            setDrilldownOpen(true);
+          }}
+          className="lift text-left rounded-xl border border-border bg-card p-4 transition-all hover:border-primary/50 hover:bg-muted/10 cursor-pointer group"
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] text-muted-foreground group-hover:text-primary transition-colors font-medium">Documents Filed</p>
+            <ArrowUpRight className="size-3.5 text-muted-foreground opacity-40 group-hover:opacity-100 group-hover:text-primary transition-all" />
+          </div>
           <p className="num text-xl font-bold text-foreground mt-1">{metrics.totalDocuments}</p>
-        </div>
+        </button>
       </div>
 
       {/* Office Visits History */}
@@ -2211,7 +2342,7 @@ function ClientDetailReportView({
                 {client.visits.map((v, idx) => (
                   <tr key={v._id || idx} className="hover:bg-muted/15">
                     <td className="py-2.5 px-3 font-mono text-muted-foreground">
-                      {new Date(v.visitedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
+                      {formatSafeDate(v.visitedAt, "—")}
                     </td>
                     <td className="py-2.5 px-3 font-semibold text-foreground">{v.purpose}</td>
                     <td className="py-2.5 px-3 text-muted-foreground">
@@ -2245,13 +2376,17 @@ function ClientDetailReportView({
                   <th className="py-2.5 px-3">Title</th>
                   <th className="py-2.5 px-3">Practice</th>
                   <th className="py-2.5 px-3">Court</th>
-                  <th className="py-2.5 px-3">Assignee</th>
+                  <th className="py-2.5 px-3">Assigned To</th>
                   <th className="py-2.5 px-3">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/60">
                 {cases.map((c) => (
-                  <tr key={c._id} className="hover:bg-muted/15">
+                  <tr
+                    key={c._id}
+                    onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: c._id } })}
+                    className="hover:bg-muted/15 cursor-pointer transition-colors"
+                  >
                     <td className="py-2.5 px-3 font-mono font-medium text-primary">{c.number}</td>
                     <td className="py-2.5 px-3 font-medium text-foreground">{c.title}</td>
                     <td className="py-2.5 px-3 text-muted-foreground">{c.practice || "General"}</td>
@@ -2269,6 +2404,33 @@ function ClientDetailReportView({
           </div>
         )}
       </div>
+
+      {/* Drilldown Modal */}
+      {drilldownOpen && (
+        <ReportDrilldownDialog
+          open={drilldownOpen}
+          onClose={() => setDrilldownOpen(false)}
+          title={drilldownTitle}
+          subtitle={drilldownSubtitle}
+          type={drilldownType}
+          tasks={tasks.filter((t) => ["pending", "in_progress", "pending_approval"].includes(t.status))}
+          cases={cases.filter((c) => !["Closed", "Archived"].includes(c.status))}
+          visits={client.visits || []}
+          documents={documents || []}
+          onOpenTask={(t) => {
+            setDrilldownOpen(false);
+            onOpenTask(t);
+          }}
+          onOpenCase={(caseId) => {
+            setDrilldownOpen(false);
+            navigate({ to: "/cases/$caseId", params: { caseId } });
+          }}
+          onRecordVisit={() => {
+            setDrilldownOpen(false);
+            setShowVisitModal(true);
+          }}
+        />
+      )}
 
       {/* Record Visit Modal */}
       {showVisitModal && (

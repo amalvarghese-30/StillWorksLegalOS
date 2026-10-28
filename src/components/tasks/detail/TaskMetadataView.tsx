@@ -44,7 +44,7 @@ export function TaskMetadataView({
         <div className="flex items-start gap-2 text-muted-foreground sm:col-span-2">
           <User size={15} className="mt-0.5 shrink-0" />
           <div className="flex flex-wrap items-center gap-1.5">
-            <span>Assignees:</span>
+            <span>Assigned To:</span>
             {activeTask.assignedUsers && activeTask.assignedUsers.length > 0 ? (
               activeTask.assignedUsers.map((u) => (
                 <span

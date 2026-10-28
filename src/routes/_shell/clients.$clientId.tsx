@@ -656,7 +656,7 @@ function ClientProfile() {
                   { label: "PAN", value: record.pan || "—" },
                   { label: "Aadhaar", value: record.aadhar || "—" },
                   {
-                    label: "Assigned Staff",
+                    label: "Assigned To",
                     value:
                       record.assignedTo && record.assignedTo.length > 0
                         ? record.assignedTo
@@ -763,7 +763,7 @@ function ClientProfile() {
                       </div>
 
                       <div className="mt-4 border-t border-border/60 pt-3 text-caption flex items-center justify-between text-muted-foreground">
-                        <span>Assigned: {c.assignedTo?.name || "Unassigned"}</span>
+                        <span>Assigned To: {c.assignedTo?.name || "Unassigned"}</span>
                         <span>Hearing: {formatDate(c.nextHearing)}</span>
                       </div>
                     </div>
@@ -858,7 +858,7 @@ function ClientProfile() {
                             )}
                             {task.assignedTo && (
                               <span>
-                                Assigned:{" "}
+                                Assigned To:{" "}
                                 {typeof task.assignedTo === "object" && task.assignedTo !== null
                                   ? (task.assignedTo as any).name
                                   : "Staff"}

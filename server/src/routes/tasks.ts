@@ -900,9 +900,32 @@ router.post("/", async (req: Request, res: Response) => {
       finalAssignedUsers = [new Types.ObjectId(assignedTo)];
     } else if (assignedTo === null) {
       finalAssignedUsers = [];
-    } else {
-      finalAssignedUsers = [new Types.ObjectId(req.userId!)];
     }
+
+    if (finalAssignedUsers.length === 0 && assignedTo !== null) {
+      // Inherit client assignees if task assignees were not provided
+      if (cleanClientId) {
+        const clientDoc = await Client.findById(cleanClientId).select("assignedTo").lean();
+        if (clientDoc && Array.isArray((clientDoc as any).assignedTo) && (clientDoc as any).assignedTo.length > 0) {
+          finalAssignedUsers = (clientDoc as any).assignedTo
+            .map((item: any) => (typeof item === "object" && item?._id ? item._id : item))
+            .filter((id: any) => id && Types.ObjectId.isValid(id))
+            .map((id: any) => new Types.ObjectId(id));
+        }
+      }
+      if (finalAssignedUsers.length === 0) {
+        finalAssignedUsers = [new Types.ObjectId(req.userId!)];
+      }
+    }
+
+    // Deduplicate assignees
+    const uniqueUserIds = new Set<string>();
+    finalAssignedUsers = finalAssignedUsers.filter((uid) => {
+      const s = uid.toString();
+      if (uniqueUserIds.has(s)) return false;
+      uniqueUserIds.add(s);
+      return true;
+    });
 
     const finalAssignedTo: Types.ObjectId | null = finalAssignedUsers.length > 0 ? finalAssignedUsers[0] : null;
     const cleanAgent = sanitizeInputText(agent, 100);
@@ -1884,6 +1907,122 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
   } catch (err) {
     console.error("[tasks] Update error:", err);
     res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/tasks/import-excel — batch update tasks from validated Excel import
+// ---------------------------------------------------------------------------
+
+router.post("/import-excel", async (req: Request, res: Response) => {
+  try {
+    if (req.user!.role !== "admin" && !req.user?.permissions?.tasks) {
+      res.status(403).json({ message: "You do not have permission to import tasks" });
+      return;
+    }
+
+    const { rows } = req.body as { rows?: Array<{ id: string; updates: Record<string, any> }> };
+    if (!Array.isArray(rows) || rows.length === 0) {
+      res.status(400).json({ message: "No rows provided for import" });
+      return;
+    }
+
+    const ALLOWED_IMPORT_FIELDS = [
+      "title", "description", "priority", "status", "deadline",
+      "notes", "category", "mainCategory", "subCategory",
+    ];
+
+    let updatedCount = 0;
+    let unchangedCount = 0;
+    const errors: Array<{ id: string; message: string }> = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || !row.id || !Types.ObjectId.isValid(row.id)) {
+        errors.push({ id: row?.id || `Row ${i + 1}`, message: "Invalid task record ID" });
+        continue;
+      }
+
+      const task = await Task.findById(row.id);
+      if (!task) {
+        errors.push({ id: row.id, message: `Task with ID ${row.id} not found` });
+        continue;
+      }
+
+      const safeUpdates: Record<string, any> = {};
+      let hasChanges = false;
+
+      for (const field of ALLOWED_IMPORT_FIELDS) {
+        if (row.updates && row.updates[field] !== undefined) {
+          const newVal = row.updates[field];
+          const currVal = (task as any)[field];
+          if (String(newVal ?? "").trim() !== String(currVal ?? "").trim()) {
+            safeUpdates[field] = newVal;
+            hasChanges = true;
+          }
+        }
+      }
+
+      if (!hasChanges) {
+        unchangedCount++;
+        continue;
+      }
+
+      if (safeUpdates["title"] !== undefined && !String(safeUpdates["title"]).trim()) {
+        errors.push({ id: row.id, message: "Task title cannot be blank" });
+        continue;
+      }
+
+      if (safeUpdates["priority"] && !["High", "Medium", "Low"].includes(safeUpdates["priority"])) {
+        errors.push({ id: row.id, message: `Invalid priority "${safeUpdates["priority"]}" (must be High, Medium, or Low)` });
+        continue;
+      }
+
+      if (safeUpdates["deadline"] !== undefined) {
+        if (safeUpdates["deadline"]) {
+          const d = new Date(safeUpdates["deadline"]);
+          if (isNaN(d.getTime())) {
+            errors.push({ id: row.id, message: "Invalid deadline date format" });
+            continue;
+          }
+          safeUpdates["deadline"] = d;
+        } else {
+          safeUpdates["deadline"] = null;
+        }
+      }
+
+      safeUpdates["updatedBy"] = new Types.ObjectId(req.userId!);
+      Object.assign(task, safeUpdates);
+      await task.save();
+      updatedCount++;
+
+      await AuditLog.create({
+        userId: req.userId,
+        userName: req.user?.name ?? "Unknown",
+        action: "update",
+        resource: "task",
+        resourceId: task._id.toString(),
+        resourceName: task.title,
+        details: "Updated via Excel Import",
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+      });
+    }
+
+    const io = req.app.get("io");
+    if (io && updatedCount > 0) {
+      io.emit("task:updated", { count: updatedCount });
+    }
+
+    res.json({
+      success: true,
+      updatedCount,
+      unchangedCount,
+      errors,
+    });
+  } catch (err) {
+    console.error("[tasks] Excel import error:", err);
+    res.status(500).json({ message: "Failed to process task Excel import" });
   }
 });
 

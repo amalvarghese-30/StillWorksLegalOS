@@ -1597,6 +1597,115 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/cases/import-excel — batch update cases from validated Excel import
+// ---------------------------------------------------------------------------
+
+router.post("/import-excel", async (req: Request, res: Response) => {
+  try {
+    if (req.user!.role !== "admin" && !req.user?.permissions?.cases) {
+      res.status(403).json({ message: "You do not have permission to import cases" });
+      return;
+    }
+
+    const { rows } = req.body as { rows?: Array<{ id: string; updates: Record<string, any> }> };
+    if (!Array.isArray(rows) || rows.length === 0) {
+      res.status(400).json({ message: "No rows provided for import" });
+      return;
+    }
+
+    const ALLOWED_IMPORT_FIELDS = [
+      "title", "description", "category", "practice", "mainCategory",
+      "subCategory", "court", "courtCaseId", "priority", "status", "nextHearing",
+    ];
+
+    let updatedCount = 0;
+    let unchangedCount = 0;
+    const errors: Array<{ id: string; message: string }> = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || !row.id || !mongoose.Types.ObjectId.isValid(row.id)) {
+        errors.push({ id: row?.id || `Row ${i + 1}`, message: "Invalid case record ID" });
+        continue;
+      }
+
+      const caseDoc = await Case.findById(row.id);
+      if (!caseDoc) {
+        errors.push({ id: row.id, message: `Case with ID ${row.id} not found` });
+        continue;
+      }
+
+      const safeUpdates: Record<string, any> = {};
+      let hasChanges = false;
+
+      for (const field of ALLOWED_IMPORT_FIELDS) {
+        if (row.updates && row.updates[field] !== undefined) {
+          const newVal = row.updates[field];
+          const currVal = (caseDoc as any)[field];
+          if (String(newVal ?? "").trim() !== String(currVal ?? "").trim()) {
+            safeUpdates[field] = newVal;
+            hasChanges = true;
+          }
+        }
+      }
+
+      if (!hasChanges) {
+        unchangedCount++;
+        continue;
+      }
+
+      if (safeUpdates["title"] !== undefined && !String(safeUpdates["title"]).trim()) {
+        errors.push({ id: row.id, message: "Case title cannot be blank" });
+        continue;
+      }
+
+      if (safeUpdates["priority"] && !["High", "Medium", "Low"].includes(safeUpdates["priority"])) {
+        errors.push({ id: row.id, message: `Invalid priority "${safeUpdates["priority"]}" (must be High, Medium, or Low)` });
+        continue;
+      }
+
+      if (safeUpdates["category"] && !safeUpdates["practice"]) {
+        safeUpdates["practice"] = safeUpdates["category"];
+      } else if (safeUpdates["practice"] && !safeUpdates["category"]) {
+        safeUpdates["category"] = safeUpdates["practice"];
+      }
+
+      safeUpdates["updatedBy"] = new mongoose.Types.ObjectId(req.userId!);
+      Object.assign(caseDoc, safeUpdates);
+      await caseDoc.save();
+      updatedCount++;
+
+      await AuditLog.create({
+        userId: req.userId,
+        userName: req.user?.name ?? "Unknown",
+        action: "update",
+        resource: "case",
+        resourceId: caseDoc._id.toString(),
+        resourceName: caseDoc.title,
+        details: "Updated via Excel Import",
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+      });
+    }
+
+    const io = req.app.get("io");
+    if (io && updatedCount > 0) {
+      io.emit("case:updated", { count: updatedCount });
+    }
+
+    res.json({
+      success: true,
+      updatedCount,
+      unchangedCount,
+      errors,
+    });
+  } catch (err) {
+    console.error("[cases] Excel import error:", err);
+    res.status(500).json({ message: "Failed to process case Excel import" });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // POST /api/cases/:id/request-deletion — request deletion approval
 // ---------------------------------------------------------------------------
 

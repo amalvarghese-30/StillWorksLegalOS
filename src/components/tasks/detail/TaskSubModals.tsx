@@ -302,7 +302,7 @@ export function TaskSubModals({
             className="mt-4 space-y-4"
           >
             <div className="space-y-1.5">
-              <Label className="text-helper">New Assignee</Label>
+              <Label className="text-helper">Assigned To</Label>
               <select
                 value={targetUserId}
                 onChange={(e) => setTargetUserId(e.target.value)}

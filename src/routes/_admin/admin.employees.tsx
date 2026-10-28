@@ -376,9 +376,9 @@ function EmployeesPage() {
     <div className="space-y-6 animate-in fade-in duration-200">
       {/* ── Page Header Matching Reference ── */}
       <PageHeader
-        breadcrumb={[{ label: "Admin", to: "/admin" }, { label: "Employees" }]}
-        title="Employees"
-        subtitle="Manage your team, monitor workloads, and access employee profiles."
+        breadcrumb={[{ label: "Admin", to: "/admin" }, { label: "Members" }]}
+        title="Members"
+        subtitle="Manage your team members, monitor workloads, and access member profiles."
         actions={
           <div className="flex items-center gap-2">
             {canManage && (
@@ -387,7 +387,7 @@ function EmployeesPage() {
                 onClick={() => setShowAddEmployee(true)}
               >
                 <Plus size={16} strokeWidth={2} className="mr-1.5" />
-                Add Employee
+                Add Member
               </Button>
             )}
           </div>

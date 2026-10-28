@@ -241,7 +241,7 @@ export function TaskEditForm({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
-          <Label className="text-helper font-medium">Assignees</Label>
+          <Label className="text-helper font-medium">Assigned To</Label>
           <AssigneeMultiSelect
             value={assignedTo}
             onChange={setAssignedTo}

@@ -17,6 +17,8 @@ import { QuickCallDialog } from "@/components/tasks/QuickCallDialog";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import { EditCallDialog } from "@/components/tasks/EditCallDialog";
 import { UpcomingClientDashboard } from "@/components/tasks/UpcomingClientDashboard";
+import { ExportImportMenu } from "@/components/common/ExportImportMenu";
+import { ExcelImportDialog } from "@/components/common/ExcelImportDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -245,6 +247,7 @@ function TasksPage() {
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showQuickCall, setShowQuickCall] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
   const [editingCallTask, setEditingCallTask] = useState<TaskRecord | null>(null);
   const [calendarMonth, setCalendarMonth] = useState(new Date());
@@ -624,6 +627,11 @@ function TasksPage() {
               </DropdownMenu>
             )}
 
+            <ExportImportMenu
+              entityType="tasks"
+              data={view === "upcoming" ? upcomingFilteredTasks : tasks}
+              onImportClick={() => setShowImportDialog(true)}
+            />
             <Button
               variant="outline"
               className="rounded-md shadow-soft transition-transform duration-200 hover:-translate-y-0.5 text-xs sm:text-helper"
@@ -879,7 +887,7 @@ function TasksPage() {
             {isAdmin && (
               <div>
                 <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">
-                  Assigned Staff ({selectedStaff.length} selected)
+                  Assigned To ({selectedStaff.length} selected)
                 </label>
                 <div className="max-h-28 overflow-y-auto rounded-md border border-border bg-background p-2 space-y-1.5 text-xs">
                   {employees.length === 0 ? (
@@ -1281,6 +1289,16 @@ function TasksPage() {
         onClose={() => setEditingCallTask(null)}
         task={editingCallTask}
       />
+      {showImportDialog && (
+        <ExcelImportDialog
+          open={showImportDialog}
+          onClose={() => setShowImportDialog(false)}
+          entityType="tasks"
+          onImportSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: taskKeys.all });
+          }}
+        />
+      )}
     </div>
   );
 }

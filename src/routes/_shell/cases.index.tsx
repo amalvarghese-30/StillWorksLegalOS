@@ -11,6 +11,8 @@ import { useCases, useUpdateCase, caseKeys, type CaseRecord } from "@/services/c
 import { useEmployees } from "@/services/admin";
 import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
 import { formatSafeDate } from "@/lib/dates";
+import { ExportImportMenu } from "@/components/common/ExportImportMenu";
+import { ExcelImportDialog } from "@/components/common/ExcelImportDialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -115,7 +117,7 @@ function CaseCard({
           </dd>
         </div>
         <div className="col-span-2 sm:col-span-1">
-          <dt className="text-caption text-muted-foreground">Assigned</dt>
+          <dt className="text-caption text-muted-foreground">Assigned To</dt>
           <dd className="mt-0.5 truncate text-helper font-medium" title={c.assignedUsers && c.assignedUsers.length > 0 ? c.assignedUsers.map((u) => u.name).join(", ") : (c.assignedTo?.name ?? "Unassigned")}>
             {c.assignedUsers && c.assignedUsers.length > 0
               ? c.assignedUsers.map((u) => u.name).join(", ")
@@ -165,6 +167,7 @@ function CasesPage() {
   const [limit, setLimit] = useState(24);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [reopenTargetCase, setReopenTargetCase] = useState<CaseRecord | null>(null);
 
   const { data: catData } = useCategories();
@@ -295,13 +298,20 @@ function CasesPage() {
         title="Cases"
         subtitle={`${filteredCases.length} matters visible · ${stats.active} active · ${stats.urgent} urgent · ${stats.closed} closed.`}
         actions={
-          <Button
-            className="gradient-primary rounded-md text-primary-foreground shadow-soft transition-transform duration-200 hover:-translate-y-0.5"
-            onClick={() => setShowAddDialog(true)}
-          >
-            <Plus size={17} strokeWidth={2} />
-            Add case
-          </Button>
+          <div className="flex items-center gap-2">
+            <ExportImportMenu
+              entityType="cases"
+              data={filteredCases}
+              onImportClick={() => setShowImportDialog(true)}
+            />
+            <Button
+              className="gradient-primary rounded-md text-primary-foreground shadow-soft transition-transform duration-200 hover:-translate-y-0.5"
+              onClick={() => setShowAddDialog(true)}
+            >
+              <Plus size={17} strokeWidth={2} />
+              Add case
+            </Button>
+          </div>
         }
       />
 
@@ -625,6 +635,17 @@ function CasesPage() {
       )}
 
       <AddCaseDialog open={showAddDialog} onClose={() => setShowAddDialog(false)} />
+
+      {showImportDialog && (
+        <ExcelImportDialog
+          open={showImportDialog}
+          onClose={() => setShowImportDialog(false)}
+          entityType="cases"
+          onImportSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: caseKeys.all });
+          }}
+        />
+      )}
 
       <AlertDialog open={Boolean(reopenTargetCase)} onOpenChange={(open) => !open && setReopenTargetCase(null)}>
         <AlertDialogContent className="rounded-xl border border-border bg-card p-6 shadow-lift max-w-md">

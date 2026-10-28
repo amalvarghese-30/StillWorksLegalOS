@@ -5,6 +5,7 @@ import {
   Trash2,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   UserPlus,
   Building2,
   Users,
@@ -215,6 +216,9 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
 
   const selectedParent = normalizedTree.find((c) => c?.name === caseForm.mainCategory);
   const availableSubCategories = selectedParent?.children ?? [];
+  const selectedSubCatNode = availableSubCategories.find((sc) => sc.name === caseForm.subCategory);
+  const availableNestedSubCategories = selectedSubCatNode?.children ?? [];
+  const [expandedSubCategoryGroups, setExpandedSubCategoryGroups] = useState<Record<string, boolean>>({ "SPECIAL LEGAL WORK": true });
 
   const updateCase = <K extends keyof CaseFormState>(key: K, value: CaseFormState[K]) => {
     setCaseForm((prev) => ({ ...prev, [key]: value }));
@@ -240,6 +244,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
         mainCategory: nextVal,
         subCategory: "",
         selectedSubCategories: [],
+        categoryPath: [],
         customCategory: nextVal !== "__other__" ? "" : prev.customCategory,
         title: newTitle || prev.title,
       };
@@ -298,6 +303,12 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
     const newTasks: OnboardingTaskEntry[] = [];
     const existingTitles = new Set(initialTasks.map((t) => t.title.toLowerCase()));
 
+    const defaultTaskAssignees = (caseForm.assignedTo && caseForm.assignedTo.length > 0)
+      ? caseForm.assignedTo
+      : (form.assignedTo && form.assignedTo.length > 0)
+      ? form.assignedTo
+      : [];
+
     for (const scName of checkedSubCategoriesForTasks) {
       if (!existingTitles.has(scName.toLowerCase())) {
         newTasks.push({
@@ -307,7 +318,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
           subCategory: scName,
           priority: "Medium",
           deadline: "",
-          assignedTo: caseForm.assignedTo || [],
+          assignedTo: defaultTaskAssignees,
           notes: "",
           description: "",
           checklist: [],
@@ -335,6 +346,11 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
 
   const addTask = () => {
     const newIdx = initialTasks.length;
+    const defaultAssignees = (caseForm.assignedTo && caseForm.assignedTo.length > 0)
+      ? caseForm.assignedTo
+      : (form.assignedTo && form.assignedTo.length > 0)
+      ? form.assignedTo
+      : [];
     setInitialTasks((prev) => [
       ...prev,
       {
@@ -344,7 +360,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
         subCategory: "",
         priority: "Medium",
         deadline: "",
-        assignedTo: caseForm.assignedTo || [],
+        assignedTo: defaultAssignees,
         notes: "",
         description: "",
         checklist: [],
@@ -559,11 +575,24 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
   const toggleStaff = (empId: string) => {
     setForm((prev) => {
       const exists = prev.assignedTo.includes(empId);
+      const nextAssigned = exists
+        ? prev.assignedTo.filter((id) => id !== empId)
+        : [...prev.assignedTo, empId];
+
+      setCaseForm((cPrev) => {
+        const isCaseUntouchedOrInSync =
+          cPrev.assignedTo.length === 0 ||
+          (cPrev.assignedTo.length === prev.assignedTo.length &&
+            cPrev.assignedTo.every((id) => prev.assignedTo.includes(id)));
+        if (isCaseUntouchedOrInSync) {
+          return { ...cPrev, assignedTo: nextAssigned };
+        }
+        return cPrev;
+      });
+
       return {
         ...prev,
-        assignedTo: exists
-          ? prev.assignedTo.filter((id) => id !== empId)
-          : [...prev.assignedTo, empId],
+        assignedTo: nextAssigned,
       };
     });
   };
@@ -640,8 +669,22 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
             category: t.category || t.subCategory || "Other Work",
             priority: t.priority,
             deadline: t.deadline ? toSafeIso(t.deadline) ?? undefined : undefined,
-            assignedTo: t.assignedTo.length > 0 ? t.assignedTo : undefined,
-            assignedUsers: t.assignedTo.length > 0 ? t.assignedTo : undefined,
+            assignedTo:
+              t.assignedTo.length > 0
+                ? t.assignedTo
+                : caseForm.assignedTo?.length > 0
+                ? caseForm.assignedTo
+                : form.assignedTo?.length > 0
+                ? form.assignedTo
+                : undefined,
+            assignedUsers:
+              t.assignedTo.length > 0
+                ? t.assignedTo
+                : caseForm.assignedTo?.length > 0
+                ? caseForm.assignedTo
+                : form.assignedTo?.length > 0
+                ? form.assignedTo
+                : undefined,
             checklist: t.checklist
               .filter((item) => item.text && item.text.trim())
               .map((item) => ({
@@ -701,10 +744,14 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
           assignedTo:
             caseForm.assignedTo && caseForm.assignedTo.length > 0
               ? caseForm.assignedTo
+              : form.assignedTo && form.assignedTo.length > 0
+              ? form.assignedTo
               : undefined,
           assignedUsers:
             caseForm.assignedTo && caseForm.assignedTo.length > 0
               ? caseForm.assignedTo
+              : form.assignedTo && form.assignedTo.length > 0
+              ? form.assignedTo
               : undefined,
           parties: validParties,
           tags: caseForm.tags.length > 0 ? caseForm.tags : undefined,
@@ -893,8 +940,22 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                 category: t.category || t.subCategory || "Other Work",
                 priority: t.priority,
                 deadline: t.deadline ? toSafeIso(t.deadline) ?? undefined : undefined,
-                assignedTo: t.assignedTo.length > 0 ? t.assignedTo : undefined,
-                assignedUsers: t.assignedTo.length > 0 ? t.assignedTo : undefined,
+                assignedTo:
+                  t.assignedTo.length > 0
+                    ? t.assignedTo
+                    : caseForm.assignedTo?.length > 0
+                    ? caseForm.assignedTo
+                    : form.assignedTo?.length > 0
+                    ? form.assignedTo
+                    : undefined,
+                assignedUsers:
+                  t.assignedTo.length > 0
+                    ? t.assignedTo
+                    : caseForm.assignedTo?.length > 0
+                    ? caseForm.assignedTo
+                    : form.assignedTo?.length > 0
+                    ? form.assignedTo
+                    : undefined,
                 checklist: t.checklist
                   .filter((item) => item.text && item.text.trim())
                   .map((item) => ({
@@ -954,10 +1015,14 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
               assignedTo:
                 caseForm.assignedTo && caseForm.assignedTo.length > 0
                   ? caseForm.assignedTo
+                  : form.assignedTo && form.assignedTo.length > 0
+                  ? form.assignedTo
                   : undefined,
               assignedUsers:
                 caseForm.assignedTo && caseForm.assignedTo.length > 0
                   ? caseForm.assignedTo
+                  : form.assignedTo && form.assignedTo.length > 0
+                  ? form.assignedTo
                   : undefined,
               parties: validParties,
               tags: caseForm.tags.length > 0 ? caseForm.tags : undefined,
@@ -1570,7 +1635,15 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                       <select
                         id="case-sub-category"
                         value={caseForm.subCategory}
-                        onChange={(e) => updateCase("subCategory", e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          updateCase("subCategory", val);
+                          updateCase("categoryPath", val ? [val] : []);
+                          const clientName = form.name.trim();
+                          if (clientName && val && val !== "__other__") {
+                            updateCase("title", `${clientName} - ${val}`);
+                          }
+                        }}
                         className="h-10 w-full rounded-md border border-border bg-card px-3 text-xs sm:text-sm outline-none transition-colors focus:border-primary"
                       >
                         <option value="">Select primary subcategory (or configure individual tasks below)…</option>
@@ -1580,6 +1653,38 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                           </option>
                         ))}
                         <option value="__other__">+ Custom subcategory...</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Nested Subcategory (e.g. under SPECIAL LEGAL WORK) */}
+                  {caseForm.subCategory && caseForm.subCategory !== "__other__" && availableNestedSubCategories.length > 0 && (
+                    <div className="space-y-1.5 pt-1 animate-in fade-in-50">
+                      <Label htmlFor="case-nested-sub-category" className="text-helper">
+                        Specific Legal Work / Matter Detail ({caseForm.subCategory})
+                      </Label>
+                      <select
+                        id="case-nested-sub-category"
+                        value={caseForm.categoryPath?.[1] || ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const newPath = val ? [caseForm.subCategory, val] : [caseForm.subCategory];
+                          updateCase("categoryPath", newPath);
+                          if (val) {
+                            const clientName = form.name.trim();
+                            if (clientName) {
+                              updateCase("title", `${clientName} - ${val}`);
+                            }
+                          }
+                        }}
+                        className="h-10 w-full rounded-md border border-border bg-card px-3 text-xs sm:text-sm outline-none transition-colors focus:border-primary"
+                      >
+                        <option value="">Select specific legal work detail…</option>
+                        {availableNestedSubCategories.map((nsc) => (
+                          <option key={nsc._id || nsc.name} value={nsc.name}>
+                            {nsc.name}
+                          </option>
+                        ))}
                       </select>
                     </div>
                   )}
@@ -1768,7 +1873,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
 
                 {/* ── Responsible Staff / Counsel Assignment ── */}
                 <div className="space-y-1.5">
-                  <Label className="text-helper">Case Team / Assigned Counsel</Label>
+                  <Label className="text-helper">Assigned To</Label>
                   <AssigneeMultiSelect
                     value={caseForm.assignedTo}
                     onChange={(val) => updateCase("assignedTo", val)}
@@ -1889,7 +1994,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                         Create Independent Tasks from Subcategories
                       </p>
                       <p className="text-[11px] leading-relaxed opacity-90">
-                        Select subcategories to create separate tasks for this client. Each selected subcategory will be added as an independent task with its own assignees, deadline, instructions, and checklist steps.
+                        Select subcategories to create separate tasks for this client. Each selected subcategory will be added as an independent task with its own assigned members, deadline, instructions, and checklist steps.
                       </p>
                     </div>
                   </div>
@@ -1931,7 +2036,15 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                           <button
                             type="button"
                             onClick={() => {
-                              const allNames = availableSubCategories.map((s) => s.name);
+                              const allNames: string[] = [];
+                              for (const s of availableSubCategories) {
+                                allNames.push(s.name);
+                                if (s.children && s.children.length > 0) {
+                                  for (const c of s.children) {
+                                    if (c.name) allNames.push(c.name);
+                                  }
+                                }
+                              }
                               setCheckedSubCategoriesForTasks(allNames);
                             }}
                             className="text-[11px] text-primary hover:underline font-medium"
@@ -1949,49 +2062,157 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
-                        {availableSubCategories.map((sc) => {
-                          const isChecked = checkedSubCategoriesForTasks.includes(sc.name);
-                          const isAlreadyCreated = initialTasks.some(
-                            (t) => t.title.toLowerCase() === sc.name.toLowerCase()
-                          );
-                          return (
-                            <label
-                              key={sc._id || sc.name}
-                              className={`flex items-start gap-2.5 rounded-lg border p-2 text-xs cursor-pointer transition-all ${
-                                isAlreadyCreated
-                                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 opacity-80"
-                                  : isChecked
-                                  ? "border-primary bg-primary/10 text-foreground font-semibold shadow-xs"
-                                  : "border-border/70 bg-card hover:bg-muted text-muted-foreground hover:text-foreground"
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isChecked || isAlreadyCreated}
-                                disabled={isAlreadyCreated}
-                                onChange={(e) => {
-                                  if (isAlreadyCreated) return;
-                                  const c = e.target.checked;
-                                  setCheckedSubCategoriesForTasks((prev) =>
-                                    c ? [...prev, sc.name] : prev.filter((name) => name !== sc.name)
-                                  );
-                                }}
-                                className="mt-0.5 size-3.5 rounded border-border text-primary focus:ring-primary shrink-0"
-                              />
-                              <div className="min-w-0 flex-1">
-                                <span className="leading-tight block truncate select-none">
-                                  {sc.name}
-                                </span>
-                                {isAlreadyCreated && (
-                                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-normal block mt-0.5">
-                                    ✓ Added as task
-                                  </span>
+                      <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                          {availableSubCategories
+                            .filter((sc) => !sc.children || sc.children.length === 0)
+                            .map((sc) => {
+                              const isChecked = checkedSubCategoriesForTasks.includes(sc.name);
+                              const isAlreadyCreated = initialTasks.some(
+                                (t) => t.title.toLowerCase() === sc.name.toLowerCase()
+                              );
+                              return (
+                                <label
+                                  key={sc._id || sc.name}
+                                  className={`flex items-start gap-2.5 rounded-lg border p-2 text-xs cursor-pointer transition-all ${
+                                    isAlreadyCreated
+                                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 opacity-80"
+                                      : isChecked
+                                      ? "border-primary bg-primary/10 text-foreground font-semibold shadow-xs"
+                                      : "border-border/70 bg-card hover:bg-muted text-muted-foreground hover:text-foreground"
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked || isAlreadyCreated}
+                                    disabled={isAlreadyCreated}
+                                    onChange={(e) => {
+                                      if (isAlreadyCreated) return;
+                                      const c = e.target.checked;
+                                      setCheckedSubCategoriesForTasks((prev) =>
+                                        c ? [...prev, sc.name] : prev.filter((name) => name !== sc.name)
+                                      );
+                                    }}
+                                    className="mt-0.5 size-3.5 rounded border-border text-primary focus:ring-primary shrink-0"
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <span className="leading-tight block truncate select-none">
+                                      {sc.name}
+                                    </span>
+                                    {isAlreadyCreated && (
+                                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-normal block mt-0.5">
+                                        ✓ Added as task
+                                      </span>
+                                    )}
+                                  </div>
+                                </label>
+                              );
+                            })}
+                        </div>
+
+                        {/* Subcategories with Nested Children (e.g. SPECIAL LEGAL WORK) */}
+                        {availableSubCategories
+                          .filter((sc) => sc.children && sc.children.length > 0)
+                          .map((sc) => {
+                            const isExpanded = expandedSubCategoryGroups[sc.name] ?? true;
+                            const isChecked = checkedSubCategoriesForTasks.includes(sc.name);
+                            const isAlreadyCreated = initialTasks.some(
+                              (t) => t.title.toLowerCase() === sc.name.toLowerCase()
+                            );
+                            return (
+                              <div
+                                key={sc._id || sc.name}
+                                className="rounded-lg border border-primary/20 bg-card p-2.5 space-y-2"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <label className="flex items-center gap-2 text-xs font-semibold text-foreground cursor-pointer select-none">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked || isAlreadyCreated}
+                                      disabled={isAlreadyCreated}
+                                      onChange={(e) => {
+                                        if (isAlreadyCreated) return;
+                                        const c = e.target.checked;
+                                        setCheckedSubCategoriesForTasks((prev) =>
+                                          c ? [...prev, sc.name] : prev.filter((name) => name !== sc.name)
+                                        );
+                                      }}
+                                      className="size-3.5 rounded border-border text-primary focus:ring-primary"
+                                    />
+                                    <span>{sc.name}</span>
+                                    {isAlreadyCreated && (
+                                      <span className="text-[10px] text-emerald-600 font-normal">
+                                        ✓ Added
+                                      </span>
+                                    )}
+                                  </label>
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setExpandedSubCategoryGroups((prev) => ({
+                                        ...prev,
+                                        [sc.name]: !isExpanded,
+                                      }))
+                                    }
+                                    className="flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+                                  >
+                                    <span>
+                                      {isExpanded ? "Hide" : "Show"} ({sc.children!.length} nested subcategories)
+                                    </span>
+                                    {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                                  </button>
+                                </div>
+
+                                {isExpanded && (
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 pt-1 border-t border-border/40">
+                                    {sc.children!.map((nsc) => {
+                                      const isChildChecked = checkedSubCategoriesForTasks.includes(nsc.name);
+                                      const isChildCreated = initialTasks.some(
+                                        (t) => t.title.toLowerCase() === nsc.name.toLowerCase()
+                                      );
+                                      return (
+                                        <label
+                                          key={nsc._id || nsc.name}
+                                          className={`flex items-start gap-2 rounded-md border p-1.5 text-[11px] cursor-pointer transition-all ${
+                                            isChildCreated
+                                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 opacity-80"
+                                              : isChildChecked
+                                              ? "border-primary bg-primary/10 text-foreground font-semibold shadow-xs"
+                                              : "border-border/60 bg-background hover:bg-muted/50 text-muted-foreground hover:text-foreground"
+                                          }`}
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={isChildChecked || isChildCreated}
+                                            disabled={isChildCreated}
+                                            onChange={(e) => {
+                                              if (isChildCreated) return;
+                                              const c = e.target.checked;
+                                              setCheckedSubCategoriesForTasks((prev) =>
+                                                c ? [...prev, nsc.name] : prev.filter((name) => name !== nsc.name)
+                                              );
+                                            }}
+                                            className="mt-0.5 size-3 rounded border-border text-primary focus:ring-primary shrink-0"
+                                          />
+                                          <div className="min-w-0 flex-1">
+                                            <span className="leading-tight block truncate select-none">
+                                              {nsc.name}
+                                            </span>
+                                            {isChildCreated && (
+                                              <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-normal block">
+                                                ✓ Added
+                                              </span>
+                                            )}
+                                          </div>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
                                 )}
                               </div>
-                            </label>
-                          );
-                        })}
+                            );
+                          })}
                       </div>
 
                       <div className="flex items-center justify-end pt-1">
@@ -2137,12 +2358,12 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                                 {/* Assignee Selector */}
                                 <div className="space-y-1.5">
                                   <Label className="text-[11px] font-semibold text-foreground">
-                                    Assigned Staff &amp; Counsel
+                                    Assigned To
                                   </Label>
                                   <AssigneeMultiSelect
                                     value={t.assignedTo}
                                     onChange={(val) => updateTask(tIdx, "assignedTo", val)}
-                                    placeholder="Select one or more assignees..."
+                                    placeholder="Select one or more members..."
                                   />
                                 </div>
 

@@ -283,7 +283,7 @@ export function ApprovalDetailDrawer({
                 {task?.assignedTo && (
                   <div className="p-3.5 rounded-xl border border-border/80 bg-muted/20 space-y-1">
                     <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                      Assigned Assignee
+                      Assigned To
                     </span>
                     <div className="flex items-center gap-2.5 pt-1">
                       <div className="size-8 rounded-full bg-blue-500/10 text-blue-600 grid place-items-center text-xs font-bold shrink-0">
@@ -301,7 +301,7 @@ export function ApprovalDetailDrawer({
                           {task.assignedTo.name}
                         </p>
                         <p className="text-xs text-muted-foreground truncate capitalize">
-                          {task.assignedTo.role?.replace(/_/g, " ") || "Assignee"}
+                          {task.assignedTo.role?.replace(/_/g, " ") || "Assigned To"}
                         </p>
                       </div>
                     </div>

@@ -150,6 +150,9 @@ function TaskDetailDialogInner({
   const [notes, setNotes] = useState(activeTask.notes || "");
   const [mainCategory, setMainCategory] = useState(activeTask.mainCategory || "");
   const [subCategory, setSubCategory] = useState(activeTask.subCategory || "");
+  const [nestedSubCategory, setNestedSubCategory] = useState(
+    (activeTask.categoryPath && activeTask.categoryPath.length > 2) ? activeTask.categoryPath[2] : ""
+  );
   const [customCategory, setCustomCategory] = useState(activeTask.customCategory || "");
   const [priority, setPriority] = useState<"High" | "Medium" | "Low">(
     (activeTask.priority as "High" | "Medium" | "Low") || "Medium"
@@ -227,6 +230,8 @@ function TaskDetailDialogInner({
   // Subcategory choices
   const selectedParent = categoryTree.find((c) => c.name === mainCategory);
   const availableSubCategories = selectedParent?.children ?? [];
+  const selectedSubParent = availableSubCategories.find((c) => c.name === subCategory);
+  const availableNestedSubCategories = selectedSubParent?.children ?? [];
 
   // Description textarea ref for formatting actions
   const descTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -260,6 +265,10 @@ function TaskDetailDialogInner({
       setMainCategory(activeTask.mainCategory || "");
       setSubCategory(activeTask.subCategory || "");
       setCustomCategory(activeTask.customCategory || "");
+      const nested = (activeTask.categoryPath && activeTask.categoryPath.length > 2)
+        ? activeTask.categoryPath[2]
+        : "";
+      setNestedSubCategory(nested);
       setPriority(
         (activeTask.priority as "High" | "Medium" | "Low") || "Medium"
       );
@@ -329,12 +338,14 @@ function TaskDetailDialogInner({
       assignedTo.length !== origAssigned.length ||
       assignedTo.some((id) => !origAssigned.includes(id));
 
+    const origNested = (activeTask.categoryPath && activeTask.categoryPath.length > 2) ? activeTask.categoryPath[2] : "";
     return (
       title !== (activeTask.title || "") ||
       description !== (activeTask.description || "") ||
       notes !== (activeTask.notes || "") ||
       mainCategory !== (activeTask.mainCategory || "") ||
       subCategory !== (activeTask.subCategory || "") ||
+      nestedSubCategory !== origNested ||
       customCategory !== (activeTask.customCategory || "") ||
       priority !== (activeTask.priority || "Medium") ||
       assignedChanged
@@ -345,6 +356,7 @@ function TaskDetailDialogInner({
     notes,
     mainCategory,
     subCategory,
+    nestedSubCategory,
     customCategory,
     priority,
     assignedTo,
@@ -368,8 +380,15 @@ function TaskDetailDialogInner({
         }
       }
 
+      const fullCategoryPath = [
+        mainCategory,
+        ...(subCategory ? [subCategory] : []),
+        ...(nestedSubCategory ? [nestedSubCategory] : []),
+      ].filter((p) => p && p !== "__other__");
+
       const chosenCategory =
         customCategory.trim() ||
+        nestedSubCategory ||
         subCategory ||
         mainCategory ||
         activeTask.category ||
@@ -380,7 +399,8 @@ function TaskDetailDialogInner({
         description: description.trim(),
         notes: notes.trim(),
         mainCategory: mainCategory || undefined,
-        subCategory: subCategory || undefined,
+        subCategory: nestedSubCategory || subCategory || undefined,
+        categoryPath: fullCategoryPath.length > 0 ? fullCategoryPath : undefined,
         customCategory: customCategory.trim() || undefined,
         category: chosenCategory,
         priority,
@@ -769,6 +789,7 @@ function TaskDetailDialogInner({
                       value={subCategory}
                       onChange={(e) => {
                         setSubCategory(e.target.value);
+                        setNestedSubCategory("");
                         if (e.target.value !== "__other__") setCustomCategory("");
                       }}
                       disabled={!mainCategory || availableSubCategories.length === 0}
@@ -784,6 +805,27 @@ function TaskDetailDialogInner({
                     </select>
                   </div>
                 </div>
+
+                {subCategory && availableNestedSubCategories.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    <Label htmlFor="nested-sub-category-select" className="text-xs font-semibold text-foreground">
+                      Specific Work Type ({subCategory})
+                    </Label>
+                    <select
+                      id="nested-sub-category-select"
+                      value={nestedSubCategory}
+                      onChange={(e) => setNestedSubCategory(e.target.value)}
+                      className="h-10 w-full rounded-lg border border-border bg-background px-3 text-xs text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    >
+                      <option value="">Select specific item (optional)…</option>
+                      {availableNestedSubCategories.map((nsc) => (
+                        <option key={nsc._id || nsc.name} value={nsc.name}>
+                          {nsc.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 {subCategory === "__other__" && (
                   <div className="space-y-1.5">
@@ -861,7 +903,7 @@ function TaskDetailDialogInner({
                 {/* Assigned Staff & Counsel */}
                 <div className="space-y-1.5">
                   <Label className="text-xs font-semibold text-foreground">
-                    Assigned Staff & Counsel
+                    Assigned To
                   </Label>
                   <AssigneeMultiSelect value={assignedTo} onChange={setAssignedTo} />
                 </div>
