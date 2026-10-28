@@ -629,7 +629,7 @@ function TasksPage() {
 
             <ExportImportMenu
               entityType="tasks"
-              data={view === "upcoming" ? upcomingFilteredTasks : tasks}
+              data={view === "upcoming" ? upcomingTasks : tasks}
               onImportClick={() => setShowImportDialog(true)}
             />
             <Button

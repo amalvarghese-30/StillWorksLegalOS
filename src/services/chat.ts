@@ -107,11 +107,16 @@ export const chatKeys = {
 // Hooks
 // ---------------------------------------------------------------------------
 
-export function useChatGroups() {
+export function useChatGroups(options?: { enabled?: boolean }) {
   return useQuery<ChatGroupsResponse>({
     queryKey: chatKeys.groups(),
     queryFn: () => api.get("/chat/groups"),
     refetchInterval: 10_000,
+    enabled: options?.enabled ?? true,
+    retry: (failureCount, error) => {
+      if ((error as any)?.status === 401 || (error as any)?.status === 403) return false;
+      return failureCount < 2;
+    },
   });
 }
 
@@ -120,6 +125,10 @@ export function useChatMessages(groupId: string | undefined) {
     queryKey: chatKeys.messages(groupId!),
     queryFn: () => api.get(`/chat/groups/${groupId}/messages`),
     enabled: !!groupId,
+    retry: (failureCount, error) => {
+      if ((error as any)?.status === 401 || (error as any)?.status === 403) return false;
+      return failureCount < 2;
+    },
   });
 }
 
@@ -130,11 +139,16 @@ export async function fetchOlderMessages(
   return api.get(`/chat/groups/${groupId}/messages?before=${encodeURIComponent(before)}`);
 }
 
-export function useChatUsers() {
+export function useChatUsers(options?: { enabled?: boolean }) {
   return useQuery<UsersResponse>({
     queryKey: chatKeys.users(),
     queryFn: () => api.get("/chat/users"),
     staleTime: 5 * 60 * 1000, // 5 min
+    enabled: options?.enabled ?? true,
+    retry: (failureCount, error) => {
+      if ((error as any)?.status === 401 || (error as any)?.status === 403) return false;
+      return failureCount < 2;
+    },
   });
 }
 

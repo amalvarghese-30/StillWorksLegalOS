@@ -730,6 +730,8 @@ router.get("/avatar/:filename", async (req: Request, res: Response) => {
 
     res.setHeader("Content-Type", mimeTypes[ext] || "application/octet-stream");
     res.setHeader("Cache-Control", "public, max-age=86400, immutable"); // 1 day immutable client cache
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    res.setHeader("Access-Control-Allow-Origin", "*");
     const stream = await StorageService.read(logicalPath);
     await pipeline(stream, res);
   } catch (err: any) {

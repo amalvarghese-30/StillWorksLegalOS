@@ -78,6 +78,25 @@ import { toast } from "sonner";
 export function FloatingChatWidget() {
   const { user, ready } = useAuth();
   const location = useLocation();
+
+  if (!ready || !user) return null;
+  const isAdmin = user.role === "admin";
+  const hasChatPermission = isAdmin || user.permissions?.chat !== false;
+  if (!hasChatPermission) return null;
+
+  const pathname = location.pathname;
+  if (pathname === "/login" || pathname === "/chat") return null;
+
+  return <FloatingChatWidgetInner user={user} isAdmin={isAdmin} />;
+}
+
+function FloatingChatWidgetInner({
+  user,
+  isAdmin,
+}: {
+  user: NonNullable<ReturnType<typeof useAuth>["user"]>;
+  isAdmin: boolean;
+}) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { socket, status: connStatus } = useSocket();
@@ -112,9 +131,6 @@ export function FloatingChatWidget() {
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const prevGroupRef = useRef<string | null>(null);
-
-  const isAdmin = user?.role === "admin";
-  const hasChatPermission = isAdmin || user?.permissions?.chat !== false;
 
   // ── Chat Groups Data ─────────────────────────────────────────────────────
   const { data: groupsData, isLoading: groupsLoading } = useChatGroups();
@@ -493,16 +509,6 @@ export function FloatingChatWidget() {
       search: activeGroupId ? { groupId: activeGroupId } : {},
     });
   };
-
-  // ── Visibility Gates ─────────────────────────────────────────────────────
-  // Do not show floating widget on:
-  // 1. Unauthenticated sessions
-  // 2. Login or auth pages
-  // 3. When chat permission is explicitly disabled
-  // 4. When user is already on the dedicated full-screen /chat page
-  const pathname = location.pathname;
-  if (!ready || !user || !hasChatPermission) return null;
-  if (pathname === "/login" || pathname === "/chat") return null;
 
   return (
     <>
