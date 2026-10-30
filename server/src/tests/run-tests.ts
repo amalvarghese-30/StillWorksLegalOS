@@ -6186,7 +6186,7 @@ const { NotificationService } = await import("../services/notifications.js");
       "Letters of Administration",
       "Civil Court Matters",
       "RTS Appeal",
-      "Legal Heir",
+      "Legal Heir Documentation",
       "Court Petition / Application",
     ];
 

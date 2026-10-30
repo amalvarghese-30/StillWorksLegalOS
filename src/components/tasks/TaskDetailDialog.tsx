@@ -392,7 +392,7 @@ function TaskDetailDialogInner({
         subCategory ||
         mainCategory ||
         activeTask.category ||
-        "Other Work";
+        "OTHER WORKS";
 
       const payload: Partial<CreateTaskPayload> = {
         title: title.trim(),

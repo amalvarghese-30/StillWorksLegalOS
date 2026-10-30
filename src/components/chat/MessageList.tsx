@@ -48,10 +48,11 @@ export function MessageList({
   onPinNotice,
 }: MessageListProps) {
   const endRef = useRef<HTMLDivElement>(null);
-  const isGroup = groupMembers.length > 2;
-  const otherIds = groupMembers.filter((m) => m._id !== currentUserId).map((m) => m._id);
+  const safeMembers = groupMembers ?? [];
+  const isGroup = safeMembers.length > 2;
+  const otherIds = safeMembers.filter((m) => m && m._id !== currentUserId).map((m) => m._id);
   const isGroupAdmin =
-    isAdmin || groupMembers.find((m) => m._id === currentUserId)?.role === "admin";
+    isAdmin || safeMembers.find((m) => m && m._id === currentUserId)?.role === "admin";
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });

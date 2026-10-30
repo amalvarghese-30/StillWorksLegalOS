@@ -131,18 +131,28 @@ export function FloatingChatWidget() {
   const prevGroupRef = useRef<string | null>(null);
 
   // ── Chat Groups Data ─────────────────────────────────────────────────────
-  const { data: groupsData, isLoading: groupsLoading } = useChatGroups({ enabled: isChatEnabled });
+  const {
+    data: groupsData,
+    isLoading: groupsLoading,
+    isError: groupsError,
+    refetch: refetchGroups,
+  } = useChatGroups({ enabled: isChatEnabled });
   const groups: ChatGroup[] = groupsData?.groups ?? [];
   const activeGroup = groups.find((g) => g._id === activeGroupId) ?? null;
 
   // Total unread messages across all groups
   const totalUnread = useMemo(
-    () => groups.reduce((sum, g) => sum + (g.unreadCount || 0), 0),
+    () => groups.reduce((sum, g) => sum + (g.unread ?? 0), 0),
     [groups],
   );
 
   // ── Messages Data ────────────────────────────────────────────────────────
-  const { data: messagesData, isLoading: messagesLoading } = useChatMessages(
+  const {
+    data: messagesData,
+    isLoading: messagesLoading,
+    isError: messagesError,
+    refetch: refetchMessages,
+  } = useChatMessages(
     activeGroupId ?? undefined,
     { enabled: isChatEnabled && Boolean(activeGroupId) },
   );
@@ -221,10 +231,10 @@ export function FloatingChatWidget() {
 
   // Mark group as read when open and focused
   useEffect(() => {
-    if (isOpen && activeGroupId && activeGroup && (activeGroup.unreadCount ?? 0) > 0) {
+    if (isOpen && activeGroupId && activeGroup && (activeGroup.unread ?? 0) > 0) {
       markReadMutation.mutate(activeGroupId);
     }
-  }, [isOpen, activeGroupId, activeGroup?.unreadCount]);
+  }, [isOpen, activeGroupId, activeGroup?.unread]);
 
   // ── Socket event listeners ───────────────────────────────────────────────
   useSocketEvent<ChatMessage>("chat:message", (msg) => {
@@ -505,7 +515,7 @@ export function FloatingChatWidget() {
     close();
     navigate({
       to: "/chat",
-      search: activeGroupId ? { groupId: activeGroupId } : {},
+      search: { groupId: activeGroupId ?? undefined },
     });
   };
 
@@ -643,30 +653,50 @@ export function FloatingChatWidget() {
                   : "flex flex-1 flex-col"
               } bg-card overflow-hidden`}
             >
-              <ChatSidebar
-                groups={groups}
-                activeGroupId={activeGroupId}
-                currentUserId={user?._id ?? ""}
-                onlineIds={onlineIds}
-                search={searchConv}
-                onSearchChange={setSearchConv}
-                isAdmin={isAdmin}
-                onSelect={handleSelectGroup}
-                onNewGroup={() => setShowCreateGroup(true)}
-                onNewChat={() => setShowNewChat(true)}
-                users={allUsers}
-                onStartDirectChat={handleStartDirectChat}
-                isCreatingDirectChat={createDirectChatMutation.isPending}
-                onTogglePin={(id, pinned) => togglePin.mutate({ groupId: id, pinned })}
-                onToggleMute={(id, muted) => toggleMute.mutate({ groupId: id, muted })}
-                onToggleArchive={(id, archived) => toggleArchive.mutate({ groupId: id, archived })}
-                onMarkRead={(id) => markReadMutation.mutate(id)}
-                onMarkUnread={(id) => markUnreadMutation.mutate(id)}
-                onClearChat={(id) => handleClearChat(id)}
-                onDeleteChat={(id) => handleDeleteChat(id)}
-                onLeaveGroup={(id) => handleLeaveGroup(id)}
-                onDeleteGroup={(id) => handleDeleteGroup(id)}
-              />
+              {groupsError ? (
+                <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+                  <div className="size-10 rounded-full bg-destructive/10 grid place-items-center text-destructive">
+                    <X size={20} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-foreground">Failed to load conversations</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">Please check your connection and retry.</p>
+                  </div>
+                  <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => refetchGroups()}>
+                    Retry
+                  </Button>
+                </div>
+              ) : groupsLoading ? (
+                <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6">
+                  <Loader2 size={20} className="animate-spin text-primary" />
+                  <span className="text-xs text-muted-foreground">Loading chats…</span>
+                </div>
+              ) : (
+                <ChatSidebar
+                  groups={groups}
+                  activeGroupId={activeGroupId}
+                  currentUserId={user?._id ?? ""}
+                  onlineIds={onlineIds}
+                  search={searchConv}
+                  onSearchChange={setSearchConv}
+                  isAdmin={isAdmin}
+                  onSelect={handleSelectGroup}
+                  onNewGroup={() => setShowCreateGroup(true)}
+                  onNewChat={() => setShowNewChat(true)}
+                  users={allUsers}
+                  onStartDirectChat={handleStartDirectChat}
+                  isCreatingDirectChat={createDirectChatMutation.isPending}
+                  onTogglePin={(id, pinned) => togglePin.mutate({ groupId: id, pinned })}
+                  onToggleMute={(id, muted) => toggleMute.mutate({ groupId: id, muted })}
+                  onToggleArchive={(id, archived) => toggleArchive.mutate({ groupId: id, archived })}
+                  onMarkRead={(id) => markReadMutation.mutate(id)}
+                  onMarkUnread={(id) => markUnreadMutation.mutate(id)}
+                  onClearChat={(id) => handleClearChat(id)}
+                  onDeleteChat={(id) => handleDeleteChat(id)}
+                  onLeaveGroup={(id) => handleLeaveGroup(id)}
+                  onDeleteGroup={(id) => handleDeleteGroup(id)}
+                />
+              )}
             </div>
 
             {/* Right Column: Active Conversation (or empty placeholder if split view) */}
@@ -687,9 +717,9 @@ export function FloatingChatWidget() {
                     onlineIds={onlineIds}
                     lastSeen={lastSeen}
                     onOpenInfo={() => setShowGroupInfo(true)}
-                    onTogglePin={() => togglePin.mutate({ groupId: activeGroup._id, pinned: !activeGroup.pinned })}
-                    onToggleMute={() => toggleMute.mutate({ groupId: activeGroup._id, muted: !activeGroup.muted })}
-                    onToggleArchive={() => toggleArchive.mutate({ groupId: activeGroup._id, archived: !activeGroup.archived })}
+                    onTogglePin={() => togglePin.mutate({ groupId: activeGroup._id, pinned: activeGroup.isPinned })}
+                    onToggleMute={() => toggleMute.mutate({ groupId: activeGroup._id, muted: activeGroup.isMuted })}
+                    onToggleArchive={() => toggleArchive.mutate({ groupId: activeGroup._id, archived: activeGroup.isArchived })}
                     isAdmin={isAdmin}
                     canManage={canManage}
                     onDeleteGroup={() => setDeleteConfirmOpen(true)}
@@ -709,54 +739,71 @@ export function FloatingChatWidget() {
                     onUnpinMessage={() => unpinMessageMutation.mutate({ groupId: activeGroup._id })}
                   />
 
-                  <MessageList
-                    messages={allMessages}
-                    currentUserId={user?._id ?? ""}
-                    groupMembers={activeMembers}
-                    isAdmin={isAdmin}
-                    isLoading={messagesLoading}
-                    hasOlder={hasOlder}
-                    loadingOlder={loadingOlder}
-                    onLoadOlder={handleLoadOlder}
-                    emptyText={
-                      activeGroup.type === "group"
-                        ? "No messages yet. Start the conversation."
-                        : "Send a message to start chatting."
-                    }
-                    onReply={(msg) => {
-                      setReplyingTo(msg);
-                      inputRef.current?.focus();
-                    }}
-                    onCopy={(msg) => {
-                      navigator.clipboard?.writeText(msg.text).then(() => toast.success("Copied"));
-                    }}
-                    onForward={(msg) => {
-                      setForwardMessage(msg);
-                      setShowForward(true);
-                    }}
-                    onDeleteForMe={(msg) => {
-                      deleteForMeMutation.mutate({ groupId: activeGroup._id, messageId: msg._id });
-                    }}
-                    onDeleteForEveryone={(msg) => {
-                      deleteForEveryoneMutation.mutate({ groupId: activeGroup._id, messageId: msg._id });
-                    }}
-                    onReport={(msg) => {
-                      reportMutation.mutate({ groupId: activeGroup._id, messageId: msg._id }, {
-                        onSuccess: () => toast.success("Message reported to admins"),
-                      });
-                    }}
-                    onToggleReaction={(msg, emoji) => {
-                      addReactionMutation.mutate({ groupId: activeGroup._id, messageId: msg._id, emoji });
-                    }}
-                    searchQuery={inChatSearch}
-                    onCaseClick={(caseNum) => {
-                      close();
-                      navigate({ to: "/clients", search: { search: caseNum } as any });
-                    }}
-                    onPinNotice={(msg) => {
-                      pinMessageMutation.mutate({ groupId: activeGroup._id, messageId: msg._id });
-                    }}
-                  />
+                  {messagesError ? (
+                    <div className="chat-wallpaper flex min-h-0 flex-1 flex-col items-center justify-center p-6 text-center">
+                      <div className="rounded-2xl bg-card/90 backdrop-blur-xs p-6 shadow-xs border border-destructive/30 max-w-xs space-y-3">
+                        <div className="size-10 rounded-full bg-destructive/10 grid place-items-center text-destructive mx-auto">
+                          <X size={20} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">Failed to load messages</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">Could not retrieve conversation history.</p>
+                        </div>
+                        <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => refetchMessages()}>
+                          Retry
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <MessageList
+                      messages={allMessages}
+                      currentUserId={user?._id ?? ""}
+                      groupMembers={activeMembers}
+                      isAdmin={isAdmin}
+                      isLoading={messagesLoading}
+                      hasOlder={hasOlder}
+                      loadingOlder={loadingOlder}
+                      onLoadOlder={handleLoadOlder}
+                      emptyText={
+                        activeGroup.type === "group"
+                          ? "No messages yet. Start the conversation."
+                          : "Send a message to start chatting."
+                      }
+                      onReply={(msg) => {
+                        setReplyingTo(msg);
+                        inputRef.current?.focus();
+                      }}
+                      onCopy={(msg) => {
+                        navigator.clipboard?.writeText(msg.text).then(() => toast.success("Copied"));
+                      }}
+                      onForward={(msg) => {
+                        setForwardMessage(msg);
+                        setShowForward(true);
+                      }}
+                      onDeleteForMe={(msg) => {
+                        deleteForMeMutation.mutate({ groupId: activeGroup._id, messageId: msg._id });
+                      }}
+                      onDeleteForEveryone={(msg) => {
+                        deleteForEveryoneMutation.mutate({ groupId: activeGroup._id, messageId: msg._id });
+                      }}
+                      onReport={(msg) => {
+                        reportMutation.mutate({ groupId: activeGroup._id, messageId: msg._id }, {
+                          onSuccess: () => toast.success("Message reported to admins"),
+                        });
+                      }}
+                      onToggleReaction={(msg, emoji) => {
+                        addReactionMutation.mutate({ groupId: activeGroup._id, messageId: msg._id, emoji });
+                      }}
+                      searchQuery={inChatSearch}
+                      onCaseClick={(caseNum) => {
+                        close();
+                        navigate({ to: "/clients", search: (prev: Record<string, unknown>) => ({ ...prev, search: caseNum }) });
+                      }}
+                      onPinNotice={(msg) => {
+                        pinMessageMutation.mutate({ groupId: activeGroup._id, messageId: msg._id });
+                      }}
+                    />
+                  )}
 
                   <MessageComposer
                     groupId={activeGroup._id}
@@ -824,23 +871,26 @@ export function FloatingChatWidget() {
             open={showGroupInfo}
             onClose={() => setShowGroupInfo(false)}
             group={activeGroup}
+            members={activeMembers}
             currentUserId={user?._id ?? ""}
-            isAdmin={isAdmin}
             canManage={canManage}
             onlineIds={onlineIds}
-            lastSeen={lastSeen}
-            onAddMembers={() => setShowAddMembers(true)}
-            onRemoveMember={(memberId) => {
-              removeMemberMutation.mutate({ groupId: activeGroup._id, memberId });
-            }}
-            onChangeRole={(memberId, role) => {
-              changeRoleMutation.mutate({ groupId: activeGroup._id, memberId, role });
-            }}
-            onLeaveGroup={() => handleLeaveGroup(activeGroup._id)}
-            onDeleteGroup={() => setDeleteConfirmOpen(true)}
-            onRenameGroup={(name) => {
+            onRename={(name) => {
               renameMutation.mutate({ groupId: activeGroup._id, name });
             }}
+            onAddMembers={() => setShowAddMembers(true)}
+            onChangeRole={(userId, role) => {
+              changeRoleMutation.mutate({ groupId: activeGroup._id, userId, role });
+            }}
+            onRemoveMember={(userId) => {
+              removeMemberMutation.mutate({ groupId: activeGroup._id, userId });
+            }}
+            onLeave={() => handleLeaveGroup(activeGroup._id)}
+            isLeaving={leaveGroupMutation.isPending}
+            isAdmin={isAdmin}
+            onClearChat={() => handleClearChat(activeGroup._id)}
+            onDeleteChat={() => handleDeleteChat(activeGroup._id)}
+            onDeleteGroup={() => setDeleteConfirmOpen(true)}
           />
         </>
       )}
@@ -851,6 +901,8 @@ export function FloatingChatWidget() {
           setForwardMessage(null);
         }}
         groups={groups}
+        currentUserId={user?._id ?? ""}
+        message={forwardMessage}
         onForward={(targetGroupId) => {
           if (!forwardMessage) return;
           sendMutation.mutate({ groupId: targetGroupId, text: forwardMessage.text });

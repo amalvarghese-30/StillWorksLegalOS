@@ -15,7 +15,7 @@ import { useAuth } from "@/lib/auth";
 import { AssigneeMultiSelect } from "@/components/common/AssigneeMultiSelect";
 import { toast } from "sonner";
 import { useCreateTask, useTaskOptions, type CreateTaskPayload } from "@/services/tasks";
-import { useCategories, useCategoryTree, isOtherWorkCategory } from "@/services/categories";
+import { useCategories, useCategoryTree, isLegacyOtherWorkPlaceholder } from "@/services/categories";
 import { useCases, useCase } from "@/services/cases";
 import { useClients, useClient } from "@/services/clients";
 import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
@@ -74,7 +74,7 @@ const EMPTY_FORM: FormState = {
   subCategory: "",
   selectedSubCategories: [],
   customCategory: "",
-  category: "Other Work",
+  category: "OTHER WORKS",
   priority: "Medium",
   deadline: "",
   localPath: "",
@@ -129,7 +129,7 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
   const { data: casesData } = useCases({ limit: "100" });
   const { data: clientsData } = useClients({ limit: "100" });
 
-  const categoryTree = (Array.isArray(treeData) ? treeData : ((treeData as any)?.tree ?? [])).filter((cat: any) => !isOtherWorkCategory(cat?.name));
+  const categoryTree = (Array.isArray(treeData) ? treeData : ((treeData as any)?.tree ?? [])).filter((cat: any) => !isLegacyOtherWorkPlaceholder(cat?.name));
 
   const [form, setForm] = useState<FormState>({
     ...EMPTY_FORM,
@@ -503,9 +503,9 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
       form.customCategory.trim() ||
       nestedSubCat ||
       chosenSubCategory ||
-      (form.mainCategory === "__other__" ? "Other Work" : form.mainCategory) ||
+      (form.mainCategory === "__other__" ? (form.customCategory.trim() || "OTHER WORKS") : form.mainCategory) ||
       form.category ||
-      "Other Work";
+      "OTHER WORKS";
 
     const fullCategoryPath = [
       form.mainCategory,
@@ -516,7 +516,7 @@ export function AddTaskDialog({ open, onClose, initialCaseId, initialClientId }:
     const payload: CreateTaskPayload = {
       title: cleanTitle,
       ...(form.description && { description: form.description.trim() }),
-      mainCategory: form.mainCategory === "__other__" ? "Other Work" : (form.mainCategory || undefined),
+      mainCategory: form.mainCategory === "__other__" ? (form.customCategory.trim() || "OTHER WORKS") : (form.mainCategory || undefined),
       subCategory: nestedSubCat || form.customCategory.trim() || chosenSubCategory || undefined,
       categoryPath: fullCategoryPath.length > 0 ? fullCategoryPath : undefined,
       customCategory: form.customCategory.trim() || undefined,

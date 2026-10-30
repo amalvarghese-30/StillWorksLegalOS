@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { useUpdateCase, type CaseRecord, type CreateCasePayload } from "@/services/cases";
 import { useEmployees } from "@/services/admin";
-import { useCategories, extractCategoryName, isOtherWorkCategory, isHeirshipCategory } from "@/services/categories";
+import { useCategories, useCategoryTree, extractCategoryName, isLegacyOtherWorkPlaceholder, isHeirshipCategory } from "@/services/categories";
 import { useAuth } from "@/lib/auth";
 import { DiscardConfirmationDialog } from "@/components/ui/discard-confirmation-dialog";
 import { AssigneeMultiSelect } from "@/components/common/AssigneeMultiSelect";
@@ -46,7 +46,10 @@ interface EditCaseDialogProps {
 export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialogProps) {
   const [title, setTitle] = useState(record.title || "");
   const [description, setDescription] = useState(record.description || "");
-  const [category, setCategory] = useState(record.category || record.practice || "Other Work");
+  const [mainCategory, setMainCategory] = useState(record.mainCategory || "");
+  const [subCategory, setSubCategory] = useState(record.subCategory || "");
+  const [categoryPath, setCategoryPath] = useState<string[]>(record.categoryPath || []);
+  const [category, setCategory] = useState(record.category || record.practice || "OTHER WORKS");
   const [localPath, setLocalPath] = useState(record.localPath || "");
   const [status, setStatus] = useState<"Active" | "Urgent" | "On Hold" | "Closed">(
     (record.status as "Active" | "Urgent" | "On Hold" | "Closed") || "Active",
@@ -68,19 +71,21 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const { data: empData } = useEmployees(undefined, { enabled: isAdmin });
-  const { data: rawCategories = [] } = useCategories();
-  const categories = useMemo(() => {
-    const rawObj =
-      rawCategories && typeof rawCategories === "object"
-        ? (rawCategories as Record<string, unknown>)
-        : null;
-    const list = Array.isArray(rawCategories)
-      ? rawCategories
-      : Array.isArray(rawObj?.categories)
-        ? (rawObj?.categories as unknown[])
-        : [];
-    return list.map(extractCategoryName).filter(Boolean);
-  }, [rawCategories]);
+  const { data: treeData } = useCategoryTree();
+  const categoryTree = useMemo(() => {
+    const rawObj = treeData && typeof treeData === "object" ? (treeData as Record<string, unknown>) : null;
+    let list: Array<{ name: string; children?: Array<{ name: string; children?: Array<{ name: string }> }> }> = [];
+    if (Array.isArray(treeData)) list = treeData as any;
+    else if (Array.isArray(rawObj?.tree)) list = rawObj.tree as any;
+    else if (Array.isArray(rawObj?.data)) list = rawObj.data as any;
+    return list.filter((c) => !isLegacyOtherWorkPlaceholder(c?.name));
+  }, [treeData]);
+
+  const selectedParent = categoryTree.find((c: any) => c?.name === mainCategory);
+  const availableSubCategories = (selectedParent?.children as any[]) ?? [];
+  const selectedSubCatNode = availableSubCategories.find((sc: any) => sc.name === subCategory);
+  const availableNestedSubCategories = (selectedSubCatNode?.children as any[]) ?? [];
+
   const employees = empData?.employees ?? [];
 
   const updateCase = useUpdateCase();
@@ -89,7 +94,12 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
     if (open) {
       setTitle(record.title || "");
       setDescription(record.description || "");
-      setCategory(record.category || record.practice || "Other Work");
+      const initMain = record.mainCategory || (record.categoryPath && record.categoryPath[0]) || record.category || "";
+      const initSub = record.subCategory || (record.categoryPath && record.categoryPath[1]) || "";
+      setMainCategory(initMain);
+      setSubCategory(initSub);
+      setCategoryPath(record.categoryPath || (initMain && initSub ? [initMain, initSub] : (initMain ? [initMain] : [])));
+      setCategory(record.category || record.practice || initSub || initMain || "OTHER WORKS");
       setLocalPath(record.localPath || "");
       setStatus((record.status as "Active" | "Urgent" | "On Hold" | "Closed") || "Active");
       setPriority(record.priority || "Medium");
@@ -117,7 +127,9 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
     return (
       title !== (record.title || "") ||
       description !== (record.description || "") ||
-      category !== (record.category || record.practice || "Other Work") ||
+      mainCategory !== (record.mainCategory || "") ||
+      subCategory !== (record.subCategory || "") ||
+      category !== (record.category || record.practice || "OTHER WORKS") ||
       localPath !== (record.localPath || "") ||
       status !== (record.status || "Active") ||
       priority !== (record.priority || "Medium") ||
@@ -129,6 +141,8 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
   }, [
     title,
     description,
+    mainCategory,
+    subCategory,
     category,
     localPath,
     status,
@@ -171,10 +185,22 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
         .map((t) => t.trim())
         .filter(Boolean);
 
+      const resolvedPath =
+        categoryPath && categoryPath.length > 0
+          ? categoryPath
+          : mainCategory && subCategory
+          ? [mainCategory, subCategory]
+          : mainCategory
+          ? [mainCategory]
+          : record.categoryPath;
+
       const payload: Partial<CreateCasePayload> = {
         title: title.trim(),
         description: description.trim(),
         category,
+        mainCategory: mainCategory || record.mainCategory || undefined,
+        subCategory: subCategory || record.subCategory || undefined,
+        categoryPath: resolvedPath,
         localPath: localPath.trim(),
         status,
         priority,
@@ -349,44 +375,103 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
                 <div className="flex-1 h-px bg-border/60" />
               </div>
 
-              {/* Category */}
-              <div className="space-y-2">
-                <Label htmlFor="case-category" className="text-xs font-semibold text-foreground">
-                  Category
+              {/* Hierarchical Category Selector */}
+              <div className="space-y-3">
+                <Label htmlFor="case-main-category" className="text-xs font-semibold text-foreground">
+                  Main Category
                 </Label>
-                {categories.length > 0 ? (
+                {categoryTree.length > 0 ? (
                   <div className="flex flex-wrap gap-1.5">
-                    {categories.filter((c) => !isOtherWorkCategory(c)).map((c) => {
-                      const isSelected = category === c;
+                    {categoryTree.map((cat: any) => {
+                      const isSelected = mainCategory === cat.name;
                       return (
                         <button
-                          key={c}
+                          key={cat.name}
                           type="button"
-                          onClick={() => setCategory(c)}
+                          onClick={() => {
+                            const nextMain = isSelected ? "" : cat.name;
+                            setMainCategory(nextMain);
+                            setSubCategory("");
+                            setCategoryPath(nextMain ? [nextMain] : []);
+                            setCategory(nextMain || "OTHER WORKS");
+                          }}
                           className={`rounded-lg border px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-all ${
                             isSelected
                               ? "border-primary bg-primary/10 text-primary shadow-xs ring-1 ring-primary/40 font-bold"
                               : "border-border/80 bg-background text-foreground/80 hover:border-primary/50 hover:bg-muted/50"
                           }`}
                         >
-                          {c}
+                          {cat.name}
                         </button>
                       );
                     })}
                   </div>
                 ) : (
-                  <select
-                    id="case-category"
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="h-11 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    {categories.filter((c) => !isOtherWorkCategory(c)).map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
+                  <input
+                    type="text"
+                    value={mainCategory}
+                    onChange={(e) => {
+                      setMainCategory(e.target.value);
+                      setCategory(e.target.value);
+                    }}
+                    className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground focus:border-primary focus:outline-none"
+                    placeholder="Enter main category…"
+                  />
+                )}
+
+                {/* Subcategory dropdown if available */}
+                {mainCategory && availableSubCategories.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    <Label htmlFor="case-sub-category" className="text-helper text-muted-foreground">
+                      Subcategory / Work Type
+                    </Label>
+                    <select
+                      id="case-sub-category"
+                      value={subCategory}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSubCategory(val);
+                        const newPath = val ? [mainCategory, val] : [mainCategory];
+                        setCategoryPath(newPath);
+                        setCategory(val || mainCategory);
+                      }}
+                      className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground focus:border-primary focus:outline-none"
+                    >
+                      <option value="">Select subcategory (optional)…</option>
+                      {availableSubCategories.map((sc: any) => (
+                        <option key={sc._id || sc.name} value={sc.name}>
+                          {sc.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Nested Subcategory (e.g. under SPECIAL LEGAL WORK) */}
+                {subCategory && availableNestedSubCategories.length > 0 && (
+                  <div className="space-y-1.5 pt-1 animate-in fade-in-50">
+                    <Label htmlFor="case-nested-sub-category" className="text-helper text-muted-foreground">
+                      Specific Legal Work / Matter Detail ({subCategory})
+                    </Label>
+                    <select
+                      id="case-nested-sub-category"
+                      value={categoryPath?.[2] || (categoryPath?.[0] === subCategory ? categoryPath?.[1] : "") || ""}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const newPath = val ? [mainCategory, subCategory, val] : [mainCategory, subCategory];
+                        setCategoryPath(newPath);
+                        setCategory(val || subCategory);
+                      }}
+                      className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground focus:border-primary focus:outline-none"
+                    >
+                      <option value="">Select specific legal work detail…</option>
+                      {availableNestedSubCategories.map((nsc: any) => (
+                        <option key={nsc._id || nsc.name} value={nsc.name}>
+                          {nsc.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 )}
               </div>
 

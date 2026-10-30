@@ -33,7 +33,7 @@ import { useCreateClient, type CreateClientPayload, type SubClient } from "@/ser
 import { useCreateCase, type CaseTaskPayload, type CaseParty } from "@/services/cases";
 import { useEmployees } from "@/services/admin";
 import { useTaskOptions, type ChecklistItem } from "@/services/tasks";
-import { useCategoryTree, useCategories, extractCategoryName, isOtherWorkCategory, isHeirshipCategory } from "@/services/categories";
+import { useCategoryTree, useCategories, extractCategoryName, isLegacyOtherWorkPlaceholder, isHeirshipCategory } from "@/services/categories";
 import { AssigneeMultiSelect } from "@/components/common/AssigneeMultiSelect";
 import { toSafeIso } from "@/lib/dates";
 import {
@@ -218,7 +218,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
     if (Array.isArray(categoryTree)) list = categoryTree;
     else if (Array.isArray(rawObj?.tree)) list = rawObj.tree as any[];
     else if (Array.isArray(rawObj?.data)) list = rawObj.data as any[];
-    return list.filter((c) => !isOtherWorkCategory(c?.name));
+    return list.filter((c) => !isLegacyOtherWorkPlaceholder(c?.name));
   }, [categoryTree]);
 
   const selectedParent = normalizedTree.find((c) => c?.name === caseForm.mainCategory);
@@ -729,15 +729,21 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
           category: chosenCategory,
           mainCategory:
             caseForm.mainCategory === "__other__"
-              ? caseForm.customCategory.trim() || "Other Work"
+              ? caseForm.customCategory.trim() || "OTHER WORKS"
               : caseForm.mainCategory || undefined,
           subCategory:
             subCatJoined === "__other__"
               ? caseForm.customCategory.trim() || undefined
               : subCatJoined || undefined,
           categoryPath:
-            caseForm.selectedSubCategories.length > 0
-              ? caseForm.selectedSubCategories
+            caseForm.categoryPath && caseForm.categoryPath.length > 0
+              ? (caseForm.mainCategory && caseForm.mainCategory !== "__other__" && caseForm.categoryPath[0] !== caseForm.mainCategory
+                  ? [caseForm.mainCategory, ...caseForm.categoryPath]
+                  : caseForm.categoryPath)
+              : caseForm.mainCategory && caseForm.mainCategory !== "__other__" && caseForm.subCategory && caseForm.subCategory !== "__other__"
+              ? [caseForm.mainCategory, caseForm.subCategory]
+              : caseForm.mainCategory && caseForm.mainCategory !== "__other__"
+              ? [caseForm.mainCategory]
               : undefined,
           courtCaseId: caseForm.courtCaseId.trim() || undefined,
           countCaseNumber:
@@ -1000,15 +1006,21 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
               category: chosenCategory,
               mainCategory:
                 caseForm.mainCategory === "__other__"
-                  ? caseForm.customCategory.trim() || "Other Work"
+                  ? caseForm.customCategory.trim() || "OTHER WORKS"
                   : caseForm.mainCategory || undefined,
               subCategory:
                 subCatJoined === "__other__"
                   ? caseForm.customCategory.trim() || undefined
                   : subCatJoined || undefined,
               categoryPath:
-                caseForm.selectedSubCategories.length > 0
-                  ? caseForm.selectedSubCategories
+                caseForm.categoryPath && caseForm.categoryPath.length > 0
+                  ? (caseForm.mainCategory && caseForm.mainCategory !== "__other__" && caseForm.categoryPath[0] !== caseForm.mainCategory
+                      ? [caseForm.mainCategory, ...caseForm.categoryPath]
+                      : caseForm.categoryPath)
+                  : caseForm.mainCategory && caseForm.mainCategory !== "__other__" && caseForm.subCategory && caseForm.subCategory !== "__other__"
+                  ? [caseForm.mainCategory, caseForm.subCategory]
+                  : caseForm.mainCategory && caseForm.mainCategory !== "__other__"
+                  ? [caseForm.mainCategory]
                   : undefined,
               courtCaseId: caseForm.courtCaseId.trim() || undefined,
               countCaseNumber:
@@ -1647,7 +1659,7 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                         onChange={(e) => {
                           const val = e.target.value;
                           updateCase("subCategory", val);
-                          updateCase("categoryPath", val ? [val] : []);
+                          updateCase("categoryPath", val ? [caseForm.mainCategory, val] : (caseForm.mainCategory ? [caseForm.mainCategory] : []));
                           if (!isCaseTitleManuallyEdited) {
                             const clientName = form.name.trim();
                             if (clientName && val && val !== "__other__") {
@@ -1676,10 +1688,10 @@ export function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                       </Label>
                       <select
                         id="case-nested-sub-category"
-                        value={caseForm.categoryPath?.[1] || ""}
+                        value={caseForm.categoryPath?.[2] || (caseForm.categoryPath?.[0] === caseForm.subCategory ? caseForm.categoryPath?.[1] : "") || ""}
                         onChange={(e) => {
                           const val = e.target.value;
-                          const newPath = val ? [caseForm.subCategory, val] : [caseForm.subCategory];
+                          const newPath = val ? [caseForm.mainCategory, caseForm.subCategory, val] : [caseForm.mainCategory, caseForm.subCategory];
                           updateCase("categoryPath", newPath);
                           if (!isCaseTitleManuallyEdited && val) {
                             const clientName = form.name.trim();

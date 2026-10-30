@@ -48,14 +48,30 @@ router.get("/tree", async (_req: Request, res: Response) => {
       .lean();
 
     // Auto-seed and reconcile from master Excel taxonomy if empty or missing required branches
-    const hasLand = all.some((c) => c.level === 1 && c.name === "LAND / PLOT / REVENUE MATTERS");
-    const hasOffice = all.some((c) => c.level === 1 && c.name === "OFFICE ADMIN WORK");
-    const specialDoc = all.find((c) => c.level === 2 && c.name === "SPECIAL LEGAL WORK");
-    const hasSpecialChildren = specialDoc
-      ? all.some((c) => c.parentId && c.parentId.toString() === specialDoc._id.toString())
-      : false;
+    const canonicalMainNames = [
+      "TRANSFER OF PROPERTY",
+      "ONLY CIDCO WORK",
+      "HEIRSHIP & COURT MATTERS",
+      "TITLE SEARCH AND MISSING DOCUMENTS",
+      "REDEVELOPMENT WORK / RERA",
+      "OTHER WORKS",
+      "REGISTRATION ONLY",
+      "LAND / PLOT / REVENUE MATTERS",
+      "OFFICE ADMIN WORK",
+    ];
 
-    if (all.length === 0 || !hasLand || !hasOffice || !hasSpecialChildren) {
+    const activeMainNames = new Set(
+      all.filter((c) => c.level === 1 || !c.parentId).map((c) => c.name.toUpperCase().trim())
+    );
+    const hasAllMainCategories = canonicalMainNames.every((name) => activeMainNames.has(name));
+
+    const specialDoc = all.find((c) => c.level === 2 && c.name === "SPECIAL LEGAL WORK");
+    const specialChildrenCount = specialDoc
+      ? all.filter((c) => c.parentId && c.parentId.toString() === specialDoc._id.toString()).length
+      : 0;
+    const hasSpecialChildren = specialChildrenCount >= 17;
+
+    if (all.length === 0 || !hasAllMainCategories || !hasSpecialChildren) {
       try {
         console.log("[categories] Category collection requires sync, syncing master taxonomy...");
         await seedCategories();

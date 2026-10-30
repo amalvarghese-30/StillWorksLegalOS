@@ -89,7 +89,7 @@ function ChatPage() {
       setActiveGroupId(id);
       navigate({
         to: "/chat",
-        search: id ? { groupId: id } : {},
+        search: { groupId: id ?? undefined },
         replace: true,
       });
     },
@@ -508,7 +508,7 @@ function ChatPage() {
   };
 
   const handleCaseClick = (caseNum: string) => {
-    navigate({ to: "/cases", search: { search: caseNum } as any });
+    navigate({ to: "/cases", search: (prev: Record<string, unknown>) => ({ ...prev, search: caseNum }) });
   };
 
   const searchMatchesCount = inChatSearch.trim()

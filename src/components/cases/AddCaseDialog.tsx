@@ -22,7 +22,7 @@ import { Label } from "@/components/ui/label";
 import { useCreateCase, type CaseRecord } from "@/services/cases";
 import { useClients } from "@/services/clients";
 import { useTaskOptions, type ChecklistItem } from "@/services/tasks";
-import { useCategoryTree, useCategories, extractCategoryName, isOtherWorkCategory, isHeirshipCategory } from "@/services/categories";
+import { useCategoryTree, useCategories, extractCategoryName, isLegacyOtherWorkPlaceholder, isHeirshipCategory } from "@/services/categories";
 import { DiscardConfirmationDialog } from "@/components/ui/discard-confirmation-dialog";
 import { AssigneeMultiSelect } from "@/components/common/AssigneeMultiSelect";
 import { toSafeIso } from "@/lib/dates";
@@ -83,7 +83,7 @@ const EMPTY_FORM: FormState = {
   countCaseNumber: "",
   nextHearing: "",
   description: "",
-  category: "Other Work",
+  category: "OTHER WORKS",
   mainCategory: "",
   subCategory: "",
   selectedSubCategories: [],
@@ -164,7 +164,7 @@ export function AddCaseDialog({
     if (Array.isArray(categoryTree)) list = categoryTree as Array<{ name?: string; children?: unknown[] }>;
     else if (Array.isArray(rawObj?.tree)) list = rawObj.tree as Array<{ name?: string; children?: unknown[] }>;
     else if (Array.isArray(rawObj?.data)) list = rawObj.data as Array<{ name?: string; children?: unknown[] }>;
-    return list.filter((c) => !isOtherWorkCategory(c?.name));
+    return list.filter((c) => !isLegacyOtherWorkPlaceholder(c?.name));
   }, [categoryTree]);
 
   const selectedParent = normalizedTree.find((c) => c?.name === form.mainCategory);
@@ -629,16 +629,24 @@ export function AddCaseDialog({
         ? form.selectedSubCategories.join(", ")
         : form.subCategory;
 
-      const resolvedPath =
-        form.categoryPath && form.categoryPath.length > 0
-          ? form.categoryPath
-          : form.selectedSubCategories.length > 0
-          ? form.selectedSubCategories
-          : form.subCategory && form.subCategory !== "__other__"
-          ? [form.subCategory]
-          : undefined;
+      let resolvedPath: string[] | undefined = undefined;
+      if (form.categoryPath && form.categoryPath.length > 0) {
+        resolvedPath =
+          form.mainCategory && form.mainCategory !== "__other__" && form.categoryPath[0] !== form.mainCategory
+            ? [form.mainCategory, ...form.categoryPath]
+            : form.categoryPath;
+      } else if (form.mainCategory && form.mainCategory !== "__other__" && form.subCategory && form.subCategory !== "__other__") {
+        resolvedPath = [form.mainCategory, form.subCategory];
+      } else if (form.mainCategory && form.mainCategory !== "__other__") {
+        resolvedPath = [form.mainCategory];
+      }
 
-      const nestedDetail = form.categoryPath && form.categoryPath.length > 1 ? form.categoryPath[1] : undefined;
+      const nestedDetail =
+        form.categoryPath && form.categoryPath.length > 2
+          ? form.categoryPath[2]
+          : form.categoryPath && form.categoryPath.length > 1 && form.categoryPath[0] === "SPECIAL LEGAL WORK"
+          ? form.categoryPath[1]
+          : undefined;
 
       const chosenCategory =
         nestedDetail ||
@@ -647,13 +655,13 @@ export function AddCaseDialog({
           : subCatJoined) ||
         (form.mainCategory === "__other__" ? form.customCategory.trim() : form.mainCategory) ||
         form.category ||
-        "Other Work";
+        "OTHER WORKS";
 
       const payload = {
         title: form.title.trim(),
         description: form.description.trim() || undefined,
         category: chosenCategory,
-        mainCategory: form.mainCategory === "__other__" ? (form.customCategory.trim() || "Other Work") : (form.mainCategory || undefined),
+        mainCategory: form.mainCategory === "__other__" ? (form.customCategory.trim() || "OTHER WORKS") : (form.mainCategory || undefined),
         subCategory: nestedDetail || (subCatJoined === "__other__" ? (form.customCategory.trim() || undefined) : (subCatJoined || undefined)),
         categoryPath: resolvedPath,
         courtCaseId: form.courtCaseId.trim() || undefined,
@@ -796,7 +804,7 @@ export function AddCaseDialog({
                       onChange={(e) => {
                         const val = e.target.value;
                         update("subCategory", val);
-                        update("categoryPath", val ? [val] : []);
+                        update("categoryPath", val ? [form.mainCategory, val] : (form.mainCategory ? [form.mainCategory] : []));
                         if (!isTitleManuallyEdited) {
                           const client = primaryClientName.trim();
                           if (client && val && val !== "__other__") {
@@ -825,10 +833,10 @@ export function AddCaseDialog({
                     </Label>
                     <select
                       id="case-nested-sub-category"
-                      value={form.categoryPath?.[1] || ""}
+                      value={form.categoryPath?.[2] || (form.categoryPath?.[0] === form.subCategory ? form.categoryPath?.[1] : "") || ""}
                       onChange={(e) => {
                         const val = e.target.value;
-                        const newPath = val ? [form.subCategory, val] : [form.subCategory];
+                        const newPath = val ? [form.mainCategory, form.subCategory, val] : [form.mainCategory, form.subCategory];
                         update("categoryPath", newPath);
                         if (!isTitleManuallyEdited && val) {
                           const client = primaryClientName.trim();

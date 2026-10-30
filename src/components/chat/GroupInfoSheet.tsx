@@ -35,7 +35,7 @@ interface GroupInfoSheetProps {
   open: boolean;
   onClose: () => void;
   group: ChatGroup | null;
-  members: ChatMember[];
+  members?: ChatMember[];
   currentUserId: string;
   canManage: boolean;
   onlineIds: Set<string>;
@@ -55,7 +55,7 @@ export function GroupInfoSheet({
   open,
   onClose,
   group,
-  members,
+  members = [],
   currentUserId,
   canManage,
   onlineIds,
@@ -64,7 +64,7 @@ export function GroupInfoSheet({
   onChangeRole,
   onRemoveMember,
   onLeave,
-  isLeaving,
+  isLeaving = false,
   isAdmin = false,
   onClearChat,
   onDeleteChat,
@@ -76,12 +76,13 @@ export function GroupInfoSheet({
   const [deleteChatConfirmOpen, setDeleteChatConfirmOpen] = useState(false);
   const [deleteGroupConfirmOpen, setDeleteGroupConfirmOpen] = useState(false);
 
+  const safeMembers = Array.isArray(members) ? members : [];
   const isDirect = group?.type === "direct";
   const otherMember = isDirect
-    ? members.find((m) => m._id !== currentUserId)
+    ? safeMembers.find((m) => m && m._id !== currentUserId)
     : undefined;
 
-  const isOnline = (m: ChatMember) => onlineIds.has(m._id) || m.online;
+  const isOnline = (m: ChatMember) => Boolean(m && (onlineIds?.has(m._id) || m.online));
 
   const saveRename = () => {
     const trimmed = nameDraft.trim();
@@ -94,7 +95,7 @@ export function GroupInfoSheet({
       <SheetContent side="right" className="w-80 sm:w-96">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
-            {group?.name}
+            {group?.name ?? (isDirect ? otherMember?.name : "Conversation")}
             {canManage && (
               <button
                 onClick={() => {
@@ -109,7 +110,7 @@ export function GroupInfoSheet({
             )}
           </SheetTitle>
           <SheetDescription>
-            {group?.type === "group" ? `${members.length} members` : "Direct conversation"}
+            {group?.type === "group" ? `${safeMembers.length} members` : "Direct conversation"}
           </SheetDescription>
         </SheetHeader>
 
@@ -177,7 +178,8 @@ export function GroupInfoSheet({
               <div>
                 <h3 className="mb-2 text-caption font-medium text-muted-foreground">Members</h3>
                 <ul className="space-y-1">
-                  {members.map((m) => {
+                  {safeMembers.map((m) => {
+                    if (!m) return null;
                     const online = isOnline(m);
                     return (
                       <li key={m._id} className="flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-accent">

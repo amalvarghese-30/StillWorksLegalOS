@@ -2,27 +2,106 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "./api";
 
 export const BASELINE_CATEGORIES: string[] = [
-  "Writ Petitions",
-  "Special Leave Petitions (SLP)",
-  "Original Suits & Civil Suits",
-  "Appeals & Revisions",
-  "Company & Corporate Petitions",
-  "Arbitration & Conciliation",
-  "Execution Proceedings",
-  "Review Petitions",
-  "Criminal Appeals & Revisions",
-  "Bail Applications & Anticipatory Bail",
+  "TRANSFER OF PROPERTY",
+  "Memorandum of Understanding (MOU)",
+  "File no and Documents Filing",
+  "Agreement for Sale",
   "Gift Deed",
-  "Registration",
-  "Legal Opinion & Consultation",
-  "Drafting & Conveyancing",
-  "Property",
-  "Corporate",
-  "Litigation",
-  "Family",
-  "Intellectual Property",
-  "Tax",
-  "Employment",
+  "CIDCO Transfer",
+  "CIDCO Mortgage Permission",
+  "Sale Deed",
+  "Power of Attorney (POA)",
+  "Other Property Transfer Work",
+  "SOCIETY DOCUMENTS",
+  "Possession Letter",
+  "ONLY CIDCO WORK",
+  "CIDCO APPLICATION",
+  "CIDCO Transfer Permission",
+  "CIDCO Mortgage Permission",
+  "CIDCO Missing Document Matters",
+  "Other CIDCO Work",
+  "CIDCO HEIRSHIP TRANSFER",
+  "CIDCO FINAL ORDER",
+  "CIDCO Leasehold Transfer",
+  "CIDCO NOC",
+  "CIDCO Duplicate / Missing Documents",
+  "CIDCO Mutation / Name Change",
+  "HEIRSHIP & COURT MATTERS",
+  "Application and Report",
+  "No-Claim",
+  "Consent Affidavit",
+  "Court Order / Heirship Certificate",
+  "WILLS & SUCCESSION",
+  "SPECIAL LEGAL WORK",
+  "SOCIETY WORK",
+  "CONVEYANCE & DEEMED CONVEYANCE",
+  "BANK & LOAN DOCUMENTATION",
+  "FAMILY COURT MATTERS",
+  "CRIMINAL COURT MATTERS",
+  "CONSUMER MATTERS",
+  "BUSINESS & COMMERCIAL AGREEMENTS",
+  "LEGAL NOTICES & REPLIES",
+  "AFFIDAVITS & DECLARATIONS",
+  "GOVERNMENT & AUTHORITY WORK",
+  "Succession Certificate",
+  "Probate",
+  "Letters of Administration",
+  "Civil Court Matters",
+  "RTS Appeal",
+  "Legal Heir Documentation",
+  "Court Petition / Application",
+  "TITLE SEARCH AND MISSING DOCUMENTS",
+  "Public Notice",
+  "Publication",
+  "Title Search Report",
+  "Certified Copies",
+  "NO-Claim certificates",
+  "Chain of Title Verification",
+  "Property Document Verification",
+  "Index II / Search",
+  "Missing Document Affidavit",
+  "REDEVELOPMENT WORK / RERA",
+  "Development Agreement and Related Documents",
+  "Permanent Alternate Accommodation Agreement",
+  "Power of Attorney",
+  "Society Resolutions",
+  "REDEVELOPMENT WORK",
+  "RERA Complaint",
+  "RERA Compliance",
+  "Redevelopment POA",
+  "Deemed Conveyance",
+  "Society Redevelopment NOC",
+  "OTHER WORKS",
+  "Affidavits",
+  "Undertakings",
+  "Indemnity Bonds",
+  "Legal Notices",
+  "Other Applications and Letters",
+  "MSEDCL Name Transfer",
+  "NMMC Transfer",
+  "MAHANAGAR GAS",
+  "WATER TAX",
+  "Society NOC",
+  "Society Share Transfer",
+  "Society Nomination",
+  "Legal Notice Reply",
+  "Bank NOC",
+  "Loan Closure",
+  "REGISTRATION ONLY",
+  "Mortgage Deed",
+  "Builders Agreements",
+  "Release Deed",
+  "Assignment Deed",
+  "Rectification Deed",
+  "Cancellation Deed",
+  "WILL",
+  "Agreement for Sale Registration",
+  "Sale Deed Registration",
+  "Leave and Licence Registration",
+  "Exchange Deed",
+  "Confirmation Deed",
+  "Lease Deed",
+  "Transfer Deed",
   "LAND / PLOT / REVENUE MATTERS",
   "SEARCH",
   "TITLE",
@@ -49,41 +128,67 @@ export const BASELINE_CATEGORIES: string[] = [
   "Staff Work Allocation",
   "Software Bug Reporting",
   "Office Expenses",
-  "HEIRSHIP & COURT MATTERS",
-  "Application and Report",
-  "No-Claim",
-  "Consent Affidavit",
-  "Court Order / Heirship Certificate",
-  "WILLS & SUCCESSION",
-  "SPECIAL LEGAL WORK",
-  "SOCIETY WORK",
-  "CONVEYANCE & DEEMED CONVEYANCE",
-  "BANK & LOAN DOCUMENTATION",
-  "FAMILY COURT MATTERS",
-  "CRIMINAL COURT MATTERS",
-  "CONSUMER MATTERS",
-  "BUSINESS & COMMERCIAL AGREEMENTS",
-  "LEGAL NOTICES & REPLIES",
-  "AFFIDAVITS & DECLARATIONS",
-  "GOVERNMENT & AUTHORITY WORK",
-  "Succession Certificate",
-  "Probate",
-  "Letters of Administration",
-  "Civil Court Matters",
-  "RTS Appeal",
-  "Legal Heir",
-  "Court Petition / Application",
 ];
 
+/**
+ * Recognizes the legitimate canonical level-1 main category "OTHER WORKS".
+ */
+export function isOtherWorksMainCategory(name?: string | null): boolean {
+  if (!name) return false;
+  const n = name.trim().toLowerCase();
+  return n === "other works";
+}
+
+/**
+ * Recognizes obsolete / singular generic "Other Work" placeholder option if explicitly filtering out placeholders.
+ * Note: Never matches "OTHER WORKS" (plural main category) or specific subcategories like "Other CIDCO Work", "Other Property Transfer Work", etc.
+ */
+export function isLegacyOtherWorkPlaceholder(name?: string | null): boolean {
+  if (!name) return false;
+  const n = name.trim().toLowerCase();
+  return n === "other work" || n === "+ other work / custom category..." || n === "+ custom category...";
+}
+
+const CANONICAL_OTHER_WORKS_SUBCATS = new Set([
+  "affidavits",
+  "undertakings",
+  "indemnity bonds",
+  "legal notices",
+  "other applications and letters",
+  "msedcl name transfer",
+  "nmmc transfer",
+  "mahanagar gas",
+  "society documents",
+  "water tax",
+  "society noc",
+  "society share transfer",
+  "society nomination",
+  "legal notice reply",
+  "bank noc",
+  "loan closure",
+  "public notice",
+]);
+
+export function isCanonicalOtherWorksSubcategory(name?: string | null): boolean {
+  if (!name) return false;
+  return CANONICAL_OTHER_WORKS_SUBCATS.has(name.trim().toLowerCase());
+}
+
+/**
+ * Recognizes custom category selections or placeholders beneath OTHER WORKS.
+ */
+export function isCustomCategoryUnderOtherWorks(category?: string | null, parentCategory?: string | null): boolean {
+  if (!category) return false;
+  return isOtherWorksMainCategory(parentCategory) && !isCanonicalOtherWorksSubcategory(category);
+}
+
+/**
+ * Legacy compatibility helper: only matches explicit placeholders, NEVER the canonical "OTHER WORKS" main category.
+ */
 export function isOtherWorkCategory(name?: string | null): boolean {
   if (!name) return false;
   const n = name.trim().toLowerCase();
-  return (
-    n === "other work" ||
-    n === "other works" ||
-    n === "+ other work / custom category..." ||
-    n.startsWith("other work")
-  );
+  return n === "other work" || n === "+ other work / custom category...";
 }
 
 export function isHeirshipCategory(name?: string | null): boolean {
@@ -101,10 +206,10 @@ export function extractCategoryName(c: unknown): string {
   if (typeof c === "string") return c.trim();
   if (c && typeof c === "object") {
     const obj = c as Record<string, unknown>;
-    if (typeof obj.name === "string" && obj.name.trim()) return obj.name.trim();
-    if (typeof obj.title === "string" && obj.title.trim()) return obj.title.trim();
-    if (typeof obj.slug === "string" && obj.slug.trim()) return obj.slug.trim();
-    if (typeof obj.label === "string" && obj.label.trim()) return obj.label.trim();
+    if (typeof obj["name"] === "string" && (obj["name"] as string).trim()) return (obj["name"] as string).trim();
+    if (typeof obj["title"] === "string" && (obj["title"] as string).trim()) return (obj["title"] as string).trim();
+    if (typeof obj["slug"] === "string" && (obj["slug"] as string).trim()) return (obj["slug"] as string).trim();
+    if (typeof obj["label"] === "string" && (obj["label"] as string).trim()) return (obj["label"] as string).trim();
   }
   return "";
 }
@@ -127,10 +232,10 @@ export async function fetchCategories(): Promise<string[]> {
     const rawObj = res && typeof res === "object" ? (res as Record<string, unknown>) : null;
     const catList = Array.isArray(res)
       ? res
-      : Array.isArray(rawObj?.categories)
-      ? (rawObj?.categories as unknown[])
-      : Array.isArray(rawObj?.data)
-      ? (rawObj?.data as unknown[])
+      : Array.isArray(rawObj?.["categories"])
+      ? (rawObj?.["categories"] as unknown[])
+      : Array.isArray(rawObj?.["data"])
+      ? (rawObj?.["data"] as unknown[])
       : [];
 
     extractedList.push(...normalizeCategoryList(catList));
@@ -141,10 +246,10 @@ export async function fetchCategories(): Promise<string[]> {
       const rawObj = taskOptRes && typeof taskOptRes === "object" ? (taskOptRes as Record<string, unknown>) : null;
       const catList = Array.isArray(taskOptRes)
         ? taskOptRes
-        : Array.isArray(rawObj?.categories)
-        ? (rawObj?.categories as unknown[])
-        : Array.isArray(rawObj?.data)
-        ? (rawObj?.data as unknown[])
+        : Array.isArray(rawObj?.["categories"])
+        ? (rawObj?.["categories"] as unknown[])
+        : Array.isArray(rawObj?.["data"])
+        ? (rawObj?.["data"] as unknown[])
         : [];
 
       extractedList.push(...normalizeCategoryList(catList));
@@ -204,7 +309,6 @@ export const BASELINE_CATEGORY_TREE: CategoryNode[] = [
       { _id: "b-other-prop", name: "Other Property Transfer Work", slug: "other-property-transfer-work", level: 2, categoryType: "both" },
       { _id: "b-society-docs", name: "SOCIETY DOCUMENTS", slug: "society-documents", level: 2, categoryType: "both" },
       { _id: "b-poss-letter", name: "Possession Letter", slug: "possession-letter", level: 2, categoryType: "both" },
-      { _id: "b-rect-deed", name: "Rectification Deed", slug: "rectification-deed", level: 2, categoryType: "both" },
     ],
   },
   {
@@ -223,13 +327,14 @@ export const BASELINE_CATEGORY_TREE: CategoryNode[] = [
       { _id: "b-cidco-final", name: "CIDCO FINAL ORDER", slug: "cidco-final-order", level: 2, categoryType: "both" },
       { _id: "b-cidco-lease", name: "CIDCO Leasehold Transfer", slug: "cidco-leasehold-transfer", level: 2, categoryType: "both" },
       { _id: "b-cidco-noc", name: "CIDCO NOC", slug: "cidco-noc", level: 2, categoryType: "both" },
+      { _id: "b-cidco-dup", name: "CIDCO Duplicate / Missing Documents", slug: "cidco-duplicate-missing-documents", level: 2, categoryType: "both" },
       { _id: "b-cidco-mutation", name: "CIDCO Mutation / Name Change", slug: "cidco-mutation-name-change", level: 2, categoryType: "both" },
     ],
   },
   {
     _id: "baseline-heirship-court",
     name: "HEIRSHIP & COURT MATTERS",
-    slug: "heirship-court-matters",
+    slug: "heirship-and-court-matters",
     level: 1,
     categoryType: "both",
     children: [
@@ -246,24 +351,112 @@ export const BASELINE_CATEGORY_TREE: CategoryNode[] = [
         categoryType: "both",
         children: [
           { _id: "b-heir-soc", name: "SOCIETY WORK", slug: "society-work", level: 3, categoryType: "both" },
-          { _id: "b-heir-conv", name: "CONVEYANCE & DEEMED CONVEYANCE", slug: "conveyance-deemed-conveyance", level: 3, categoryType: "both" },
-          { _id: "b-heir-bank", name: "BANK & LOAN DOCUMENTATION", slug: "bank-loan-documentation", level: 3, categoryType: "both" },
+          { _id: "b-heir-conv", name: "CONVEYANCE & DEEMED CONVEYANCE", slug: "conveyance-and-deemed-conveyance", level: 3, categoryType: "both" },
+          { _id: "b-heir-bank", name: "BANK & LOAN DOCUMENTATION", slug: "bank-and-loan-documentation", level: 3, categoryType: "both" },
           { _id: "b-heir-fam", name: "FAMILY COURT MATTERS", slug: "family-court-matters", level: 3, categoryType: "both" },
           { _id: "b-heir-crim", name: "CRIMINAL COURT MATTERS", slug: "criminal-court-matters", level: 3, categoryType: "both" },
           { _id: "b-heir-cons", name: "CONSUMER MATTERS", slug: "consumer-matters", level: 3, categoryType: "both" },
-          { _id: "b-heir-bus", name: "BUSINESS & COMMERCIAL AGREEMENTS", slug: "business-commercial-agreements", level: 3, categoryType: "both" },
-          { _id: "b-heir-not", name: "LEGAL NOTICES & REPLIES", slug: "legal-notices-replies", level: 3, categoryType: "both" },
-          { _id: "b-heir-aff", name: "AFFIDAVITS & DECLARATIONS", slug: "affidavits-declarations", level: 3, categoryType: "both" },
-          { _id: "b-heir-govt", name: "GOVERNMENT & AUTHORITY WORK", slug: "government-authority-work", level: 3, categoryType: "both" },
+          { _id: "b-heir-bus", name: "BUSINESS & COMMERCIAL AGREEMENTS", slug: "business-and-commercial-agreements", level: 3, categoryType: "both" },
+          { _id: "b-heir-not", name: "LEGAL NOTICES & REPLIES", slug: "legal-notices-and-replies", level: 3, categoryType: "both" },
+          { _id: "b-heir-aff", name: "AFFIDAVITS & DECLARATIONS", slug: "affidavits-and-declarations", level: 3, categoryType: "both" },
+          { _id: "b-heir-govt", name: "GOVERNMENT & AUTHORITY WORK", slug: "government-and-authority-work", level: 3, categoryType: "both" },
           { _id: "b-heir-succ", name: "Succession Certificate", slug: "succession-certificate", level: 3, categoryType: "both" },
           { _id: "b-heir-probate", name: "Probate", slug: "probate", level: 3, categoryType: "both" },
           { _id: "b-heir-admin", name: "Letters of Administration", slug: "letters-of-administration", level: 3, categoryType: "both" },
           { _id: "b-heir-civil", name: "Civil Court Matters", slug: "civil-court-matters", level: 3, categoryType: "both" },
           { _id: "b-heir-rts", name: "RTS Appeal", slug: "rts-appeal", level: 3, categoryType: "both" },
-          { _id: "b-heir-heir", name: "Legal Heir", slug: "legal-heir", level: 3, categoryType: "both" },
+          { _id: "b-heir-heir", name: "Legal Heir Documentation", slug: "legal-heir-documentation", level: 3, categoryType: "both" },
           { _id: "b-heir-petition", name: "Court Petition / Application", slug: "court-petition-application", level: 3, categoryType: "both" },
         ],
       },
+    ],
+  },
+  {
+    _id: "baseline-title-search",
+    name: "TITLE SEARCH AND MISSING DOCUMENTS",
+    slug: "title-search-and-missing-documents",
+    level: 1,
+    categoryType: "both",
+    children: [
+      { _id: "b-pub-notice", name: "Public Notice", slug: "public-notice", level: 2, categoryType: "both" },
+      { _id: "b-pub-action", name: "Publication", slug: "publication", level: 2, categoryType: "both" },
+      { _id: "b-search-rep", name: "Title Search Report", slug: "title-search-report", level: 2, categoryType: "both" },
+      { _id: "b-cert-copies", name: "Certified Copies", slug: "certified-copies", level: 2, categoryType: "both" },
+      { _id: "b-noclaim-certs", name: "NO-Claim certificates", slug: "no-claim-certificates", level: 2, categoryType: "both" },
+      { _id: "b-chain-title", name: "Chain of Title Verification", slug: "chain-of-title-verification", level: 2, categoryType: "both" },
+      { _id: "b-prop-verify", name: "Property Document Verification", slug: "property-document-verification", level: 2, categoryType: "both" },
+      { _id: "b-index-ii", name: "Index II / Search", slug: "index-ii-search", level: 2, categoryType: "both" },
+      { _id: "b-miss-aff", name: "Missing Document Affidavit", slug: "missing-document-affidavit", level: 2, categoryType: "both" },
+    ],
+  },
+  {
+    _id: "baseline-redevelopment-rera",
+    name: "REDEVELOPMENT WORK / RERA",
+    slug: "redevelopment-work-rera",
+    level: 1,
+    categoryType: "both",
+    children: [
+      { _id: "b-da-rel", name: "Development Agreement and Related Documents", slug: "development-agreement-and-related-documents", level: 2, categoryType: "both" },
+      { _id: "b-paaa", name: "Permanent Alternate Accommodation Agreement", slug: "permanent-alternate-accommodation-agreement", level: 2, categoryType: "both" },
+      { _id: "b-redev-poa", name: "Power of Attorney", slug: "power-of-attorney", level: 2, categoryType: "both" },
+      { _id: "b-soc-res", name: "Society Resolutions", slug: "society-resolutions", level: 2, categoryType: "both" },
+      { _id: "b-redev-work", name: "REDEVELOPMENT WORK", slug: "redevelopment-work", level: 2, categoryType: "both" },
+      { _id: "b-rera-comp", name: "RERA Complaint", slug: "rera-complaint", level: 2, categoryType: "both" },
+      { _id: "b-rera-compli", name: "RERA Compliance", slug: "rera-compliance", level: 2, categoryType: "both" },
+      { _id: "b-redev-poa2", name: "Redevelopment POA", slug: "redevelopment-poa", level: 2, categoryType: "both" },
+      { _id: "b-deemed-conv", name: "Deemed Conveyance", slug: "deemed-conveyance", level: 2, categoryType: "both" },
+      { _id: "b-soc-redev-noc", name: "Society Redevelopment NOC", slug: "society-redevelopment-noc", level: 2, categoryType: "both" },
+    ],
+  },
+  {
+    _id: "baseline-other-works",
+    name: "OTHER WORKS",
+    slug: "other-works",
+    level: 1,
+    categoryType: "both",
+    children: [
+      { _id: "b-other-aff", name: "Affidavits", slug: "affidavits", level: 2, categoryType: "both" },
+      { _id: "b-other-under", name: "Undertakings", slug: "undertakings", level: 2, categoryType: "both" },
+      { _id: "b-other-indem", name: "Indemnity Bonds", slug: "indemnity-bonds", level: 2, categoryType: "both" },
+      { _id: "b-other-notices", name: "Legal Notices", slug: "legal-notices", level: 2, categoryType: "both" },
+      { _id: "b-other-letters", name: "Other Applications and Letters", slug: "other-applications-and-letters", level: 2, categoryType: "both" },
+      { _id: "b-other-msedcl", name: "MSEDCL Name Transfer", slug: "msedcl-name-transfer", level: 2, categoryType: "both" },
+      { _id: "b-other-nmmc", name: "NMMC Transfer", slug: "nmmc-transfer", level: 2, categoryType: "both" },
+      { _id: "b-other-mgas", name: "MAHANAGAR GAS", slug: "mahanagar-gas", level: 2, categoryType: "both" },
+      { _id: "b-other-socdocs", name: "SOCIETY DOCUMENTS", slug: "society-documents", level: 2, categoryType: "both" },
+      { _id: "b-other-wtax", name: "WATER TAX", slug: "water-tax", level: 2, categoryType: "both" },
+      { _id: "b-other-socnoc", name: "Society NOC", slug: "society-noc", level: 2, categoryType: "both" },
+      { _id: "b-other-soctrans", name: "Society Share Transfer", slug: "society-share-transfer", level: 2, categoryType: "both" },
+      { _id: "b-other-socnom", name: "Society Nomination", slug: "society-nomination", level: 2, categoryType: "both" },
+      { _id: "b-other-notrep", name: "Legal Notice Reply", slug: "legal-notice-reply", level: 2, categoryType: "both" },
+      { _id: "b-other-banknoc", name: "Bank NOC", slug: "bank-noc", level: 2, categoryType: "both" },
+      { _id: "b-other-loanclos", name: "Loan Closure", slug: "loan-closure", level: 2, categoryType: "both" },
+      { _id: "b-other-pubnot", name: "Public Notice", slug: "public-notice", level: 2, categoryType: "both" },
+    ],
+  },
+  {
+    _id: "baseline-registration-only",
+    name: "REGISTRATION ONLY",
+    slug: "registration-only",
+    level: 1,
+    categoryType: "both",
+    children: [
+      { _id: "b-reg-poa", name: "Power of Attorney (POA)", slug: "power-of-attorney-poa", level: 2, categoryType: "both" },
+      { _id: "b-reg-gift", name: "Gift Deed", slug: "gift-deed", level: 2, categoryType: "both" },
+      { _id: "b-reg-mort", name: "Mortgage Deed", slug: "mortgage-deed", level: 2, categoryType: "both" },
+      { _id: "b-reg-build", name: "Builders Agreements", slug: "builders-agreements", level: 2, categoryType: "both" },
+      { _id: "b-reg-rel", name: "Release Deed", slug: "release-deed", level: 2, categoryType: "both" },
+      { _id: "b-reg-ass", name: "Assignment Deed", slug: "assignment-deed", level: 2, categoryType: "both" },
+      { _id: "b-reg-rect", name: "Rectification Deed", slug: "rectification-deed", level: 2, categoryType: "both" },
+      { _id: "b-reg-canc", name: "Cancellation Deed", slug: "cancellation-deed", level: 2, categoryType: "both" },
+      { _id: "b-reg-will", name: "WILL", slug: "will", level: 2, categoryType: "both" },
+      { _id: "b-reg-sale-agr", name: "Agreement for Sale Registration", slug: "agreement-for-sale-registration", level: 2, categoryType: "both" },
+      { _id: "b-reg-sale", name: "Sale Deed Registration", slug: "sale-deed-registration", level: 2, categoryType: "both" },
+      { _id: "b-reg-lic", name: "Leave and Licence Registration", slug: "leave-and-licence-registration", level: 2, categoryType: "both" },
+      { _id: "b-reg-exch", name: "Exchange Deed", slug: "exchange-deed", level: 2, categoryType: "both" },
+      { _id: "b-reg-conf", name: "Confirmation Deed", slug: "confirmation-deed", level: 2, categoryType: "both" },
+      { _id: "b-reg-lease", name: "Lease Deed", slug: "lease-deed", level: 2, categoryType: "both" },
+      { _id: "b-reg-trans", name: "Transfer Deed", slug: "transfer-deed", level: 2, categoryType: "both" },
     ],
   },
   {
@@ -308,60 +501,6 @@ export const BASELINE_CATEGORY_TREE: CategoryNode[] = [
       { _id: "b-admin-exp", name: "Office Expenses", slug: "office-expenses", level: 2, categoryType: "both" },
     ],
   },
-  {
-    _id: "baseline-title-search",
-    name: "TITLE SEARCH AND MISSING DOCUMENTS",
-    slug: "title-search-and-missing-documents",
-    level: 1,
-    categoryType: "both",
-    children: [
-      { _id: "b-pub-notice", name: "Public Notice", slug: "public-notice", level: 2, categoryType: "both" },
-      { _id: "b-pub-action", name: "Publication", slug: "publication", level: 2, categoryType: "both" },
-      { _id: "b-search-rep", name: "Title Search Report", slug: "title-search-report", level: 2, categoryType: "both" },
-      { _id: "b-cert-copies", name: "Certified Copies", slug: "certified-copies", level: 2, categoryType: "both" },
-      { _id: "b-chain-title", name: "Chain of Title Verification", slug: "chain-of-title-verification", level: 2, categoryType: "both" },
-      { _id: "b-prop-verify", name: "Property Document Verification", slug: "property-document-verification", level: 2, categoryType: "both" },
-      { _id: "b-index-ii", name: "Index II / Search", slug: "index-ii-search", level: 2, categoryType: "both" },
-      { _id: "b-miss-aff", name: "Missing Document Affidavit", slug: "missing-document-affidavit", level: 2, categoryType: "both" },
-    ],
-  },
-  {
-    _id: "baseline-redevelopment-rera",
-    name: "REDEVELOPMENT WORK / RERA",
-    slug: "redevelopment-work-rera",
-    level: 1,
-    categoryType: "both",
-    children: [
-      { _id: "b-da-rel", name: "Development Agreement and Related Documents", slug: "development-agreement-and-related-documents", level: 2, categoryType: "both" },
-      { _id: "b-paaa", name: "Permanent Alternate Accommodation Agreement", slug: "permanent-alternate-accommodation-agreement", level: 2, categoryType: "both" },
-      { _id: "b-redev-poa", name: "Power of Attorney", slug: "power-of-attorney", level: 2, categoryType: "both" },
-      { _id: "b-soc-res", name: "Society Resolutions", slug: "society-resolutions", level: 2, categoryType: "both" },
-      { _id: "b-rera-comp", name: "RERA Complaint", slug: "rera-complaint", level: 2, categoryType: "both" },
-      { _id: "b-rera-compli", name: "RERA Compliance", slug: "rera-compliance", level: 2, categoryType: "both" },
-      { _id: "b-deemed-conv", name: "Deemed Conveyance", slug: "deemed-conveyance", level: 2, categoryType: "both" },
-    ],
-  },
-  {
-    _id: "baseline-registration-only",
-    name: "REGISTRATION ONLY",
-    slug: "registration-only",
-    level: 1,
-    categoryType: "both",
-    children: [
-      { _id: "b-reg-poa", name: "Power of Attorney (POA)", slug: "power-of-attorney-poa", level: 2, categoryType: "both" },
-      { _id: "b-reg-gift", name: "Gift Deed", slug: "gift-deed", level: 2, categoryType: "both" },
-      { _id: "b-reg-mort", name: "Mortgage Deed", slug: "mortgage-deed", level: 2, categoryType: "both" },
-      { _id: "b-reg-build", name: "Builders Agreements", slug: "builders-agreements", level: 2, categoryType: "both" },
-      { _id: "b-reg-rel", name: "Release Deed", slug: "release-deed", level: 2, categoryType: "both" },
-      { _id: "b-reg-ass", name: "Assignment Deed", slug: "assignment-deed", level: 2, categoryType: "both" },
-      { _id: "b-reg-rect", name: "Rectification Deed", slug: "rectification-deed", level: 2, categoryType: "both" },
-      { _id: "b-reg-canc", name: "Cancellation Deed", slug: "cancellation-deed", level: 2, categoryType: "both" },
-      { _id: "b-reg-will", name: "WILL", slug: "will", level: 2, categoryType: "both" },
-      { _id: "b-reg-sale-agr", name: "Agreement for Sale Registration", slug: "agreement-for-sale-registration", level: 2, categoryType: "both" },
-      { _id: "b-reg-sale", name: "Sale Deed Registration", slug: "sale-deed-registration", level: 2, categoryType: "both" },
-      { _id: "b-reg-lic", name: "Leave and Licence Registration", slug: "leave-and-licence-registration", level: 2, categoryType: "both" },
-    ],
-  },
 ];
 
 export async function fetchCategoryTree(): Promise<CategoryNode[]> {
@@ -370,18 +509,18 @@ export async function fetchCategoryTree(): Promise<CategoryNode[]> {
     const rawObj = res && typeof res === "object" ? (res as Record<string, unknown>) : null;
     const list = Array.isArray(res)
       ? res
-      : Array.isArray(rawObj?.tree)
-      ? rawObj?.tree
-      : Array.isArray(rawObj?.data)
-      ? rawObj?.data
+      : Array.isArray(rawObj?.["tree"])
+      ? (rawObj?.["tree"] as unknown[])
+      : Array.isArray(rawObj?.["data"])
+      ? (rawObj?.["data"] as unknown[])
       : [];
     if (list.length > 0) {
-      return (list as CategoryNode[]).filter((c) => !isOtherWorkCategory(c?.name));
+      return list as CategoryNode[];
     }
   } catch (err) {
     console.error("Failed to fetch category tree, falling back to master baseline:", err);
   }
-  return BASELINE_CATEGORY_TREE.filter((c) => !isOtherWorkCategory(c?.name));
+  return BASELINE_CATEGORY_TREE;
 }
 
 export function useCategoryTree() {
@@ -389,6 +528,6 @@ export function useCategoryTree() {
     queryKey: ["categories", "tree"],
     queryFn: fetchCategoryTree,
     staleTime: 1000 * 60 * 15,
-    initialData: () => BASELINE_CATEGORY_TREE.filter((c) => !isOtherWorkCategory(c?.name)),
+    initialData: () => BASELINE_CATEGORY_TREE,
   });
 }

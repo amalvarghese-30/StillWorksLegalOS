@@ -34,7 +34,6 @@ export const EXCEL_TAXONOMY: TaxonomyGroup[] = [
       { name: "Other Property Transfer Work" },
       { name: "SOCIETY DOCUMENTS" },
       { name: "Possession Letter" },
-      { name: "Rectification Deed", note: "Added per Section 4.2 specification" },
     ],
   },
   {
@@ -81,7 +80,7 @@ export const EXCEL_TAXONOMY: TaxonomyGroup[] = [
           { name: "Letters of Administration" },
           { name: "Civil Court Matters" },
           { name: "RTS Appeal" },
-          { name: "Legal Heir" },
+          { name: "Legal Heir Documentation" },
           { name: "Court Petition / Application" },
         ],
       },
@@ -349,6 +348,13 @@ export async function seedCategories(): Promise<{
             slug: grandChildSlug,
           });
 
+          if (!nestedDoc && grandChild.name === "Legal Heir Documentation") {
+            nestedDoc = await Category.findOne({
+              parentId: child._id,
+              slug: "legal-heir",
+            });
+          }
+
           if (!nestedDoc) {
             nestedDoc = await Category.findOne({
               parentId: child._id,
@@ -356,17 +362,25 @@ export async function seedCategories(): Promise<{
             });
           }
 
+          if (!nestedDoc && grandChild.name === "Legal Heir Documentation") {
+            nestedDoc = await Category.findOne({
+              parentId: child._id,
+              name: { $regex: /^Legal Heir$/i },
+            });
+          }
+
           // 2. If not found under child._id, check if it was previously placed directly under parent._id
           if (!nestedDoc) {
             const searchSlugs = [grandChildSlug];
-            if (grandChild.name === "Legal Heir") {
-              searchSlugs.push("legal-heir-documentation");
+            if (grandChild.name === "Legal Heir Documentation" || grandChild.name === "Legal Heir") {
+              searchSlugs.push("legal-heir", "legal-heir-documentation");
             }
             const oldUnderParent = await Category.findOne({
               parentId: parent._id,
               $or: [
                 { slug: { $in: searchSlugs } },
                 { name: { $regex: new RegExp(`^${escapeRegex(grandChild.name)}$`, "i") } },
+                ...(grandChild.name === "Legal Heir Documentation" ? [{ name: { $regex: /^Legal Heir$/i } }] : []),
               ],
             });
 
@@ -479,6 +493,81 @@ export async function seedCategories(): Promise<{
         }
       }
     }
+  }
+
+  // Clean up duplicate Rectification Deed under TRANSFER OF PROPERTY and reparent tasks/cases
+  const topParent = await Category.findOne({ parentId: null, slug: "transfer-of-property" });
+  const regParent = await Category.findOne({ parentId: null, slug: "registration-only" });
+
+  if (topParent && regParent) {
+    const topRectDeed = await Category.findOne({
+      parentId: topParent._id,
+      slug: "rectification-deed",
+    });
+
+    const regRectDeed = await Category.findOne({
+      parentId: regParent._id,
+      slug: "rectification-deed",
+    });
+
+    if (topRectDeed) {
+      if (mongoose.connection.db) {
+        const tasksColl = mongoose.connection.db.collection("tasks");
+        const casesColl = mongoose.connection.db.collection("cases");
+
+        // Reparent tasks referencing TRANSFER OF PROPERTY -> Rectification Deed
+        await tasksColl.updateMany(
+          {
+            $or: [
+              { subCategory: "Rectification Deed", mainCategory: "TRANSFER OF PROPERTY" },
+              { category: "Rectification Deed", mainCategory: "TRANSFER OF PROPERTY" },
+              { categoryPath: { $all: ["TRANSFER OF PROPERTY", "Rectification Deed"] } },
+              { categoryId: topRectDeed._id },
+            ],
+          },
+          {
+            $set: {
+              mainCategory: "REGISTRATION ONLY",
+              subCategory: "Rectification Deed",
+              categoryPath: ["REGISTRATION ONLY", "Rectification Deed"],
+              ...(regRectDeed ? { categoryId: regRectDeed._id } : {}),
+            },
+          }
+        );
+
+        // Reparent cases if any specifically had mainCategory: "TRANSFER OF PROPERTY" and subCategory: "Rectification Deed"
+        await casesColl.updateMany(
+          {
+            mainCategory: "TRANSFER OF PROPERTY",
+            subCategory: "Rectification Deed",
+          },
+          {
+            $set: {
+              mainCategory: "REGISTRATION ONLY",
+              subCategory: "Rectification Deed",
+              categoryPath: ["REGISTRATION ONLY", "Rectification Deed"],
+            },
+          }
+        );
+      }
+
+      await Category.deleteOne({ _id: topRectDeed._id });
+    }
+  }
+
+  // Normalize any tasks or cases referencing legacy "Legal Heir" to "Legal Heir Documentation"
+  if (mongoose.connection.db) {
+    const tasksColl = mongoose.connection.db.collection("tasks");
+    const casesColl = mongoose.connection.db.collection("cases");
+
+    await tasksColl.updateMany(
+      { subCategory: "Legal Heir" },
+      { $set: { subCategory: "Legal Heir Documentation" } }
+    );
+    await casesColl.updateMany(
+      { subCategory: "Legal Heir" },
+      { $set: { subCategory: "Legal Heir Documentation" } }
+    );
   }
 
   const total = await Category.countDocuments();
