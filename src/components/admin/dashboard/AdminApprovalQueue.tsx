@@ -324,7 +324,7 @@ export function AdminApprovalQueue() {
               </div>
             ))}
           </div>
-        ) : isError ? (
+        ) : isError && !data ? (
           <div className="flex flex-col items-center justify-center py-10 text-center">
             <AlertTriangle className="size-8 text-destructive/80 mb-2" />
             <p className="text-sm font-semibold text-foreground">Couldn't load approval queue</p>

@@ -11,6 +11,8 @@ import {
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
 import { StatusPill, toneForStatus } from "@/components/common/StatusPill";
+import { ErrorState } from "@/components/common/ErrorState";
+import { StaleDataBanner } from "@/components/common/StaleDataBanner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -400,7 +402,14 @@ function ClientProfile() {
   const searchParams = Route.useSearch();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
-  const { data, isLoading, isError } = useClient(clientId);
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isFetching,
+  } = useClient(clientId);
   const record = data?.client;
   const [active, setActive] = useState(searchParams.tab || "overview");
 
@@ -592,13 +601,52 @@ function ClientProfile() {
     );
   }
 
-  if (isError || !data || !record) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="max-w-sm text-center">
-          <h2 className="text-xl font-semibold">Client not found</h2>
-          <p className="mt-2 text-helper text-muted-foreground">This client may have been deleted or you don't have access to it.</p>
+  if (!data || !record) {
+    const errStatus = (error as any)?.status;
+    if (errStatus === 404) {
+      return (
+        <div className="flex min-h-[60vh] items-center justify-center p-4">
+          <ErrorState
+            variant="not-found"
+            title="Client not found"
+            description="This client record may have been deleted, archived, or moved."
+            secondaryAction={{
+              label: "← Back to clients",
+              onClick: () => navigate({ to: "/clients" }),
+            }}
+          />
         </div>
+      );
+    }
+
+    if (errStatus === 403) {
+      return (
+        <div className="flex min-h-[60vh] items-center justify-center p-4">
+          <ErrorState
+            variant="access-denied"
+            title="Access denied"
+            description="You do not have permission to view this client profile."
+            secondaryAction={{
+              label: "← Back to clients",
+              onClick: () => navigate({ to: "/clients" }),
+            }}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center p-4">
+        <ErrorState
+          title="Couldn't load client profile"
+          description={error instanceof Error ? error.message : "We couldn't reach the server. Please check your connection."}
+          onRetry={() => refetch()}
+          isRetrying={isFetching}
+          secondaryAction={{
+            label: "← Back to clients",
+            onClick: () => navigate({ to: "/clients" }),
+          }}
+        />
       </div>
     );
   }
@@ -607,6 +655,14 @@ function ClientProfile() {
 
   return (
     <div>
+      {isError && (
+        <StaleDataBanner
+          message="Could not refresh the latest client details from the server. Showing cached profile."
+          onRefresh={() => refetch()}
+          isRefreshing={isFetching}
+          className="mb-4"
+        />
+      )}
       <PageHeader
         breadcrumb={[
           { label: "S & S", to: "/" },

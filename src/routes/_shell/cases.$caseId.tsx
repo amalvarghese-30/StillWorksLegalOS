@@ -57,6 +57,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { MobileSectionNav } from "@/components/layout/MobileSectionNav";
+import { ErrorState } from "@/components/common/ErrorState";
+import { StaleDataBanner } from "@/components/common/StaleDataBanner";
 import {
   useCase,
   useUpdateCase,
@@ -411,7 +413,14 @@ function AddPartyForm({ caseId }: { caseId: string }) {
 
 function CaseWorkspace() {
   const { caseId } = Route.useParams();
-  const { data, isLoading, isError } = useCase(caseId);
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isFetching,
+  } = useCase(caseId);
   const [active, setActive] = useState("overview");
 
   // Linked data — queried only when tab is active
@@ -634,15 +643,52 @@ function CaseWorkspace() {
     );
   }
 
-  if (isError || !data) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="max-w-sm text-center">
-          <h2 className="text-xl font-semibold">Case not found</h2>
-          <p className="mt-2 text-helper text-muted-foreground">
-            This case may have been deleted or you don't have access to it.
-          </p>
+  if (!data) {
+    const errStatus = (error as any)?.status;
+    if (errStatus === 404) {
+      return (
+        <div className="flex min-h-[60vh] items-center justify-center p-4">
+          <ErrorState
+            variant="not-found"
+            title="Case not found"
+            description="This matter may have been deleted, archived, or moved."
+            secondaryAction={{
+              label: "← Back to cases",
+              onClick: () => navigate({ to: "/cases" }),
+            }}
+          />
         </div>
+      );
+    }
+
+    if (errStatus === 403) {
+      return (
+        <div className="flex min-h-[60vh] items-center justify-center p-4">
+          <ErrorState
+            variant="access-denied"
+            title="Access denied"
+            description="You do not have permission to view this case workspace."
+            secondaryAction={{
+              label: "← Back to cases",
+              onClick: () => navigate({ to: "/cases" }),
+            }}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center p-4">
+        <ErrorState
+          title="Couldn't load case workspace"
+          description={error instanceof Error ? error.message : "We couldn't reach the server. Please check your connection."}
+          onRetry={() => refetch()}
+          isRetrying={isFetching}
+          secondaryAction={{
+            label: "← Back to cases",
+            onClick: () => navigate({ to: "/cases" }),
+          }}
+        />
       </div>
     );
   }
@@ -656,6 +702,14 @@ function CaseWorkspace() {
 
   return (
     <div>
+      {isError && (
+        <StaleDataBanner
+          message="Could not refresh the latest case details from the server. Showing cached workspace."
+          onRefresh={() => refetch()}
+          isRefreshing={isFetching}
+          className="mb-4"
+        />
+      )}
       <PageHeader
         breadcrumb={[
           { label: "S & S", to: "/" },

@@ -3,12 +3,12 @@ import { useNavigate } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 
 interface DashboardMetricCardsProps {
-  hearingsCount: number;
-  overdueCount: number;
-  pendingTasksCount: number;
-  activeCasesCount: number;
-  totalClientsCount: number;
-  tasksCompletedCount: number;
+  hearingsCount?: number | null;
+  overdueCount?: number | null;
+  pendingTasksCount?: number | null;
+  activeCasesCount?: number | null;
+  totalClientsCount?: number | null;
+  tasksCompletedCount?: number | null;
   periodLabel?: string;
   loading?: boolean;
 }
@@ -25,10 +25,16 @@ export function DashboardMetricCards({
 }: DashboardMetricCardsProps) {
   const navigate = useNavigate();
 
+  const formatValue = (val: number | null | undefined) => {
+    if (loading) return "…";
+    if (val === null || val === undefined) return "—";
+    return val;
+  };
+
   const cards = [
     {
       label: "Today's hearings",
-      value: hearingsCount,
+      value: formatValue(hearingsCount),
       hint: "Court appearances",
       icon: Gavel,
       isGradient: true,
@@ -36,7 +42,7 @@ export function DashboardMetricCards({
     },
     {
       label: "Overdue items",
-      value: overdueCount,
+      value: formatValue(overdueCount),
       hint: "Tasks & Cases",
       icon: AlertTriangle,
       iconColor: "text-rose-600 dark:text-rose-400",
@@ -45,7 +51,7 @@ export function DashboardMetricCards({
     },
     {
       label: "Pending tasks",
-      value: pendingTasksCount,
+      value: formatValue(pendingTasksCount),
       hint: "Awaiting completion",
       icon: Clock,
       iconColor: "text-amber-600 dark:text-amber-400",
@@ -55,7 +61,7 @@ export function DashboardMetricCards({
     },
     {
       label: "Active cases",
-      value: activeCasesCount,
+      value: formatValue(activeCasesCount),
       hint: "Firm-wide",
       icon: Briefcase,
       iconColor: "text-blue-600 dark:text-blue-400",
@@ -64,7 +70,7 @@ export function DashboardMetricCards({
     },
     {
       label: "Clients",
-      value: totalClientsCount,
+      value: formatValue(totalClientsCount),
       hint: periodLabel,
       icon: Users,
       iconColor: "text-purple-600 dark:text-purple-400",
@@ -74,7 +80,7 @@ export function DashboardMetricCards({
     },
     {
       label: "Tasks done",
-      value: tasksCompletedCount,
+      value: formatValue(tasksCompletedCount),
       hint: periodLabel,
       icon: CheckCircle2,
       iconColor: "text-emerald-600 dark:text-emerald-400",

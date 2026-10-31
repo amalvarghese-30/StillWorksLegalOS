@@ -11,6 +11,7 @@ import {
   ChevronDown,
   Loader2,
   CalendarDays,
+  RotateCw,
 } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { formatSafeDate } from "@/lib/dates";
@@ -67,6 +68,9 @@ interface PendingCasesAndTasksSectionProps {
   tasks: TaskRecord[];
   cases: CaseRecord[];
   isLoading?: boolean;
+  isError?: boolean;
+  onRetry?: () => void;
+  isRetrying?: boolean;
   onSelectTask: (task: TaskRecord) => void;
 }
 
@@ -74,6 +78,9 @@ export function PendingCasesAndTasksSection({
   tasks,
   cases,
   isLoading = false,
+  isError = false,
+  onRetry,
+  isRetrying = false,
   onSelectTask,
 }: PendingCasesAndTasksSectionProps) {
   const navigate = useNavigate();
@@ -366,9 +373,29 @@ export function PendingCasesAndTasksSection({
 
       {/* Main Table / Horizontal Cards */}
       <div className="mt-4">
-        {isLoading ? (
+        {isLoading && filteredItems.length === 0 ? (
           <div className="flex items-center justify-center py-16">
             <Loader2 className="animate-spin text-muted-foreground" size={24} />
+          </div>
+        ) : isError && filteredItems.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center rounded-lg border border-destructive/30 bg-destructive/5 px-4">
+            <AlertTriangle size={24} className="text-destructive mb-2" />
+            <p className="text-sm font-semibold text-destructive">Failed to load pending items</p>
+            <p className="mt-1 text-xs text-muted-foreground max-w-[280px]">
+              Could not retrieve pending cases and tasks from the server.
+            </p>
+            {onRetry && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onRetry}
+                disabled={isRetrying}
+                className="mt-3 rounded-lg text-xs"
+              >
+                <RotateCw size={12} className={`mr-1.5 ${isRetrying ? "animate-spin" : ""}`} />
+                {isRetrying ? "Retrying…" : "Retry"}
+              </Button>
+            )}
           </div>
         ) : filteredItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center rounded-lg border border-dashed border-border/70 bg-muted/20">
@@ -377,6 +404,16 @@ export function PendingCasesAndTasksSection({
           </div>
         ) : (
           <div className="w-full">
+            {isError && (
+              <div className="mb-3 flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs text-amber-800 dark:text-amber-300">
+                <span>Showing cached pending items. Refresh failed.</span>
+                {onRetry && (
+                  <button onClick={onRetry} className="font-semibold underline hover:no-underline">
+                    Retry
+                  </button>
+                )}
+              </div>
+            )}
             {/* Desktop View (>= xl) */}
             <div className="hidden xl:block space-y-2">
               {filteredItems.map((item) => {

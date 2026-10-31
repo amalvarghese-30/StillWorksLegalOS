@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowRight, AlertTriangle, Users } from "lucide-react";
+import { ArrowRight, AlertTriangle, Users, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useEmployeeWorkload } from "@/services/reports";
 import { cn } from "@/lib/utils";
@@ -7,7 +7,7 @@ import { EmployeeAvatar } from "../EmployeeAvatar";
 
 export function AdminTeamCapacity() {
   const navigate = useNavigate();
-  const { data, isLoading, isError, refetch } = useEmployeeWorkload();
+  const { data, isLoading, isError, isFetching, refetch } = useEmployeeWorkload();
   const workloads = data?.workloads ?? [];
 
   // Sort descending by workload percentage, or active work
@@ -54,15 +54,22 @@ export function AdminTeamCapacity() {
               </div>
             ))}
           </div>
-        ) : isError ? (
+        ) : isError && !data ? (
           <div className="flex flex-col items-center justify-center py-10 text-center">
             <AlertTriangle className="size-8 text-destructive/80 mb-2" />
             <p className="text-sm font-semibold text-foreground">Couldn't load team capacity</p>
             <p className="text-xs text-muted-foreground mt-1 max-w-xs">
               Unable to aggregate employee workloads.
             </p>
-            <Button variant="outline" size="sm" onClick={() => refetch()} className="mt-4 rounded-md">
-              Retry
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="mt-4 rounded-md"
+            >
+              {isFetching ? <Loader2 className="size-3.5 mr-1.5 animate-spin" /> : null}
+              {isFetching ? "Retrying..." : "Retry"}
             </Button>
           </div>
         ) : sortedWorkloads.length === 0 ? (
@@ -76,7 +83,21 @@ export function AdminTeamCapacity() {
             </p>
           </div>
         ) : (
-          <ul className="space-y-3.5">
+          <div className="space-y-3">
+            {isError && (
+              <div className="mb-2 flex items-center justify-between rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-300">
+                <span>Sync failed. Showing cached capacity.</span>
+                <button
+                  type="button"
+                  onClick={() => refetch()}
+                  disabled={isFetching}
+                  className="font-medium underline hover:text-amber-900 dark:hover:text-amber-100"
+                >
+                  {isFetching ? "Retrying..." : "Retry"}
+                </button>
+              </div>
+            )}
+            <ul className="space-y-3.5">
             {sortedWorkloads.slice(0, 6).map((emp) => {
               const initials = emp.name
                 .split(" ")
@@ -158,7 +179,8 @@ export function AdminTeamCapacity() {
               );
             })}
           </ul>
-        )}
+        </div>
+      )}
       </div>
 
       {/* Footer Info */}

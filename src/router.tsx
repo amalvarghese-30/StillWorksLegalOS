@@ -12,9 +12,23 @@ export const getRouter = () => {
       queries: {
         staleTime: 30_000,
         retry: (failureCount, error: any) => {
-          if (error?.status === 401 || error?.status === 403 || error?.isForbidden) {
+          // Never retry permanent client/auth/permission/validation/missing errors
+          if (
+            error?.status === 400 ||
+            error?.status === 401 ||
+            error?.status === 403 ||
+            error?.status === 404 ||
+            error?.status === 409 ||
+            error?.status === 422 ||
+            error?.isForbidden ||
+            error?.isUnauthorized ||
+            error?.isNotFound ||
+            error?.isValidationError ||
+            error?.isConflict
+          ) {
             return false;
           }
+          // Retry transient network or 5xx server failures once
           return failureCount < 1;
         },
       },

@@ -28,6 +28,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useEmployees, type EmployeeRecord } from "@/services/admin";
+import { ErrorState } from "@/components/common/ErrorState";
+import { StaleDataBanner } from "@/components/common/StaleDataBanner";
 import { useEmployeeWorkload } from "@/services/reports";
 import { useCreateDirectChat } from "@/services/chat";
 import { useFloatingChat } from "@/lib/floatingChat";
@@ -97,7 +99,13 @@ function EmployeesPage() {
   const canManage = Boolean(user?.role === "admin" || user?.permissions?.employees);
 
   // Load employees and workload metrics
-  const { data, isLoading, isError, refetch } = useEmployees();
+  const {
+    data,
+    isLoading,
+    isError,
+    refetch,
+    isFetching,
+  } = useEmployees();
   const { data: workloadData } = useEmployeeWorkload();
 
   const employees = data?.employees ?? [];
@@ -655,19 +663,27 @@ function EmployeesPage() {
       )}
 
       {/* ── Error State ── */}
-      {isError && (
-        <div className="flex flex-col items-center gap-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-12 text-center">
-          <AlertTriangle size={28} className="text-destructive" />
-          <p className="font-semibold text-foreground">Failed to load team directory</p>
-          <p className="text-helper text-muted-foreground">Unable to fetch employee records from the server.</p>
-          <Button variant="outline" size="sm" onClick={() => refetch()} className="mt-2 rounded-lg">
-            <RotateCcw size={14} className="mr-1.5" /> Retry
-          </Button>
-        </div>
+      {isError && Boolean(data) && (
+        <StaleDataBanner
+          message="Could not refresh the latest team directory from the server. Showing cached team members."
+          onRefresh={() => refetch()}
+          isRefreshing={isFetching}
+          className="mb-4"
+        />
+      )}
+
+      {isError && !data && (
+        <ErrorState
+          title="Failed to load team directory"
+          description="Unable to fetch employee records from the server."
+          onRetry={() => refetch()}
+          isRetrying={isFetching}
+          className="my-4"
+        />
       )}
 
       {/* ── Empty Filter State ── */}
-      {!isLoading && !isError && filteredEmployees.length === 0 && (
+      {!isLoading && (!isError || Boolean(data)) && filteredEmployees.length === 0 && (
         <div className="flex flex-col items-center gap-3 rounded-2xl border border-border/80 bg-card p-12 text-center shadow-soft">
           <Users size={32} className="text-muted-foreground/60" />
           <h3 className="font-display font-semibold text-foreground">No employees match your criteria</h3>
@@ -685,7 +701,7 @@ function EmployeesPage() {
       )}
 
       {/* ── Employee Table Presentation (Default) or Grid ── */}
-      {!isLoading && !isError && filteredEmployees.length > 0 && (
+      {!isLoading && (!isError || Boolean(data)) && filteredEmployees.length > 0 && (
         <>
           {viewMode === "grid" ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

@@ -33,21 +33,21 @@ export function AdminDashboard() {
   const { user } = useAuth();
 
   // Queries for KPI row
-  const { data: summary, isLoading: summaryLoading } = useReportsSummary();
-  const { data: approvalsData, isLoading: approvalsLoading } = useApprovals();
-  const { data: workloadData, isLoading: workloadLoading } = useEmployeeWorkload();
-  const { data: auditData, isLoading: auditLoading } = useAuditLogs({ limit: "10" });
+  const { data: summary, isLoading: summaryLoading, isError: summaryError } = useReportsSummary();
+  const { data: approvalsData, isLoading: approvalsLoading, isError: approvalsError } = useApprovals();
+  const { data: workloadData, isLoading: workloadLoading, isError: workloadError } = useEmployeeWorkload();
+  const { data: auditData, isLoading: auditLoading, isError: auditError } = useAuditLogs({ limit: "10" });
 
   const approvals = approvalsData?.approvals ?? [];
   const workloads = workloadData?.workloads ?? [];
   const logs = auditData?.logs ?? [];
 
-  const pendingApprovalsCount = approvalsLoading ? "…" : (approvalsData?.total ?? approvals.length);
-  const teamMembersCount = workloadLoading ? "…" : workloads.length;
-  const activeCasesCount = summaryLoading ? "…" : (summary?.activeCases ?? 0);
-  const clientsCount = summaryLoading ? "…" : (summary?.totalClients ?? 0);
-  const docsApprovedCount = summaryLoading ? "…" : (summary?.docsApproved ?? 0);
-  const auditEventsCount = auditLoading ? "…" : (auditData?.total ?? logs.length);
+  const pendingApprovalsCount = approvalsLoading ? "…" : approvalsData ? (approvalsData?.total ?? approvals.length) : (approvalsError ? "—" : approvals.length);
+  const teamMembersCount = workloadLoading ? "…" : workloadData ? workloads.length : (workloadError ? "—" : 0);
+  const activeCasesCount = summaryLoading ? "…" : summary ? (summary?.activeCases ?? 0) : (summaryError ? "—" : 0);
+  const clientsCount = summaryLoading ? "…" : summary ? (summary?.totalClients ?? 0) : (summaryError ? "—" : 0);
+  const docsApprovedCount = summaryLoading ? "…" : summary ? (summary?.docsApproved ?? 0) : (summaryError ? "—" : 0);
+  const auditEventsCount = auditLoading ? "…" : auditData ? (auditData?.total ?? logs.length) : (auditError ? "—" : logs.length);
 
   const greetingTitle = user?.name ? `Welcome back, ${user.name} 👋` : "Firm administration";
 

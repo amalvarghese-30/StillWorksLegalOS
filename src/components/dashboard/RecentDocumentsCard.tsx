@@ -1,12 +1,16 @@
-import { FileText, ArrowRight, Loader2, FileCheck, FileCode, FileSpreadsheet } from "lucide-react";
+import { FileText, ArrowRight, Loader2, FileCheck, FileCode, FileSpreadsheet, AlertTriangle, RotateCw } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { formatSafeRelative } from "@/lib/dates";
 import type { DocumentRecord } from "@/services/documents";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 interface RecentDocumentsCardProps {
   documents: DocumentRecord[];
   isLoading?: boolean;
+  isError?: boolean;
+  onRetry?: () => void;
+  isRetrying?: boolean;
   onPreviewDocument: (doc: DocumentRecord) => void;
 }
 
@@ -54,6 +58,9 @@ function getFileBadgeInfo(fileName: string, mimeType?: string) {
 export function RecentDocumentsCard({
   documents,
   isLoading = false,
+  isError = false,
+  onRetry,
+  isRetrying = false,
   onPreviewDocument,
 }: RecentDocumentsCardProps) {
   return (
@@ -79,9 +86,29 @@ export function RecentDocumentsCard({
 
       {/* Body */}
       <div className="mt-3.5 flex-1 min-w-0">
-        {isLoading ? (
+        {isLoading && documents.length === 0 ? (
           <div className="flex items-center justify-center py-10">
             <Loader2 className="animate-spin text-muted-foreground" size={20} />
+          </div>
+        ) : isError && documents.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-8 text-center px-4 rounded-lg border border-destructive/30 bg-destructive/5">
+            <AlertTriangle size={24} className="text-destructive mb-2" />
+            <p className="text-sm font-semibold text-destructive">Failed to load documents</p>
+            <p className="mt-1 text-xs text-muted-foreground max-w-[280px]">
+              Could not retrieve document list from the server.
+            </p>
+            {onRetry && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onRetry}
+                disabled={isRetrying}
+                className="mt-3 rounded-lg text-xs"
+              >
+                <RotateCw size={12} className={`mr-1.5 ${isRetrying ? "animate-spin" : ""}`} />
+                {isRetrying ? "Retrying…" : "Retry"}
+              </Button>
+            )}
           </div>
         ) : documents.length === 0 ? (
           <div className="py-10 text-center text-xs text-muted-foreground">
@@ -89,6 +116,16 @@ export function RecentDocumentsCard({
           </div>
         ) : (
           <div className="space-y-2.5">
+            {isError && (
+              <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300">
+                <span>Showing cached documents. Refresh failed.</span>
+                {onRetry && (
+                  <button onClick={onRetry} className="font-semibold underline hover:no-underline">
+                    Retry
+                  </button>
+                )}
+              </div>
+            )}
             {documents.slice(0, 4).map((doc) => {
               const badge = getFileBadgeInfo(doc.name, doc.mimeType);
               const caseNumber =

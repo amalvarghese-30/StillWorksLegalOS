@@ -321,30 +321,98 @@ export async function refreshAccessToken(): Promise<string | null> {
 // Typed fetch wrapper with automatic token refresh
 // ---------------------------------------------------------------------------
 
+function parseRetryAfter(header: string | null): number | undefined {
+  if (!header) return undefined;
+  const seconds = parseInt(header, 10);
+  if (!isNaN(seconds) && seconds >= 0) return seconds;
+  const date = Date.parse(header);
+  if (!isNaN(date)) {
+    const diff = Math.max(0, Math.ceil((date - Date.now()) / 1000));
+    return diff;
+  }
+  return undefined;
+}
+
+/**
+ * Safely consumes a Response body stream exactly once.
+ * Avoids stream-locked double read errors and extracts clean error messages.
+ */
+export async function readResponseBodySafe(res: Response): Promise<unknown> {
+  let text = "";
+  try {
+    text = await res.text();
+  } catch {
+    return undefined;
+  }
+
+  if (!text || !text.trim()) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    const trimmed = text.trim();
+    if (trimmed.startsWith("<") && (trimmed.includes("<html") || trimmed.includes("<!DOCTYPE"))) {
+      const titleMatch = /<title>(.*?)<\/title>/i.exec(trimmed);
+      if (titleMatch && titleMatch[1]) {
+        return { message: titleMatch[1].trim() };
+      }
+      return { message: "Server returned an HTML error page." };
+    }
+    return trimmed;
+  }
+}
+
+export interface ApiErrorOptions {
+  retryAfterSeconds?: number;
+  isAborted?: boolean;
+  isTimeout?: boolean;
+}
+
 export class ApiError extends Error {
   status: number;
   body: unknown;
+  retryAfterSeconds?: number;
+  isAborted?: boolean;
+  isTimeout?: boolean;
 
-  constructor(status: number, body: unknown) {
+  constructor(status: number, body: unknown, options?: ApiErrorOptions) {
     let msg = "";
-    if (body && typeof body === "object" && "message" in (body as Record<string, unknown>)) {
-      msg = String((body as Record<string, unknown>)["message"]);
+    if (body && typeof body === "object") {
+      const b = body as Record<string, unknown>;
+      if ("message" in b && b["message"]) {
+        msg = String(b["message"]);
+      } else if ("error" in b && b["error"]) {
+        msg = typeof b["error"] === "string" ? b["error"] : String((b["error"] as Record<string, unknown>)?.["message"] || "");
+      }
     } else if (typeof body === "string" && body.trim()) {
       msg = body.trim();
     }
     if (!msg) {
-      if (status === 401) msg = "Your session has expired. Please sign in again.";
+      if (options?.isTimeout) msg = "The request timed out. Please try again.";
+      else if (options?.isAborted) msg = "The request was cancelled.";
+      else if (status === 0) msg = "Unable to connect to the server. Please check your network.";
+      else if (status === 400) msg = "Invalid request. Please check your inputs.";
+      else if (status === 401) msg = "Your session has expired. Please sign in again.";
       else if (status === 403) msg = "You don't have permission to perform this action.";
       else if (status === 404) msg = "The requested record was not found.";
       else if (status === 409) msg = "This record was updated by someone else. Please refresh.";
-      else if (status === 429) msg = "Too many requests. Please wait a moment.";
-      else if (status >= 500) msg = "A server error occurred. Please try again shortly.";
+      else if (status === 422) msg = "Validation failed. Please verify your data.";
+      else if (status === 429) {
+        msg = options?.retryAfterSeconds
+          ? `Too many requests. Please wait ${options.retryAfterSeconds} seconds.`
+          : "Too many requests. Please wait a moment.";
+      } else if (status >= 500) msg = "A server error occurred. Please try again shortly.";
       else msg = `Request failed (${status})`;
     }
     super(msg);
     this.name = "ApiError";
     this.status = status;
     this.body = body;
+    this.retryAfterSeconds = options?.retryAfterSeconds;
+    this.isAborted = options?.isAborted ?? false;
+    this.isTimeout = options?.isTimeout ?? false;
   }
 
   get isUnauthorized(): boolean {
@@ -363,25 +431,40 @@ export class ApiError extends Error {
     return this.status === 409;
   }
 
+  get isValidationError(): boolean {
+    return this.status === 400 || this.status === 422;
+  }
+
   get isRateLimited(): boolean {
     return this.status === 429;
   }
 
   get isServerError(): boolean {
-    return this.status >= 500;
+    return this.status >= 500 && this.status < 600;
+  }
+
+  get isNetworkError(): boolean {
+    return this.status === 0;
   }
 
   get userFriendlyMessage(): string {
+    if (this.isTimeout) return "Request timed out. Please check your connection and try again.";
+    if (this.isAborted) return "Request was cancelled.";
+    if (this.isNetworkError) return "Could not reach the server. Please check your internet connection.";
     if (this.isUnauthorized) return "Your session has expired. Please sign in again.";
     if (this.isForbidden) return "You don't have permission to perform this action.";
     if (this.isNotFound) return "The requested record was not found.";
     if (this.isConflict) return "This record was updated by someone else. Please refresh.";
-    if (this.isRateLimited) return "Too many requests. Please wait a moment.";
+    if (this.isRateLimited) {
+      return this.retryAfterSeconds
+        ? `Too many requests. Please wait ${this.retryAfterSeconds} seconds before retrying.`
+        : "Too many requests. Please wait a moment before retrying.";
+    }
     if (this.isServerError) return "A server error occurred. Please try again shortly.";
     if (this.body && typeof this.body === "object" && "message" in (this.body as Record<string, unknown>)) {
       return String((this.body as Record<string, unknown>)["message"]);
     }
-    return "An unexpected error occurred. Please try again.";
+    return this.message || "An unexpected error occurred. Please try again.";
   }
 }
 
@@ -391,8 +474,9 @@ export async function apiFetch<T = unknown>(
   retryCount = 0
 ): Promise<T> {
   const token = getAccessToken();
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
     ...((options.headers as Record<string, string>) ?? {}),
   };
 
@@ -410,7 +494,16 @@ export async function apiFetch<T = unknown>(
     init.credentials = "include";
   }
 
-  const res = await fetch(`${API_BASE}${path}`, init);
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, init);
+  } catch (err: unknown) {
+    const errorObj = err as { name?: string };
+    if (errorObj?.name === "AbortError") {
+      throw new ApiError(0, { message: "Request cancelled" }, { isAborted: true });
+    }
+    throw new ApiError(0, { message: "Network connection failed" });
+  }
 
   // If 401 Unauthorized on a protected resource, try to refresh token once
   if (res.status === 401 && retryCount === 0 && !path.startsWith("/auth/")) {
@@ -418,32 +511,45 @@ export async function apiFetch<T = unknown>(
     if (newToken) {
       // Retry with new token
       headers["Authorization"] = `Bearer ${newToken}`;
-      const retryRes = await fetch(`${API_BASE}${path}`, {
-        ...init,
-        headers,
-      });
+      let retryRes: Response;
+      try {
+        retryRes = await fetch(`${API_BASE}${path}`, {
+          ...init,
+          headers,
+        });
+      } catch (retryErr: unknown) {
+        const retryErrObj = retryErr as { name?: string };
+        if (retryErrObj?.name === "AbortError") {
+          throw new ApiError(0, { message: "Request cancelled" }, { isAborted: true });
+        }
+        throw new ApiError(0, { message: "Network connection failed on retry" });
+      }
+
       if (retryRes.ok) {
         if (retryRes.status === 204) return undefined as T;
-        return retryRes.json() as Promise<T>;
+        const retryData = await readResponseBodySafe(retryRes);
+        return retryData as T;
       }
+
+      // The retry request failed — PARSE AND THROW THE RETRY ERROR (NOT the original 401!)
+      const retryBody = await readResponseBodySafe(retryRes);
+      const retryAfter = parseRetryAfter(retryRes.headers.get("Retry-After"));
+      throw new ApiError(retryRes.status, retryBody, { retryAfterSeconds: retryAfter });
     }
-    // Refresh failed or retry failed — throw original error
+    // Refresh failed completely (token expired/revoked) — proceed to throw 401 below
   }
 
   if (!res.ok) {
-    let body: unknown;
-    try {
-      body = await res.json();
-    } catch {
-      body = await res.text();
-    }
-    throw new ApiError(res.status, body);
+    const body = await readResponseBodySafe(res);
+    const retryAfter = parseRetryAfter(res.headers.get("Retry-After"));
+    throw new ApiError(res.status, body, { retryAfterSeconds: retryAfter });
   }
 
   // Handle 204 No Content
   if (res.status === 204) return undefined as T;
 
-  return res.json() as Promise<T>;
+  const data = await readResponseBodySafe(res);
+  return data as T;
 }
 
 // ---------------------------------------------------------------------------
@@ -483,52 +589,76 @@ export interface UploadStreamOptions {
   path: string;
   formData: FormData;
   onProgress?: (percent: number) => void;
+  timeoutMs?: number;
 }
 
 /**
- * Multipart upload via XHR so byte-level progress can be reported. Mirrors
- * `apiFetch`'s auth/credentials handling but sends the body untouched.
+ * Multipart upload via XHR so byte-level progress can be reported.
+ * Supports one-time automatic token refresh retry on 401 and reports retried errors accurately.
  */
-export function uploadStream<T = unknown>({ path, formData, onProgress }: UploadStreamOptions): Promise<T> {
-  const token = getAccessToken();
+export function uploadStream<T = unknown>({
+  path,
+  formData,
+  onProgress,
+  timeoutMs = 120_000,
+}: UploadStreamOptions): Promise<T> {
+  const executeUpload = (authToken: string | null): Promise<T> => {
+    return new Promise<T>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${API_BASE}${path}`);
+      xhr.timeout = timeoutMs;
 
-  return new Promise<T>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${API_BASE}${path}`);
+      if (authToken) xhr.setRequestHeader("Authorization", `Bearer ${authToken}`);
+      if (!isElectron()) xhr.withCredentials = true;
 
-    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-    if (!isElectron()) xhr.withCredentials = true;
+      xhr.upload.addEventListener("progress", (event) => {
+        if (event.lengthComputable && onProgress) {
+          onProgress(Math.round((event.loaded / event.total) * 100));
+        }
+      });
 
-    xhr.upload.addEventListener("progress", (event) => {
-      if (event.lengthComputable && onProgress) {
-        onProgress(Math.round((event.loaded / event.total) * 100));
-      }
-    });
-
-    xhr.addEventListener("load", () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
+      xhr.addEventListener("load", () => {
         let body: unknown;
         try {
           body = xhr.responseText ? JSON.parse(xhr.responseText) : undefined;
         } catch {
-          body = undefined;
+          const text = xhr.responseText || "";
+          if (text.startsWith("<") && (text.includes("<html") || text.includes("<!DOCTYPE"))) {
+            body = { message: "Server returned an HTML error page." };
+          } else {
+            body = text;
+          }
         }
-        resolve(body as T);
-      } else {
-        let body: unknown;
-        try {
-          body = JSON.parse(xhr.responseText);
-        } catch {
-          body = xhr.responseText;
+
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(body as T);
+        } else {
+          reject(new ApiError(xhr.status, body));
         }
-        reject(new ApiError(xhr.status, body));
-      }
+      });
+
+      xhr.addEventListener("error", () =>
+        reject(new ApiError(0, { message: "Network error during upload" }))
+      );
+      xhr.addEventListener("abort", () =>
+        reject(new ApiError(0, { message: "Upload cancelled" }, { isAborted: true }))
+      );
+      xhr.addEventListener("timeout", () =>
+        reject(new ApiError(0, { message: "Upload timed out" }, { isTimeout: true }))
+      );
+
+      xhr.send(formData);
     });
+  };
 
-    xhr.addEventListener("error", () => reject(new ApiError(0, { message: "Network error during upload" })));
-    xhr.addEventListener("abort", () => reject(new ApiError(0, { message: "Upload aborted" })));
-
-    xhr.send(formData);
+  return executeUpload(getAccessToken()).catch(async (error: unknown) => {
+    if (error instanceof ApiError && error.status === 401 && !path.startsWith("/auth/")) {
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        return executeUpload(newToken);
+      }
+    }
+    throw error;
   });
 }
 
@@ -540,24 +670,49 @@ export interface DownloadBlobResult {
 /**
  * Downloads a binary resource as a Blob, extracting the filename from the
  * Content-Disposition header.
+ * Supports one-time automatic token refresh retry on 401 and reads response bodies safely.
  */
 export async function downloadBlob(path: string): Promise<DownloadBlobResult> {
+  const executeDownload = async (authToken: string | null): Promise<Response> => {
+    const headers: Record<string, string> = {};
+    if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
+
+    const init: RequestInit = { headers };
+    if (!isElectron()) init.credentials = "include";
+
+    return fetch(`${API_BASE}${path}`, init);
+  };
+
   const token = getAccessToken();
-  const headers: Record<string, string> = {};
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  let res: Response;
+  try {
+    res = await executeDownload(token);
+  } catch (err: unknown) {
+    const errObj = err as { name?: string };
+    if (errObj?.name === "AbortError") {
+      throw new ApiError(0, { message: "Download cancelled" }, { isAborted: true });
+    }
+    throw new ApiError(0, { message: "Network connection failed" });
+  }
 
-  const init: RequestInit = { headers };
-  if (!isElectron()) init.credentials = "include";
-
-  const res = await fetch(`${API_BASE}${path}`, init);
+  // If 401 on protected download, attempt one-time token refresh
+  if (res.status === 401 && !path.startsWith("/auth/")) {
+    const newToken = await refreshAccessToken();
+    if (newToken) {
+      try {
+        res = await executeDownload(newToken);
+      } catch (retryErr: unknown) {
+        const retryErrObj = retryErr as { name?: string };
+        if (retryErrObj?.name === "AbortError") {
+          throw new ApiError(0, { message: "Download cancelled" }, { isAborted: true });
+        }
+        throw new ApiError(0, { message: "Network connection failed on retry" });
+      }
+    }
+  }
 
   if (!res.ok) {
-    let body: unknown;
-    try {
-      body = await res.json();
-    } catch {
-      body = await res.text();
-    }
+    const body = await readResponseBodySafe(res);
     throw new ApiError(res.status, body);
   }
 

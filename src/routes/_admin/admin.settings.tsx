@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { User, Building2, Bell, Lock, Palette, HardDrive, ListChecks, Loader2, RefreshCw, Camera, Trash2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { getAccessToken, getApiBase } from "@/services/api";
+import { apiFetch, getAccessToken, getApiBase } from "@/services/api";
 import { adminKeys } from "@/services/admin";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
@@ -87,19 +87,10 @@ function SettingsPage() {
       const formData = new FormData();
       formData.append("avatar", file);
 
-      const token = getAccessToken();
-      const res = await fetch(`${getApiBase()}/auth/avatar`, {
+      await apiFetch("/auth/avatar", {
         method: "POST",
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
         body: formData,
       });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || "Failed to upload avatar");
-      }
 
       await refreshUser();
       queryClient.invalidateQueries({ queryKey: adminKeys.all });
@@ -107,7 +98,7 @@ function SettingsPage() {
       toast.success("Profile picture updated successfully");
     } catch (err: any) {
       console.error("Avatar upload error:", err);
-      toast.error(err.message || "Failed to upload avatar");
+      toast.error(err?.message || "Failed to upload avatar");
     } finally {
       setIsUploadingAvatar(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -117,18 +108,9 @@ function SettingsPage() {
   const handleRemoveAvatar = async () => {
     try {
       setIsRemovingAvatar(true);
-      const token = getAccessToken();
-      const res = await fetch(`${getApiBase()}/auth/avatar`, {
+      await apiFetch("/auth/avatar", {
         method: "DELETE",
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
       });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || "Failed to remove avatar");
-      }
 
       await refreshUser();
       queryClient.invalidateQueries({ queryKey: adminKeys.all });
@@ -136,7 +118,7 @@ function SettingsPage() {
       toast.success("Profile picture removed");
     } catch (err: any) {
       console.error("Avatar removal error:", err);
-      toast.error(err.message || "Failed to remove avatar");
+      toast.error(err?.message || "Failed to remove avatar");
     } finally {
       setIsRemovingAvatar(false);
     }

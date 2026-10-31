@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Activity, ArrowRight, AlertTriangle } from "lucide-react";
+import { Activity, ArrowRight, AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuditLogs, type AuditLogItem } from "@/services/admin";
 import { useTask, type TaskRecord } from "@/services/tasks";
@@ -34,7 +34,7 @@ function formatAuditTimestamp(isoDate: string): string {
 
 export function AdminRecentActivity() {
   const navigate = useNavigate();
-  const { data, isLoading, isError, refetch } = useAuditLogs({ limit: "7" });
+  const { data, isLoading, isError, isFetching, refetch } = useAuditLogs({ limit: "7" });
   const logs = data?.logs ?? [];
 
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -99,15 +99,22 @@ export function AdminRecentActivity() {
               </div>
             ))}
           </div>
-        ) : isError ? (
+        ) : isError && !data ? (
           <div className="flex flex-col items-center justify-center py-10 text-center">
             <AlertTriangle className="size-8 text-destructive/80 mb-2" />
             <p className="text-sm font-semibold text-foreground">Couldn't load recent activity</p>
             <p className="text-xs text-muted-foreground mt-1 max-w-xs">
               Check server connection and try again.
             </p>
-            <Button variant="outline" size="sm" onClick={() => refetch()} className="mt-4 rounded-md">
-              Retry
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="mt-4 rounded-md"
+            >
+              {isFetching ? <Loader2 className="size-3.5 mr-1.5 animate-spin" /> : null}
+              {isFetching ? "Retrying..." : "Retry"}
             </Button>
           </div>
         ) : logs.length === 0 ? (
@@ -121,7 +128,21 @@ export function AdminRecentActivity() {
             </p>
           </div>
         ) : (
-          <ul className="divide-y divide-border/50">
+          <div className="space-y-3">
+            {isError && (
+              <div className="mb-2 flex items-center justify-between rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-300">
+                <span>Sync failed. Showing cached activity.</span>
+                <button
+                  type="button"
+                  onClick={() => refetch()}
+                  disabled={isFetching}
+                  className="font-medium underline hover:text-amber-900 dark:hover:text-amber-100"
+                >
+                  {isFetching ? "Retrying..." : "Retry"}
+                </button>
+              </div>
+            )}
+            <ul className="divide-y divide-border/50">
             {logs.map((a) => (
               <li
                 key={a._id}
@@ -151,7 +172,8 @@ export function AdminRecentActivity() {
               </li>
             ))}
           </ul>
-        )}
+        </div>
+      )}
       </div>
 
       {/* Task detail dialog if opened from activity */}

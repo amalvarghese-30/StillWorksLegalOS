@@ -23,6 +23,8 @@ import { useSocketEvent } from "@/lib/socket";
 import { useClients, clientKeys, type ClientRecord } from "@/services/clients";
 import { useCases, caseKeys, type CaseRecord } from "@/services/cases";
 import { AddClientDialog } from "@/components/clients/AddClientDialog";
+import { ErrorState } from "@/components/common/ErrorState";
+import { StaleDataBanner } from "@/components/common/StaleDataBanner";
 import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
 import { formatSafeDate } from "@/lib/dates";
 import { ExportImportMenu } from "@/components/common/ExportImportMenu";
@@ -186,6 +188,8 @@ function ClientsPage() {
     isLoading: isClientsLoading,
     isError: isClientsError,
     error: clientsError,
+    refetch: refetchClients,
+    isFetching: isClientsFetching,
   } = useClients(clientSearch.trim() ? { search: clientSearch } : {});
 
   const {
@@ -193,6 +197,8 @@ function ClientsPage() {
     isLoading: isCasesLoading,
     isError: isCasesError,
     error: casesError,
+    refetch: refetchCases,
+    isFetching: isCasesFetching,
   } = useCases(
     {
       search: caseSearch.trim() || undefined,
@@ -351,18 +357,29 @@ function ClientsPage() {
             </div>
           )}
 
-          {/* Error */}
-          {isClientsError && !isClientsLoading && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-8 text-center">
-              <p className="font-medium text-destructive">Failed to load clients</p>
-              <p className="mt-1 text-helper text-muted-foreground">
-                {clientsError instanceof Error ? clientsError.message : "Could not connect to the server."}
-              </p>
-            </div>
+          {/* Stale data warning on background refetch failure */}
+          {isClientsError && Boolean(clientsData) && (
+            <StaleDataBanner
+              message="Could not refresh the latest clients from the server. Showing cached clients."
+              onRefresh={() => refetchClients()}
+              isRefreshing={isClientsFetching}
+              className="mb-4"
+            />
+          )}
+
+          {/* Initial load error */}
+          {isClientsError && !clientsData && !isClientsLoading && (
+            <ErrorState
+              title="Failed to load clients"
+              description={clientsError instanceof Error ? clientsError.message : "Could not connect to the server."}
+              onRetry={() => refetchClients()}
+              isRetrying={isClientsFetching}
+              className="my-4"
+            />
           )}
 
           {/* Empty */}
-          {!isClientsLoading && !isClientsError && clientsData?.clients.length === 0 && (
+          {!isClientsLoading && (!isClientsError || Boolean(clientsData)) && clientsData?.clients.length === 0 && (
             <div className="rounded-lg border border-border bg-card p-16 text-center shadow-soft">
               <Users size={36} className="mx-auto text-muted-foreground/60 mb-2" />
               <p className="text-title font-semibold">No clients found</p>
@@ -379,7 +396,7 @@ function ClientsPage() {
           )}
 
           {/* Data */}
-          {!isClientsLoading && !isClientsError && clientsData && (
+          {!isClientsLoading && (!isClientsError || Boolean(clientsData)) && clientsData && clientsData.clients.length > 0 && (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {clientsData.clients.map((c) => (
                 <ClientCard key={c._id} c={c} />
@@ -411,18 +428,29 @@ function ClientsPage() {
             </div>
           )}
 
-          {/* Error */}
-          {isCasesError && !isCasesLoading && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-8 text-center">
-              <p className="font-medium text-destructive">Failed to load cases</p>
-              <p className="mt-1 text-helper text-muted-foreground">
-                {casesError instanceof Error ? casesError.message : "Could not connect to the server."}
-              </p>
-            </div>
+          {/* Stale data warning on background refetch failure */}
+          {isCasesError && Boolean(casesData) && (
+            <StaleDataBanner
+              message="Could not refresh the latest client cases from the server. Showing cached cases."
+              onRefresh={() => refetchCases()}
+              isRefreshing={isCasesFetching}
+              className="mb-4"
+            />
+          )}
+
+          {/* Initial load error */}
+          {isCasesError && !casesData && !isCasesLoading && (
+            <ErrorState
+              title="Failed to load cases"
+              description={casesError instanceof Error ? casesError.message : "Could not connect to the server."}
+              onRetry={() => refetchCases()}
+              isRetrying={isCasesFetching}
+              className="my-4"
+            />
           )}
 
           {/* Empty */}
-          {!isCasesLoading && !isCasesError && (!casesData?.cases || casesData.cases.length === 0) && (
+          {!isCasesLoading && (!isCasesError || Boolean(casesData)) && (!casesData?.cases || casesData.cases.length === 0) && (
             <div className="rounded-lg border border-border bg-card p-16 text-center shadow-soft">
               <Briefcase size={36} className="mx-auto text-muted-foreground/60 mb-2" />
               <p className="text-title font-semibold">No cases found</p>

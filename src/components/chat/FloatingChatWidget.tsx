@@ -653,7 +653,7 @@ export function FloatingChatWidget() {
                   : "flex flex-1 flex-col"
               } bg-card overflow-hidden`}
             >
-              {groupsError ? (
+              {groupsError && !groupsData ? (
                 <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
                   <div className="size-10 rounded-full bg-destructive/10 grid place-items-center text-destructive">
                     <X size={20} />
@@ -666,36 +666,46 @@ export function FloatingChatWidget() {
                     Retry
                   </Button>
                 </div>
-              ) : groupsLoading ? (
+              ) : groupsLoading && groups.length === 0 ? (
                 <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6">
                   <Loader2 size={20} className="animate-spin text-primary" />
                   <span className="text-xs text-muted-foreground">Loading chats…</span>
                 </div>
               ) : (
-                <ChatSidebar
-                  groups={groups}
-                  activeGroupId={activeGroupId}
-                  currentUserId={user?._id ?? ""}
-                  onlineIds={onlineIds}
-                  search={searchConv}
-                  onSearchChange={setSearchConv}
-                  isAdmin={isAdmin}
-                  onSelect={handleSelectGroup}
-                  onNewGroup={() => setShowCreateGroup(true)}
-                  onNewChat={() => setShowNewChat(true)}
-                  users={allUsers}
-                  onStartDirectChat={handleStartDirectChat}
-                  isCreatingDirectChat={createDirectChatMutation.isPending}
-                  onTogglePin={(id, pinned) => togglePin.mutate({ groupId: id, pinned })}
-                  onToggleMute={(id, muted) => toggleMute.mutate({ groupId: id, muted })}
-                  onToggleArchive={(id, archived) => toggleArchive.mutate({ groupId: id, archived })}
-                  onMarkRead={(id) => markReadMutation.mutate(id)}
-                  onMarkUnread={(id) => markUnreadMutation.mutate(id)}
-                  onClearChat={(id) => handleClearChat(id)}
-                  onDeleteChat={(id) => handleDeleteChat(id)}
-                  onLeaveGroup={(id) => handleLeaveGroup(id)}
-                  onDeleteGroup={(id) => handleDeleteGroup(id)}
-                />
+                <>
+                  {groupsError && groups.length > 0 && (
+                    <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-amber-500/10 border-b border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300">
+                      <span>Showing cached chats.</span>
+                      <button onClick={() => refetchGroups()} className="font-semibold underline hover:no-underline">
+                        Retry
+                      </button>
+                    </div>
+                  )}
+                  <ChatSidebar
+                    groups={groups}
+                    activeGroupId={activeGroupId}
+                    currentUserId={user?._id ?? ""}
+                    onlineIds={onlineIds}
+                    search={searchConv}
+                    onSearchChange={setSearchConv}
+                    isAdmin={isAdmin}
+                    onSelect={handleSelectGroup}
+                    onNewGroup={() => setShowCreateGroup(true)}
+                    onNewChat={() => setShowNewChat(true)}
+                    users={allUsers}
+                    onStartDirectChat={handleStartDirectChat}
+                    isCreatingDirectChat={createDirectChatMutation.isPending}
+                    onTogglePin={(id, pinned) => togglePin.mutate({ groupId: id, pinned })}
+                    onToggleMute={(id, muted) => toggleMute.mutate({ groupId: id, muted })}
+                    onToggleArchive={(id, archived) => toggleArchive.mutate({ groupId: id, archived })}
+                    onMarkRead={(id) => markReadMutation.mutate(id)}
+                    onMarkUnread={(id) => markUnreadMutation.mutate(id)}
+                    onClearChat={(id) => handleClearChat(id)}
+                    onDeleteChat={(id) => handleDeleteChat(id)}
+                    onLeaveGroup={(id) => handleLeaveGroup(id)}
+                    onDeleteGroup={(id) => handleDeleteGroup(id)}
+                  />
+                </>
               )}
             </div>
 
@@ -739,7 +749,7 @@ export function FloatingChatWidget() {
                     onUnpinMessage={() => unpinMessageMutation.mutate({ groupId: activeGroup._id })}
                   />
 
-                  {messagesError ? (
+                  {messagesError && allMessages.length === 0 ? (
                     <div className="chat-wallpaper flex min-h-0 flex-1 flex-col items-center justify-center p-6 text-center">
                       <div className="rounded-2xl bg-card/90 backdrop-blur-xs p-6 shadow-xs border border-destructive/30 max-w-xs space-y-3">
                         <div className="size-10 rounded-full bg-destructive/10 grid place-items-center text-destructive mx-auto">
@@ -755,34 +765,43 @@ export function FloatingChatWidget() {
                       </div>
                     </div>
                   ) : (
-                    <MessageList
-                      messages={allMessages}
-                      currentUserId={user?._id ?? ""}
-                      groupMembers={activeMembers}
-                      isAdmin={isAdmin}
-                      isLoading={messagesLoading}
-                      hasOlder={hasOlder}
-                      loadingOlder={loadingOlder}
-                      onLoadOlder={handleLoadOlder}
-                      emptyText={
-                        activeGroup.type === "group"
-                          ? "No messages yet. Start the conversation."
-                          : "Send a message to start chatting."
-                      }
-                      onReply={(msg) => {
-                        setReplyingTo(msg);
-                        inputRef.current?.focus();
-                      }}
-                      onCopy={(msg) => {
-                        navigator.clipboard?.writeText(msg.text).then(() => toast.success("Copied"));
-                      }}
-                      onForward={(msg) => {
-                        setForwardMessage(msg);
-                        setShowForward(true);
-                      }}
-                      onDeleteForMe={(msg) => {
-                        deleteForMeMutation.mutate({ groupId: activeGroup._id, messageId: msg._id });
-                      }}
+                    <>
+                      {messagesError && allMessages.length > 0 && (
+                        <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-amber-500/10 border-b border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300">
+                          <span>Showing cached messages. Sync failed.</span>
+                          <button onClick={() => refetchMessages()} className="font-semibold underline hover:no-underline">
+                            Retry
+                          </button>
+                        </div>
+                      )}
+                      <MessageList
+                        messages={allMessages}
+                        currentUserId={user?._id ?? ""}
+                        groupMembers={activeMembers}
+                        isAdmin={isAdmin}
+                        isLoading={messagesLoading}
+                        hasOlder={hasOlder}
+                        loadingOlder={loadingOlder}
+                        onLoadOlder={handleLoadOlder}
+                        emptyText={
+                          activeGroup.type === "group"
+                            ? "No messages yet. Start the conversation."
+                            : "Send a message to start chatting."
+                        }
+                        onReply={(msg) => {
+                          setReplyingTo(msg);
+                          inputRef.current?.focus();
+                        }}
+                        onCopy={(msg) => {
+                          navigator.clipboard?.writeText(msg.text).then(() => toast.success("Copied"));
+                        }}
+                        onForward={(msg) => {
+                          setForwardMessage(msg);
+                          setShowForward(true);
+                        }}
+                        onDeleteForMe={(msg) => {
+                          deleteForMeMutation.mutate({ groupId: activeGroup._id, messageId: msg._id });
+                        }}
                       onDeleteForEveryone={(msg) => {
                         deleteForEveryoneMutation.mutate({ groupId: activeGroup._id, messageId: msg._id });
                       }}
@@ -803,7 +822,8 @@ export function FloatingChatWidget() {
                         pinMessageMutation.mutate({ groupId: activeGroup._id, messageId: msg._id });
                       }}
                     />
-                  )}
+                  </>
+                )}
 
                   <MessageComposer
                     groupId={activeGroup._id}

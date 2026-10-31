@@ -8,6 +8,8 @@ import { useCalendarEvents, type CalendarEvent } from "@/services/calendar";
 import { useEmployees } from "@/services/admin";
 import { ScheduleHearingDialog } from "@/components/calendar/ScheduleHearingDialog";
 import { DayDetailsDialog } from "@/components/calendar/DayDetailsDialog";
+import { ErrorState } from "@/components/common/ErrorState";
+import { StaleDataBanner } from "@/components/common/StaleDataBanner";
 
 export function getLocalDateKey(value: string | Date): string {
   const date = value instanceof Date ? value : new Date(value);
@@ -97,7 +99,13 @@ function CalendarPage() {
   const monthStart = new Date(currentYear, currentMonth, 1 - 7, 0, 0, 0).toISOString();
   const monthEnd = new Date(currentYear, currentMonth + 1, 7, 23, 59, 59).toISOString();
 
-  const { data: eventsData, isLoading, isError } = useCalendarEvents({
+  const {
+    data: eventsData,
+    isLoading,
+    isError,
+    refetch,
+    isFetching,
+  } = useCalendarEvents({
     start: monthStart,
     end: monthEnd,
     ...(isAdmin && filterEmployee !== "all" ? { employeeId: filterEmployee } : {}),
@@ -268,15 +276,25 @@ function CalendarPage() {
         </div>
       )}
 
-      {isError && (
-        <div className="flex flex-col items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-12 text-center">
-          <AlertTriangle size={28} className="text-destructive" />
-          <p className="font-medium">Failed to load calendar</p>
-          <p className="text-helper text-muted-foreground">Check that the server is running.</p>
-        </div>
+      {isError && eventsData && (
+        <StaleDataBanner
+          message="Could not refresh the latest calendar events from the server. Showing cached schedule."
+          onRefresh={() => refetch()}
+          isRefreshing={isFetching}
+          className="mb-4"
+        />
       )}
 
-      {!isLoading && !isError && (
+      {isError && !eventsData && (
+        <ErrorState
+          title="Failed to load calendar"
+          description="Could not connect to the server to retrieve your hearings and events."
+          onRetry={() => refetch()}
+          isRetrying={isFetching}
+        />
+      )}
+
+      {!isLoading && (!isError || Boolean(eventsData)) && (
         <>
           {view === "Agenda" ? (
             <div className="rounded-lg border border-border bg-card p-6 shadow-soft">

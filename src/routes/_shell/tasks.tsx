@@ -19,6 +19,8 @@ import { EditCallDialog } from "@/components/tasks/EditCallDialog";
 import { UpcomingClientDashboard } from "@/components/tasks/UpcomingClientDashboard";
 import { ExportImportMenu } from "@/components/common/ExportImportMenu";
 import { ExcelImportDialog } from "@/components/common/ExcelImportDialog";
+import { ErrorState } from "@/components/common/ErrorState";
+import { StaleDataBanner } from "@/components/common/StaleDataBanner";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -314,7 +316,14 @@ function TasksPage() {
     return f;
   }, [page, limit, view, search, statusFilter, priorityFilter, categoryFilter, selectedStaff, dueFrom, dueTo, isAdmin]);
 
-  const { data, isLoading, isError, error } = useTasks(apiFilters);
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isFetching,
+  } = useTasks(apiFilters);
   const { data: empData } = useEmployees();
   const employees = empData?.employees ?? [];
   const { data: clientsData } = useClients({ limit: 1000 });
@@ -933,18 +942,29 @@ function TasksPage() {
         </div>
       )}
 
-      {/* Error */}
-      {isError && !isLoading && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-8 text-center">
-          <p className="font-medium text-destructive">Failed to load tasks</p>
-          <p className="mt-1 text-helper text-muted-foreground">
-            {error instanceof Error ? error.message : "Could not connect to the server."}
-          </p>
-        </div>
+      {/* Stale data warning on background refetch failure */}
+      {isError && Boolean(data) && (
+        <StaleDataBanner
+          message="Could not refresh the latest tasks from the server. Showing cached tasks."
+          onRefresh={() => refetch()}
+          isRefreshing={isFetching}
+          className="mb-4"
+        />
+      )}
+
+      {/* Initial load error */}
+      {isError && !data && !isLoading && (
+        <ErrorState
+          title="Failed to load tasks"
+          description={error instanceof Error ? error.message : "Could not connect to the server."}
+          onRetry={() => refetch()}
+          isRetrying={isFetching}
+          className="my-4"
+        />
       )}
 
       {/* Empty (when not in upcoming view) */}
-      {!isLoading && !isError && view !== "upcoming" && tasks.length === 0 && (
+      {!isLoading && (!isError || Boolean(data)) && view !== "upcoming" && tasks.length === 0 && (
         <div className="rounded-lg border border-border bg-card p-16 text-center shadow-soft">
           <p className="text-title font-semibold">No tasks yet</p>
           <p className="mt-2 text-helper text-muted-foreground">
@@ -954,7 +974,7 @@ function TasksPage() {
       )}
 
       {/* View Content */}
-      {!isLoading && !isError && view === "upcoming" ? (
+      {!isLoading && (!isError || Boolean(data)) && view === "upcoming" ? (
         <UpcomingClientDashboard
           tasks={upcomingTasks}
           clients={clients}
@@ -962,7 +982,7 @@ function TasksPage() {
           onCompleteTask={handleCompleteTask}
           isAdmin={isAdmin}
         />
-      ) : !isLoading && !isError && tasks.length > 0 && view === "calendar" ? (
+      ) : !isLoading && (!isError || Boolean(data)) && tasks.length > 0 && view === "calendar" ? (
         <div className="space-y-6">
           {/* Calendar header */}
           <div className="flex items-center justify-between">
@@ -1064,7 +1084,7 @@ function TasksPage() {
             </div>
           </div>
         </div>
-      ) : !isLoading && !isError && tasks.length > 0 ? (
+      ) : !isLoading && (!isError || Boolean(data)) && tasks.length > 0 ? (
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
           <div className="space-y-6 stagger-children">
             {BUCKETS.map((b) => {

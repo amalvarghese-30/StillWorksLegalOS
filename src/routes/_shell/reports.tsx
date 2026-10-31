@@ -38,6 +38,7 @@ import {
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
 import { ErrorState } from "@/components/common/ErrorState";
+import { StaleDataBanner } from "@/components/common/StaleDataBanner";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1859,11 +1860,20 @@ function EmployeeDetailReportView({
     );
   }
 
-  if (isError || !data?.employee) {
+  if (!data?.employee) {
+    if (isLoading) {
+      return (
+        <div className="flex justify-center py-16">
+          <Loader2 size={32} className="animate-spin text-muted-foreground" />
+        </div>
+      );
+    }
+
     return (
       <div className="rounded-xl border border-border p-8 text-center bg-card">
         <AlertTriangle size={32} className="mx-auto text-destructive mb-2" />
         <p className="font-semibold text-foreground">Failed to load employee detailed report</p>
+        <p className="mt-1 text-xs text-muted-foreground">Could not reach the server to retrieve detailed analytics.</p>
         <Button variant="outline" size="sm" onClick={() => refetch()} className="mt-4">
           Retry
         </Button>
@@ -1875,6 +1885,20 @@ function EmployeeDetailReportView({
 
   return (
     <div className="space-y-6 printable-report">
+      {isError && (
+        <StaleDataBanner
+          message="Could not refresh the latest client metrics from the server. Showing cached report."
+          onRefresh={() => refetch()}
+          className="mb-4 no-print"
+        />
+      )}
+      {isError && (
+        <StaleDataBanner
+          message="Could not refresh the latest employee metrics from the server. Showing cached report."
+          onRefresh={() => refetch()}
+          className="mb-4 no-print"
+        />
+      )}
       {/* Header and Print Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-4 no-print">
         <div className="flex items-center gap-3">
@@ -2291,11 +2315,12 @@ function ClientDetailReportView({
     );
   }
 
-  if (isError || !data?.client) {
+  if (!data?.client) {
     return (
       <div className="rounded-xl border border-border p-8 text-center bg-card">
         <AlertTriangle size={32} className="mx-auto text-destructive mb-2" />
         <p className="font-semibold text-foreground">Failed to load client detailed report</p>
+        <p className="mt-1 text-xs text-muted-foreground">Could not reach the server to retrieve detailed analytics.</p>
         <Button variant="outline" size="sm" onClick={() => refetch()} className="mt-4">
           Retry
         </Button>
@@ -2326,6 +2351,13 @@ function ClientDetailReportView({
 
   return (
     <div className="space-y-6 printable-report">
+      {isError && (
+        <StaleDataBanner
+          message="Could not refresh the latest client metrics from the server. Showing cached report."
+          onRefresh={() => refetch()}
+          className="mb-4 no-print"
+        />
+      )}
       {/* Action Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-4 no-print">
         <div className="flex items-center gap-3">

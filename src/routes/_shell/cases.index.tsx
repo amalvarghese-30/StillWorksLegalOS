@@ -13,6 +13,8 @@ import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
 import { formatSafeDate } from "@/lib/dates";
 import { ExportImportMenu } from "@/components/common/ExportImportMenu";
 import { ExcelImportDialog } from "@/components/common/ExcelImportDialog";
+import { ErrorState } from "@/components/common/ErrorState";
+import { StaleDataBanner } from "@/components/common/StaleDataBanner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -203,7 +205,14 @@ function CasesPage() {
 
   // Fetch cases with server-side query parameters
   const queryClient = useQueryClient();
-  const { data, isLoading, isError, error } = useCases(apiFilters);
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isFetching,
+  } = useCases(apiFilters);
   const updateCase = useUpdateCase();
   const { data: empData } = useEmployees();
   const employees = empData?.employees ?? [];
@@ -545,18 +554,29 @@ function CasesPage() {
         </div>
       )}
 
-      {/* Error */}
-      {isError && !isLoading && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-8 text-center">
-          <p className="font-medium text-destructive">Failed to load cases</p>
-          <p className="mt-1 text-helper text-muted-foreground">
-            {error instanceof Error ? error.message : "Could not connect to the server."}
-          </p>
-        </div>
+      {/* Stale data warning on background refetch failure */}
+      {isError && Boolean(data) && (
+        <StaleDataBanner
+          message="Could not refresh the latest cases from the server. Showing cached cases."
+          onRefresh={() => refetch()}
+          isRefreshing={isFetching}
+          className="mb-4"
+        />
+      )}
+
+      {/* Initial load error */}
+      {isError && !data && !isLoading && (
+        <ErrorState
+          title="Failed to load cases"
+          description={error instanceof Error ? error.message : "Could not connect to the server."}
+          onRetry={() => refetch()}
+          isRetrying={isFetching}
+          className="my-4"
+        />
       )}
 
       {/* Empty */}
-      {!isLoading && !isError && filteredCases.length === 0 && (
+      {!isLoading && (!isError || Boolean(data)) && filteredCases.length === 0 && (
         <div className="rounded-lg border border-border bg-card p-16 text-center shadow-soft">
           <p className="text-title font-semibold">No cases found</p>
           <p className="mt-2 text-helper text-muted-foreground">
@@ -573,7 +593,7 @@ function CasesPage() {
       )}
 
       {/* Data */}
-      {!isLoading && !isError && filteredCases.length > 0 && (
+      {!isLoading && (!isError || Boolean(data)) && filteredCases.length > 0 && (
         <div className="grid gap-4 xl:grid-cols-2">
           {filteredCases.map((c) => (
             <CaseCard key={c._id} c={c} onReopen={handleReopen} />

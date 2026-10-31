@@ -1,4 +1,4 @@
-import { ShieldCheck, ArrowRight, Loader2, Clock, Check, X, MoreVertical } from "lucide-react";
+import { ShieldCheck, ArrowRight, Loader2, Clock, Check, X, MoreVertical, AlertTriangle, RotateCw } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { formatSafeRelative } from "@/lib/dates";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,9 @@ import type { ApprovalItem } from "@/services/admin";
 interface ItemsAwaitingApprovalCardProps {
   approvals: ApprovalItem[];
   isLoading?: boolean;
+  isError?: boolean;
+  onRetry?: () => void;
+  isRetrying?: boolean;
   onApprove?: (item: ApprovalItem) => void;
   onReject?: (item: ApprovalItem) => void;
   actingOn?: string | null;
@@ -21,6 +24,9 @@ interface ItemsAwaitingApprovalCardProps {
 export function ItemsAwaitingApprovalCard({
   approvals,
   isLoading = false,
+  isError = false,
+  onRetry,
+  isRetrying = false,
   onApprove,
   onReject,
   actingOn,
@@ -52,9 +58,29 @@ export function ItemsAwaitingApprovalCard({
 
       {/* Body */}
       <div className="mt-3.5 flex-1 min-w-0">
-        {isLoading ? (
+        {isLoading && approvals.length === 0 ? (
           <div className="flex items-center justify-center py-10">
             <Loader2 className="animate-spin text-muted-foreground" size={20} />
+          </div>
+        ) : isError && approvals.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-8 text-center px-4 rounded-lg border border-destructive/30 bg-destructive/5">
+            <AlertTriangle size={24} className="text-destructive mb-2" />
+            <p className="text-sm font-semibold text-destructive">Failed to load approvals</p>
+            <p className="mt-1 text-xs text-muted-foreground max-w-[280px]">
+              Could not retrieve approval queue from the server.
+            </p>
+            {onRetry && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onRetry}
+                disabled={isRetrying}
+                className="mt-3 rounded-lg text-xs"
+              >
+                <RotateCw size={12} className={`mr-1.5 ${isRetrying ? "animate-spin" : ""}`} />
+                {isRetrying ? "Retrying…" : "Retry"}
+              </Button>
+            )}
           </div>
         ) : approvals.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center px-4 rounded-lg border border-dashed border-border/70 bg-muted/20">
@@ -68,6 +94,16 @@ export function ItemsAwaitingApprovalCard({
           </div>
         ) : (
           <div className="space-y-2.5">
+            {isError && (
+              <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300">
+                <span>Showing cached approvals. Refresh failed.</span>
+                {onRetry && (
+                  <button onClick={onRetry} className="font-semibold underline hover:no-underline">
+                    Retry
+                  </button>
+                )}
+              </div>
+            )}
             {approvals.slice(0, 4).map((item) => {
               const isActing = actingOn === item._id;
 

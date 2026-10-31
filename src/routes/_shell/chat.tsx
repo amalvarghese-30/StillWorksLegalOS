@@ -59,6 +59,8 @@ import { NewChatDialog } from "@/components/chat/NewChatDialog";
 import { AddMembersDialog } from "@/components/chat/AddMembersDialog";
 import { ForwardDialog } from "@/components/chat/ForwardDialog";
 import { GroupInfoSheet } from "@/components/chat/GroupInfoSheet";
+import { ErrorState } from "@/components/common/ErrorState";
+import { StaleDataBanner } from "@/components/common/StaleDataBanner";
 
 export const Route = createFileRoute("/_shell/chat")({
   head: () => ({
@@ -124,11 +126,23 @@ function ChatPage() {
   const isAdmin = user?.role === "admin";
 
   // ── Data ─────────────────────────────────────────────────────────────────
-  const { data: groupsData, isLoading: groupsLoading, isError: groupsError } = useChatGroups();
+  const {
+    data: groupsData,
+    isLoading: groupsLoading,
+    isError: groupsError,
+    refetch: refetchGroups,
+    isFetching: groupsFetching,
+  } = useChatGroups();
   const groups: ChatGroup[] = groupsData?.groups ?? [];
   const activeGroup = groups.find((g) => g._id === activeGroupId) ?? null;
 
-  const { data: messagesData, isLoading: messagesLoading } = useChatMessages(activeGroupId ?? undefined);
+  const {
+    data: messagesData,
+    isLoading: messagesLoading,
+    isError: messagesError,
+    refetch: refetchMessages,
+    isFetching: messagesFetching,
+  } = useChatMessages(activeGroupId ?? undefined);
   const latestMessages = messagesData?.messages ?? [];
   const allMessages = [...olderPages.flat(), ...latestMessages];
   const effectiveCursor =
@@ -699,15 +713,25 @@ function ChatPage() {
         </div>
       )}
 
-      {groupsError && (
-        <div className="flex flex-col items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-12 text-center">
-          <AlertTriangle size={28} className="text-destructive" />
-          <p className="font-medium">Failed to load chat</p>
-          <p className="text-helper text-muted-foreground">Check that the server is running.</p>
-        </div>
+      {groupsError && Boolean(groupsData) && (
+        <StaleDataBanner
+          message="Could not refresh the latest conversations from the server. Showing cached chat list."
+          onRefresh={() => refetchGroups()}
+          isRefreshing={groupsFetching}
+          className="mb-4"
+        />
       )}
 
-      {!groupsLoading && !groupsError && (
+      {groupsError && !groupsData && (
+        <ErrorState
+          title="Failed to load chat"
+          description="Could not connect to the chat server. Please verify your connection."
+          onRetry={() => refetchGroups()}
+          isRetrying={groupsFetching}
+        />
+      )}
+
+      {!groupsLoading && (!groupsError || Boolean(groupsData)) && (
         <div
           className={`grid overflow-hidden bg-card transition-all md:grid-cols-[300px_minmax(0,1fr)] lg:grid-cols-[340px_minmax(0,1fr)] ${
             activeGroupId
@@ -781,31 +805,54 @@ function ChatPage() {
                   onJumpToMessage={handleJumpToMessage}
                   onUnpinMessage={handleUnpinNotice}
                 />
-                <MessageList
-                  messages={allMessages}
-                  currentUserId={user?._id ?? ""}
-                  groupMembers={activeMembers}
-                  isAdmin={isAdmin}
-                  isLoading={messagesLoading}
-                  hasOlder={hasOlder}
-                  loadingOlder={loadingOlder}
-                  onLoadOlder={handleLoadOlder}
-                  emptyText={
-                    activeGroup.type === "group"
-                      ? "No messages yet. Start the conversation."
-                      : "Send a message to start chatting."
-                  }
-                  onReply={handleReply}
-                  onCopy={handleCopy}
-                  onForward={handleForward}
-                  onDeleteForMe={handleDeleteForMe}
-                  onDeleteForEveryone={handleDeleteForEveryone}
-                  onReport={handleReport}
-                  onToggleReaction={handleToggleReaction}
-                  searchQuery={inChatSearch}
-                  onCaseClick={handleCaseClick}
-                  onPinNotice={handlePinNotice}
-                />
+                {messagesError && allMessages.length > 0 && (
+                  <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-amber-500/10 border-b border-amber-500/30 text-xs text-amber-800 dark:text-amber-300">
+                    <span>Showing cached message history. Sync failed.</span>
+                    <button
+                      type="button"
+                      onClick={() => refetchMessages()}
+                      className="font-semibold underline hover:no-underline"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+                {messagesError && allMessages.length === 0 ? (
+                  <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
+                    <ErrorState
+                      title="Failed to load messages"
+                      description="Could not retrieve conversation history."
+                      onRetry={() => refetchMessages()}
+                      isRetrying={messagesFetching}
+                    />
+                  </div>
+                ) : (
+                  <MessageList
+                    messages={allMessages}
+                    currentUserId={user?._id ?? ""}
+                    groupMembers={activeMembers}
+                    isAdmin={isAdmin}
+                    isLoading={messagesLoading}
+                    hasOlder={hasOlder}
+                    loadingOlder={loadingOlder}
+                    onLoadOlder={handleLoadOlder}
+                    emptyText={
+                      activeGroup.type === "group"
+                        ? "No messages yet. Start the conversation."
+                        : "Send a message to start chatting."
+                    }
+                    onReply={handleReply}
+                    onCopy={handleCopy}
+                    onForward={handleForward}
+                    onDeleteForMe={handleDeleteForMe}
+                    onDeleteForEveryone={handleDeleteForEveryone}
+                    onReport={handleReport}
+                    onToggleReaction={handleToggleReaction}
+                    searchQuery={inChatSearch}
+                    onCaseClick={handleCaseClick}
+                    onPinNotice={handlePinNotice}
+                  />
+                )}
                 <MessageComposer
                   groupId={activeGroupId ?? ""}
                   value={chatInput}

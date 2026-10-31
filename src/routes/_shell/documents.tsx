@@ -68,6 +68,8 @@ import { VersionHistoryDialog } from "@/components/documents/VersionHistoryDialo
 import { DocumentPreviewModal } from "@/components/documents/DocumentPreviewModal";
 import { DocumentInlinePreview } from "@/components/documents/DocumentInlinePreview";
 import { RequestAccessDialog } from "@/components/documents/RequestAccessDialog";
+import { ErrorState } from "@/components/common/ErrorState";
+import { StaleDataBanner } from "@/components/common/StaleDataBanner";
 
 export const Route = createFileRoute("/_shell/documents")({
   head: () => ({
@@ -279,7 +281,14 @@ function DocumentsPage() {
 
   const queryClient = useQueryClient();
   const requestAccess = useRequestAccess();
-  const { data, isLoading, isError, error } = useDocuments();
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isFetching,
+  } = useDocuments();
 
   useSocketEvent("document:created", () => {
     queryClient.invalidateQueries({ queryKey: docKeys.all });
@@ -533,18 +542,29 @@ function DocumentsPage() {
             </div>
           )}
 
-          {/* Error */}
-          {isError && !isLoading && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-8 text-center">
-              <p className="font-medium text-destructive">Failed to load documents</p>
-              <p className="mt-1 text-helper text-muted-foreground">
-                {error instanceof Error ? error.message : "Could not connect to the server."}
-              </p>
-            </div>
+          {/* Stale data warning on background refetch failure */}
+          {isError && Boolean(data) && (
+            <StaleDataBanner
+              message="Could not refresh the latest documents from the server. Showing cached documents."
+              onRefresh={() => refetch()}
+              isRefreshing={isFetching}
+              className="mb-4"
+            />
+          )}
+
+          {/* Initial load error */}
+          {isError && !data && !isLoading && (
+            <ErrorState
+              title="Failed to load documents"
+              description={error instanceof Error ? error.message : "Could not connect to the server."}
+              onRetry={() => refetch()}
+              isRetrying={isFetching}
+              className="my-4"
+            />
           )}
 
           {/* Empty */}
-          {!isLoading && !isError && filtered.length === 0 && (
+          {!isLoading && (!isError || Boolean(data)) && filtered.length === 0 && (
             <div className="rounded-lg border border-border bg-card p-16 text-center shadow-soft">
               <p className="text-title font-semibold">No documents</p>
               <p className="mt-2 text-helper text-muted-foreground">
@@ -554,7 +574,7 @@ function DocumentsPage() {
           )}
 
           {/* Data */}
-          {!isLoading && !isError && filtered.length > 0 && (
+          {!isLoading && (!isError || Boolean(data)) && filtered.length > 0 && (
             <div className={`${grid ? "grid gap-4 sm:grid-cols-2" : "space-y-3"} stagger-children`}>
               {filtered.map((d) => (
                 <DocumentCard

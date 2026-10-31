@@ -22,7 +22,7 @@ import {
   useRevokeAllOtherSessions,
 } from "@/services/admin";
 import { validatePhone, sanitizePhone } from "@/lib/validation";
-import { getAccessToken, getApiBase } from "@/services/api";
+import { apiFetch, getAccessToken, getApiBase } from "@/services/api";
 import { UserAvatar } from "@/components/common/UserAvatar";
 import { APP_VERSION } from "@/version";
 import { isElectron } from "@/platform";
@@ -105,25 +105,16 @@ function SettingsPage() {
       const formData = new FormData();
       formData.append("avatar", file);
 
-      const token = getAccessToken();
-      const res = await fetch(`${getApiBase()}/auth/avatar`, {
+      await apiFetch("/auth/avatar", {
         method: "POST",
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
         body: formData,
       });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || "Failed to upload avatar");
-      }
 
       await refreshUser();
       toast.success("Profile picture updated successfully");
     } catch (err: any) {
       console.error("Avatar upload error:", err);
-      toast.error(err.message || "Failed to upload avatar");
+      toast.error(err?.message || "Failed to upload avatar");
     } finally {
       setIsUploadingAvatar(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -133,24 +124,15 @@ function SettingsPage() {
   const handleRemoveAvatar = async () => {
     try {
       setIsRemovingAvatar(true);
-      const token = getAccessToken();
-      const res = await fetch(`${getApiBase()}/auth/avatar`, {
+      await apiFetch("/auth/avatar", {
         method: "DELETE",
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
       });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || "Failed to remove avatar");
-      }
 
       await refreshUser();
       toast.success("Profile picture removed");
     } catch (err: any) {
       console.error("Avatar removal error:", err);
-      toast.error(err.message || "Failed to remove avatar");
+      toast.error(err?.message || "Failed to remove avatar");
     } finally {
       setIsRemovingAvatar(false);
     }
@@ -474,49 +456,67 @@ function SettingsPage() {
                     </div>
 
                     <div className="divide-y divide-border rounded-lg border border-border bg-card">
-                      {activeSessionsQuery.data?.sessions.map((s) => (
-                        <div key={s._id} className="flex items-center justify-between p-3.5">
-                          <div className="flex items-center gap-3">
-                            <span className="grid size-9 place-items-center rounded-md bg-muted text-muted-foreground">
-                              <Laptop size={18} />
-                            </span>
-                            <div className="space-y-0.5">
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs font-semibold text-foreground">
-                                  {s.userAgent.slice(0, 48)}...
-                                </span>
-                                {s.isCurrent && (
-                                  <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-                                    Current session
+                      {activeSessionsQuery.isLoading ? (
+                        <div className="flex items-center justify-center p-6 text-xs text-muted-foreground">
+                          <Loader2 size={16} className="animate-spin mr-2" /> Loading active sessions...
+                        </div>
+                      ) : activeSessionsQuery.isError && !activeSessionsQuery.data ? (
+                        <div className="p-4 text-center">
+                          <p className="text-xs text-destructive">Failed to load active sessions.</p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => activeSessionsQuery.refetch()}
+                            disabled={activeSessionsQuery.isFetching}
+                            className="mt-2 h-7 text-xs"
+                          >
+                            {activeSessionsQuery.isFetching ? "Retrying..." : "Retry"}
+                          </Button>
+                        </div>
+                      ) : activeSessionsQuery.data?.sessions?.length ? (
+                        activeSessionsQuery.data.sessions.map((s) => (
+                          <div key={s._id} className="flex items-center justify-between p-3.5">
+                            <div className="flex items-center gap-3">
+                              <span className="grid size-9 place-items-center rounded-md bg-muted text-muted-foreground">
+                                <Laptop size={18} />
+                              </span>
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-semibold text-foreground">
+                                    {s.userAgent.slice(0, 48)}...
                                   </span>
-                                )}
-                                {s.rememberMe && (
-                                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                                    Remember Me
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-2 text-[11px] text-muted-foreground font-mono">
-                                <span>IP: {s.ip || "127.0.0.1"}</span>
-                                <span>•</span>
-                                <span>Active: {new Date(s.lastActiveAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}</span>
+                                  {s.isCurrent && (
+                                    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                                      Current session
+                                    </span>
+                                  )}
+                                  {s.rememberMe && (
+                                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                                      Remember Me
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 text-[11px] text-muted-foreground font-mono">
+                                  <span>IP: {s.ip || "127.0.0.1"}</span>
+                                  <span>•</span>
+                                  <span>Active: {new Date(s.lastActiveAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}</span>
+                                </div>
                               </div>
                             </div>
+                            {!s.isCurrent && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={revokeSessionMutation.isPending}
+                                onClick={() => revokeSessionMutation.mutate(s._id)}
+                                className="h-8 text-xs text-muted-foreground hover:text-destructive"
+                              >
+                                Revoke
+                              </Button>
+                            )}
                           </div>
-                          {!s.isCurrent && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={revokeSessionMutation.isPending}
-                              onClick={() => revokeSessionMutation.mutate(s._id)}
-                              className="h-8 text-xs text-muted-foreground hover:text-destructive"
-                            >
-                              Revoke
-                            </Button>
-                          )}
-                        </div>
-                      ))}
-                      {!activeSessionsQuery.data?.sessions?.length && (
+                        ))
+                      ) : (
                         <div className="p-4 text-center text-xs text-muted-foreground">
                           No active sessions found.
                         </div>

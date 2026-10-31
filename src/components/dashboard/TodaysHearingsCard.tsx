@@ -1,14 +1,24 @@
-import { Gavel, Calendar, ArrowRight, Loader2, Clock } from "lucide-react";
+import { Gavel, Calendar, ArrowRight, Loader2, Clock, AlertTriangle, RotateCw } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { CalendarEvent } from "@/services/calendar";
 import { formatSafeDateTime } from "@/lib/dates";
+import { Button } from "@/components/ui/button";
 
 interface TodaysHearingsCardProps {
   hearings: CalendarEvent[];
   isLoading?: boolean;
+  isError?: boolean;
+  onRetry?: () => void;
+  isRetrying?: boolean;
 }
 
-export function TodaysHearingsCard({ hearings, isLoading = false }: TodaysHearingsCardProps) {
+export function TodaysHearingsCard({
+  hearings,
+  isLoading = false,
+  isError = false,
+  onRetry,
+  isRetrying = false,
+}: TodaysHearingsCardProps) {
   const navigate = useNavigate();
 
   return (
@@ -34,9 +44,29 @@ export function TodaysHearingsCard({ hearings, isLoading = false }: TodaysHearin
 
       {/* Body */}
       <div className="mt-3.5 flex-1 min-w-0 flex flex-col justify-center">
-        {isLoading ? (
+        {isLoading && hearings.length === 0 ? (
           <div className="flex items-center justify-center py-10">
             <Loader2 className="animate-spin text-muted-foreground" size={20} />
+          </div>
+        ) : isError && hearings.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-8 text-center px-4 rounded-lg border border-destructive/30 bg-destructive/5">
+            <AlertTriangle size={24} className="text-destructive mb-2" />
+            <p className="text-sm font-semibold text-destructive">Failed to load hearings</p>
+            <p className="mt-1 text-xs text-muted-foreground max-w-[280px]">
+              Could not retrieve court schedule from the server.
+            </p>
+            {onRetry && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onRetry}
+                disabled={isRetrying}
+                className="mt-3 rounded-lg text-xs"
+              >
+                <RotateCw size={12} className={`mr-1.5 ${isRetrying ? "animate-spin" : ""}`} />
+                {isRetrying ? "Retrying…" : "Retry"}
+              </Button>
+            )}
           </div>
         ) : hearings.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center px-4 rounded-lg border border-dashed border-border/70 bg-muted/20">
@@ -52,6 +82,16 @@ export function TodaysHearingsCard({ hearings, isLoading = false }: TodaysHearin
           </div>
         ) : (
           <div className="space-y-2.5">
+            {isError && (
+              <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300">
+                <span>Showing cached hearings. Refresh failed.</span>
+                {onRetry && (
+                  <button onClick={onRetry} className="font-semibold underline hover:no-underline">
+                    Retry
+                  </button>
+                )}
+              </div>
+            )}
             {hearings.map((h) => {
               const startDate = new Date(h.start);
               const timeString = isNaN(startDate.getTime())

@@ -130,17 +130,58 @@ function Dashboard() {
   );
 
   // Queries
-  const { data: summary, isLoading: summaryLoading } = useReportsSummary();
-  const { data: eventsData, isLoading: hearingsLoading } = useCalendarEvents({
+  const {
+    data: summary,
+    isLoading: summaryLoading,
+    isError: summaryError,
+    refetch: refetchSummary,
+    isFetching: summaryFetching,
+  } = useReportsSummary();
+
+  const {
+    data: eventsData,
+    isLoading: hearingsLoading,
+    isError: hearingsError,
+    refetch: refetchHearings,
+    isFetching: hearingsFetching,
+  } = useCalendarEvents({
     start: startOfDay,
     end: endOfDay,
   });
-  const { data: casesData, isLoading: casesLoading } = useCases({ page: "1", limit: "50" });
-  const { data: docsData, isLoading: docsLoading } = useDocuments({ page: "1", limit: "10" });
-  const { data: approvalsData, isLoading: approvalsLoading } = useApprovals(undefined, {
+
+  const {
+    data: casesData,
+    isLoading: casesLoading,
+    isError: casesError,
+    refetch: refetchCases,
+    isFetching: casesFetching,
+  } = useCases({ page: "1", limit: "50" });
+
+  const {
+    data: docsData,
+    isLoading: docsLoading,
+    isError: docsError,
+    refetch: refetchDocs,
+    isFetching: docsFetching,
+  } = useDocuments({ page: "1", limit: "10" });
+
+  const {
+    data: approvalsData,
+    isLoading: approvalsLoading,
+    isError: approvalsError,
+    refetch: refetchApprovals,
+    isFetching: approvalsFetching,
+  } = useApprovals(undefined, {
     enabled: hasApprovalsAccess,
   });
-  const { data: tasksData, isLoading: tasksLoading } = useTasks({ limit: "100" });
+
+  const {
+    data: tasksData,
+    isLoading: tasksLoading,
+    isError: tasksError,
+    refetch: refetchTasks,
+    isFetching: tasksFetching,
+  } = useTasks({ limit: "100" });
 
   const hearings: CalendarEvent[] = useMemo(
     () => (eventsData?.events ?? []).filter((e) => e.type === "hearing"),
@@ -309,12 +350,12 @@ function Dashboard() {
 
       {/* ── Metric Summary Cards (Row of 6) ── */}
       <DashboardMetricCards
-        hearingsCount={hearings.length}
-        overdueCount={overdueCount}
-        pendingTasksCount={pendingTasksCount}
-        activeCasesCount={activeCasesCount}
-        totalClientsCount={totalClientsCount}
-        tasksCompletedCount={tasksCompletedCount}
+        hearingsCount={hearingsError && !eventsData ? null : hearings.length}
+        overdueCount={tasksError && !tasksData ? null : overdueCount}
+        pendingTasksCount={tasksError && !tasksData ? null : pendingTasksCount}
+        activeCasesCount={casesError && !casesData ? null : activeCasesCount}
+        totalClientsCount={summaryError && !summary ? null : totalClientsCount}
+        tasksCompletedCount={summaryError && !summary ? null : tasksCompletedCount}
         periodLabel={summary?.period || "30 days"}
         loading={summaryLoading || tasksLoading || hearingsLoading}
       />
@@ -326,11 +367,23 @@ function Dashboard() {
             tasks={allTasks}
             cases={cases}
             isLoading={tasksLoading || casesLoading}
+            isError={Boolean((tasksError && !tasksData) || (casesError && !casesData))}
+            onRetry={() => {
+              if (tasksError) refetchTasks();
+              if (casesError) refetchCases();
+            }}
+            isRetrying={tasksFetching || casesFetching}
             onSelectTask={(task) => setSelectedTask(task)}
           />
         </div>
         <div className="lg:col-span-5 xl:col-span-5">
-          <TodaysHearingsCard hearings={hearings} isLoading={hearingsLoading} />
+          <TodaysHearingsCard
+            hearings={hearings}
+            isLoading={hearingsLoading}
+            isError={hearingsError}
+            onRetry={() => refetchHearings()}
+            isRetrying={hearingsFetching}
+          />
         </div>
       </div>
 
@@ -340,6 +393,9 @@ function Dashboard() {
           <RecentDocumentsCard
             documents={documents}
             isLoading={docsLoading}
+            isError={docsError}
+            onRetry={() => refetchDocs()}
+            isRetrying={docsFetching}
             onPreviewDocument={(doc) => setPreviewDoc(doc)}
           />
         </div>
@@ -347,6 +403,9 @@ function Dashboard() {
           <ItemsAwaitingApprovalCard
             approvals={approvals}
             isLoading={approvalsLoading}
+            isError={approvalsError}
+            onRetry={() => refetchApprovals()}
+            isRetrying={approvalsFetching}
             actingOn={actingOn}
             onApprove={(item) => runApproval(item, "approved")}
             onReject={(item) => runApproval(item, "rejected")}
@@ -359,6 +418,12 @@ function Dashboard() {
         tasks={allTasks}
         cases={cases}
         isLoading={tasksLoading || casesLoading}
+        isError={Boolean((tasksError && !tasksData) || (casesError && !casesData))}
+        onRetry={() => {
+          if (tasksError) refetchTasks();
+          if (casesError) refetchCases();
+        }}
+        isRetrying={tasksFetching || casesFetching}
         onSelectTask={(task) => setSelectedTask(task)}
       />
 

@@ -1,8 +1,9 @@
-import { Clock, Briefcase, CheckSquare, ArrowRight, Loader2 } from "lucide-react";
+import { Clock, Briefcase, CheckSquare, ArrowRight, Loader2, AlertTriangle, RotateCw } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { formatSafeRelative } from "@/lib/dates";
 import { EmployeeAvatar } from "@/components/admin/EmployeeAvatar";
 import { StatusPill, toneForStatus } from "@/components/common/StatusPill";
+import { Button } from "@/components/ui/button";
 import type { TaskRecord } from "@/services/tasks";
 import type { CaseRecord } from "@/services/cases";
 import { cn } from "@/lib/utils";
@@ -26,6 +27,9 @@ interface RecentCasesAndTasksCardProps {
   tasks: TaskRecord[];
   cases: CaseRecord[];
   isLoading?: boolean;
+  isError?: boolean;
+  onRetry?: () => void;
+  isRetrying?: boolean;
   onSelectTask: (task: TaskRecord) => void;
 }
 
@@ -33,6 +37,9 @@ export function RecentCasesAndTasksCard({
   tasks,
   cases,
   isLoading = false,
+  isError = false,
+  onRetry,
+  isRetrying = false,
   onSelectTask,
 }: RecentCasesAndTasksCardProps) {
   const navigate = useNavigate();
@@ -111,9 +118,29 @@ export function RecentCasesAndTasksCard({
 
       {/* Body */}
       <div className="mt-3.5 flex-1 min-w-0">
-        {isLoading ? (
+        {isLoading && activities.length === 0 ? (
           <div className="flex items-center justify-center py-10">
             <Loader2 className="animate-spin text-muted-foreground" size={20} />
+          </div>
+        ) : isError && activities.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-8 text-center px-4 rounded-lg border border-destructive/30 bg-destructive/5">
+            <AlertTriangle size={24} className="text-destructive mb-2" />
+            <p className="text-sm font-semibold text-destructive">Failed to load recent activity</p>
+            <p className="mt-1 text-xs text-muted-foreground max-w-[280px]">
+              Could not retrieve cases and tasks from the server.
+            </p>
+            {onRetry && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onRetry}
+                disabled={isRetrying}
+                className="mt-3 rounded-lg text-xs"
+              >
+                <RotateCw size={12} className={`mr-1.5 ${isRetrying ? "animate-spin" : ""}`} />
+                {isRetrying ? "Retrying…" : "Retry"}
+              </Button>
+            )}
           </div>
         ) : activities.length === 0 ? (
           <div className="py-10 text-center text-xs text-muted-foreground">
@@ -121,6 +148,16 @@ export function RecentCasesAndTasksCard({
           </div>
         ) : (
           <div className="space-y-2.5">
+            {isError && (
+              <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300">
+                <span>Showing cached activity. Refresh failed.</span>
+                {onRetry && (
+                  <button onClick={onRetry} className="font-semibold underline hover:no-underline">
+                    Retry
+                  </button>
+                )}
+              </div>
+            )}
             {activities.map((item) => (
               <div
                 key={item.id}

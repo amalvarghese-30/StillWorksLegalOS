@@ -37,6 +37,8 @@ import {
 import { ApprovalTable } from "@/components/admin/approvals/ApprovalTable";
 import { ApprovalDetailDrawer } from "@/components/admin/approvals/ApprovalDetailDrawer";
 import { ApprovalRejectModal } from "@/components/admin/approvals/ApprovalRejectModal";
+import { ErrorState } from "@/components/common/ErrorState";
+import { StaleDataBanner } from "@/components/common/StaleDataBanner";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_admin/admin/approvals")({
@@ -543,25 +545,26 @@ function ApprovalsPage() {
         </div>
       )}
 
-      {isError && (
-        <div className="flex flex-col items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-12 text-center">
-          <AlertTriangle size={32} className="text-destructive" />
-          <p className="font-semibold text-foreground">Failed to load approvals queue</p>
-          <p className="text-xs text-muted-foreground">
-            The server could not complete the request. Please verify connection and retry.
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetchApprovals()}
-            className="text-xs mt-2"
-          >
-            Retry
-          </Button>
-        </div>
+      {isError && Boolean(approvalsData) && (
+        <StaleDataBanner
+          message="Could not refresh the latest approvals from the server. Showing cached queue."
+          onRefresh={() => refetchApprovals()}
+          isRefreshing={isFetching}
+          className="mb-4"
+        />
       )}
 
-      {!isApprovalsLoading && !isError && (
+      {isError && !approvalsData && (
+        <ErrorState
+          title="Failed to load approvals queue"
+          description="The server could not complete the request. Please verify connection and retry."
+          onRetry={() => refetchApprovals()}
+          isRetrying={isFetching}
+          className="my-4"
+        />
+      )}
+
+      {!isApprovalsLoading && (!isError || Boolean(approvalsData)) && (
         <>
           {approvals.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-16 rounded-xl border border-border/80 bg-card text-center shadow-soft">

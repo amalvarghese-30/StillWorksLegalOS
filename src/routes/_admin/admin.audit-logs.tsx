@@ -31,6 +31,8 @@ import {
 import { AuditMetricsSummary } from "@/components/admin/audit/AuditMetricsSummary";
 import { AuditLogTable } from "@/components/admin/audit/AuditLogTable";
 import { AuditLogDetailDrawer } from "@/components/admin/audit/AuditLogDetailDrawer";
+import { ErrorState } from "@/components/common/ErrorState";
+import { StaleDataBanner } from "@/components/common/StaleDataBanner";
 
 export const Route = createFileRoute("/_admin/admin/audit-logs")({
   head: () => ({
@@ -143,7 +145,7 @@ function AuditLogsPage() {
     ipFilter,
   ]);
 
-  const { data: logsData, isLoading, isError, refetch } = useAuditLogs(queryParams);
+  const { data: logsData, isLoading, isError, isFetching, refetch } = useAuditLogs(queryParams);
   const { data: metrics, isLoading: isMetricsLoading, refetch: refetchMetrics } = useAuditLogMetrics();
 
   const logs = logsData?.logs ?? [];
@@ -400,31 +402,33 @@ function AuditLogsPage() {
         </div>
       </div>
 
-      {/* Error Banner */}
-      {isError && (
-        <div className="flex items-center gap-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-          <AlertTriangle size={18} className="shrink-0" />
-          <div className="flex-1">
-            <p className="font-semibold">Failed to query audit trail</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Unable to reach the server. Please verify your connection or administrative permissions.
-            </p>
-          </div>
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
-            Retry
-          </Button>
-        </div>
+      {/* Stale data banner on background refetch failure with cached data */}
+      {isError && Boolean(logsData) && (
+        <StaleDataBanner
+          message="Unable to update audit trail. Showing cached logs."
+          onRetry={() => refetch()}
+          isRetrying={isFetching}
+        />
       )}
 
-      {/* Main Audit Log Table */}
-      <AuditLogTable
-        logs={logs}
-        isLoading={isLoading}
-        onSelectLog={(log) => setSelectedLog(log)}
-        selectedLogId={selectedLog?._id}
-        onResetFilters={handleResetFilters}
-        hasActiveFilters={hasActiveFilters}
-      />
+      {/* Main Audit Log Table or Initial Error State */}
+      {isError && !logsData ? (
+        <ErrorState
+          title="Failed to query audit trail"
+          description="Unable to reach the server. Please verify your connection or administrative permissions."
+          onRetry={() => refetch()}
+          isRetrying={isFetching}
+        />
+      ) : (
+        <AuditLogTable
+          logs={logs}
+          isLoading={isLoading}
+          onSelectLog={(log) => setSelectedLog(log)}
+          selectedLogId={selectedLog?._id}
+          onResetFilters={handleResetFilters}
+          hasActiveFilters={hasActiveFilters}
+        />
+      )}
 
       {/* Pagination Footer */}
       {!isLoading && total > 0 && (
