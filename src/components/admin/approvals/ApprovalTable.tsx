@@ -19,6 +19,8 @@ import { resolveAvatarUrl } from "@/lib/avatarUrl";
 import { StatusPill } from "@/components/common/StatusPill";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { SortHeaderButton } from "@/components/common/table/SortableTableHeader";
+import { type SortDirection } from "@/lib/sorting";
 
 interface ApprovalTableProps {
   approvals: ApprovalItem[];
@@ -31,6 +33,9 @@ interface ApprovalTableProps {
   onToggleSelect?: (id: string) => void;
   onToggleSelectAll?: () => void;
   allSelected?: boolean;
+  sortKey?: string | null;
+  sortDirection?: SortDirection;
+  onSort?: (key: string) => void;
 }
 
 export function iconForKind(kind?: string) {
@@ -113,6 +118,9 @@ export function ApprovalTable({
   onToggleSelect,
   onToggleSelectAll,
   allSelected,
+  sortKey,
+  sortDirection,
+  onSort,
 }: ApprovalTableProps) {
   return (
     <div className="w-full">
@@ -134,22 +142,64 @@ export function ApprovalTable({
                   </th>
                 )}
                 <th scope="col" className="px-3 py-3 w-[30%]">
-                  Request
+                  <SortHeaderButton
+                    sortKey="title"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={onSort}
+                  >
+                    Request
+                  </SortHeaderButton>
                 </th>
                 <th scope="col" className="px-2 py-3 w-[12%]">
-                  Type
+                  <SortHeaderButton
+                    sortKey="kind"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={onSort}
+                  >
+                    Type
+                  </SortHeaderButton>
                 </th>
                 <th scope="col" className="px-2 py-3 w-[16%]">
-                  Submitted By
+                  <SortHeaderButton
+                    sortKey="userName"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={onSort}
+                  >
+                    Submitted By
+                  </SortHeaderButton>
                 </th>
                 <th scope="col" className="px-2 py-3 w-[15%]">
-                  Submitted On
+                  <SortHeaderButton
+                    sortKey="when"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={onSort}
+                  >
+                    Submitted On
+                  </SortHeaderButton>
                 </th>
                 <th scope="col" className="px-2 py-3 w-[9%]">
-                  Priority
+                  <SortHeaderButton
+                    sortKey="priority"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={onSort}
+                  >
+                    Priority
+                  </SortHeaderButton>
                 </th>
                 <th scope="col" className="px-2 py-3 w-[8%]">
-                  Status
+                  <SortHeaderButton
+                    sortKey="status"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={onSort}
+                  >
+                    Status
+                  </SortHeaderButton>
                 </th>
                 <th scope="col" className="px-3 py-3 text-right w-[10%]">
                   Actions

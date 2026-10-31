@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import { StatusPill } from "@/components/common/StatusPill";
 import { formatSafeDate } from "@/lib/dates";
+import { useTableSorting } from "@/hooks/useTableSorting";
+import { SortHeaderButton } from "@/components/common/table/SortableTableHeader";
 
 interface ReportDrilldownDialogProps {
   open: boolean;
@@ -142,6 +144,42 @@ export function ReportDrilldownDialog({
       ? visits.length
       : documents.length;
 
+  const {
+    sortedData: sortedTasks,
+    sortKey: taskSortKey,
+    sortDirection: taskSortDir,
+    onSort: handleTaskSort,
+  } = useTableSorting(filteredTasks, {
+    customAccessors: {
+      title: (t) => t.title,
+      case: (t) => (typeof t.caseId === "object" && t.caseId ? t.caseId.title : t.caseName || ""),
+      assignedTo: (t) =>
+        Array.isArray(t.assignedUsers) && t.assignedUsers.length > 0
+          ? t.assignedUsers.map((u: any) => u.name).join(", ")
+          : t.assignedTo?.name || "",
+      deadline: (t) => t.deadline,
+      status: (t) => t.status,
+    },
+  });
+
+  const {
+    sortedData: sortedCases,
+    sortKey: caseSortKey,
+    sortDirection: caseSortDir,
+    onSort: handleCaseSort,
+  } = useTableSorting(filteredCases, {
+    customAccessors: {
+      number: (c) => c.number,
+      title: (c) => c.title,
+      practice: (c) => c.mainCategory || c.practice || "",
+      assignedTo: (c) =>
+        Array.isArray(c.assignedUsers) && c.assignedUsers.length > 0
+          ? c.assignedUsers.map((u: any) => u.name).join(", ")
+          : c.assignedTo?.name || "",
+      status: (c) => c.status,
+    },
+  });
+
   return (
     <Dialog open={open} onOpenChange={(o) => (!o ? onClose() : null)}>
       <DialogContent className="w-[calc(100vw-1.5rem)] sm:w-full max-w-4xl max-h-[85vh] flex flex-col rounded-2xl p-4 sm:p-6 shadow-lift border-border bg-card">
@@ -227,16 +265,61 @@ export function ReportDrilldownDialog({
                   <table className="w-full text-left text-xs table-fixed">
                     <thead>
                       <tr className="border-b border-border bg-muted/40 text-muted-foreground font-semibold text-[11px]">
-                        <th className="py-2.5 px-3 w-[30%]">Task Title</th>
-                        <th className="py-2.5 px-3 w-[22%]">Related Case</th>
-                        <th className="py-2.5 px-3 w-[16%]">Assigned To</th>
-                        <th className="py-2.5 px-3 w-[14%]">Deadline</th>
-                        <th className="py-2.5 px-3 w-[10%]">Status</th>
+                        <th className="py-2.5 px-3 w-[30%]">
+                          <SortHeaderButton
+                            sortKey="title"
+                            currentSortKey={taskSortKey}
+                            currentDirection={taskSortDir}
+                            onSort={handleTaskSort}
+                          >
+                            Task Title
+                          </SortHeaderButton>
+                        </th>
+                        <th className="py-2.5 px-3 w-[22%]">
+                          <SortHeaderButton
+                            sortKey="case"
+                            currentSortKey={taskSortKey}
+                            currentDirection={taskSortDir}
+                            onSort={handleTaskSort}
+                          >
+                            Related Case
+                          </SortHeaderButton>
+                        </th>
+                        <th className="py-2.5 px-3 w-[16%]">
+                          <SortHeaderButton
+                            sortKey="assignedTo"
+                            currentSortKey={taskSortKey}
+                            currentDirection={taskSortDir}
+                            onSort={handleTaskSort}
+                          >
+                            Assigned To
+                          </SortHeaderButton>
+                        </th>
+                        <th className="py-2.5 px-3 w-[14%]">
+                          <SortHeaderButton
+                            sortKey="deadline"
+                            currentSortKey={taskSortKey}
+                            currentDirection={taskSortDir}
+                            onSort={handleTaskSort}
+                          >
+                            Deadline
+                          </SortHeaderButton>
+                        </th>
+                        <th className="py-2.5 px-3 w-[10%]">
+                          <SortHeaderButton
+                            sortKey="status"
+                            currentSortKey={taskSortKey}
+                            currentDirection={taskSortDir}
+                            onSort={handleTaskSort}
+                          >
+                            Status
+                          </SortHeaderButton>
+                        </th>
                         <th className="py-2.5 px-3 text-right w-[8%]">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border/60">
-                      {filteredTasks.map((t) => {
+                      {sortedTasks.map((t) => {
                         const caseTitle = typeof t.caseId === "object" && t.caseId ? t.caseId.title : t.caseName || "—";
                         const caseNum = typeof t.caseId === "object" && t.caseId ? t.caseId.number : null;
                         const assignees = Array.isArray(t.assignedUsers) && t.assignedUsers.length > 0
@@ -289,7 +372,7 @@ export function ReportDrilldownDialog({
 
                 {/* Mobile / Tablet View */}
                 <div className="md:hidden space-y-2">
-                  {filteredTasks.map((t) => {
+                  {sortedTasks.map((t) => {
                     const caseTitle = typeof t.caseId === "object" && t.caseId ? t.caseId.title : t.caseName || "—";
                     const assignees = Array.isArray(t.assignedUsers) && t.assignedUsers.length > 0
                       ? t.assignedUsers.map((u: any) => u.name).join(", ")
@@ -335,16 +418,61 @@ export function ReportDrilldownDialog({
                   <table className="w-full text-left text-xs table-fixed">
                     <thead>
                       <tr className="border-b border-border bg-muted/40 text-muted-foreground font-semibold text-[11px]">
-                        <th className="py-2.5 px-3 w-[15%]">Matter No</th>
-                        <th className="py-2.5 px-3 w-[30%]">Case Title</th>
-                        <th className="py-2.5 px-3 w-[18%]">Practice Area</th>
-                        <th className="py-2.5 px-3 w-[15%]">Assigned To</th>
-                        <th className="py-2.5 px-3 w-[12%]">Status</th>
+                        <th className="py-2.5 px-3 w-[15%]">
+                          <SortHeaderButton
+                            sortKey="number"
+                            currentSortKey={caseSortKey}
+                            currentDirection={caseSortDir}
+                            onSort={handleCaseSort}
+                          >
+                            Matter No
+                          </SortHeaderButton>
+                        </th>
+                        <th className="py-2.5 px-3 w-[30%]">
+                          <SortHeaderButton
+                            sortKey="title"
+                            currentSortKey={caseSortKey}
+                            currentDirection={caseSortDir}
+                            onSort={handleCaseSort}
+                          >
+                            Case Title
+                          </SortHeaderButton>
+                        </th>
+                        <th className="py-2.5 px-3 w-[18%]">
+                          <SortHeaderButton
+                            sortKey="practice"
+                            currentSortKey={caseSortKey}
+                            currentDirection={caseSortDir}
+                            onSort={handleCaseSort}
+                          >
+                            Practice Area
+                          </SortHeaderButton>
+                        </th>
+                        <th className="py-2.5 px-3 w-[15%]">
+                          <SortHeaderButton
+                            sortKey="assignedTo"
+                            currentSortKey={caseSortKey}
+                            currentDirection={caseSortDir}
+                            onSort={handleCaseSort}
+                          >
+                            Assigned To
+                          </SortHeaderButton>
+                        </th>
+                        <th className="py-2.5 px-3 w-[12%]">
+                          <SortHeaderButton
+                            sortKey="status"
+                            currentSortKey={caseSortKey}
+                            currentDirection={caseSortDir}
+                            onSort={handleCaseSort}
+                          >
+                            Status
+                          </SortHeaderButton>
+                        </th>
                         <th className="py-2.5 px-3 text-right w-[10%]">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border/60">
-                      {filteredCases.map((c) => {
+                      {sortedCases.map((c) => {
                         const assignees = Array.isArray(c.assignedUsers) && c.assignedUsers.length > 0
                           ? c.assignedUsers.map((u: any) => u.name).join(", ")
                           : c.assignedTo?.name || "Unassigned";
@@ -396,7 +524,7 @@ export function ReportDrilldownDialog({
 
                 {/* Mobile / Tablet View */}
                 <div className="md:hidden space-y-2">
-                  {filteredCases.map((c) => {
+                  {sortedCases.map((c) => {
                     const assignees = Array.isArray(c.assignedUsers) && c.assignedUsers.length > 0
                       ? c.assignedUsers.map((u: any) => u.name).join(", ")
                       : c.assignedTo?.name || "Unassigned";

@@ -19,6 +19,8 @@ import {
   getResourceBadge,
 } from "./auditUtils";
 import { cn } from "@/lib/utils";
+import { SortHeaderButton } from "@/components/common/table/SortableTableHeader";
+import { type SortDirection } from "@/lib/sorting";
 
 interface AuditLogTableProps {
   logs: AuditLogItem[];
@@ -27,6 +29,9 @@ interface AuditLogTableProps {
   selectedLogId?: string;
   onResetFilters?: () => void;
   hasActiveFilters?: boolean;
+  sortKey?: string | null;
+  sortDirection?: SortDirection;
+  onSort?: (key: string) => void;
 }
 
 function getUserInitials(name: string): string {
@@ -62,6 +67,9 @@ export function AuditLogTable({
   selectedLogId,
   onResetFilters,
   hasActiveFilters,
+  sortKey,
+  sortDirection,
+  onSort,
 }: AuditLogTableProps) {
   const [copiedIp, setCopiedIp] = useState<string | null>(null);
 
@@ -146,12 +154,66 @@ export function AuditLogTable({
         <table className="w-full border-collapse text-left table-fixed">
           <thead>
             <tr className="border-b border-border/70 bg-muted/30 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-              <th scope="col" className="py-3.5 pl-4 pr-2 w-[15%]">Timestamp (IST)</th>
-              <th scope="col" className="px-2 py-3.5 w-[14%]">User / Actor</th>
-              <th scope="col" className="px-2 py-3.5 w-[12%]">Action</th>
-              <th scope="col" className="px-3 py-3.5 w-[33%]">Record &amp; Details</th>
-              <th scope="col" className="px-2 py-3.5 w-[12%]">IP Address</th>
-              <th scope="col" className="px-2 py-3.5 w-[9%]">Client</th>
+              <th scope="col" className="py-3.5 pl-4 pr-2 w-[15%]">
+                <SortHeaderButton
+                  sortKey="createdAt"
+                  currentSortKey={sortKey}
+                  currentDirection={sortDirection}
+                  onSort={onSort}
+                >
+                  Timestamp (IST)
+                </SortHeaderButton>
+              </th>
+              <th scope="col" className="px-2 py-3.5 w-[14%]">
+                <SortHeaderButton
+                  sortKey="userName"
+                  currentSortKey={sortKey}
+                  currentDirection={sortDirection}
+                  onSort={onSort}
+                >
+                  User / Actor
+                </SortHeaderButton>
+              </th>
+              <th scope="col" className="px-2 py-3.5 w-[12%]">
+                <SortHeaderButton
+                  sortKey="action"
+                  currentSortKey={sortKey}
+                  currentDirection={sortDirection}
+                  onSort={onSort}
+                >
+                  Action
+                </SortHeaderButton>
+              </th>
+              <th scope="col" className="px-3 py-3.5 w-[33%]">
+                <SortHeaderButton
+                  sortKey="resourceName"
+                  currentSortKey={sortKey}
+                  currentDirection={sortDirection}
+                  onSort={onSort}
+                >
+                  Record &amp; Details
+                </SortHeaderButton>
+              </th>
+              <th scope="col" className="px-2 py-3.5 w-[12%]">
+                <SortHeaderButton
+                  sortKey="ip"
+                  currentSortKey={sortKey}
+                  currentDirection={sortDirection}
+                  onSort={onSort}
+                >
+                  IP Address
+                </SortHeaderButton>
+              </th>
+              <th scope="col" className="px-2 py-3.5 w-[9%]">
+                <SortHeaderButton
+                  sortKey="userAgent"
+                  currentSortKey={sortKey}
+                  currentDirection={sortDirection}
+                  onSort={onSort}
+                >
+                  Client
+                </SortHeaderButton>
+              </th>
               <th scope="col" className="py-3.5 pl-2 pr-4 text-right w-[5%]">Details</th>
             </tr>
           </thead>

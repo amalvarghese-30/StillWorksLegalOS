@@ -70,6 +70,8 @@ import { DocumentInlinePreview } from "@/components/documents/DocumentInlinePrev
 import { RequestAccessDialog } from "@/components/documents/RequestAccessDialog";
 import { ErrorState } from "@/components/common/ErrorState";
 import { StaleDataBanner } from "@/components/common/StaleDataBanner";
+import { useTableSorting } from "@/hooks/useTableSorting";
+import { SortHeaderButton } from "@/components/common/table/SortableTableHeader";
 
 export const Route = createFileRoute("/_shell/documents")({
   head: () => ({
@@ -326,9 +328,25 @@ function DocumentsPage() {
       : shelfDocs;
   }, [rawDocs, activeShelf, search, favourites, user]);
 
+  const {
+    sortedData: sortedDocs,
+    sortKey: docSortKey,
+    sortDirection: docSortDir,
+    onSort: handleDocSort,
+    resetSort: resetDocSort,
+  } = useTableSorting(filtered, {
+    customAccessors: {
+      name: (d) => d.name,
+      case: (d) => d.caseTitle || d.caseName || (typeof d.caseId === "object" ? d.caseId?.title : "") || "",
+      uploadedBy: (d) => (typeof d.uploadedBy === "object" ? d.uploadedBy?.name : "") || "",
+      size: (d) => d.sizeBytes || 0,
+      date: (d) => d.updatedAt || d.createdAt,
+    },
+  });
+
   // Select first doc as default preview
   const [selected, setSelected] = useState<DocumentRecord | null>(null);
-  const previewDoc = selected ?? filtered[0] ?? null;
+  const previewDoc = selected ?? sortedDocs[0] ?? null;
 
   const handleDocSelect = (doc: DocumentRecord) => {
     setSelected(doc);
@@ -575,17 +593,74 @@ function DocumentsPage() {
 
           {/* Data */}
           {!isLoading && (!isError || Boolean(data)) && filtered.length > 0 && (
-            <div className={`${grid ? "grid gap-4 sm:grid-cols-2" : "space-y-3"} stagger-children`}>
-              {filtered.map((d) => (
-                <DocumentCard
-                  key={d._id}
-                  doc={d}
-                  active={previewDoc?._id === d._id}
-                  onClick={() => handleDocSelect(d)}
-                  isFav={favourites.has(d._id)}
-                  onToggleFav={(e) => toggleFav(d._id, e)}
-                />
-              ))}
+            <div className="space-y-3">
+              {/* Subtle Column Sorting Bar */}
+              <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground border-b border-border/60 pb-2">
+                <span className="text-[11px] font-medium mr-1 text-muted-foreground/80">Sort by:</span>
+                <SortHeaderButton
+                  sortKey="name"
+                  currentSortKey={docSortKey}
+                  currentDirection={docSortDir}
+                  onSort={handleDocSort}
+                >
+                  Name
+                </SortHeaderButton>
+                <SortHeaderButton
+                  sortKey="case"
+                  currentSortKey={docSortKey}
+                  currentDirection={docSortDir}
+                  onSort={handleDocSort}
+                >
+                  Case
+                </SortHeaderButton>
+                <SortHeaderButton
+                  sortKey="uploadedBy"
+                  currentSortKey={docSortKey}
+                  currentDirection={docSortDir}
+                  onSort={handleDocSort}
+                >
+                  Uploaded By
+                </SortHeaderButton>
+                <SortHeaderButton
+                  sortKey="size"
+                  currentSortKey={docSortKey}
+                  currentDirection={docSortDir}
+                  onSort={handleDocSort}
+                >
+                  Size
+                </SortHeaderButton>
+                <SortHeaderButton
+                  sortKey="date"
+                  currentSortKey={docSortKey}
+                  currentDirection={docSortDir}
+                  onSort={handleDocSort}
+                >
+                  Date
+                </SortHeaderButton>
+                {docSortDir && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={resetDocSort}
+                    className="h-6 text-[11px] text-muted-foreground hover:text-foreground ml-auto"
+                  >
+                    Reset sort
+                  </Button>
+                )}
+              </div>
+
+              <div className={`${grid ? "grid gap-4 sm:grid-cols-2" : "space-y-3"} stagger-children`}>
+                {sortedDocs.map((d) => (
+                  <DocumentCard
+                    key={d._id}
+                    doc={d}
+                    active={previewDoc?._id === d._id}
+                    onClick={() => handleDocSelect(d)}
+                    isFav={favourites.has(d._id)}
+                    onToggleFav={(e) => toggleFav(d._id, e)}
+                  />
+                ))}
+              </div>
             </div>
           )}
         </div>

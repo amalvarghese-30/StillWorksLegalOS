@@ -40,6 +40,7 @@ import { EditEmployeeDialog } from "@/components/admin/EditEmployeeDialog";
 import { EmployeeCard, formatRole } from "@/components/admin/EmployeeCard";
 import { EmployeeTableView } from "@/components/admin/EmployeeTableView";
 import { EmployeeDetailWorkspace } from "@/components/admin/EmployeeDetailWorkspace";
+import { sortData, getNextSortState, type SortDirection, type AccessorFn } from "@/lib/sorting";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_admin/admin/employees")({
@@ -90,8 +91,17 @@ function EmployeesPage() {
   const [roleFilter, setRoleFilter] = useState(routeSearch.role ?? "all");
   const [statusFilter, setStatusFilter] = useState(routeSearch.status ?? "all");
   const [teamFilter, setTeamFilter] = useState(routeSearch.team ?? "all");
-  const [sortOption, setSortOption] = useState(routeSearch.sort ?? "name_asc");
+  const [sortOption, setSortOption] = useState(routeSearch.sort ?? "");
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
   const [viewMode, setViewMode] = useState<"grid" | "table">(routeSearch.view ?? "table");
+
+  const handleSort = (targetKey: string) => {
+    const next = getNextSortState(sortKey, sortDirection, targetKey);
+    setSortKey(next.key);
+    setSortDirection(next.direction);
+    setSortOption(next.direction ? `${next.key}_${next.direction}` : "");
+  };
 
   // Selection state for bulk operations
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -167,83 +177,70 @@ function EmployeesPage() {
     );
   };
 
+  // Accessors for column sorting across standard and derived metrics
+  const employeeAccessors = useMemo<Record<string, AccessorFn<EmployeeItem>>>(
+    () => ({
+      name: (e) => e.name,
+      role: (e) => e.title || e.role,
+      employeeCode: (e) => e.employeeCode || `emp-${e._id.slice(-4)}`,
+      contact: (e) => e.email || e.phone,
+      cases: (e) => workloadById.get(e._id)?.activeCases ?? 0,
+      totalTasks: (e) => {
+        const w = workloadById.get(e._id);
+        return w?.totalTasks ?? (w?.pendingTasks ?? 0) + (w?.completedTasks ?? 0);
+      },
+      completedTasks: (e) => workloadById.get(e._id)?.completedTasks ?? 0,
+      pendingTasks: (e) => workloadById.get(e._id)?.pendingTasks ?? 0,
+      overdueTasks: (e) => workloadById.get(e._id)?.overdueTasks ?? 0,
+      workload: (e) => workloadById.get(e._id)?.workload ?? 0,
+      status: (e) => (isOnline(e._id) ? "Online" : e.status || (e.isActive ? "Active" : "Offline")),
+    }),
+    [workloadById, isOnline]
+  );
+
   // Filter & sort logic
   const filteredEmployees = useMemo(() => {
-    return employees
-      .filter((e) => {
-        // Search filter: name, email, title, role, or employee code
-        if (searchQuery.trim()) {
-          const q = searchQuery.toLowerCase().trim();
-          const nameMatch = e.name?.toLowerCase().includes(q);
-          const emailMatch = e.email?.toLowerCase().includes(q);
-          const titleMatch = e.title?.toLowerCase().includes(q);
-          const roleMatch = e.role?.toLowerCase().includes(q);
-          const empCodeMatch = `emp-${e._id.slice(-4)}`.toLowerCase().includes(q);
-          if (!nameMatch && !emailMatch && !titleMatch && !roleMatch && !empCodeMatch) {
-            return false;
-          }
-        }
-        // Role filter
-        if (roleFilter !== "all" && e.role !== roleFilter) {
+    const base = employees.filter((e) => {
+      // Search filter: name, email, title, role, or employee code
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const nameMatch = e.name?.toLowerCase().includes(q);
+        const emailMatch = e.email?.toLowerCase().includes(q);
+        const titleMatch = e.title?.toLowerCase().includes(q);
+        const roleMatch = e.role?.toLowerCase().includes(q);
+        const empCodeMatch = (e.employeeCode || `emp-${e._id.slice(-4)}`).toLowerCase().includes(q);
+        if (!nameMatch && !emailMatch && !titleMatch && !roleMatch && !empCodeMatch) {
           return false;
         }
-        // Status filter (uses presence or stored status)
-        if (statusFilter !== "all") {
-          const online = isOnline(e._id);
-          const effectiveStatus = online ? "online" : (e.status === "online" ? "offline" : (e.status || "offline"));
-          if (effectiveStatus !== statusFilter) {
-            return false;
-          }
+      }
+      // Role filter
+      if (roleFilter !== "all" && e.role !== roleFilter) {
+        return false;
+      }
+      // Status filter (uses presence or stored status)
+      if (statusFilter !== "all") {
+        const online = isOnline(e._id);
+        const effectiveStatus = online ? "online" : (e.status === "online" ? "offline" : (e.status || "offline"));
+        if (effectiveStatus !== statusFilter) {
+          return false;
         }
-        // Team filter (checks designation / title)
-        if (teamFilter !== "all") {
-          const titleLower = (e.title || "").toLowerCase();
-          const roleLower = (e.role || "").toLowerCase();
-          if (teamFilter === "litigation" && !titleLower.includes("litigation")) return false;
-          if (teamFilter === "civil" && !titleLower.includes("civil")) return false;
-          if (teamFilter === "documentation" && !titleLower.includes("doc")) return false;
-          if (teamFilter === "court_filing" && !titleLower.includes("filing") && !titleLower.includes("court")) return false;
-          if (teamFilter === "corporate" && !titleLower.includes("corporate")) return false;
-          if (teamFilter === "admin" && !titleLower.includes("admin") && roleLower !== "admin") return false;
-        }
-        return true;
-      })
-      .sort((a, b) => {
-        if (sortOption === "name_desc") {
-          return (b.name || "").localeCompare(a.name || "");
-        }
-        if (sortOption === "workload_desc") {
-          const wA = workloadById.get(a._id)?.workload ?? 0;
-          const wB = workloadById.get(b._id)?.workload ?? 0;
-          return wB - wA;
-        }
-        if (sortOption === "workload_asc") {
-          const wA = workloadById.get(a._id)?.workload ?? 0;
-          const wB = workloadById.get(b._id)?.workload ?? 0;
-          return wA - wB;
-        }
-        if (sortOption === "tasks_desc") {
-          const tA = workloadById.get(a._id)?.pendingTasks ?? 0;
-          const tB = workloadById.get(b._id)?.pendingTasks ?? 0;
-          return tB - tA;
-        }
-        if (sortOption === "cases_desc") {
-          const cA = workloadById.get(a._id)?.activeCases ?? 0;
-          const cB = workloadById.get(b._id)?.activeCases ?? 0;
-          return cB - cA;
-        }
-        if (sortOption === "overdue_desc") {
-          const oA = workloadById.get(a._id)?.overdueTasks ?? 0;
-          const oB = workloadById.get(b._id)?.overdueTasks ?? 0;
-          return oB - oA;
-        }
-        if (sortOption === "role") {
-          return (a.role || "").localeCompare(b.role || "");
-        }
-        // Default: name_asc
-        return (a.name || "").localeCompare(b.name || "");
-      });
-  }, [employees, searchQuery, roleFilter, statusFilter, teamFilter, sortOption, workloadById, isOnline]);
+      }
+      // Team filter (checks designation / title)
+      if (teamFilter !== "all") {
+        const titleLower = (e.title || "").toLowerCase();
+        const roleLower = (e.role || "").toLowerCase();
+        if (teamFilter === "litigation" && !titleLower.includes("litigation")) return false;
+        if (teamFilter === "civil" && !titleLower.includes("civil")) return false;
+        if (teamFilter === "documentation" && !titleLower.includes("doc")) return false;
+        if (teamFilter === "court_filing" && !titleLower.includes("filing") && !titleLower.includes("court")) return false;
+        if (teamFilter === "corporate" && !titleLower.includes("corporate")) return false;
+        if (teamFilter === "admin" && !titleLower.includes("admin") && roleLower !== "admin") return false;
+      }
+      return true;
+    });
+
+    return sortData(base, sortKey, sortDirection, employeeAccessors);
+  }, [employees, searchQuery, roleFilter, statusFilter, teamFilter, sortKey, sortDirection, employeeAccessors, isOnline]);
 
   const handleSelectAll = (selectAll: boolean) => {
     if (selectAll) {
@@ -383,7 +380,9 @@ function EmployeesPage() {
     setRoleFilter("all");
     setStatusFilter("all");
     setTeamFilter("all");
-    setSortOption("name_asc");
+    setSortOption("");
+    setSortKey(null);
+    setSortDirection(null);
   };
 
   return (
@@ -733,7 +732,9 @@ function EmployeesPage() {
               onViewTasks={handleViewTasks}
               isMessagingPending={createDirectChat.isPending}
               sortOption={sortOption}
-              onSort={(sortKey) => setSortOption(sortKey)}
+              sortKey={sortKey}
+              sortDirection={sortDirection}
+              onSort={handleSort}
             />
           )}
         </>

@@ -66,6 +66,8 @@ import {
 } from "@/services/reports";
 import { useRecordClientVisit } from "@/services/clients";
 import type { TaskRecord } from "@/services/tasks";
+import { SortHeaderButton } from "@/components/common/table/SortableTableHeader";
+import { useTableSorting } from "@/hooks/useTableSorting";
 
 export const Route = createFileRoute("/_shell/reports")({
   head: () => ({
@@ -185,6 +187,24 @@ function ReportsPage() {
 
   const { data: clientDetailData, isLoading: clientDetailLoading } = useClientDetailReport(drilldownClientId || undefined);
   const { data: employeeDetailData, isLoading: employeeDetailLoading } = useEmployeeDetailReport(drilldownEmployeeId || undefined);
+
+  const rawClients = clientReportsData?.clients ?? [];
+  const {
+    sortedData: sortedClientReports,
+    sortKey: clientReportSortKey,
+    sortDirection: clientReportSortDir,
+    onSort: handleClientReportSort,
+  } = useTableSorting(rawClients, {
+    accessors: {
+      name: (c) => c.name,
+      type: (c) => `${c.type} ${c.tag}`,
+      contact: (c) => c.phone || c.email || "",
+      activeCases: (c) => c.metrics?.activeCases ?? 0,
+      pendingTasks: (c) => c.metrics?.pendingTasks ?? 0,
+      visitCount: (c) => c.visitCount ?? 0,
+      lastVisitAt: (c) => c.lastVisitAt || "",
+    },
+  });
 
   const recordVisitMutation = useRecordClientVisit();
 
@@ -577,18 +597,84 @@ function ReportsPage() {
                       <table className="w-full table-fixed text-left text-xs border-collapse">
                         <thead>
                           <tr className="border-b border-border text-muted-foreground font-medium bg-muted/30">
-                            <th className="py-2.5 px-3 w-[22%]">Client Name</th>
-                            <th className="py-2.5 px-3 w-[15%]">Type / Tag</th>
-                            <th className="py-2.5 px-3 w-[18%]">Contact</th>
-                            <th className="py-2.5 px-3 w-[9%] text-center">Active Matters</th>
-                            <th className="py-2.5 px-3 w-[9%] text-center">Pending Tasks</th>
-                            <th className="py-2.5 px-3 w-[7%] text-center">Visits</th>
-                            <th className="py-2.5 px-3 w-[12%]">Last Visit</th>
+                            <th className="py-2.5 px-3 w-[22%]">
+                              <SortHeaderButton
+                                sortKey="name"
+                                currentSortKey={clientReportSortKey}
+                                currentDirection={clientReportSortDir}
+                                onSort={handleClientReportSort}
+                              >
+                                Client Name
+                              </SortHeaderButton>
+                            </th>
+                            <th className="py-2.5 px-3 w-[15%]">
+                              <SortHeaderButton
+                                sortKey="type"
+                                currentSortKey={clientReportSortKey}
+                                currentDirection={clientReportSortDir}
+                                onSort={handleClientReportSort}
+                              >
+                                Type / Tag
+                              </SortHeaderButton>
+                            </th>
+                            <th className="py-2.5 px-3 w-[18%]">
+                              <SortHeaderButton
+                                sortKey="contact"
+                                currentSortKey={clientReportSortKey}
+                                currentDirection={clientReportSortDir}
+                                onSort={handleClientReportSort}
+                              >
+                                Contact
+                              </SortHeaderButton>
+                            </th>
+                            <th className="py-2.5 px-3 w-[9%] text-center">
+                              <SortHeaderButton
+                                sortKey="activeCases"
+                                currentSortKey={clientReportSortKey}
+                                currentDirection={clientReportSortDir}
+                                onSort={handleClientReportSort}
+                                align="center"
+                              >
+                                Active Matters
+                              </SortHeaderButton>
+                            </th>
+                            <th className="py-2.5 px-3 w-[9%] text-center">
+                              <SortHeaderButton
+                                sortKey="pendingTasks"
+                                currentSortKey={clientReportSortKey}
+                                currentDirection={clientReportSortDir}
+                                onSort={handleClientReportSort}
+                                align="center"
+                              >
+                                Pending Tasks
+                              </SortHeaderButton>
+                            </th>
+                            <th className="py-2.5 px-3 w-[7%] text-center">
+                              <SortHeaderButton
+                                sortKey="visitCount"
+                                currentSortKey={clientReportSortKey}
+                                currentDirection={clientReportSortDir}
+                                onSort={handleClientReportSort}
+                                align="center"
+                              >
+                                Visits
+                              </SortHeaderButton>
+                            </th>
+                            <th className="py-2.5 px-3 w-[12%]">
+                              <SortHeaderButton
+                                sortKey="lastVisitAt"
+                                currentSortKey={clientReportSortKey}
+                                currentDirection={clientReportSortDir}
+                                onSort={handleClientReportSort}
+                              >
+                                Last Visit
+                              </SortHeaderButton>
+                            </th>
                             <th className="py-2.5 px-3 w-[8%] text-right no-print">Action</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-border/60">
-                          {clientReportsData.clients.map((c) => (
+                          {sortedClientReports.map((c) => (
                             <tr key={c._id} className="hover:bg-muted/20 transition-colors">
                               <td className="py-2.5 px-3 font-semibold text-foreground break-words">
                                 {c.name}
@@ -637,7 +723,7 @@ function ReportsPage() {
 
                     {/* Mobile / Tablet Stacked Cards */}
                     <div className="md:hidden space-y-3">
-                      {clientReportsData.clients.map((c) => (
+                      {sortedClientReports.map((c) => (
                         <div
                           key={c._id}
                           className="rounded-xl border border-border bg-card p-3.5 shadow-soft space-y-2.5"
@@ -1883,6 +1969,38 @@ function EmployeeDetailReportView({
 
   const { employee, metrics, tasks, cases, auditLogs } = data;
 
+  const {
+    sortedData: sortedTasks,
+    sortKey: empTaskSortKey,
+    sortDirection: empTaskSortDir,
+    onSort: handleEmpTaskSort,
+  } = useTableSorting(tasks, {
+    accessors: {
+      title: (t) => t.title,
+      caseTitle: (t) => t.caseId?.title || "",
+      clientName: (t) => t.clientId?.name || "",
+      priority: (t) => t.priority,
+      deadline: (t) => t.deadline || "",
+      status: (t) => t.status,
+    },
+  });
+
+  const {
+    sortedData: sortedCases,
+    sortKey: empCaseSortKey,
+    sortDirection: empCaseSortDir,
+    onSort: handleEmpCaseSort,
+  } = useTableSorting(cases, {
+    accessors: {
+      number: (c) => c.number,
+      title: (c) => c.title,
+      practice: (c) => c.practice || c.category || "",
+      court: (c) => c.court || "",
+      nextHearing: (c) => c.nextHearing || "",
+      status: (c) => c.status,
+    },
+  });
+
   return (
     <div className="space-y-6 printable-report">
       {isError && (
@@ -2051,17 +2169,71 @@ function EmployeeDetailReportView({
               <table className="w-full table-fixed text-left text-xs">
                 <thead>
                   <tr className="border-b border-border text-muted-foreground bg-muted/20 font-medium">
-                    <th className="py-2.5 px-3 w-[28%]">Title</th>
-                    <th className="py-2.5 px-3 w-[20%]">Case / Matter</th>
-                    <th className="py-2.5 px-3 w-[18%]">Client</th>
-                    <th className="py-2.5 px-3 w-[10%]">Priority</th>
-                    <th className="py-2.5 px-3 w-[12%]">Deadline</th>
-                    <th className="py-2.5 px-3 w-[12%]">Status</th>
+                    <th className="py-2.5 px-3 w-[28%]">
+                      <SortHeaderButton
+                        sortKey="title"
+                        currentSortKey={empTaskSortKey}
+                        currentDirection={empTaskSortDir}
+                        onSort={handleEmpTaskSort}
+                      >
+                        Title
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-2.5 px-3 w-[20%]">
+                      <SortHeaderButton
+                        sortKey="caseTitle"
+                        currentSortKey={empTaskSortKey}
+                        currentDirection={empTaskSortDir}
+                        onSort={handleEmpTaskSort}
+                      >
+                        Case / Matter
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-2.5 px-3 w-[18%]">
+                      <SortHeaderButton
+                        sortKey="clientName"
+                        currentSortKey={empTaskSortKey}
+                        currentDirection={empTaskSortDir}
+                        onSort={handleEmpTaskSort}
+                      >
+                        Client
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-2.5 px-3 w-[10%]">
+                      <SortHeaderButton
+                        sortKey="priority"
+                        currentSortKey={empTaskSortKey}
+                        currentDirection={empTaskSortDir}
+                        onSort={handleEmpTaskSort}
+                      >
+                        Priority
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-2.5 px-3 w-[12%]">
+                      <SortHeaderButton
+                        sortKey="deadline"
+                        currentSortKey={empTaskSortKey}
+                        currentDirection={empTaskSortDir}
+                        onSort={handleEmpTaskSort}
+                      >
+                        Deadline
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-2.5 px-3 w-[12%]">
+                      <SortHeaderButton
+                        sortKey="status"
+                        currentSortKey={empTaskSortKey}
+                        currentDirection={empTaskSortDir}
+                        onSort={handleEmpTaskSort}
+                      >
+                        Status
+                      </SortHeaderButton>
+                    </th>
                     <th className="py-2.5 px-3 text-right no-print">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
-                  {tasks.map((t) => (
+                  {sortedTasks.map((t) => (
                     <tr key={t._id} className="hover:bg-muted/15">
                       <td className="py-2.5 px-3 font-medium text-foreground break-words">{t.title}</td>
                       <td className="py-2.5 px-3 text-muted-foreground break-words">{t.caseId?.title || "—"}</td>
@@ -2158,16 +2330,70 @@ function EmployeeDetailReportView({
               <table className="w-full table-fixed text-left text-xs">
                 <thead>
                   <tr className="border-b border-border text-muted-foreground bg-muted/20 font-medium">
-                    <th className="py-2.5 px-3 w-[15%]">Matter No</th>
-                    <th className="py-2.5 px-3 w-[30%]">Title</th>
-                    <th className="py-2.5 px-3 w-[15%]">Practice</th>
-                    <th className="py-2.5 px-3 w-[15%]">Court</th>
-                    <th className="py-2.5 px-3 w-[13%]">Next Hearing</th>
-                    <th className="py-2.5 px-3 w-[12%]">Status</th>
+                    <th className="py-2.5 px-3 w-[15%]">
+                      <SortHeaderButton
+                        sortKey="number"
+                        currentSortKey={empCaseSortKey}
+                        currentDirection={empCaseSortDir}
+                        onSort={handleEmpCaseSort}
+                      >
+                        Matter No
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-2.5 px-3 w-[30%]">
+                      <SortHeaderButton
+                        sortKey="title"
+                        currentSortKey={empCaseSortKey}
+                        currentDirection={empCaseSortDir}
+                        onSort={handleEmpCaseSort}
+                      >
+                        Title
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-2.5 px-3 w-[15%]">
+                      <SortHeaderButton
+                        sortKey="practice"
+                        currentSortKey={empCaseSortKey}
+                        currentDirection={empCaseSortDir}
+                        onSort={handleEmpCaseSort}
+                      >
+                        Practice
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-2.5 px-3 w-[15%]">
+                      <SortHeaderButton
+                        sortKey="court"
+                        currentSortKey={empCaseSortKey}
+                        currentDirection={empCaseSortDir}
+                        onSort={handleEmpCaseSort}
+                      >
+                        Court
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-2.5 px-3 w-[13%]">
+                      <SortHeaderButton
+                        sortKey="nextHearing"
+                        currentSortKey={empCaseSortKey}
+                        currentDirection={empCaseSortDir}
+                        onSort={handleEmpCaseSort}
+                      >
+                        Next Hearing
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-2.5 px-3 w-[12%]">
+                      <SortHeaderButton
+                        sortKey="status"
+                        currentSortKey={empCaseSortKey}
+                        currentDirection={empCaseSortDir}
+                        onSort={handleEmpCaseSort}
+                      >
+                        Status
+                      </SortHeaderButton>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
-                  {cases.map((c) => (
+                  {sortedCases.map((c) => (
                     <tr
                       key={c._id}
                       onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: c._id } })}
@@ -2306,6 +2532,38 @@ function ClientDetailReportView({
   const [drilldownSubtitle, setDrilldownSubtitle] = useState("");
   const [selectedVisit, setSelectedVisit] = useState<any | null>(null);
   const navigate = useNavigate();
+
+  const rawClientVisits = useMemo(() => data?.client?.visits || [], [data?.client?.visits]);
+  const {
+    sortedData: sortedVisits,
+    sortKey: visitSortKey,
+    sortDirection: visitSortDir,
+    onSort: handleVisitSort,
+  } = useTableSorting(rawClientVisits, {
+    customAccessors: {
+      visitedAt: (v) => v.visitedAt,
+      purpose: (v) => v.purpose,
+      handledBy: (v) => (v.handledBy ? (typeof v.handledBy === "object" ? v.handledBy.name : v.handledBy) : ""),
+      notes: (v) => v.notes,
+    },
+  });
+
+  const rawCases = useMemo(() => data?.cases || [], [data?.cases]);
+  const {
+    sortedData: sortedCases,
+    sortKey: caseSortKey,
+    sortDirection: caseSortDir,
+    onSort: handleCaseSort,
+  } = useTableSorting(rawCases, {
+    customAccessors: {
+      number: (c) => c.number,
+      title: (c) => c.title,
+      practice: (c) => c.practice,
+      court: (c) => c.court,
+      assignedTo: (c) => c.assignedTo?.name,
+      status: (c) => c.status,
+    },
+  });
 
   if (isLoading) {
     return (
@@ -2508,14 +2766,50 @@ function ClientDetailReportView({
               <table className="w-full table-fixed text-left text-xs">
                 <thead>
                   <tr className="border-b border-border text-muted-foreground bg-muted/20 font-medium">
-                    <th className="py-2.5 px-3 w-[20%]">Date & Time</th>
-                    <th className="py-2.5 px-3 w-[25%]">Purpose</th>
-                    <th className="py-2.5 px-3 w-[20%]">Handled By</th>
-                    <th className="py-2.5 px-3 w-[35%]">Notes</th>
+                    <th className="py-2.5 px-3 w-[20%]">
+                      <SortHeaderButton
+                        sortKey="visitedAt"
+                        currentSortKey={visitSortKey}
+                        currentDirection={visitSortDir}
+                        onSort={handleVisitSort}
+                      >
+                        Date & Time
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-2.5 px-3 w-[25%]">
+                      <SortHeaderButton
+                        sortKey="purpose"
+                        currentSortKey={visitSortKey}
+                        currentDirection={visitSortDir}
+                        onSort={handleVisitSort}
+                      >
+                        Purpose
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-2.5 px-3 w-[20%]">
+                      <SortHeaderButton
+                        sortKey="handledBy"
+                        currentSortKey={visitSortKey}
+                        currentDirection={visitSortDir}
+                        onSort={handleVisitSort}
+                      >
+                        Handled By
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-2.5 px-3 w-[35%]">
+                      <SortHeaderButton
+                        sortKey="notes"
+                        currentSortKey={visitSortKey}
+                        currentDirection={visitSortDir}
+                        onSort={handleVisitSort}
+                      >
+                        Notes
+                      </SortHeaderButton>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
-                  {client.visits.map((v, idx) => (
+                  {sortedVisits.map((v, idx) => (
                     <tr
                       key={v._id || idx}
                       onClick={() => setSelectedVisit(v)}
@@ -2538,7 +2832,7 @@ function ClientDetailReportView({
 
             {/* Mobile / Tablet Stacked Cards */}
             <div className="md:hidden divide-y divide-border/60">
-              {client.visits.map((v, idx) => (
+              {sortedVisits.map((v, idx) => (
                 <div
                   key={v._id || idx}
                   onClick={() => setSelectedVisit(v)}
@@ -2581,16 +2875,70 @@ function ClientDetailReportView({
               <table className="w-full table-fixed text-left text-xs">
                 <thead>
                   <tr className="border-b border-border text-muted-foreground bg-muted/20 font-medium">
-                    <th className="py-2.5 px-3 w-[15%]">Matter No</th>
-                    <th className="py-2.5 px-3 w-[30%]">Title</th>
-                    <th className="py-2.5 px-3 w-[15%]">Practice</th>
-                    <th className="py-2.5 px-3 w-[15%]">Court</th>
-                    <th className="py-2.5 px-3 w-[13%]">Assigned To</th>
-                    <th className="py-2.5 px-3 w-[12%]">Status</th>
+                    <th className="py-2.5 px-3 w-[15%]">
+                      <SortHeaderButton
+                        sortKey="number"
+                        currentSortKey={caseSortKey}
+                        currentDirection={caseSortDir}
+                        onSort={handleCaseSort}
+                      >
+                        Matter No
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-2.5 px-3 w-[30%]">
+                      <SortHeaderButton
+                        sortKey="title"
+                        currentSortKey={caseSortKey}
+                        currentDirection={caseSortDir}
+                        onSort={handleCaseSort}
+                      >
+                        Title
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-2.5 px-3 w-[15%]">
+                      <SortHeaderButton
+                        sortKey="practice"
+                        currentSortKey={caseSortKey}
+                        currentDirection={caseSortDir}
+                        onSort={handleCaseSort}
+                      >
+                        Practice
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-2.5 px-3 w-[15%]">
+                      <SortHeaderButton
+                        sortKey="court"
+                        currentSortKey={caseSortKey}
+                        currentDirection={caseSortDir}
+                        onSort={handleCaseSort}
+                      >
+                        Court
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-2.5 px-3 w-[13%]">
+                      <SortHeaderButton
+                        sortKey="assignedTo"
+                        currentSortKey={caseSortKey}
+                        currentDirection={caseSortDir}
+                        onSort={handleCaseSort}
+                      >
+                        Assigned To
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-2.5 px-3 w-[12%]">
+                      <SortHeaderButton
+                        sortKey="status"
+                        currentSortKey={caseSortKey}
+                        currentDirection={caseSortDir}
+                        onSort={handleCaseSort}
+                      >
+                        Status
+                      </SortHeaderButton>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
-                  {cases.map((c) => (
+                  {sortedCases.map((c) => (
                     <tr
                       key={c._id}
                       onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: c._id } })}
@@ -2614,7 +2962,7 @@ function ClientDetailReportView({
 
             {/* Mobile / Tablet Stacked Cards */}
             <div className="md:hidden divide-y divide-border/60">
-              {cases.map((c) => (
+              {sortedCases.map((c) => (
                 <div
                   key={c._id}
                   onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: c._id } })}

@@ -46,6 +46,8 @@ import { usePresence } from "@/lib/presence";
 import { cn } from "@/lib/utils";
 import { formatSafeDate } from "@/lib/dates";
 import { toast } from "sonner";
+import { useTableSorting } from "@/hooks/useTableSorting";
+import { SortHeaderButton } from "@/components/common/table/SortableTableHeader";
 
 interface EmployeeDetailWorkspaceProps {
   employeeId: string;
@@ -256,6 +258,39 @@ export function EmployeeDetailWorkspace({
 
     return list;
   }, [tasks, taskStatusFilter, taskSearch, startOfToday, endOfToday, startOfWeek]);
+
+  // Sorting for assigned cases table
+  const {
+    sortedData: sortedCases,
+    sortKey: caseSortKey,
+    sortDirection: caseSortDir,
+    onSort: onCaseSort,
+  } = useTableSorting(filteredCases, {
+    accessors: {
+      title: (c) => c.title,
+      number: (c) => c.number,
+      practice: (c) => c.practice || c.category || "General",
+      court: (c) => c.court || "",
+      nextHearing: (c) => c.nextHearing || "",
+      status: (c) => c.status,
+    },
+  });
+
+  // Sorting for assigned tasks table
+  const {
+    sortedData: sortedTasks,
+    sortKey: taskSortKey,
+    sortDirection: taskSortDir,
+    onSort: onTaskSort,
+  } = useTableSorting(filteredTasks, {
+    accessors: {
+      title: (t) => t.title,
+      caseTitle: (t) => (typeof t.caseId === "object" ? (t.caseId as any)?.title : t.caseName || ""),
+      priority: (t) => t.priority,
+      deadline: (t) => t.deadline || "",
+      status: (t) => t.status,
+    },
+  });
 
   // Upcoming deadlines from tasks (next 7 days, non-completed)
   const upcomingDeadlinesList = useMemo(() => {
@@ -800,17 +835,71 @@ export function EmployeeDetailWorkspace({
               <table className="w-full text-left text-xs">
                 <thead className="border-b border-border/80 bg-muted/40 font-semibold uppercase tracking-wider text-[10px] text-muted-foreground">
                   <tr>
-                    <th className="py-3 px-4">Case / Matter</th>
-                    <th className="py-3 px-4">Case Number</th>
-                    <th className="py-3 px-4">Practice Area</th>
-                    <th className="py-3 px-4">Court</th>
-                    <th className="py-3 px-4">Next Hearing</th>
-                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4">
+                      <SortHeaderButton
+                        sortKey="title"
+                        currentSortKey={caseSortKey}
+                        currentDirection={caseSortDir}
+                        onSort={onCaseSort}
+                      >
+                        Case / Matter
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-3 px-4">
+                      <SortHeaderButton
+                        sortKey="number"
+                        currentSortKey={caseSortKey}
+                        currentDirection={caseSortDir}
+                        onSort={onCaseSort}
+                      >
+                        Case Number
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-3 px-4">
+                      <SortHeaderButton
+                        sortKey="practice"
+                        currentSortKey={caseSortKey}
+                        currentDirection={caseSortDir}
+                        onSort={onCaseSort}
+                      >
+                        Practice Area
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-3 px-4">
+                      <SortHeaderButton
+                        sortKey="court"
+                        currentSortKey={caseSortKey}
+                        currentDirection={caseSortDir}
+                        onSort={onCaseSort}
+                      >
+                        Court
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-3 px-4">
+                      <SortHeaderButton
+                        sortKey="nextHearing"
+                        currentSortKey={caseSortKey}
+                        currentDirection={caseSortDir}
+                        onSort={onCaseSort}
+                      >
+                        Next Hearing
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-3 px-4">
+                      <SortHeaderButton
+                        sortKey="status"
+                        currentSortKey={caseSortKey}
+                        currentDirection={caseSortDir}
+                        onSort={onCaseSort}
+                      >
+                        Status
+                      </SortHeaderButton>
+                    </th>
                     <th className="py-3 px-4 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
-                  {filteredCases.map((c) => (
+                  {sortedCases.map((c) => (
                     <tr
                       key={c._id}
                       onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: c._id } })}
@@ -947,18 +1036,61 @@ export function EmployeeDetailWorkspace({
               <table className="w-full text-left text-xs">
                 <thead className="border-b border-border/80 bg-muted/40 font-semibold uppercase tracking-wider text-[10px] text-muted-foreground">
                   <tr>
-                    <th className="py-3 px-4">Task Title</th>
-                    <th className="py-3 px-4">Related Matter</th>
-                    <th className="py-3 px-4">Priority</th>
                     <th className="py-3 px-4">
-                      {taskStatusFilter === "done_today" || taskStatusFilter === "done_this_week" ? "Completed Date" : "Deadline"}
+                      <SortHeaderButton
+                        sortKey="title"
+                        currentSortKey={taskSortKey}
+                        currentDirection={taskSortDir}
+                        onSort={onTaskSort}
+                      >
+                        Task Title
+                      </SortHeaderButton>
                     </th>
-                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4">
+                      <SortHeaderButton
+                        sortKey="caseTitle"
+                        currentSortKey={taskSortKey}
+                        currentDirection={taskSortDir}
+                        onSort={onTaskSort}
+                      >
+                        Related Matter
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-3 px-4">
+                      <SortHeaderButton
+                        sortKey="priority"
+                        currentSortKey={taskSortKey}
+                        currentDirection={taskSortDir}
+                        onSort={onTaskSort}
+                      >
+                        Priority
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-3 px-4">
+                      <SortHeaderButton
+                        sortKey="deadline"
+                        currentSortKey={taskSortKey}
+                        currentDirection={taskSortDir}
+                        onSort={onTaskSort}
+                      >
+                        {taskStatusFilter === "done_today" || taskStatusFilter === "done_this_week" ? "Completed Date" : "Deadline"}
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-3 px-4">
+                      <SortHeaderButton
+                        sortKey="status"
+                        currentSortKey={taskSortKey}
+                        currentDirection={taskSortDir}
+                        onSort={onTaskSort}
+                      >
+                        Status
+                      </SortHeaderButton>
+                    </th>
                     <th className="py-3 px-4 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
-                  {filteredTasks.map((t) => {
+                  {sortedTasks.map((t) => {
                     const isOverdue = t.status !== "completed" && t.deadline && new Date(t.deadline) < new Date();
                     const isCompletionView = taskStatusFilter === "done_today" || taskStatusFilter === "done_this_week";
                     return (

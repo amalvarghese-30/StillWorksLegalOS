@@ -11,6 +11,8 @@ import { useCases, useUpdateCase, caseKeys, type CaseRecord } from "@/services/c
 import { useEmployees } from "@/services/admin";
 import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
 import { formatSafeDate } from "@/lib/dates";
+import { useTableSorting } from "@/hooks/useTableSorting";
+import { SortHeaderButton } from "@/components/common/table/SortableTableHeader";
 import { ExportImportMenu } from "@/components/common/ExportImportMenu";
 import { ExcelImportDialog } from "@/components/common/ExcelImportDialog";
 import { ErrorState } from "@/components/common/ErrorState";
@@ -261,6 +263,24 @@ function CasesPage() {
 
   const filteredCases = rawCases;
 
+  const {
+    sortedData: sortedCases,
+    sortKey: caseSortKey,
+    sortDirection: caseSortDir,
+    onSort: handleCaseSort,
+    resetSort: resetCaseSort,
+  } = useTableSorting(filteredCases, {
+    customAccessors: {
+      number: (c) => c.number,
+      title: (c) => c.title,
+      client: (c) => c.parties?.[0]?.name ?? "",
+      category: (c) => c.category || c.practice || "",
+      status: (c) => c.status,
+      priority: (c) => c.priority,
+      nextHearing: (c) => c.nextHearing,
+    },
+  });
+
   const toggleStaff = (idOrName: string) => {
     setPage(1);
     setSelectedStaff((prev) =>
@@ -291,6 +311,7 @@ function CasesPage() {
     setCategoryFilter("All");
     setSelectedStaff([]);
     setPage(1);
+    resetCaseSort();
   };
 
   const activeFilterCount =
@@ -310,7 +331,7 @@ function CasesPage() {
           <div className="flex items-center gap-2">
             <ExportImportMenu
               entityType="cases"
-              data={filteredCases}
+              data={sortedCases}
               onImportClick={() => setShowImportDialog(true)}
             />
             <Button
@@ -594,10 +615,75 @@ function CasesPage() {
 
       {/* Data */}
       {!isLoading && (!isError || Boolean(data)) && filteredCases.length > 0 && (
-        <div className="grid gap-4 xl:grid-cols-2">
-          {filteredCases.map((c) => (
-            <CaseCard key={c._id} c={c} onReopen={handleReopen} />
-          ))}
+        <div className="space-y-3">
+          {/* Subtle Column Sorting Bar */}
+          <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground border-b border-border/60 pb-2">
+            <span className="text-[11px] font-medium mr-1 text-muted-foreground/80">Sort by:</span>
+            <SortHeaderButton
+              sortKey="number"
+              currentSortKey={caseSortKey}
+              currentDirection={caseSortDir}
+              onSort={handleCaseSort}
+            >
+              Case #
+            </SortHeaderButton>
+            <SortHeaderButton
+              sortKey="title"
+              currentSortKey={caseSortKey}
+              currentDirection={caseSortDir}
+              onSort={handleCaseSort}
+            >
+              Title
+            </SortHeaderButton>
+            <SortHeaderButton
+              sortKey="client"
+              currentSortKey={caseSortKey}
+              currentDirection={caseSortDir}
+              onSort={handleCaseSort}
+            >
+              Client
+            </SortHeaderButton>
+            <SortHeaderButton
+              sortKey="category"
+              currentSortKey={caseSortKey}
+              currentDirection={caseSortDir}
+              onSort={handleCaseSort}
+            >
+              Category
+            </SortHeaderButton>
+            <SortHeaderButton
+              sortKey="priority"
+              currentSortKey={caseSortKey}
+              currentDirection={caseSortDir}
+              onSort={handleCaseSort}
+            >
+              Priority
+            </SortHeaderButton>
+            <SortHeaderButton
+              sortKey="nextHearing"
+              currentSortKey={caseSortKey}
+              currentDirection={caseSortDir}
+              onSort={handleCaseSort}
+            >
+              Next Hearing
+            </SortHeaderButton>
+            {caseSortDir && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={resetCaseSort}
+                className="h-6 text-[11px] text-muted-foreground hover:text-foreground ml-auto"
+              >
+                Reset sort
+              </Button>
+            )}
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            {sortedCases.map((c) => (
+              <CaseCard key={c._id} c={c} onReopen={handleReopen} />
+            ))}
+          </div>
         </div>
       )}
 

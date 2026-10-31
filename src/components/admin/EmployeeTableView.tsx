@@ -8,8 +8,6 @@ import {
   CheckCircle2,
   Clock3,
   AlertTriangle,
-  ChevronDown,
-  ArrowUpDown,
   User,
   Pencil,
   Briefcase,
@@ -28,6 +26,8 @@ import {
 import { EmployeeAvatar } from "./EmployeeAvatar";
 import { usePresence } from "@/lib/presence";
 import { cn } from "@/lib/utils";
+import { SortHeaderButton } from "@/components/common/table/SortableTableHeader";
+import { type SortDirection } from "@/lib/sorting";
 import type { EmployeeItem, EmployeeWorkload } from "@/services/admin";
 
 interface EmployeeTableViewProps {
@@ -44,6 +44,8 @@ interface EmployeeTableViewProps {
   onViewTasks?: (emp: EmployeeItem) => void;
   isMessagingPending?: boolean;
   sortOption?: string;
+  sortKey?: string | null;
+  sortDirection?: SortDirection;
   onSort?: (sortKey: string) => void;
 }
 
@@ -70,6 +72,8 @@ export function EmployeeTableView({
   onViewTasks,
   isMessagingPending,
   sortOption,
+  sortKey,
+  sortDirection,
   onSort,
 }: EmployeeTableViewProps) {
   const { isOnline } = usePresence();
@@ -100,90 +104,141 @@ export function EmployeeTableView({
 
               {/* 2. Employee */}
               <th className="py-2.5 px-2">
-                <button
-                  type="button"
-                  onClick={() => onSort?.(sortOption === "name_asc" ? "name_desc" : "name_asc")}
-                  className="flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
+                <SortHeaderButton
+                  sortKey="name"
+                  currentSortKey={sortKey}
+                  currentDirection={sortDirection}
+                  onSort={onSort}
                 >
-                  <span>Employee</span>
-                  <ArrowUpDown size={11} className="opacity-60" />
-                </button>
+                  Employee
+                </SortHeaderButton>
               </th>
 
               {/* 3. Role / Designation */}
               <th className="py-2.5 px-2">
-                <button
-                  type="button"
-                  onClick={() => onSort?.("role")}
-                  className="flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
+                <SortHeaderButton
+                  sortKey="role"
+                  currentSortKey={sortKey}
+                  currentDirection={sortDirection}
+                  onSort={onSort}
                 >
-                  <span>Role</span>
-                  <ArrowUpDown size={11} className="opacity-60" />
-                </button>
+                  Role
+                </SortHeaderButton>
               </th>
 
               {/* 4. Employee Code (Desktop wide only) */}
-              <th className="py-2.5 px-2 whitespace-nowrap hidden xl:table-cell">Code</th>
+              <th className="py-2.5 px-2 whitespace-nowrap hidden xl:table-cell">
+                <SortHeaderButton
+                  sortKey="employeeCode"
+                  currentSortKey={sortKey}
+                  currentDirection={sortDirection}
+                  onSort={onSort}
+                >
+                  Code
+                </SortHeaderButton>
+              </th>
 
               {/* 5. Contact */}
-              <th className="py-2.5 px-2">Contact</th>
+              <th className="py-2.5 px-2 whitespace-nowrap">
+                <SortHeaderButton
+                  sortKey="contact"
+                  currentSortKey={sortKey}
+                  currentDirection={sortDirection}
+                  onSort={onSort}
+                >
+                  Contact
+                </SortHeaderButton>
+              </th>
 
               {/* 6. Cases */}
               <th className="py-2.5 px-2 whitespace-nowrap text-center">
-                <button
-                  type="button"
-                  onClick={() => onSort?.("cases_desc")}
-                  className="inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
+                <SortHeaderButton
+                  sortKey="cases"
+                  currentSortKey={sortKey}
+                  currentDirection={sortDirection}
+                  onSort={onSort}
+                  align="center"
                 >
-                  <span>Cases</span>
-                  <ArrowUpDown size={11} className="opacity-60" />
-                </button>
+                  Cases
+                </SortHeaderButton>
               </th>
 
               {/* 7. Total Tasks */}
-              <th className="py-2.5 px-2 whitespace-nowrap text-center">Total</th>
+              <th className="py-2.5 px-2 whitespace-nowrap text-center">
+                <SortHeaderButton
+                  sortKey="totalTasks"
+                  currentSortKey={sortKey}
+                  currentDirection={sortDirection}
+                  onSort={onSort}
+                  align="center"
+                >
+                  Total
+                </SortHeaderButton>
+              </th>
 
               {/* 8. Completed */}
-              <th className="py-2.5 px-2 whitespace-nowrap text-center">Done</th>
+              <th className="py-2.5 px-2 whitespace-nowrap text-center">
+                <SortHeaderButton
+                  sortKey="completedTasks"
+                  currentSortKey={sortKey}
+                  currentDirection={sortDirection}
+                  onSort={onSort}
+                  align="center"
+                >
+                  Done
+                </SortHeaderButton>
+              </th>
 
               {/* 9. Pending */}
               <th className="py-2.5 px-2 text-center whitespace-nowrap bg-amber-500/10 text-amber-900 dark:text-amber-200 font-bold rounded-t-lg border-b border-amber-300/40">
-                <button
-                  type="button"
-                  onClick={() => onSort?.("tasks_desc")}
-                  className="inline-flex items-center gap-1 hover:opacity-80 transition-opacity cursor-pointer"
+                <SortHeaderButton
+                  sortKey="pendingTasks"
+                  currentSortKey={sortKey}
+                  currentDirection={sortDirection}
+                  onSort={onSort}
+                  align="center"
                 >
-                  <span>Pending</span>
-                  <ArrowUpDown size={11} className="opacity-70" />
-                </button>
+                  Pending
+                </SortHeaderButton>
               </th>
 
               {/* 10. Overdue */}
               <th className="py-2.5 px-2 whitespace-nowrap text-center">
-                <button
-                  type="button"
-                  onClick={() => onSort?.("overdue_desc")}
-                  className="inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
+                <SortHeaderButton
+                  sortKey="overdueTasks"
+                  currentSortKey={sortKey}
+                  currentDirection={sortDirection}
+                  onSort={onSort}
+                  align="center"
                 >
-                  <span>Overdue</span>
-                  <ArrowUpDown size={11} className="opacity-60" />
-                </button>
+                  Overdue
+                </SortHeaderButton>
               </th>
 
               {/* 11. Workload */}
               <th className="py-2.5 px-2 whitespace-nowrap">
-                <button
-                  type="button"
-                  onClick={() => onSort?.(sortOption === "workload_desc" ? "workload_asc" : "workload_desc")}
-                  className="flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
+                <SortHeaderButton
+                  sortKey="workload"
+                  currentSortKey={sortKey}
+                  currentDirection={sortDirection}
+                  onSort={onSort}
                 >
-                  <span>Workload</span>
-                  <ChevronDown size={12} className="opacity-70" />
-                </button>
+                  Workload
+                </SortHeaderButton>
               </th>
 
               {/* 12. Status */}
-              <th className="py-2.5 px-2 whitespace-nowrap text-center">Status</th>
+              <th className="py-2.5 px-2 whitespace-nowrap text-center">
+                <SortHeaderButton
+                  sortKey="status"
+                  currentSortKey={sortKey}
+                  currentDirection={sortDirection}
+                  onSort={onSort}
+                  align="center"
+                >
+                  Status
+                </SortHeaderButton>
+              </th>
 
               {/* 13. Actions */}
               <th className="py-2.5 px-2 text-center whitespace-nowrap w-10">Actions</th>

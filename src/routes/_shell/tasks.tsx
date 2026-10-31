@@ -31,6 +31,8 @@ import {
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import { formatSafeDate } from "@/lib/dates";
+import { useTableSorting } from "@/hooks/useTableSorting";
+import { SortHeaderButton } from "@/components/common/table/SortableTableHeader";
 
 export const Route = createFileRoute("/_shell/tasks")({
   head: () => ({
@@ -486,6 +488,31 @@ function TasksPage() {
 
   const tasks = allTasks;
 
+  const {
+    sortedData: sortedTasks,
+    sortKey: taskSortKey,
+    sortDirection: taskSortDir,
+    onSort: handleTaskSort,
+    resetSort: resetTaskSort,
+  } = useTableSorting(tasks, {
+    customAccessors: {
+      title: (t) => t.title,
+      case: (t) => (typeof t.caseId === "object" && t.caseId ? t.caseId.title : t.caseName || ""),
+      assignedTo: (t) => {
+        const assignees =
+          Array.isArray(t.assignedUsers) && t.assignedUsers.length > 0
+            ? t.assignedUsers
+            : t.assignedTo
+            ? [t.assignedTo]
+            : [];
+        return assignees.map((a: any) => a.name).join(", ");
+      },
+      deadline: (t) => t.deadline,
+      priority: (t) => t.priority,
+      status: (t) => t.status,
+    },
+  });
+
   const toggleStaff = (idOrName: string) => {
     setSelectedStaff((prev) =>
       prev.includes(idOrName) ? prev.filter((s) => s !== idOrName) : [...prev, idOrName]
@@ -504,6 +531,7 @@ function TasksPage() {
     setDueFrom("");
     setDueTo("");
     setPage(1);
+    resetTaskSort();
   };
 
   const activeFilterCount =
@@ -1085,26 +1113,90 @@ function TasksPage() {
           </div>
         </div>
       ) : !isLoading && (!isError || Boolean(data)) && tasks.length > 0 ? (
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
-          <div className="space-y-6 stagger-children">
-            {BUCKETS.map((b) => {
-              const bucketTasks = tasks.filter((t) => getBucket(t) === b);
-              if (bucketTasks.length === 0) return null;
-              return (
-                <SectionCard
-                  key={b}
-                  title={b}
-                  description={`${bucketTasks.length} item(s)`}
-                  icon={ListTodo}
-                  bodyClassName="grid gap-3 sm:grid-cols-2 stagger-children"
-                >
-                  {bucketTasks.map((t) => (
-                    <TaskCard key={t._id} task={t} onSelect={setSelectedTask} />
-                  ))}
-                </SectionCard>
-              );
-            })}
+        <div className="space-y-4">
+          {/* Subtle Column Sorting Bar */}
+          <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground border-b border-border/60 pb-2">
+            <span className="text-[11px] font-medium mr-1 text-muted-foreground/80">Sort by:</span>
+            <SortHeaderButton
+              sortKey="title"
+              currentSortKey={taskSortKey}
+              currentDirection={taskSortDir}
+              onSort={handleTaskSort}
+            >
+              Task Title
+            </SortHeaderButton>
+            <SortHeaderButton
+              sortKey="case"
+              currentSortKey={taskSortKey}
+              currentDirection={taskSortDir}
+              onSort={handleTaskSort}
+            >
+              Case
+            </SortHeaderButton>
+            <SortHeaderButton
+              sortKey="assignedTo"
+              currentSortKey={taskSortKey}
+              currentDirection={taskSortDir}
+              onSort={handleTaskSort}
+            >
+              Assigned To
+            </SortHeaderButton>
+            <SortHeaderButton
+              sortKey="deadline"
+              currentSortKey={taskSortKey}
+              currentDirection={taskSortDir}
+              onSort={handleTaskSort}
+            >
+              Deadline
+            </SortHeaderButton>
+            <SortHeaderButton
+              sortKey="priority"
+              currentSortKey={taskSortKey}
+              currentDirection={taskSortDir}
+              onSort={handleTaskSort}
+            >
+              Priority
+            </SortHeaderButton>
+            <SortHeaderButton
+              sortKey="status"
+              currentSortKey={taskSortKey}
+              currentDirection={taskSortDir}
+              onSort={handleTaskSort}
+            >
+              Status
+            </SortHeaderButton>
+            {taskSortDir && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={resetTaskSort}
+                className="h-6 text-[11px] text-muted-foreground hover:text-foreground ml-auto"
+              >
+                Reset sort
+              </Button>
+            )}
           </div>
+
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+            <div className="space-y-6 stagger-children">
+              {BUCKETS.map((b) => {
+                const bucketTasks = sortedTasks.filter((t) => getBucket(t) === b);
+                if (bucketTasks.length === 0) return null;
+                return (
+                  <SectionCard
+                    key={b}
+                    title={b}
+                    description={`${bucketTasks.length} item(s)`}
+                    icon={ListTodo}
+                    bodyClassName="grid gap-3 sm:grid-cols-2 stagger-children"
+                  >
+                    {bucketTasks.map((t) => (
+                      <TaskCard key={t._id} task={t} onSelect={setSelectedTask} />
+                    ))}
+                  </SectionCard>
+                );
+              })}
+            </div>
 
           {/* Call reminders sidebar */}
           <SectionCard
@@ -1247,6 +1339,7 @@ function TasksPage() {
             )}
           </SectionCard>
         </div>
+      </div>
       ) : null}
 
       {totalItems > 0 && (

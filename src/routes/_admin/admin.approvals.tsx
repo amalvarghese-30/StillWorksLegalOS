@@ -30,6 +30,7 @@ import { useReviewCaseAccessRequest } from "@/services/cases";
 import { useApproveTask, useRejectTask, useUpdateTask, taskKeys } from "@/services/tasks";
 import { reportKeys } from "@/services/reports";
 import { toast } from "sonner";
+import { useTableSorting } from "@/hooks/useTableSorting";
 import {
   ApprovalMetricsSummary,
   type MetricFilter,
@@ -152,6 +153,22 @@ function ApprovalsPage() {
       (item) => (item.priority || "medium").toLowerCase() === priorityFilter.toLowerCase()
     );
   }, [rawApprovals, priorityFilter]);
+
+  const {
+    sortedData: sortedApprovals,
+    sortKey: tableSortKey,
+    sortDirection: tableSortDir,
+    onSort: handleTableSort,
+  } = useTableSorting(approvals, {
+    accessors: {
+      title: (a) => a.title,
+      kind: (a) => a.kind,
+      userName: (a) => a.userName,
+      when: (a) => a.when,
+      priority: (a) => a.priority,
+      status: (a) => a.status,
+    },
+  });
 
   // Mutations
   const approveTask = useApproveTask();
@@ -592,12 +609,15 @@ function ApprovalsPage() {
           ) : (
             <div className="space-y-3">
               <ApprovalTable
-                approvals={approvals}
+                approvals={sortedApprovals}
                 selectedItem={selectedItem}
                 onSelectItem={handleOpenDetail}
                 onQuickApprove={handleApprove}
                 onQuickReject={handleOpenRejectModal}
                 processingIds={processingIds}
+                sortKey={tableSortKey}
+                sortDirection={tableSortDir}
+                onSort={handleTableSort}
               />
 
               {/* Pagination Controls */}

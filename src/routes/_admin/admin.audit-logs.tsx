@@ -33,6 +33,7 @@ import { AuditLogTable } from "@/components/admin/audit/AuditLogTable";
 import { AuditLogDetailDrawer } from "@/components/admin/audit/AuditLogDetailDrawer";
 import { ErrorState } from "@/components/common/ErrorState";
 import { StaleDataBanner } from "@/components/common/StaleDataBanner";
+import { useTableSorting } from "@/hooks/useTableSorting";
 
 export const Route = createFileRoute("/_admin/admin/audit-logs")({
   head: () => ({
@@ -151,6 +152,22 @@ function AuditLogsPage() {
   const logs = logsData?.logs ?? [];
   const total = logsData?.total ?? 0;
   const totalPages = logsData?.totalPages ?? 1;
+
+  const {
+    sortedData: sortedLogs,
+    sortKey: tableSortKey,
+    sortDirection: tableSortDir,
+    onSort: handleTableSort,
+  } = useTableSorting(logs, {
+    accessors: {
+      createdAt: (l) => l.createdAt,
+      userName: (l) => l.userName,
+      action: (l) => l.action,
+      resourceName: (l) => l.resourceName ?? l.resource,
+      ip: (l) => l.ip,
+      userAgent: (l) => l.userAgent,
+    },
+  });
 
   const hasActiveFilters =
     Boolean(debouncedSearch) ||
@@ -421,12 +438,15 @@ function AuditLogsPage() {
         />
       ) : (
         <AuditLogTable
-          logs={logs}
+          logs={sortedLogs}
           isLoading={isLoading}
           onSelectLog={(log) => setSelectedLog(log)}
           selectedLogId={selectedLog?._id}
           onResetFilters={handleResetFilters}
           hasActiveFilters={hasActiveFilters}
+          sortKey={tableSortKey}
+          sortDirection={tableSortDir}
+          onSort={handleTableSort}
         />
       )}
 

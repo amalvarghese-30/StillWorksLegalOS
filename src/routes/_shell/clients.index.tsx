@@ -1,5 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { useTableSorting } from "@/hooks/useTableSorting";
+import { SortHeaderButton } from "@/components/common/table/SortableTableHeader";
 import {
   Plus,
   Search,
@@ -229,6 +231,29 @@ function ClientsPage() {
 
   const totalClients = clientsData?.total ?? 0;
   const totalCases = casesData?.total ?? casesData?.cases?.length ?? 0;
+
+  const rawCasesList = useMemo(() => casesData?.cases || [], [casesData?.cases]);
+  const {
+    sortedData: sortedCases,
+    sortKey: caseSortKey,
+    sortDirection: caseSortDir,
+    onSort: handleCaseSort,
+  } = useTableSorting(rawCasesList, {
+    customAccessors: {
+      number: (c) => c.number,
+      title: (c) => c.title,
+      clientParty: (c) => {
+        const clientParty = c.parties?.find((p) => p.type === "client") || c.parties?.[0];
+        return clientParty?.name || "";
+      },
+      status: (c) => c.status,
+      assignedTo: (c) =>
+        Array.isArray(c.assignedUsers) && c.assignedUsers.length > 0
+          ? c.assignedUsers.map((u: any) => u.name).join(", ")
+          : c.assignedTo?.name || "",
+      nextHearing: (c) => c.nextHearing,
+    },
+  });
 
   return (
     <div>
@@ -475,17 +500,71 @@ function ClientsPage() {
                 <table className="w-full text-left text-helper">
                   <thead className="border-b border-border bg-muted/40 text-caption font-semibold uppercase tracking-wider text-muted-foreground">
                     <tr>
-                      <th className="px-4 py-3 sm:px-6">Case #</th>
-                      <th className="px-4 py-3 sm:px-6">Matter Title & Forum</th>
-                      <th className="px-4 py-3 sm:px-6">Client / Parties</th>
-                      <th className="px-4 py-3 sm:px-6">Status</th>
-                      <th className="px-4 py-3 sm:px-6">Assigned To</th>
-                      <th className="px-4 py-3 sm:px-6">Next Hearing</th>
+                      <th className="px-4 py-3 sm:px-6">
+                        <SortHeaderButton
+                          sortKey="number"
+                          currentSortKey={caseSortKey}
+                          currentDirection={caseSortDir}
+                          onSort={handleCaseSort}
+                        >
+                          Case #
+                        </SortHeaderButton>
+                      </th>
+                      <th className="px-4 py-3 sm:px-6">
+                        <SortHeaderButton
+                          sortKey="title"
+                          currentSortKey={caseSortKey}
+                          currentDirection={caseSortDir}
+                          onSort={handleCaseSort}
+                        >
+                          Matter Title & Forum
+                        </SortHeaderButton>
+                      </th>
+                      <th className="px-4 py-3 sm:px-6">
+                        <SortHeaderButton
+                          sortKey="clientParty"
+                          currentSortKey={caseSortKey}
+                          currentDirection={caseSortDir}
+                          onSort={handleCaseSort}
+                        >
+                          Client / Parties
+                        </SortHeaderButton>
+                      </th>
+                      <th className="px-4 py-3 sm:px-6">
+                        <SortHeaderButton
+                          sortKey="status"
+                          currentSortKey={caseSortKey}
+                          currentDirection={caseSortDir}
+                          onSort={handleCaseSort}
+                        >
+                          Status
+                        </SortHeaderButton>
+                      </th>
+                      <th className="px-4 py-3 sm:px-6">
+                        <SortHeaderButton
+                          sortKey="assignedTo"
+                          currentSortKey={caseSortKey}
+                          currentDirection={caseSortDir}
+                          onSort={handleCaseSort}
+                        >
+                          Assigned To
+                        </SortHeaderButton>
+                      </th>
+                      <th className="px-4 py-3 sm:px-6">
+                        <SortHeaderButton
+                          sortKey="nextHearing"
+                          currentSortKey={caseSortKey}
+                          currentDirection={caseSortDir}
+                          onSort={handleCaseSort}
+                        >
+                          Next Hearing
+                        </SortHeaderButton>
+                      </th>
                       <th className="px-4 py-3 sm:px-6 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/60">
-                    {casesData.cases.map((c) => {
+                    {sortedCases.map((c) => {
                       const clientParty = c.parties?.find((p) => p.type === "client") || c.parties?.[0];
                       const clientPartyId =
                         clientParty?.clientId && typeof clientParty.clientId === "object"

@@ -24,6 +24,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { formatSafeDate } from "@/lib/dates";
 import { toast } from "sonner";
+import { useTableSorting } from "@/hooks/useTableSorting";
+import { SortHeaderButton } from "@/components/common/table/SortableTableHeader";
 import type { TaskRecord } from "@/services/tasks";
 import type { ClientRecord } from "@/services/clients";
 
@@ -419,361 +421,459 @@ export function UpcomingClientDashboard({
 
             {/* ── Tasks Content inside Client Card ── */}
             {!isCollapsed && (
-              <div>
-                {/* Desktop & Tablet Table (>= 768px) */}
-                <div className="hidden md:block overflow-x-auto">
-                  <table className="w-full border-collapse text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-border/60 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground bg-muted/20">
-                        <th className="py-2.5 px-4">TASK TITLE</th>
-                        <th className="py-2.5 px-4">DESCRIPTION</th>
-                        <th className="py-2.5 px-4">ASSIGNED TO</th>
-                        <th className="py-2.5 px-4">DEADLINE</th>
-                        <th className="py-2.5 px-4">CREATED BY</th>
-                        <th className="py-2.5 px-3 w-10 text-right">
-                          <span className="sr-only">Actions</span>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/50">
-                      {group.tasks.map((task) => {
-                        const caseTitle = getTaskCaseDisplay(task);
-                        const deadlineInfo = getRelativeDeadline(task.deadline);
-                        const creatorName =
-                          typeof task.createdBy === "object" && task.createdBy?.name
-                            ? task.createdBy.name
-                            : typeof task.createdBy === "string"
-                            ? task.createdBy
-                            : "Unknown";
-                        const creatorInitials = getInitials(creatorName);
-
-                        // Assigned users list
-                        const assignees =
-                          Array.isArray(task.assignedUsers) && task.assignedUsers.length > 0
-                            ? task.assignedUsers
-                            : task.assignedTo
-                            ? [task.assignedTo]
-                            : [];
-
-                        // Priority dot color
-                        const priorityColor =
-                          task.priority === "High"
-                            ? "bg-rose-500"
-                            : task.priority === "Medium"
-                            ? "bg-amber-500"
-                            : "bg-emerald-500";
-
-                        return (
-                          <tr
-                            key={task._id}
-                            onClick={() => onSelectTask(task)}
-                            className="group hover:bg-muted/40 transition-colors duration-150 cursor-pointer"
-                          >
-                            {/* 1. TASK TITLE */}
-                            <td className="py-3 px-4 align-top">
-                              <div className="flex items-start gap-2.5">
-                                <span
-                                  className={`h-2.5 w-2.5 rounded-full ${priorityColor} shrink-0 mt-1`}
-                                  title={`${task.priority} Priority`}
-                                />
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <p className="font-semibold text-foreground group-hover:text-primary transition-colors text-xs sm:text-sm">
-                                      {task.title}
-                                    </p>
-                                    {task.isCall && (
-                                      <span className="inline-flex items-center gap-1 rounded-pill bg-violet-500/10 text-violet-600 dark:text-violet-400 px-1.5 py-0.2 text-[10px] font-semibold">
-                                        <PhoneCall size={10} /> Call
-                                      </span>
-                                    )}
-                                  </div>
-                                  {caseTitle ? (
-                                    <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
-                                      Case: {caseTitle}
-                                    </p>
-                                  ) : (
-                                    <p className="text-[11px] text-muted-foreground/60 mt-0.5 italic">
-                                      General Work
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                            </td>
-
-                            {/* 2. DESCRIPTION */}
-                            <td className="py-3 px-4 align-top text-muted-foreground max-w-xs">
-                              {task.description?.trim() ? (
-                                <p className="line-clamp-2 text-xs leading-relaxed">
-                                  {task.description}
-                                </p>
-                              ) : (
-                                <p className="text-xs italic text-muted-foreground/60">
-                                  No description provided
-                                </p>
-                              )}
-                            </td>
-
-                            {/* 3. ASSIGNED TO */}
-                            <td className="py-3 px-4 align-top whitespace-nowrap">
-                              {assignees.length > 0 ? (
-                                <div className="flex items-center gap-2">
-                                  <div className="h-6 w-6 rounded-full bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 font-semibold text-[10px] flex items-center justify-center shrink-0">
-                                    {getInitials(assignees[0].name)}
-                                  </div>
-                                  <span className="font-medium text-foreground text-xs">
-                                    {assignees[0].name}
-                                    {assignees.length > 1 && (
-                                      <span className="ml-1 text-[10px] text-muted-foreground font-normal">
-                                        +{assignees.length - 1}
-                                      </span>
-                                    )}
-                                  </span>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-1.5 text-muted-foreground/80">
-                                  <User size={14} />
-                                  <span className="italic text-xs">Unassigned</span>
-                                </div>
-                              )}
-                            </td>
-
-                            {/* 4. DEADLINE */}
-                            <td className="py-3 px-4 align-top whitespace-nowrap">
-                              <div className="flex items-start gap-2">
-                                <Calendar
-                                  size={15}
-                                  className={`shrink-0 mt-0.5 ${
-                                    deadlineInfo.isUrgent
-                                      ? "text-rose-600 dark:text-rose-400"
-                                      : "text-muted-foreground"
-                                  }`}
-                                />
-                                <div>
-                                  <p
-                                    className={`font-semibold text-xs ${
-                                      deadlineInfo.isUrgent
-                                        ? "text-rose-600 dark:text-rose-400"
-                                        : "text-foreground"
-                                    }`}
-                                  >
-                                    {formatSafeDate(task.deadline)}
-                                  </p>
-                                  <p
-                                    className={`text-[11px] font-medium ${
-                                      deadlineInfo.isUrgent
-                                        ? "text-rose-600 dark:text-rose-400 font-semibold"
-                                        : "text-muted-foreground"
-                                    }`}
-                                  >
-                                    {deadlineInfo.label}
-                                  </p>
-                                </div>
-                              </div>
-                            </td>
-
-                            {/* 5. CREATED BY */}
-                            <td className="py-3 px-4 align-top whitespace-nowrap">
-                              <div className="flex items-start gap-2">
-                                <div className="h-6 w-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold text-[10px] flex items-center justify-center shrink-0 mt-0.5">
-                                  {creatorInitials}
-                                </div>
-                                <div>
-                                  <p className="font-medium text-foreground text-xs">
-                                    {creatorName}
-                                  </p>
-                                  <p className="text-[11px] text-muted-foreground">
-                                    {formatSafeDate(task.createdAt)}
-                                  </p>
-                                </div>
-                              </div>
-                            </td>
-
-                            {/* 6. ACTIONS */}
-                            <td
-                              className="py-3 px-3 align-middle text-right"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 text-muted-foreground hover:text-foreground rounded-md"
-                                  >
-                                    <MoreVertical size={16} />
-                                    <span className="sr-only">Task actions</span>
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="w-44 text-xs">
-                                  <DropdownMenuItem onClick={() => onSelectTask(task)}>
-                                    <Eye size={14} className="mr-2 text-muted-foreground" />
-                                    View Details
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => onSelectTask(task)}>
-                                    <Edit2 size={14} className="mr-2 text-muted-foreground" />
-                                    Edit Task
-                                  </DropdownMenuItem>
-                                  {onCompleteTask && task.status !== "completed" && (
-                                    <DropdownMenuItem onClick={() => onCompleteTask(task)}>
-                                      <CheckCircle2 size={14} className="mr-2 text-success" />
-                                      Mark Completed
-                                    </DropdownMenuItem>
-                                  )}
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem onClick={() => handleCopyTaskId(task._id)}>
-                                    <Copy size={14} className="mr-2 text-muted-foreground" />
-                                    Copy Task ID
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Mobile Responsive Cards (< 768px) */}
-                <div className="md:hidden divide-y divide-border/60">
-                  {group.tasks.map((task) => {
-                    const caseTitle = getTaskCaseDisplay(task);
-                    const deadlineInfo = getRelativeDeadline(task.deadline);
-                    const creatorName =
-                      typeof task.createdBy === "object" && task.createdBy?.name
-                        ? task.createdBy.name
-                        : typeof task.createdBy === "string"
-                        ? task.createdBy
-                        : "Unknown";
-                    const creatorInitials = getInitials(creatorName);
-
-                    const assignees =
-                      Array.isArray(task.assignedUsers) && task.assignedUsers.length > 0
-                        ? task.assignedUsers
-                        : task.assignedTo
-                        ? [task.assignedTo]
-                        : [];
-
-                    const priorityColor =
-                      task.priority === "High"
-                        ? "bg-rose-500"
-                        : task.priority === "Medium"
-                        ? "bg-amber-500"
-                        : "bg-emerald-500";
-
-                    return (
-                      <div
-                        key={task._id}
-                        onClick={() => onSelectTask(task)}
-                        className="p-4 space-y-2.5 hover:bg-muted/30 transition-colors cursor-pointer"
-                      >
-                        {/* Title and Action Menu */}
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-start gap-2 min-w-0">
-                            <span
-                              className={`h-2.5 w-2.5 rounded-full ${priorityColor} shrink-0 mt-1`}
-                              title={`${task.priority} Priority`}
-                            />
-                            <div className="min-w-0">
-                              <p className="font-semibold text-foreground text-xs leading-snug">
-                                {task.title}
-                              </p>
-                              {caseTitle && (
-                                <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
-                                  Case: {caseTitle}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-
-                          <div onClick={(e) => e.stopPropagation()}>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 text-muted-foreground hover:text-foreground -mr-2"
-                                >
-                                  <MoreVertical size={16} />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-44 text-xs">
-                                <DropdownMenuItem onClick={() => onSelectTask(task)}>
-                                  <Eye size={14} className="mr-2 text-muted-foreground" />
-                                  View Details
-                                </DropdownMenuItem>
-                                {onCompleteTask && task.status !== "completed" && (
-                                  <DropdownMenuItem onClick={() => onCompleteTask(task)}>
-                                    <CheckCircle2 size={14} className="mr-2 text-success" />
-                                    Mark Completed
-                                  </DropdownMenuItem>
-                                )}
-                                <DropdownMenuItem onClick={() => handleCopyTaskId(task._id)}>
-                                  <Copy size={14} className="mr-2 text-muted-foreground" />
-                                  Copy Task ID
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        </div>
-
-                        {/* Description Preview */}
-                        {task.description?.trim() && (
-                          <p className="text-xs text-muted-foreground line-clamp-2 pl-4 leading-relaxed">
-                            {task.description}
-                          </p>
-                        )}
-
-                        {/* Meta Grid: Assigned To, Deadline, Created By */}
-                        <div className="grid grid-cols-2 gap-2 pt-1 pl-4 text-xs text-muted-foreground">
-                          {/* Assigned To */}
-                          <div className="flex items-center gap-1.5">
-                            <div className="h-5 w-5 rounded-full bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 font-semibold text-[9px] flex items-center justify-center shrink-0">
-                              {assignees.length > 0 ? getInitials(assignees[0].name) : "?"}
-                            </div>
-                            <span className="truncate text-foreground text-[11px] font-medium">
-                              {assignees.length > 0 ? assignees[0].name : "Unassigned"}
-                            </span>
-                          </div>
-
-                          {/* Deadline */}
-                          <div className="flex items-center gap-1.5">
-                            <Calendar
-                              size={13}
-                              className={`shrink-0 ${
-                                deadlineInfo.isUrgent
-                                  ? "text-rose-600 dark:text-rose-400"
-                                  : "text-muted-foreground"
-                              }`}
-                            />
-                            <span
-                              className={`text-[11px] font-semibold truncate ${
-                                deadlineInfo.isUrgent
-                                  ? "text-rose-600 dark:text-rose-400"
-                                  : "text-foreground"
-                              }`}
-                            >
-                              {formatSafeDate(task.deadline)} ({deadlineInfo.label})
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Created By Line */}
-                        <div className="flex items-center gap-1.5 pl-4 text-[10px] text-muted-foreground">
-                          <span className="text-muted-foreground/80">Created by:</span>
-                          <span className="font-medium text-foreground">{creatorName}</span>
-                          <span className="text-muted-foreground/40">•</span>
-                          <span>{formatSafeDate(task.createdAt)}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+              <ClientGroupTaskTable
+                group={group}
+                onSelectTask={onSelectTask}
+                onCompleteTask={onCompleteTask}
+                onCopyTaskId={handleCopyTaskId}
+              />
             )}
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Client Group Task Table with 3-State Column Sorting
+// ---------------------------------------------------------------------------
+interface ClientGroupTaskTableProps {
+  group: ClientTaskGroup;
+  onSelectTask: (task: TaskRecord) => void;
+  onCompleteTask?: (task: TaskRecord) => void;
+  onCopyTaskId: (id: string) => void;
+}
+
+function ClientGroupTaskTable({
+  group,
+  onSelectTask,
+  onCompleteTask,
+  onCopyTaskId,
+}: ClientGroupTaskTableProps) {
+  const {
+    sortedData: sortedTasks,
+    sortKey,
+    sortDirection,
+    onSort,
+  } = useTableSorting(group.tasks, {
+    customAccessors: {
+      title: (t) => t.title,
+      description: (t) => t.description || "",
+      assignedTo: (t) => {
+        const assignees =
+          Array.isArray(t.assignedUsers) && t.assignedUsers.length > 0
+            ? t.assignedUsers
+            : t.assignedTo
+            ? [t.assignedTo]
+            : [];
+        return assignees.map((a: any) => a.name).join(", ");
+      },
+      deadline: (t) => t.deadline,
+      createdBy: (t) =>
+        typeof t.createdBy === "object" && t.createdBy?.name
+          ? t.createdBy.name
+          : typeof t.createdBy === "string"
+          ? t.createdBy
+          : "",
+    },
+  });
+
+  return (
+    <div>
+      {/* Desktop & Tablet Table (>= 768px) */}
+      <div className="hidden md:block overflow-x-auto">
+        <table className="w-full border-collapse text-left text-xs">
+          <thead>
+            <tr className="border-b border-border/60 text-[11px] font-semibold text-muted-foreground bg-muted/20">
+              <th className="py-2.5 px-4">
+                <SortHeaderButton
+                  sortKey="title"
+                  currentSortKey={sortKey}
+                  currentDirection={sortDirection}
+                  onSort={onSort}
+                >
+                  TASK TITLE
+                </SortHeaderButton>
+              </th>
+              <th className="py-2.5 px-4">
+                <SortHeaderButton
+                  sortKey="description"
+                  currentSortKey={sortKey}
+                  currentDirection={sortDirection}
+                  onSort={onSort}
+                >
+                  DESCRIPTION
+                </SortHeaderButton>
+              </th>
+              <th className="py-2.5 px-4">
+                <SortHeaderButton
+                  sortKey="assignedTo"
+                  currentSortKey={sortKey}
+                  currentDirection={sortDirection}
+                  onSort={onSort}
+                >
+                  ASSIGNED TO
+                </SortHeaderButton>
+              </th>
+              <th className="py-2.5 px-4">
+                <SortHeaderButton
+                  sortKey="deadline"
+                  currentSortKey={sortKey}
+                  currentDirection={sortDirection}
+                  onSort={onSort}
+                >
+                  DEADLINE
+                </SortHeaderButton>
+              </th>
+              <th className="py-2.5 px-4">
+                <SortHeaderButton
+                  sortKey="createdBy"
+                  currentSortKey={sortKey}
+                  currentDirection={sortDirection}
+                  onSort={onSort}
+                >
+                  CREATED BY
+                </SortHeaderButton>
+              </th>
+              <th className="py-2.5 px-3 w-10 text-right">
+                <span className="sr-only">Actions</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/50">
+            {sortedTasks.map((task) => {
+              const caseTitle = getTaskCaseDisplay(task);
+              const deadlineInfo = getRelativeDeadline(task.deadline);
+              const creatorName =
+                typeof task.createdBy === "object" && task.createdBy?.name
+                  ? task.createdBy.name
+                  : typeof task.createdBy === "string"
+                  ? task.createdBy
+                  : "Unknown";
+              const creatorInitials = getInitials(creatorName);
+
+              // Assigned users list
+              const assignees =
+                Array.isArray(task.assignedUsers) && task.assignedUsers.length > 0
+                  ? task.assignedUsers
+                  : task.assignedTo
+                  ? [task.assignedTo]
+                  : [];
+
+              // Priority dot color
+              const priorityColor =
+                task.priority === "High"
+                  ? "bg-rose-500"
+                  : task.priority === "Medium"
+                  ? "bg-amber-500"
+                  : "bg-emerald-500";
+
+              return (
+                <tr
+                  key={task._id}
+                  onClick={() => onSelectTask(task)}
+                  className="group hover:bg-muted/40 transition-colors duration-150 cursor-pointer"
+                >
+                  {/* 1. TASK TITLE */}
+                  <td className="py-3 px-4 align-top">
+                    <div className="flex items-start gap-2.5">
+                      <span
+                        className={`h-2.5 w-2.5 rounded-full ${priorityColor} shrink-0 mt-1`}
+                        title={`${task.priority} Priority`}
+                      />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="font-semibold text-foreground group-hover:text-primary transition-colors text-xs sm:text-sm">
+                            {task.title}
+                          </p>
+                          {task.isCall && (
+                            <span className="inline-flex items-center gap-1 rounded-pill bg-violet-500/10 text-violet-600 dark:text-violet-400 px-1.5 py-0.2 text-[10px] font-semibold">
+                              <PhoneCall size={10} /> Call
+                            </span>
+                          )}
+                        </div>
+                        {caseTitle ? (
+                          <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                            Case: {caseTitle}
+                          </p>
+                        ) : (
+                          <p className="text-[11px] text-muted-foreground/60 mt-0.5 italic">
+                            General Work
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* 2. DESCRIPTION */}
+                  <td className="py-3 px-4 align-top text-muted-foreground max-w-xs">
+                    {task.description?.trim() ? (
+                      <p className="line-clamp-2 text-xs leading-relaxed">
+                        {task.description}
+                      </p>
+                    ) : (
+                      <p className="text-xs italic text-muted-foreground/60">
+                        No description provided
+                      </p>
+                    )}
+                  </td>
+
+                  {/* 3. ASSIGNED TO */}
+                  <td className="py-3 px-4 align-top whitespace-nowrap">
+                    {assignees.length > 0 ? (
+                      <div className="flex items-center gap-2">
+                        <div className="h-6 w-6 rounded-full bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 font-semibold text-[10px] flex items-center justify-center shrink-0">
+                          {getInitials(assignees[0].name)}
+                        </div>
+                        <span className="font-medium text-foreground text-xs">
+                          {assignees[0].name}
+                          {assignees.length > 1 && (
+                            <span className="ml-1 text-[10px] text-muted-foreground font-normal">
+                              +{assignees.length - 1}
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 text-muted-foreground/80">
+                        <User size={14} />
+                        <span className="italic text-xs">Unassigned</span>
+                      </div>
+                    )}
+                  </td>
+
+                  {/* 4. DEADLINE */}
+                  <td className="py-3 px-4 align-top whitespace-nowrap">
+                    <div className="flex items-start gap-2">
+                      <Calendar
+                        size={15}
+                        className={`shrink-0 mt-0.5 ${
+                          deadlineInfo.isUrgent
+                            ? "text-rose-600 dark:text-rose-400"
+                            : "text-muted-foreground"
+                        }`}
+                      />
+                      <div>
+                        <p
+                          className={`font-semibold text-xs ${
+                            deadlineInfo.isUrgent
+                              ? "text-rose-600 dark:text-rose-400"
+                              : "text-foreground"
+                          }`}
+                        >
+                          {formatSafeDate(task.deadline)}
+                        </p>
+                        <p
+                          className={`text-[11px] font-medium ${
+                            deadlineInfo.isUrgent
+                              ? "text-rose-600 dark:text-rose-400 font-semibold"
+                              : "text-muted-foreground"
+                          }`}
+                        >
+                          {deadlineInfo.label}
+                        </p>
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* 5. CREATED BY */}
+                  <td className="py-3 px-4 align-top whitespace-nowrap">
+                    <div className="flex items-start gap-2">
+                      <div className="h-6 w-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold text-[10px] flex items-center justify-center shrink-0 mt-0.5">
+                        {creatorInitials}
+                      </div>
+                      <div>
+                        <p className="font-medium text-foreground text-xs">
+                          {creatorName}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {formatSafeDate(task.createdAt)}
+                        </p>
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* 6. ACTIONS */}
+                  <td
+                    className="py-3 px-3 align-middle text-right"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-foreground rounded-md"
+                        >
+                          <MoreVertical size={16} />
+                          <span className="sr-only">Task actions</span>
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-44 text-xs">
+                        <DropdownMenuItem onClick={() => onSelectTask(task)}>
+                          <Eye size={14} className="mr-2 text-muted-foreground" />
+                          View Details
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => onSelectTask(task)}>
+                          <Edit2 size={14} className="mr-2 text-muted-foreground" />
+                          Edit Task
+                        </DropdownMenuItem>
+                        {onCompleteTask && task.status !== "completed" && (
+                          <DropdownMenuItem onClick={() => onCompleteTask(task)}>
+                            <CheckCircle2 size={14} className="mr-2 text-success" />
+                            Mark Completed
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => onCopyTaskId(task._id)}>
+                          <Copy size={14} className="mr-2 text-muted-foreground" />
+                          Copy Task ID
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile Responsive Cards (< 768px) */}
+      <div className="md:hidden divide-y divide-border/60">
+        {sortedTasks.map((task) => {
+          const caseTitle = getTaskCaseDisplay(task);
+          const deadlineInfo = getRelativeDeadline(task.deadline);
+          const creatorName =
+            typeof task.createdBy === "object" && task.createdBy?.name
+              ? task.createdBy.name
+              : typeof task.createdBy === "string"
+              ? task.createdBy
+              : "Unknown";
+
+          const assignees =
+            Array.isArray(task.assignedUsers) && task.assignedUsers.length > 0
+              ? task.assignedUsers
+              : task.assignedTo
+              ? [task.assignedTo]
+              : [];
+
+          const priorityColor =
+            task.priority === "High"
+              ? "bg-rose-500"
+              : task.priority === "Medium"
+              ? "bg-amber-500"
+              : "bg-emerald-500";
+
+          return (
+            <div
+              key={task._id}
+              onClick={() => onSelectTask(task)}
+              className="p-4 space-y-2.5 hover:bg-muted/30 transition-colors cursor-pointer"
+            >
+              {/* Title and Action Menu */}
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-start gap-2 min-w-0">
+                  <span
+                    className={`h-2.5 w-2.5 rounded-full ${priorityColor} shrink-0 mt-1`}
+                    title={`${task.priority} Priority`}
+                  />
+                  <div className="min-w-0">
+                    <p className="font-semibold text-foreground text-xs leading-snug">
+                      {task.title}
+                    </p>
+                    {caseTitle && (
+                      <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                        Case: {caseTitle}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div onClick={(e) => e.stopPropagation()}>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground -mr-2"
+                      >
+                        <MoreVertical size={16} />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-44 text-xs">
+                      <DropdownMenuItem onClick={() => onSelectTask(task)}>
+                        <Eye size={14} className="mr-2 text-muted-foreground" />
+                        View Details
+                      </DropdownMenuItem>
+                      {onCompleteTask && task.status !== "completed" && (
+                        <DropdownMenuItem onClick={() => onCompleteTask(task)}>
+                          <CheckCircle2 size={14} className="mr-2 text-success" />
+                          Mark Completed
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem onClick={() => onCopyTaskId(task._id)}>
+                        <Copy size={14} className="mr-2 text-muted-foreground" />
+                        Copy Task ID
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+
+              {/* Description Preview */}
+              {task.description?.trim() && (
+                <p className="text-xs text-muted-foreground line-clamp-2 pl-4 leading-relaxed">
+                  {task.description}
+                </p>
+              )}
+
+              {/* Meta Grid: Assigned To, Deadline, Created By */}
+              <div className="grid grid-cols-2 gap-2 pt-1 pl-4 text-xs text-muted-foreground">
+                {/* Assigned To */}
+                <div className="flex items-center gap-1.5">
+                  <div className="h-5 w-5 rounded-full bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 font-semibold text-[9px] flex items-center justify-center shrink-0">
+                    {assignees.length > 0 ? getInitials(assignees[0].name) : "?"}
+                  </div>
+                  <span className="truncate text-foreground text-[11px] font-medium">
+                    {assignees.length > 0 ? assignees[0].name : "Unassigned"}
+                  </span>
+                </div>
+
+                {/* Deadline */}
+                <div className="flex items-center gap-1.5">
+                  <Calendar
+                    size={13}
+                    className={`shrink-0 ${
+                      deadlineInfo.isUrgent
+                        ? "text-rose-600 dark:text-rose-400"
+                        : "text-muted-foreground"
+                    }`}
+                  />
+                  <span
+                    className={`text-[11px] font-semibold truncate ${
+                      deadlineInfo.isUrgent
+                        ? "text-rose-600 dark:text-rose-400"
+                        : "text-foreground"
+                    }`}
+                  >
+                    {formatSafeDate(task.deadline)} ({deadlineInfo.label})
+                  </span>
+                </div>
+              </div>
+
+              {/* Created By Line */}
+              <div className="flex items-center gap-1.5 pl-4 text-[10px] text-muted-foreground">
+                <span className="text-muted-foreground/80">Created by:</span>
+                <span className="font-medium text-foreground">{creatorName}</span>
+                <span className="text-muted-foreground/40">•</span>
+                <span>{formatSafeDate(task.createdAt)}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
