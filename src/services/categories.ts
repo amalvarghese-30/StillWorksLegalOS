@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 
 export const BASELINE_CATEGORIES: string[] = [
@@ -277,8 +277,15 @@ export interface CategoryNode {
   code?: string;
   level: number;
   parentId?: string | null;
+  ancestors?: string[];
   categoryType: "case" | "task" | "both" | "legal" | "admin" | "custom";
+  isActive?: boolean;
+  displayOrder?: number;
+  description?: string;
+  isCustom?: boolean;
   children?: CategoryNode[];
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export function useCategories() {
@@ -503,9 +510,9 @@ export const BASELINE_CATEGORY_TREE: CategoryNode[] = [
   },
 ];
 
-export async function fetchCategoryTree(): Promise<CategoryNode[]> {
+export async function fetchCategoryTree(includeInactive = false): Promise<CategoryNode[]> {
   try {
-    const res = await api.get<unknown>("/categories/tree");
+    const res = await api.get<unknown>(`/categories/tree${includeInactive ? "?includeInactive=true" : ""}`);
     const rawObj = res && typeof res === "object" ? (res as Record<string, unknown>) : null;
     const list = Array.isArray(res)
       ? res
@@ -523,11 +530,143 @@ export async function fetchCategoryTree(): Promise<CategoryNode[]> {
   return BASELINE_CATEGORY_TREE;
 }
 
-export function useCategoryTree() {
+export function useCategoryTree(options?: { includeInactive?: boolean }) {
+  const includeInactive = Boolean(options?.includeInactive);
   return useQuery<CategoryNode[]>({
-    queryKey: ["categories", "tree"],
-    queryFn: fetchCategoryTree,
-    staleTime: 1000 * 60 * 15,
-    initialData: () => BASELINE_CATEGORY_TREE,
+    queryKey: ["categories", "tree", { includeInactive }],
+    queryFn: () => fetchCategoryTree(includeInactive),
+    staleTime: 1000 * 30, // 30 seconds
+    placeholderData: () => (includeInactive ? undefined : BASELINE_CATEGORY_TREE),
+  });
+}
+
+export interface CreateCategoryPayload {
+  name: string;
+  parentId?: string | null;
+  description?: string;
+  displayOrder?: number;
+  categoryType?: "legal" | "admin" | "custom";
+}
+
+export function useCreateCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: CreateCategoryPayload) => {
+      return api.post<{ category: CategoryNode }>("/categories", payload);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["categories"] });
+    },
+  });
+}
+
+export interface UpdateCategoryPayload {
+  id: string;
+  name?: string;
+  description?: string;
+  displayOrder?: number;
+  categoryType?: "legal" | "admin" | "custom";
+}
+
+export function useUpdateCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...payload }: UpdateCategoryPayload) => {
+      return api.patch<{ category: CategoryNode }>(`/categories/${id}`, payload);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["categories"] });
+    },
+  });
+}
+
+export function useSetCategoryStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, isActive }: { id: string; isActive: boolean }) => {
+      return api.patch<{ category: CategoryNode }>(`/categories/${id}/status`, { isActive });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["categories"] });
+    },
+  });
+}
+
+export function useMoveCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, targetParentId }: { id: string; targetParentId: string | null }) => {
+      return api.patch<{ category: CategoryNode }>(`/categories/${id}/move`, { targetParentId });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["categories"] });
+    },
+  });
+}
+
+export function useReorderCategories() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (items: Array<{ id: string; displayOrder: number }>) => {
+      return api.patch<{ message: string }>("/categories/reorder", { items });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["categories"] });
+    },
+  });
+}
+
+export interface CategoryUsageResponse {
+  category: {
+    _id: string;
+    name: string;
+    slug: string;
+    level: number;
+    isActive: boolean;
+  };
+  childCount: number;
+  casesCount: number;
+  tasksCount: number;
+  totalRecords: number;
+  canDelete: boolean;
+}
+
+export function useCategoryUsage(categoryId: string | null) {
+  return useQuery<CategoryUsageResponse>({
+    queryKey: ["categories", "usage", categoryId],
+    queryFn: async () => {
+      if (!categoryId) throw new Error("Category ID required");
+      return api.get<CategoryUsageResponse>(`/categories/${categoryId}/usage`);
+    },
+    enabled: Boolean(categoryId),
+  });
+}
+
+export function useMigrateCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, targetCategoryId }: { id: string; targetCategoryId: string }) => {
+      return api.post<{ message: string; casesMigrated: number; tasksMigrated: number }>(
+        `/categories/${id}/migrate`,
+        { targetCategoryId }
+      );
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["categories"] });
+      qc.invalidateQueries({ queryKey: ["cases"] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  });
+}
+
+export function useDeleteCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      return api.delete<{ message: string }>(`/categories/${id}`);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["categories"] });
+    },
   });
 }

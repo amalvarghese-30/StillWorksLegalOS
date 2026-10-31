@@ -1,16 +1,18 @@
 import { useEffect, useState } from "react";
-import { Plus, Trash2, Loader2, Tags, ListChecks, UserRound } from "lucide-react";
+import { Plus, Trash2, Loader2, Tags, ListChecks, UserRound, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useTaskOptionsConfig, useUpdateTaskOptions } from "@/services/admin";
 import type { ChecklistTemplate } from "@/services/tasks";
+import { CategoryManagementSettings } from "./CategoryManagementSettings";
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
 export function TaskOptionsSettings() {
+  const [activeSubTab, setActiveSubTab] = useState<"categories" | "templates">("categories");
   const { data, isLoading } = useTaskOptionsConfig();
   const update = useUpdateTaskOptions();
 
@@ -84,13 +86,46 @@ export function TaskOptionsSettings() {
   };
 
   return (
-    <div className="space-y-8">
-      {/* Categories */}
-      <section>
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h3 className="flex items-center gap-2 font-semibold">
-              <Tags size={16} strokeWidth={1.75} className="text-muted-foreground" />
+    <div className="space-y-6">
+      {/* ── SUB-NAVIGATION TABS ── */}
+      <div className="flex items-center gap-2 border-b border-border pb-3">
+        <button
+          type="button"
+          onClick={() => setActiveSubTab("categories")}
+          className={`flex items-center gap-2 px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+            activeSubTab === "categories"
+              ? "bg-primary text-primary-foreground shadow-xs font-bold"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+          }`}
+        >
+          <Layers size={14} />
+          Category Management
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSubTab("templates")}
+          className={`flex items-center gap-2 px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+            activeSubTab === "templates"
+              ? "bg-primary text-primary-foreground shadow-xs font-bold"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+          }`}
+        >
+          <ListChecks size={14} />
+          Checklists &amp; Brokers
+        </button>
+      </div>
+
+      {activeSubTab === "categories" ? (
+        <CategoryManagementSettings />
+      ) : (
+        <div className="space-y-8">
+          {/* Categories */}
+          <section>
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="flex items-center gap-2 font-semibold">
+                  <Tags size={16} strokeWidth={1.75} className="text-muted-foreground" />
               Task categories
             </h3>
             <p className="text-helper text-muted-foreground">
@@ -251,6 +286,8 @@ export function TaskOptionsSettings() {
           <span className="text-caption text-destructive">Failed to save. Please try again.</span>
         )}
       </div>
+    </div>
+      )}
     </div>
   );
 }

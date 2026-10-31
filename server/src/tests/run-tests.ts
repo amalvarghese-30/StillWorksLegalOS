@@ -6756,6 +6756,246 @@ const { NotificationService } = await import("../services/notifications.js");
     assert(usersDeniedRes.status === 403, "S43-17: User without chat permission gets 403 on /api/chat/users");
   }
 
+  // =========================================================================
+  // SUITE 44: Dynamic Category Management CRUD, Hierarchy Validation & Migration
+  // =========================================================================
+  {
+    console.log(`\n--- SUITE 44: Dynamic Category Management CRUD, Hierarchy Validation & Migration ---`);
+
+    const adminUser = await createUser({ name: "Category Admin S44", role: "admin" });
+    const adminToken = await createToken(adminUser);
+    const empUser = await createUser({ name: "Normal Emp S44", role: "employee" });
+    const empToken = await createToken(empUser);
+
+    // 1. Admin creates a main category (Level 1)
+    const createMainRes = await request(app)
+      .post("/api/categories")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "INTELLECTUAL PROPERTY", description: "Patent, Trademark, Copyright", displayOrder: 100 });
+    assert(createMainRes.status === 201, "S44-01: Admin creates a main category (Level 1)");
+    const mainCat = createMainRes.body?.category;
+    assert(mainCat?.name === "INTELLECTUAL PROPERTY", "S44-01b: Main category name matches");
+    assert(mainCat?.level === 1, "S44-01c: Main category level is 1");
+    assert(mainCat?.parentId === null, "S44-01d: Main category has null parentId");
+
+    // 2. Admin creates a second-level category (Level 2) under main category
+    const createL2Res = await request(app)
+      .post("/api/categories")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "Trademark Registration", parentId: mainCat._id, description: "Classes 1-45" });
+    assert(createL2Res.status === 201, "S44-02: Admin creates a second-level category (Level 2)");
+    const l2Cat = createL2Res.body?.category;
+    assert(l2Cat?.level === 2, "S44-02b: Subcategory level is 2");
+    assert(l2Cat?.parentId === mainCat._id, "S44-02c: Subcategory parentId matches main category");
+
+    // 3. Admin creates a third-level category (Level 3)
+    const createL3Res = await request(app)
+      .post("/api/categories")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "Trademark Objection Reply", parentId: l2Cat._id });
+    assert(createL3Res.status === 201, "S44-03: Admin creates a third-level category (Level 3)");
+    const l3Cat = createL3Res.body?.category;
+    assert(l3Cat?.level === 3, "S44-03b: Nested subcategory level is 3");
+    assert(l3Cat?.ancestors?.length === 2, "S44-03c: Level 3 category has 2 ancestors");
+
+    // 4. Duplicate name under same parent is rejected with 409
+    const dupRes = await request(app)
+      .post("/api/categories")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "Trademark Registration", parentId: mainCat._id });
+    assert(dupRes.status === 409, "S44-04: Duplicate category name under same parent is rejected with 409");
+
+    // 5. Same name under a different parent is permitted
+    const otherParentRes = await request(app)
+      .post("/api/categories")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "CORPORATE COMPLIANCE" });
+    assert(otherParentRes.status === 201, "S44-05a: Create second main category succeeds");
+    const otherMain = otherParentRes.body?.category;
+
+    const sameNameDiffParentRes = await request(app)
+      .post("/api/categories")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "Trademark Registration", parentId: otherMain._id });
+    assert(sameNameDiffParentRes.status === 201, "S44-05: Same category name under different parent is permitted (201)");
+
+    // 6. Empty category name is rejected with 400
+    const emptyNameRes = await request(app)
+      .post("/api/categories")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "   " });
+    assert(emptyNameRes.status === 400, "S44-06: Empty category name is rejected with 400");
+
+    // 7. Invalid parent ID is rejected
+    const invalidParentRes = await request(app)
+      .post("/api/categories")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "Invalid Parent Child", parentId: "60f000000000000000000000" });
+    assert(invalidParentRes.status === 404, "S44-07: Non-existent parent ID is rejected with 404");
+
+    // 8. Invalid hierarchy depth beyond level 3 is rejected
+    const beyondDepthRes = await request(app)
+      .post("/api/categories")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "Level 4 Attempt", parentId: l3Cat._id });
+    assert(beyondDepthRes.status === 400, "S44-08: Attempting to create level 4 category is rejected with 400");
+
+    // 9. Circular parent movement: cannot move category under itself
+    const moveSelfRes = await request(app)
+      .patch(`/api/categories/${mainCat._id}/move`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ targetParentId: mainCat._id });
+    assert(moveSelfRes.status === 400, "S44-09: Moving category under itself is rejected with 400");
+
+    // 10. Circular parent movement: cannot move category under its own descendant
+    const moveDescRes = await request(app)
+      .patch(`/api/categories/${mainCat._id}/move`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ targetParentId: l2Cat._id });
+    assert(moveDescRes.status === 400, "S44-10: Moving category under its own descendant is rejected with 400");
+
+    // 11. Category rename preserves ID and updates slug
+    const origL2Id = l2Cat._id;
+    const renameRes = await request(app)
+      .patch(`/api/categories/${origL2Id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "Trademark & Copyright Filing" });
+    assert(renameRes.status === 200, "S44-11a: Category rename succeeds (200)");
+    assert(renameRes.body?.category?._id === origL2Id, "S44-11b: Category ID is strictly preserved on rename");
+    assert(renameRes.body?.category?.slug === "trademark-and-copyright-filing", "S44-11c: Slug correctly updated to match new name");
+
+    // 12. Category move updates descendant ancestry and levels
+    // Move l2Cat under otherMain
+    const moveRes = await request(app)
+      .patch(`/api/categories/${origL2Id}/move`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ targetParentId: otherMain._id });
+    assert(moveRes.status === 200, "S44-12a: Category move succeeds (200)");
+    assert(moveRes.body?.category?.parentId === otherMain._id, "S44-12b: Category parentId updated");
+
+    // Verify descendant (l3Cat) was updated
+    const refreshedL3Res = await request(app)
+      .get(`/api/categories?parentId=${origL2Id}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    const updatedL3 = (refreshedL3Res.body?.categories || []).find((c: any) => c._id === l3Cat._id);
+    assert(Boolean(updatedL3), "S44-12c: Descendant category found under moved parent");
+    assert(updatedL3?.ancestors?.some((a: any) => a === otherMain._id), "S44-12d: Descendant ancestors rebuilt with new parent ancestry");
+
+    // 13. Category ordering persists
+    const reorderRes = await request(app)
+      .patch("/api/categories/reorder")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        items: [
+          { id: mainCat._id, displayOrder: 15 },
+          { id: otherMain._id, displayOrder: 25 },
+        ],
+      });
+    assert(reorderRes.status === 200, "S44-13a: Category reorder succeeds (200)");
+
+    // 14. Deactivation works and cascades to descendants
+    const deactivateRes = await request(app)
+      .patch(`/api/categories/${origL2Id}/status`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ isActive: false });
+    assert(deactivateRes.status === 200, "S44-14a: Deactivation succeeds (200)");
+    assert(deactivateRes.body?.category?.isActive === false, "S44-14b: Category isActive is false");
+
+    // Check descendant was also deactivated
+    const descCheck = await Category.findById(l3Cat._id);
+    assert(descCheck?.isActive === false, "S44-14c: Descendant category automatically deactivated");
+
+    // 15. Reactivation works
+    const reactivateRes = await request(app)
+      .patch(`/api/categories/${origL2Id}/status`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ isActive: true });
+    assert(reactivateRes.status === 200, "S44-15a: Reactivation succeeds (200)");
+    assert(reactivateRes.body?.category?.isActive === true, "S44-15b: Category isActive is true");
+
+    // 16. Permanent deletion blocked when child categories exist
+    const deleteWithChildRes = await request(app)
+      .delete(`/api/categories/${origL2Id}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    assert(deleteWithChildRes.status === 400, "S44-16: Deletion blocked when child categories exist (400)");
+
+    // 17. Permanent deletion blocked when linked cases or tasks exist
+    // Delete leaf l3Cat first or create a temporary category with a task
+    const leafCatRes = await request(app)
+      .post("/api/categories")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "Leaf Category With Task", parentId: otherMain._id });
+    const leafCat = leafCatRes.body?.category;
+
+    // Create a task referencing this category
+    const clientForTask = await Client.create({ name: "S44 Client", createdBy: adminUser._id });
+    await Task.create({
+      title: "Task with Leaf Category",
+      description: "Testing deletion safety",
+      category: leafCat.name,
+      mainCategory: otherMain.name,
+      subCategory: leafCat.name,
+      categoryPath: [otherMain.name, leafCat.name],
+      priority: "Medium",
+      status: "pending",
+      clientId: clientForTask._id,
+      createdBy: adminUser._id,
+    });
+
+    const deleteWithTaskRes = await request(app)
+      .delete(`/api/categories/${leafCat._id}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    assert(deleteWithTaskRes.status === 400, "S44-17: Deletion blocked when linked records exist (400)");
+
+    // 18. Record migration transfers cases/tasks and enables safe deletion
+    const targetLeafRes = await request(app)
+      .post("/api/categories")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "Target Leaf Migration Destination", parentId: otherMain._id });
+    const targetLeaf = targetLeafRes.body?.category;
+
+    const migrateRes = await request(app)
+      .post(`/api/categories/${leafCat._id}/migrate`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ targetCategoryId: targetLeaf._id });
+    assert(migrateRes.status === 200, "S44-18a: Record migration succeeds (200)");
+    assert(migrateRes.body?.tasksMigrated >= 1, "S44-18b: At least 1 task migrated");
+
+    // Now leafCat has 0 linked records, so deletion succeeds
+    const deleteSafeRes = await request(app)
+      .delete(`/api/categories/${leafCat._id}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    assert(deleteSafeRes.status === 200, "S44-18c: Permanent deletion succeeds once records are migrated (200)");
+
+    // 19. Non-admin employee cannot modify/delete categories (403), unauthenticated gets 401
+    const empCreateGlobalRes = await request(app)
+      .post("/api/categories")
+      .set("Authorization", `Bearer ${empToken}`)
+      .send({ name: "Unauthorized Global Cat" });
+    assert(empCreateGlobalRes.status === 403, "S44-19a: Employee cannot create global category (403)");
+
+    const empDeleteRes = await request(app)
+      .delete(`/api/categories/${targetLeaf._id}`)
+      .set("Authorization", `Bearer ${empToken}`);
+    assert(empDeleteRes.status === 403, "S44-19b: Employee cannot delete category (403)");
+
+    const unauthDeleteRes = await request(app)
+      .delete(`/api/categories/${targetLeaf._id}`);
+    assert(unauthDeleteRes.status === 401, "S44-19c: Unauthenticated user gets 401 on category delete");
+
+    // 20. Non-admin employee CAN create custom category under "Other Works"
+    const otherWorksCat = await Category.findOne({ parentId: null, slug: "other-works" });
+    assert(Boolean(otherWorksCat), "S44-20a: 'OTHER WORKS' main category exists");
+
+    const empCustomRes = await request(app)
+      .post("/api/categories")
+      .set("Authorization", `Bearer ${empToken}`)
+      .send({ name: "Special Client Affidavit Custom", parentId: otherWorksCat?._id?.toString() });
+    assert(empCustomRes.status === 201, "S44-20b: Employee can create custom category under 'OTHER WORKS' (201)");
+    assert(empCustomRes.body?.category?.isCustom === true, "S44-20c: Created category is marked isCustom: true");
+    assert(empCustomRes.body?.category?.categoryType === "custom", "S44-20d: categoryType is 'custom'");
+  }
+
 
   try {
     if (mongoose.connection.readyState === 1) {

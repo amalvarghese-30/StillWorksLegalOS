@@ -81,8 +81,27 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
     return list.filter((c) => !isLegacyOtherWorkPlaceholder(c?.name));
   }, [treeData]);
 
+  // Preserve historical/inactive mainCategory if not present in active tree
+  const mainCategoryOptions = useMemo(() => {
+    const list = [...categoryTree];
+    if (mainCategory && !list.some((c: any) => c.name === mainCategory)) {
+      list.unshift({ name: mainCategory, children: [] } as any);
+    }
+    return list;
+  }, [categoryTree, mainCategory]);
+
   const selectedParent = categoryTree.find((c: any) => c?.name === mainCategory);
   const availableSubCategories = (selectedParent?.children as any[]) ?? [];
+
+  // Preserve historical/inactive subCategory if not present in active subcategories
+  const subCategoryOptions = useMemo(() => {
+    const list = [...availableSubCategories];
+    if (subCategory && !list.some((sc: any) => sc.name === subCategory)) {
+      list.unshift({ name: subCategory, children: [] } as any);
+    }
+    return list;
+  }, [availableSubCategories, subCategory]);
+
   const selectedSubCatNode = availableSubCategories.find((sc: any) => sc.name === subCategory);
   const availableNestedSubCategories = (selectedSubCatNode?.children as any[]) ?? [];
 
@@ -380,9 +399,9 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
                 <Label htmlFor="case-main-category" className="text-xs font-semibold text-foreground">
                   Main Category
                 </Label>
-                {categoryTree.length > 0 ? (
+                {mainCategoryOptions.length > 0 ? (
                   <div className="flex flex-wrap gap-1.5">
-                    {categoryTree.map((cat: any) => {
+                    {mainCategoryOptions.map((cat: any) => {
                       const isSelected = mainCategory === cat.name;
                       return (
                         <button
@@ -420,7 +439,7 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
                 )}
 
                 {/* Subcategory dropdown if available */}
-                {mainCategory && availableSubCategories.length > 0 && (
+                {mainCategory && subCategoryOptions.length > 0 && (
                   <div className="space-y-1.5 pt-1">
                     <Label htmlFor="case-sub-category" className="text-helper text-muted-foreground">
                       Subcategory / Work Type
@@ -438,7 +457,7 @@ export function EditCaseDialog({ open, onClose, record, caseId }: EditCaseDialog
                       className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground focus:border-primary focus:outline-none"
                     >
                       <option value="">Select subcategory (optional)…</option>
-                      {availableSubCategories.map((sc: any) => (
+                      {subCategoryOptions.map((sc: any) => (
                         <option key={sc._id || sc.name} value={sc.name}>
                           {sc.name}
                         </option>
