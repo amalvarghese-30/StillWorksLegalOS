@@ -23,6 +23,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   useAuditLogs,
   useAuditLogMetrics,
+  useEmployees,
   downloadAuditLogsCsv,
   adminKeys,
   type AuditLogItem,
@@ -54,6 +55,7 @@ const ACTION_OPTIONS = [
   { value: "all", label: "All Actions" },
   { value: "create", label: "Create" },
   { value: "update", label: "Update" },
+  { value: "reschedule", label: "Rescheduled Hearings" },
   { value: "delete", label: "Delete" },
   { value: "approve", label: "Approve" },
   { value: "reject", label: "Reject" },
@@ -75,7 +77,7 @@ const RESOURCE_OPTIONS = [
   { value: "document", label: "Documents" },
   { value: "auth", label: "Auth / Sessions" },
   { value: "user", label: "Employees / Users" },
-  { value: "calendar", label: "Calendar" },
+  { value: "calendar", label: "Calendar Events" },
   { value: "chat", label: "Chat" },
   { value: "settings", label: "Settings" },
   { value: "approval", label: "Approvals" },
@@ -94,6 +96,7 @@ function AuditLogsPage() {
   // Filters State
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [selectedUser, setSelectedUser] = useState("all");
   const [selectedAction, setSelectedAction] = useState("all");
   const [selectedResource, setSelectedResource] = useState("all");
   const [startDate, setStartDate] = useState("");
@@ -108,6 +111,10 @@ function AuditLogsPage() {
   const [selectedLog, setSelectedLog] = useState<AuditLogItem | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Employees for User filter
+  const { data: employeesData } = useEmployees();
+  const employees = employeesData?.employees ?? [];
 
   // Debounce search
   useEffect(() => {
@@ -126,6 +133,7 @@ function AuditLogsPage() {
       sortBy,
     };
     if (debouncedSearch) params.search = debouncedSearch;
+    if (selectedUser && selectedUser !== "all") params.userId = selectedUser;
     if (selectedAction && selectedAction !== "all") params.action = selectedAction;
     if (selectedResource && selectedResource !== "all") params.resource = selectedResource;
     if (todayOnly) params.todayOnly = true;
@@ -138,6 +146,7 @@ function AuditLogsPage() {
     pageSize,
     sortBy,
     debouncedSearch,
+    selectedUser,
     selectedAction,
     selectedResource,
     todayOnly,
@@ -171,6 +180,7 @@ function AuditLogsPage() {
 
   const hasActiveFilters =
     Boolean(debouncedSearch) ||
+    selectedUser !== "all" ||
     selectedAction !== "all" ||
     selectedResource !== "all" ||
     Boolean(todayOnly) ||
@@ -181,6 +191,7 @@ function AuditLogsPage() {
   const handleResetFilters = () => {
     setSearchInput("");
     setDebouncedSearch("");
+    setSelectedUser("all");
     setSelectedAction("all");
     setSelectedResource("all");
     setStartDate("");
@@ -286,7 +297,7 @@ function AuditLogsPage() {
       <div className="flex flex-col gap-3 rounded-2xl border border-border/80 bg-card p-4 shadow-soft">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-center">
           {/* Main Search Input */}
-          <div className="relative col-span-1 sm:col-span-2 lg:col-span-5">
+          <div className="relative col-span-1 sm:col-span-2 lg:col-span-3">
             <Search
               size={16}
               className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground"
@@ -294,15 +305,34 @@ function AuditLogsPage() {
             <input
               type="search"
               aria-label="Search logs"
-              placeholder="Search by user, action, IP, record title, or details…"
+              placeholder="Search by user, action, IP, record title…"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               className="w-full rounded-xl border border-border/80 bg-background/50 pl-9 pr-4 py-2 text-xs text-foreground placeholder:text-muted-foreground/70 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
             />
           </div>
 
-          {/* Action Filter */}
+          {/* User / Employee Filter */}
           <div className="col-span-1 sm:col-span-1 lg:col-span-3">
+            <select
+              value={selectedUser}
+              onChange={(e) => {
+                setSelectedUser(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full rounded-xl border border-border/80 bg-background/50 px-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary cursor-pointer transition-all"
+            >
+              <option value="all">All Users / Staff</option>
+              {employees.map((emp) => (
+                <option key={emp._id} value={emp._id}>
+                  {emp.name} ({emp.role})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Action Filter */}
+          <div className="col-span-1 sm:col-span-1 lg:col-span-2">
             <select
               value={selectedAction}
               onChange={(e) => {
@@ -338,7 +368,7 @@ function AuditLogsPage() {
           </div>
 
           {/* Sort By Dropdown */}
-          <div className="col-span-1 sm:col-span-2 lg:col-span-2">
+          <div className="col-span-1 sm:col-span-1 lg:col-span-2">
             <select
               value={sortBy}
               onChange={(e) => {

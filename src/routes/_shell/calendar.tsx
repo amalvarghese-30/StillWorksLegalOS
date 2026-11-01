@@ -76,7 +76,7 @@ function CalendarPage() {
     typeof window !== "undefined" && window.innerWidth < 640 ? "Agenda" : "Month"
   );
   const [search, setSearch] = useState("");
-  const [filterEmployee, setFilterEmployee] = useState(isAdmin ? "all" : "me");
+  const [filterEmployee, setFilterEmployee] = useState("all");
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [initialScheduleDate, setInitialScheduleDate] = useState<string | undefined>(undefined);
@@ -108,10 +108,10 @@ function CalendarPage() {
   } = useCalendarEvents({
     start: monthStart,
     end: monthEnd,
-    ...(isAdmin && filterEmployee !== "all" ? { employeeId: filterEmployee } : {}),
+    ...(filterEmployee !== "all" ? { employeeId: filterEmployee } : {}),
   });
 
-  const { data: empData } = useEmployees(undefined, { enabled: isAdmin });
+  const { data: empData } = useEmployees(undefined, { enabled: true });
   const apiEmployees = empData?.employees ?? [];
 
   const allEvents: CalendarEvent[] = eventsData?.events ?? [];
@@ -198,23 +198,19 @@ function CalendarPage() {
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-muted/50 px-3 py-1 text-caption font-medium">
-              <span
-                className={`size-2 rounded-full ${isAdmin ? "bg-primary" : "bg-emerald-500"}`}
-              />
-              <span>{isAdmin ? "Firm Calendar" : "My Calendar"}</span>
+              <span className="size-2 rounded-full bg-primary" />
+              <span>Firm Calendar</span>
             </span>
-            {isAdmin && (
-              <select
-                value={filterEmployee}
-                onChange={(e) => setFilterEmployee(e.target.value)}
-                className="h-11 rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary"
-              >
-                <option value="all">All employees</option>
-                {apiEmployees.map((emp) => (
-                  <option key={emp._id} value={emp._id}>{emp.name}</option>
-                ))}
-              </select>
-            )}
+            <select
+              value={filterEmployee}
+              onChange={(e) => setFilterEmployee(e.target.value)}
+              className="h-11 rounded-md border border-border bg-card px-3 text-helper outline-none transition-colors focus:border-primary"
+            >
+              <option value="all">All employees</option>
+              {apiEmployees.map((emp) => (
+                <option key={emp._id} value={emp._id}>{emp.name}</option>
+              ))}
+            </select>
             <Button className="gradient-primary rounded-md text-primary-foreground shadow-soft transition-transform duration-200 hover:-translate-y-0.5" onClick={() => setShowScheduleDialog(true)}>
               <Plus size={17} strokeWidth={2} />
               New event

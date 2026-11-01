@@ -155,16 +155,23 @@ export function AuditLogDetailDrawer({
               Actor & Attribution
             </h4>
 
-            <div className="flex items-center gap-3">
-              <div className="grid size-10 place-items-center rounded-xl border border-primary/20 bg-primary/10 text-primary font-bold text-sm">
-                {log.userName.slice(0, 2).toUpperCase()}
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="grid size-10 place-items-center rounded-xl border border-primary/20 bg-primary/10 text-primary font-bold text-sm">
+                  {log.userName.slice(0, 2).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <p className="font-bold text-foreground text-sm">{log.userName}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 capitalize">
+                    {log.action.replace(/_/g, " ")} · {log.resource}
+                  </p>
+                </div>
               </div>
-              <div className="min-w-0">
-                <p className="font-bold text-foreground text-sm">{log.userName}</p>
-                <p className="text-xs text-muted-foreground mt-0.5 capitalize">
-                  {log.action.replace(/_/g, " ")} · {log.resource}
-                </p>
-              </div>
+              {log.metadata?.actorRole && (
+                <span className="rounded-full border border-border px-2.5 py-1 text-xs font-semibold uppercase tracking-wider bg-muted text-foreground">
+                  {String(log.metadata.actorRole)}
+                </span>
+              )}
             </div>
           </div>
 
@@ -193,6 +200,31 @@ export function AuditLogDetailDrawer({
               <p className="text-xs text-muted-foreground italic bg-card p-3 rounded-xl border border-border/60">
                 No detailed field changes recorded for this event.
               </p>
+            )}
+
+            {/* Structured Before vs After comparison if available */}
+            {log.metadata?.previousValues && log.metadata?.newValues && (
+              Object.keys(log.metadata.previousValues as object).length > 0 ||
+              Object.keys(log.metadata.newValues as object).length > 0
+            ) && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 pt-3 border-t border-border/60">
+                <div className="rounded-xl border border-rose-500/20 bg-rose-50/30 dark:bg-rose-950/20 p-3">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-rose-700 dark:text-rose-400 mb-2">
+                    Previous Values
+                  </p>
+                  <pre className="text-[11px] font-mono text-foreground overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto">
+                    {JSON.stringify(log.metadata.previousValues, null, 2)}
+                  </pre>
+                </div>
+                <div className="rounded-xl border border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-950/20 p-3">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 mb-2">
+                    New Values
+                  </p>
+                  <pre className="text-[11px] font-mono text-foreground overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto">
+                    {JSON.stringify(log.metadata.newValues, null, 2)}
+                  </pre>
+                </div>
+              </div>
             )}
           </div>
 
@@ -279,6 +311,39 @@ export function AuditLogDetailDrawer({
                     className="transition-transform group-hover:translate-x-1"
                   />
                 </Link>
+              ) : log.resource === "calendar" ? (
+                <div className="space-y-2 mt-2">
+                  <Link
+                    to="/calendar"
+                    className="inline-flex items-center justify-between w-full rounded-xl border border-primary/30 bg-primary/5 hover:bg-primary/10 px-4 py-2.5 text-xs font-semibold text-primary transition-all group"
+                  >
+                    <span className="flex items-center gap-2">
+                      <ExternalLink size={13} />
+                      Open Calendar ({log.resourceName ?? "Calendar"})
+                    </span>
+                    <ArrowRight
+                      size={14}
+                      className="transition-transform group-hover:translate-x-1"
+                    />
+                  </Link>
+
+                  {Boolean(log.metadata?.caseId) && (
+                    <Link
+                      to="/cases/$caseId"
+                      params={{ caseId: String(log.metadata!.caseId) }}
+                      className="inline-flex items-center justify-between w-full rounded-xl border border-purple-500/30 bg-purple-500/5 hover:bg-purple-500/10 px-4 py-2.5 text-xs font-semibold text-purple-600 dark:text-purple-400 transition-all group"
+                    >
+                      <span className="flex items-center gap-2">
+                        <ExternalLink size={13} />
+                        Open Linked Case File: {String(log.metadata?.caseNumber || log.metadata?.caseTitle || "Case Details")}
+                      </span>
+                      <ArrowRight
+                        size={14}
+                        className="transition-transform group-hover:translate-x-1"
+                      />
+                    </Link>
+                  )}
+                </div>
               ) : null}
             </div>
           )}

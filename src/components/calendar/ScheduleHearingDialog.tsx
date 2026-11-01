@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
-import { Gavel, Loader2, CalendarDays, Clock, CheckSquare } from "lucide-react";
+import { Gavel, Loader2, CalendarDays, Clock, CheckSquare, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { useCreateEvent, useUpdateEvent, type CreateEventPayload, type CalendarEvent } from "@/services/calendar";
+import { useCreateEvent, useUpdateEvent, useDeleteEvent, type CreateEventPayload, type CalendarEvent } from "@/services/calendar";
 import { useCases } from "@/services/cases";
+import { useEmployees } from "@/services/admin";
 import {
   Dialog,
   DialogContent,
@@ -65,9 +66,13 @@ function formatLocalTime(value?: string | Date | null, fallback = "10:30"): stri
 export function ScheduleHearingDialog({ open, onClose, initialDate, eventToEdit }: ScheduleHearingDialogProps) {
   const createEvent = useCreateEvent();
   const updateEvent = useUpdateEvent();
+  const deleteEvent = useDeleteEvent();
 
   const { data: casesData } = useCases({ page: "1", limit: "50" });
   const cases = casesData?.cases ?? [];
+
+  const { data: employeesData } = useEmployees();
+  const employees = employeesData?.employees ?? [];
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -78,6 +83,7 @@ export function ScheduleHearingDialog({ open, onClose, initialDate, eventToEdit 
   const [endTime, setEndTime] = useState("11:30");
   const [allDay, setAllDay] = useState(false);
   const [caseId, setCaseId] = useState("");
+  const [assignedStaffId, setAssignedStaffId] = useState("");
 
   useEffect(() => {
     if (eventToEdit) {
@@ -90,13 +96,30 @@ export function ScheduleHearingDialog({ open, onClose, initialDate, eventToEdit 
       setEndTime(eventToEdit.allDay ? "11:30" : formatLocalTime(eventToEdit.end, "11:30"));
       setAllDay(Boolean(eventToEdit.allDay));
       setCaseId(eventToEdit.caseId || "");
+      setAssignedStaffId(
+        eventToEdit.assignedTo && eventToEdit.assignedTo.length > 0
+          ? eventToEdit.assignedTo[0]?._id || ""
+          : ""
+      );
     } else if (initialDate) {
       setStartDate(initialDate);
       setEndDate(initialDate);
+      setAssignedStaffId("");
     }
   }, [eventToEdit, initialDate]);
 
   if (!open) return null;
+
+  const handleDelete = () => {
+    if (!eventToEdit) return;
+    if (window.confirm(`Are you sure you want to delete or cancel "${eventToEdit.title}"?`)) {
+      deleteEvent.mutate(eventToEdit._id, {
+        onSuccess: () => {
+          onClose();
+        },
+      });
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -137,6 +160,7 @@ export function ScheduleHearingDialog({ open, onClose, initialDate, eventToEdit 
     }
 
     if (caseId) payload.caseId = caseId;
+    if (assignedStaffId) payload.assignedTo = [assignedStaffId];
 
     const resetAndClose = () => {
       setTitle("");
@@ -148,6 +172,7 @@ export function ScheduleHearingDialog({ open, onClose, initialDate, eventToEdit 
       setEndTime("11:30");
       setAllDay(false);
       setCaseId("");
+      setAssignedStaffId("");
       onClose();
     };
 
@@ -161,7 +186,7 @@ export function ScheduleHearingDialog({ open, onClose, initialDate, eventToEdit 
     }
   };
 
-  const isPending = createEvent.isPending || updateEvent.isPending;
+  const isPending = createEvent.isPending || updateEvent.isPending || deleteEvent.isPending;
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -316,23 +341,57 @@ export function ScheduleHearingDialog({ open, onClose, initialDate, eventToEdit 
             </select>
           </div>
 
-          {/* ── Actions ── */}
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={isPending || !title.trim() || !startDate}
-              className="gradient-primary rounded-md text-primary-foreground shadow-soft"
+          {/* ── Assigned Staff ── */}
+          <div className="space-y-1.5">
+            <Label htmlFor="event-assigned" className="text-helper">Assigned staff</Label>
+            <select
+              id="event-assigned"
+              value={assignedStaffId}
+              onChange={(e) => setAssignedStaffId(e.target.value)}
+              className="h-11 w-full rounded-md border border-border bg-background px-3 text-helper text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             >
-              {isPending ? <Loader2 size={17} className="animate-spin" /> : <Gavel size={17} strokeWidth={2} />}
-              {isPending ? (eventToEdit ? "Updating…" : "Scheduling…") : (eventToEdit ? "Update Event" : "Schedule event")}
-            </Button>
+              <option value="">Default (Current User / Shared)</option>
+              {employees.map((emp) => (
+                <option key={emp._id} value={emp._id}>
+                  {emp.name} ({emp.role})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* ── Actions ── */}
+          <DialogFooter className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-2">
+            {eventToEdit ? (
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={handleDelete}
+                disabled={isPending}
+                className="gap-1.5 rounded-md order-2 sm:order-1"
+              >
+                <Trash2 size={16} />
+                Delete Event
+              </Button>
+            ) : (
+              <div className="order-2 sm:order-1" />
+            )}
+            <div className="flex items-center gap-2 justify-end order-1 sm:order-2">
+              <Button type="button" variant="outline" onClick={onClose} disabled={isPending}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isPending || !title.trim() || !startDate}
+                className="gradient-primary rounded-md text-primary-foreground shadow-soft"
+              >
+                {isPending ? <Loader2 size={17} className="animate-spin" /> : <Gavel size={17} strokeWidth={2} />}
+                {isPending ? (eventToEdit ? "Updating…" : "Scheduling…") : (eventToEdit ? "Update Event" : "Schedule event")}
+              </Button>
+            </div>
           </DialogFooter>
 
-          {(createEvent.isError || updateEvent.isError) && (
-            <p className="text-caption text-destructive">Failed to save event. Please try again.</p>
+          {(createEvent.isError || updateEvent.isError || deleteEvent.isError) && (
+            <p className="text-caption text-destructive">Failed to save or delete event. Please try again.</p>
           )}
         </form>
       </DialogContent>

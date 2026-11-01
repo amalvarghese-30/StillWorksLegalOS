@@ -170,8 +170,10 @@ export async function canAccessTask(
 
 /**
  * Authorization check for calendar events
- * Admins: full access
- * Employees: can access events they created, are assigned to, firm events, or events in their accessible cases.
+ * Full Shared Calendar Access:
+ * Both Admin and Member accounts have full shared access to firm calendar events.
+ * Every authenticated user can view, edit, reschedule, and delete any calendar event,
+ * unless calendar permission is explicitly disabled.
  */
 export async function canAccessCalendarEvent(
   userId: string,
@@ -182,20 +184,9 @@ export async function canAccessCalendarEvent(
   if (userRole === "admin") return true;
   if (userPermissions && userPermissions["calendar"] === false) return false;
 
-  const event = await CalendarEvent.findById(eventId)
-    .select("createdBy assignedTo type caseId")
-    .lean();
-  if (!event) return false;
-
-  if (event.createdBy?.toString() === userId) return true;
-  if (event.assignedTo?.some((id) => id.toString() === userId)) return true;
-  if (event.type === "firm_event") return true;
-
-  if (event.caseId) {
-    return canAccessCase(userId, userRole, event.caseId.toString(), userPermissions);
-  }
-
-  return false;
+  // In the shared calendar model, all authenticated firm members have access
+  // to view, update, reschedule, and delete any calendar event.
+  return true;
 }
 
 /**

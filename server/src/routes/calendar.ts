@@ -18,8 +18,159 @@ router.use(requireAuth);
 router.use(requireAdminOrPermission("calendar"));
 
 // ---------------------------------------------------------------------------
+// Audit & Diff Helpers for Calendar Operations
+// ---------------------------------------------------------------------------
+
+function formatAuditDate(d: Date | string | null | undefined): string {
+  if (!d) return "None";
+  const dateObj = d instanceof Date ? d : new Date(d);
+  if (isNaN(dateObj.getTime())) return String(d);
+  return dateObj.toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+interface CalendarDiffResult {
+  hasChanges: boolean;
+  changedFields: string[];
+  diffs: string[];
+  previousValues: Record<string, any>;
+  newValues: Record<string, any>;
+  summary: string;
+}
+
+function computeCalendarEventDiff(
+  existing: any,
+  updates: Record<string, any>
+): CalendarDiffResult {
+  const changedFields: string[] = [];
+  const diffs: string[] = [];
+  const previousValues: Record<string, any> = {};
+  const newValues: Record<string, any> = {};
+
+  // Title
+  if (updates["title"] !== undefined && updates["title"] !== existing.title) {
+    changedFields.push("title");
+    previousValues["title"] = existing.title;
+    newValues["title"] = updates["title"];
+    diffs.push(`Title: "${existing.title}" → "${updates["title"]}"`);
+  }
+
+  // Description / Remarks
+  const effectiveNewDesc = updates["description"] !== undefined ? updates["description"] : updates["remarks"];
+  if (effectiveNewDesc !== undefined && effectiveNewDesc !== existing.description) {
+    changedFields.push("description");
+    previousValues["description"] = existing.description || "";
+    newValues["description"] = effectiveNewDesc;
+    diffs.push(`Description: "${existing.description || "None"}" → "${effectiveNewDesc}"`);
+  }
+
+  // Type
+  if (updates["type"] !== undefined && updates["type"] !== existing.type) {
+    changedFields.push("type");
+    previousValues["type"] = existing.type;
+    newValues["type"] = updates["type"];
+    diffs.push(`Event type: ${existing.type} → ${updates["type"]}`);
+  }
+
+  // Start Date / Time
+  if (updates["start"] !== undefined) {
+    const oldStart = new Date(existing.start).getTime();
+    const newStart = new Date(updates["start"]).getTime();
+    if (Math.abs(oldStart - newStart) > 1000) {
+      changedFields.push("start");
+      previousValues["start"] = new Date(existing.start).toISOString();
+      newValues["start"] = new Date(updates["start"]).toISOString();
+      diffs.push(`Start date: ${formatAuditDate(existing.start)} → ${formatAuditDate(updates["start"])}`);
+    }
+  }
+
+  // End Date / Time
+  if (Object.prototype.hasOwnProperty.call(updates, "end")) {
+    const oldEnd = existing.end ? new Date(existing.end).getTime() : null;
+    const newEnd = updates["end"] ? new Date(updates["end"]).getTime() : null;
+    if (oldEnd !== newEnd) {
+      changedFields.push("end");
+      previousValues["end"] = existing.end ? new Date(existing.end).toISOString() : null;
+      newValues["end"] = updates["end"] ? new Date(updates["end"]).toISOString() : null;
+      diffs.push(`End date: ${formatAuditDate(existing.end)} → ${formatAuditDate(updates["end"])}`);
+    }
+  }
+
+  // All Day
+  if (updates["allDay"] !== undefined && Boolean(updates["allDay"]) !== Boolean(existing.allDay)) {
+    changedFields.push("allDay");
+    previousValues["allDay"] = Boolean(existing.allDay);
+    newValues["allDay"] = Boolean(updates["allDay"]);
+    diffs.push(`All day: ${existing.allDay ? "Yes" : "No"} → ${updates["allDay"] ? "Yes" : "No"}`);
+  }
+
+  // Hearing Status / Outcome
+  if (updates["hearingStatus"] !== undefined && updates["hearingStatus"] !== existing.hearingStatus) {
+    changedFields.push("hearingStatus");
+    previousValues["hearingStatus"] = existing.hearingStatus || "scheduled";
+    newValues["hearingStatus"] = updates["hearingStatus"];
+    diffs.push(`Hearing status: ${existing.hearingStatus || "scheduled"} → ${updates["hearingStatus"]}`);
+  }
+
+  // Color
+  if (updates["color"] !== undefined && updates["color"] !== existing.color) {
+    changedFields.push("color");
+    previousValues["color"] = existing.color || "";
+    newValues["color"] = updates["color"];
+    diffs.push(`Color: ${existing.color || "default"} → ${updates["color"]}`);
+  }
+
+  // Case ID
+  if (updates["caseId"] !== undefined && String(updates["caseId"] || "") !== String(existing.caseId || "")) {
+    changedFields.push("caseId");
+    previousValues["caseId"] = existing.caseId ? existing.caseId.toString() : null;
+    newValues["caseId"] = updates["caseId"] ? String(updates["caseId"]) : null;
+    diffs.push(`Linked case: ${existing.caseId || "None"} → ${updates["caseId"] || "None"}`);
+  }
+
+  // Client ID
+  if (updates["clientId"] !== undefined && String(updates["clientId"] || "") !== String(existing.clientId || "")) {
+    changedFields.push("clientId");
+    previousValues["clientId"] = existing.clientId ? existing.clientId.toString() : null;
+    newValues["clientId"] = updates["clientId"] ? String(updates["clientId"]) : null;
+    diffs.push(`Linked client: ${existing.clientId || "None"} → ${updates["clientId"] || "None"}`);
+  }
+
+  // Assigned To
+  if (updates["assignedTo"] !== undefined) {
+    const oldIds = Array.isArray(existing.assignedTo) ? existing.assignedTo.map((id: any) => id.toString()).sort() : [];
+    const newIds = (Array.isArray(updates["assignedTo"]) ? updates["assignedTo"] : [updates["assignedTo"]].filter(Boolean))
+      .map((id: any) => id.toString())
+      .sort();
+    if (JSON.stringify(oldIds) !== JSON.stringify(newIds)) {
+      changedFields.push("assignedTo");
+      previousValues["assignedTo"] = oldIds;
+      newValues["assignedTo"] = newIds;
+      diffs.push(`Assigned staff changed (${oldIds.length} → ${newIds.length} assigned)`);
+    }
+  }
+
+  const summary = diffs.length > 0 ? diffs.join(" · ") : "No field values changed";
+  return {
+    hasChanges: changedFields.length > 0,
+    changedFields,
+    diffs,
+    previousValues,
+    newValues,
+    summary,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // GET /api/calendar/events — list by date range, employee filter
-// Filters to user's accessible events
+// Shared Firm Calendar: Both Admin and Members view all firm calendar events
 // ---------------------------------------------------------------------------
 
 router.get("/events", async (req: Request, res: Response) => {
@@ -44,28 +195,9 @@ router.get("/events", async (req: Request, res: Response) => {
       filter["start"] = { $gte: firstDay, $lte: lastDay };
     }
 
-    // Employee filter - only admins can filter by other employees
+    // Employee filter: All authenticated users can filter by specific employee or view all
     if (employeeId && employeeId !== "all") {
-      if (req.user!.role === "admin") {
-        filter["assignedTo"] = employeeId;
-      } else {
-        // Non-admins see events they are assigned to or created
-        filter["$or"] = [
-          { assignedTo: { $in: [req.userId] } },
-          { createdBy: req.userId },
-        ];
-      }
-    } else if (req.user!.role !== "admin") {
-      const { getAccessibleCaseIds } = await import("../middleware/authorization.js");
-      const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
-
-      filter["$or"] = [
-        { assignedTo: { $in: [req.userId] } },
-        { createdBy: req.userId },
-        { type: "hearing" },
-        { type: "firm_event" },
-        ...(accessibleCaseIds.length > 0 ? [{ caseId: { $in: accessibleCaseIds } }] : []),
-      ];
+      filter["assignedTo"] = employeeId;
     }
 
     if (caseId) {
@@ -74,15 +206,6 @@ router.get("/events", async (req: Request, res: Response) => {
 
     if (type && type !== "all") {
       filter["type"] = type;
-    }
-
-    // If caseId provided and user is non-admin without cases permission, verify case access
-    if (caseId && req.user!.role !== "admin" && !req.user?.permissions?.cases) {
-      const hasAccess = await getAccessibleCaseIds(req.userId!, req.user!.role);
-      if (!hasAccess.includes(caseId)) {
-        res.json({ events: [] });
-        return;
-      }
     }
 
     const events = await CalendarEvent.find(filter)
@@ -162,20 +285,9 @@ router.post("/events", async (req: Request, res: Response) => {
       }
     }
 
-    // Validate case access if caseId provided
-    if (caseId && req.user!.role !== "admin") {
-      const { getAccessibleCaseIds } = await import("../middleware/authorization.js");
-      const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
-      if (!accessibleCaseIds.includes(caseId)) {
-        res.status(403).json({ message: "Cannot create event for a case you don't have access to" });
-        return;
-      }
-    }
-
-    // Non-admins can only assign to themselves
-    const finalAssignedTo = req.user!.role === "admin"
-      ? (Array.isArray(assignedTo) ? assignedTo : [assignedTo].filter(Boolean))
-      : [req.userId];
+    // All authenticated users can assign to any employee (firm-wide calendar access)
+    const rawAssigned = Array.isArray(assignedTo) ? assignedTo : [assignedTo].filter(Boolean);
+    const finalAssignedTo = rawAssigned.length > 0 ? rawAssigned : [req.userId];
 
     const event = await CalendarEvent.create({
       title: title.trim(),
@@ -210,6 +322,7 @@ router.post("/events", async (req: Request, res: Response) => {
       }
     }
 
+    const linkedCase = caseId ? await Case.findById(caseId).select("title number").lean() : null;
     await AuditLog.create({
       userId: req.userId,
       userName: req.user?.name ?? "Unknown",
@@ -217,6 +330,29 @@ router.post("/events", async (req: Request, res: Response) => {
       resource: "calendar",
       resourceId: event._id.toString(),
       resourceName: event.title,
+      details: `Created calendar event: ${event.title}`,
+      metadata: {
+        actorRole: req.user?.role === "admin" ? "Admin" : "Member",
+        actionType: "CREATE",
+        eventTitle: event.title,
+        eventType: event.type,
+        eventDate: event.start,
+        caseId: event.caseId ? event.caseId.toString() : null,
+        caseTitle: linkedCase?.title || null,
+        caseNumber: linkedCase?.number || null,
+        changedFields: ["title", "description", "type", "start", "allDay", "caseId", "assignedTo"],
+        previousValues: {},
+        newValues: {
+          title: event.title,
+          description: event.description,
+          type: event.type,
+          start: event.start,
+          allDay: event.allDay,
+          caseId: event.caseId ? event.caseId.toString() : null,
+          assignedTo: event.assignedTo,
+        },
+        diffs: [`Created ${event.type} event "${event.title}" on ${formatAuditDate(event.start)}`],
+      },
       ip: req.ip,
       userAgent: req.headers["user-agent"],
     });
@@ -292,25 +428,6 @@ router.patch("/events/:id", requireResourceAccess("calendarEvent"), async (req: 
           return;
         }
         updates["end"] = parsedEnd;
-      }
-    }
-
-    // Non-admins cannot reassign to others
-    if (req.user!.role !== "admin" && updates["assignedTo"]) {
-      const assigned = Array.isArray(updates["assignedTo"]) ? updates["assignedTo"] : [updates["assignedTo"]];
-      if (!assigned.includes(req.userId)) {
-        res.status(403).json({ message: "Cannot remove yourself from event assignments" });
-        return;
-      }
-    }
-
-    // Validate case access if caseId changed or if modifying linked hearing
-    const targetCaseId = updates["caseId"] ? String(updates["caseId"]) : (existingEvent.caseId ? existingEvent.caseId.toString() : null);
-    if (targetCaseId && req.user!.role !== "admin" && !req.user?.permissions?.cases) {
-      const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
-      if (!accessibleCaseIds.includes(targetCaseId)) {
-        res.status(403).json({ message: "You do not have permission to modify events for this case" });
-        return;
       }
     }
 
@@ -510,13 +627,57 @@ router.patch("/events/:id", requireResourceAccess("calendarEvent"), async (req: 
             });
           }
 
+          const oldStartDateStr = formatAuditDate(oldStart);
+          const newStartDateStr = formatAuditDate(newStart);
+          const rescheduleDiffs: string[] = [
+            `Hearing rescheduled from ${oldStartDateStr} to ${newStartDateStr}`,
+          ];
+          const rescheduleChangedFields = ["start", "hearingStatus"];
+          const reschedulePrevValues: Record<string, unknown> = {
+            start: oldStart,
+            hearingStatus: existingEvent.hearingStatus,
+          };
+          const rescheduleNewValues: Record<string, unknown> = {
+            start: newStart,
+            hearingStatus: "scheduled",
+          };
+          if (typeof req.body["remarks"] === "string" && req.body["remarks"].trim()) {
+            rescheduleChangedFields.push("remarks");
+            reschedulePrevValues["remarks"] = existingEvent.remarks || "";
+            rescheduleNewValues["remarks"] = req.body["remarks"].trim();
+            rescheduleDiffs.push(`Remarks: "${reschedulePrevValues["remarks"]}" → "${rescheduleNewValues["remarks"]}"`);
+          }
+          if (updates["title"] && updates["title"] !== existingEvent.title) {
+            rescheduleChangedFields.push("title");
+            reschedulePrevValues["title"] = existingEvent.title;
+            rescheduleNewValues["title"] = updates["title"];
+            rescheduleDiffs.push(`Title: "${existingEvent.title}" → "${updates["title"]}"`);
+          }
+
           await AuditLog.create({
             userId: req.userId,
             userName: req.user?.name ?? "Unknown",
-            action: "update",
+            action: "reschedule",
             resource: "calendar",
             resourceId: finalNewEvent._id.toString(),
             resourceName: finalNewEvent.title,
+            details: `Hearing rescheduled from ${oldStartDateStr} to ${newStartDateStr}${linkedCase ? ` for matter ${linkedCase.number || linkedCase.title}` : ""}`,
+            metadata: {
+              actorRole: req.user?.role === "admin" ? "Admin" : "Member",
+              actionType: "RESCHEDULE",
+              isRescheduled: true,
+              eventTitle: finalNewEvent.title,
+              eventType: "hearing",
+              eventDate: newStart,
+              previousEventDate: oldStart,
+              caseId: linkedCase._id.toString(),
+              caseTitle: linkedCase.title,
+              caseNumber: linkedCase.number,
+              changedFields: rescheduleChangedFields,
+              previousValues: reschedulePrevValues,
+              newValues: rescheduleNewValues,
+              diffs: rescheduleDiffs,
+            },
             ip: req.ip,
             userAgent: req.headers["user-agent"],
           });
@@ -553,6 +714,8 @@ router.patch("/events/:id", requireResourceAccess("calendarEvent"), async (req: 
       }
     }
 
+    const diffResult = computeCalendarEventDiff(existingEvent, updates);
+
     const event = await CalendarEvent.findByIdAndUpdate(req.params["id"], updates, {
       new: true,
       runValidators: true,
@@ -588,6 +751,7 @@ router.patch("/events/:id", requireResourceAccess("calendarEvent"), async (req: 
       }
     }
 
+    const linkedCase = event.caseId ? await Case.findById(event.caseId).select("title number").lean() : null;
     await AuditLog.create({
       userId: req.userId,
       userName: req.user?.name ?? "Unknown",
@@ -595,6 +759,21 @@ router.patch("/events/:id", requireResourceAccess("calendarEvent"), async (req: 
       resource: "calendar",
       resourceId: event._id.toString(),
       resourceName: event.title,
+      details: diffResult.summary || `Updated calendar event ${event.title}`,
+      metadata: {
+        actorRole: req.user?.role === "admin" ? "Admin" : "Member",
+        actionType: "UPDATE",
+        eventTitle: event.title,
+        eventType: event.type,
+        eventDate: event.start,
+        caseId: event.caseId ? event.caseId.toString() : null,
+        caseTitle: linkedCase?.title || null,
+        caseNumber: linkedCase?.number || null,
+        changedFields: diffResult.changedFields,
+        previousValues: diffResult.previousValues,
+        newValues: diffResult.newValues,
+        diffs: diffResult.diffs,
+      },
       ip: req.ip,
       userAgent: req.headers["user-agent"],
     });
@@ -629,15 +808,6 @@ router.post("/events/:id/record-hearing", requireResourceAccess("calendarEvent")
     if (event.type !== "hearing" || !event.caseId) {
       res.status(400).json({ message: "Event is not a court hearing linked to a case" });
       return;
-    }
-
-    // Verify case access
-    if (req.user!.role !== "admin" && !req.user?.permissions?.cases) {
-      const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
-      if (!accessibleCaseIds.includes(event.caseId.toString())) {
-        res.status(403).json({ message: "You do not have permission to modify hearings for this case" });
-        return;
-      }
     }
 
     const caseRecord = await Case.findById(event.caseId);
@@ -865,13 +1035,48 @@ router.post("/events/:id/record-hearing", requireResourceAccess("calendarEvent")
       }
     });
 
+    const recordDiffs: string[] = [
+      `Hearing outcome recorded as "${status}" for ${formatAuditDate(hearingDate)}`,
+    ];
+    if (remarks) {
+      recordDiffs.push(`Remarks / work done: "${remarks}"`);
+    }
+    if (parsedNextHearing) {
+      recordDiffs.push(`Next hearing date scheduled: ${formatAuditDate(parsedNextHearing)}`);
+    }
+
     await AuditLog.create({
       userId: req.userId,
       userName: req.user?.name ?? "Unknown",
-      action: "update",
+      action: parsedNextHearing ? "reschedule" : "update",
       resource: "calendar",
       resourceId: event._id.toString(),
       resourceName: `Hearing recorded: ${caseRecord.number || caseRecord.title}`,
+      details: recordDiffs.join(" · "),
+      metadata: {
+        actorRole: req.user?.role === "admin" ? "Admin" : "Member",
+        actionType: "RECORD_HEARING",
+        isRescheduled: Boolean(parsedNextHearing),
+        eventTitle: event.title,
+        eventType: "hearing",
+        eventDate: hearingDate,
+        nextHearingDate: parsedNextHearing,
+        caseId: caseRecord._id.toString(),
+        caseTitle: caseRecord.title,
+        caseNumber: caseRecord.number,
+        changedFields: ["hearingStatus", "remarks", ...(parsedNextHearing ? ["nextHearingDate"] : [])],
+        previousValues: {
+          hearingStatus: event.hearingStatus,
+          remarks: event.remarks || "",
+          nextHearingDate: caseRecord.nextHearing,
+        },
+        newValues: {
+          hearingStatus: status,
+          remarks,
+          nextHearingDate: parsedNextHearing,
+        },
+        diffs: recordDiffs,
+      },
       ip: req.ip,
       userAgent: req.headers["user-agent"],
     });
@@ -924,9 +1129,44 @@ router.delete("/events/:id", requireResourceAccess("calendarEvent"), async (req:
       return;
     }
 
+    const linkedCase = existing.caseId ? await Case.findById(existing.caseId).select("title number").lean() : null;
+
     // Phase 5 rule: For a case-linked hearing event, ordinary removal / cancelling
     // must NOT silently hard-delete the historical calendar entry!
     if (existing.type === "hearing" && existing.caseId) {
+      await AuditLog.create({
+        userId: req.userId,
+        userName: req.user?.name ?? "Unknown",
+        action: "delete",
+        resource: "calendar",
+        resourceId: existing._id.toString(),
+        resourceName: existing.title,
+        details: `Hearing cancelled: ${existing.title} (${formatAuditDate(existing.start)})`,
+        metadata: {
+          actorRole: req.user?.role === "admin" ? "Admin" : "Member",
+          actionType: "DELETE",
+          eventTitle: existing.title,
+          eventType: existing.type,
+          eventDate: existing.start,
+          caseId: existing.caseId.toString(),
+          caseTitle: linkedCase?.title || null,
+          caseNumber: linkedCase?.number || null,
+          changedFields: ["hearingStatus", "remarks"],
+          previousValues: {
+            hearingStatus: existing.hearingStatus,
+            remarks: existing.remarks || "",
+            start: existing.start,
+          },
+          newValues: {
+            hearingStatus: "cancelled",
+            remarks: "Hearing cancelled",
+          },
+          diffs: [`Hearing "${existing.title}" on ${formatAuditDate(existing.start)} cancelled and preserved in history`],
+        },
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+      });
+
       existing.isNextHearing = false;
       existing.hearingStatus = "cancelled";
       if (!existing.remarks || !existing.remarks.includes("cancelled")) {
@@ -962,10 +1202,10 @@ router.delete("/events/:id", requireResourceAccess("calendarEvent"), async (req:
         hearingStatus: { $ne: "cancelled" },
       }).sort({ start: 1 });
 
-      const linkedCase = await Case.findById(existing.caseId);
-      if (linkedCase) {
-        linkedCase.nextHearing = nextUpcomingHearing ? nextUpcomingHearing.start : null;
-        await linkedCase.save();
+      const linkedCaseDoc = await Case.findById(existing.caseId);
+      if (linkedCaseDoc) {
+        linkedCaseDoc.nextHearing = nextUpcomingHearing ? nextUpcomingHearing.start : null;
+        await linkedCaseDoc.save();
         if (nextUpcomingHearing) {
           nextUpcomingHearing.isNextHearing = true;
           await nextUpcomingHearing.save();
@@ -973,10 +1213,10 @@ router.delete("/events/:id", requireResourceAccess("calendarEvent"), async (req:
         const io = req.app.get("io");
         if (io) {
           io.emit("case:updated", {
-            caseId: linkedCase._id.toString(),
-            number: linkedCase.number,
-            title: linkedCase.title,
-            nextHearing: linkedCase.nextHearing ? linkedCase.nextHearing.toISOString() : null,
+            caseId: linkedCaseDoc._id.toString(),
+            number: linkedCaseDoc.number,
+            title: linkedCaseDoc.title,
+            nextHearing: linkedCaseDoc.nextHearing ? linkedCaseDoc.nextHearing.toISOString() : null,
           });
         }
       }
@@ -991,20 +1231,43 @@ router.delete("/events/:id", requireResourceAccess("calendarEvent"), async (req:
         });
       }
 
-      await AuditLog.create({
-        userId: req.userId,
-        userName: req.user?.name ?? "Unknown",
-        action: "update",
-        resource: "calendar",
-        resourceId: existing._id.toString(),
-        resourceName: existing.title,
-        ip: req.ip,
-        userAgent: req.headers["user-agent"],
-      });
-
       res.json({ message: "Hearing cancelled and preserved in history", event: existing });
       return;
     }
+
+    // Permanent delete: Log BEFORE deletion
+    await AuditLog.create({
+      userId: req.userId,
+      userName: req.user?.name ?? "Unknown",
+      action: "delete",
+      resource: "calendar",
+      resourceId: existing._id.toString(),
+      resourceName: existing.title,
+      details: `Permanently deleted calendar event "${existing.title}"`,
+      metadata: {
+        actorRole: req.user?.role === "admin" ? "Admin" : "Member",
+        actionType: "DELETE",
+        eventTitle: existing.title,
+        eventType: existing.type,
+        eventDate: existing.start,
+        caseId: existing.caseId ? existing.caseId.toString() : null,
+        caseTitle: linkedCase?.title || null,
+        caseNumber: linkedCase?.number || null,
+        changedFields: ["deleted"],
+        previousValues: {
+          title: existing.title,
+          type: existing.type,
+          start: existing.start,
+          end: existing.end,
+          assignedTo: existing.assignedTo,
+          caseId: existing.caseId ? existing.caseId.toString() : null,
+        },
+        newValues: {},
+        diffs: [`Permanently deleted event "${existing.title}" scheduled for ${formatAuditDate(existing.start)}`],
+      },
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
 
     const event = await CalendarEvent.findByIdAndDelete(req.params["id"]);
     if (!event) {
@@ -1047,17 +1310,6 @@ router.delete("/events/:id", requireResourceAccess("calendarEvent"), async (req:
     } catch (remErr) {
       console.error("[calendar] Failed to delete synchronized reminders on event delete:", remErr);
     }
-
-    await AuditLog.create({
-      userId: req.userId,
-      userName: req.user?.name ?? "Unknown",
-      action: "delete",
-      resource: "calendar",
-      resourceId: event._id.toString(),
-      resourceName: event.title,
-      ip: req.ip,
-      userAgent: req.headers["user-agent"],
-    });
 
     res.json({ message: "Event deleted" });
   } catch (err) {

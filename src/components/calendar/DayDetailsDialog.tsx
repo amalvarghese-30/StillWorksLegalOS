@@ -10,6 +10,7 @@ import {
   Building,
   Pencil,
   FileCheck2,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,7 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { CalendarEvent } from "@/services/calendar";
+import { useDeleteEvent, type CalendarEvent } from "@/services/calendar";
 import { RecordHearingDialog } from "./RecordHearingDialog";
 
 interface DayDetailsDialogProps {
@@ -73,6 +74,13 @@ export function DayDetailsDialog({
   onEditEvent,
 }: DayDetailsDialogProps) {
   const [recordingEvent, setRecordingEvent] = useState<CalendarEvent | null>(null);
+  const deleteEvent = useDeleteEvent();
+
+  const handleDeleteEvent = (event: CalendarEvent) => {
+    if (window.confirm(`Are you sure you want to delete or cancel "${event.title}"?`)) {
+      deleteEvent.mutate(event._id);
+    }
+  };
 
   if (!open || !dateStr) return null;
 
@@ -213,12 +221,21 @@ export function DayDetailsDialog({
                                 onClose();
                                 onEditEvent(event);
                               }}
-                              className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                              className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
                               title="Edit / Reschedule event"
                             >
                               <Pencil size={11} /> Edit / Reschedule
                             </button>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteEvent(event)}
+                            disabled={deleteEvent.isPending}
+                            className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] font-medium text-rose-600 dark:text-rose-400 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
+                            title="Delete or cancel event"
+                          >
+                            <Trash2 size={11} /> Delete
+                          </button>
                         </div>
                       </div>
                     </li>

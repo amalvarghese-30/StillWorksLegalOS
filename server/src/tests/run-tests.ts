@@ -6996,6 +6996,221 @@ const { NotificationService } = await import("../services/notifications.js");
     assert(empCustomRes.body?.category?.categoryType === "custom", "S44-20d: categoryType is 'custom'");
   }
 
+  // --- SUITE 45: Full Calendar Access For All Users & Comprehensive Edit Log Audit ---
+  console.log("\n--- SUITE 45: Full Calendar Access For All Users & Comprehensive Edit Log Audit ---");
+  {
+    // Setup users: Admin, Member A, Member B
+    const adminUser = await createUser({
+      name: "Adv. Calendar Admin",
+      email: "caladmin@test.com",
+      role: "admin",
+      permissions: {
+        dashboard: true, clients: true, cases: true, tasks: true,
+        documents: true, calendar: true, chat: true, reports: true,
+        employees: true, approvals: true, auditLogs: true, settings: true,
+      },
+    });
+    const adminToken = await createToken(adminUser);
+
+    const memberA = await createUser({
+      name: "Adv. Member A",
+      email: "calmemberA@test.com",
+      role: "employee",
+      permissions: {
+        dashboard: true, clients: false, cases: false, tasks: false,
+        documents: false, calendar: true, chat: false, reports: false,
+        employees: false, approvals: false, auditLogs: false, settings: false,
+      },
+    });
+    const tokenA = await createToken(memberA);
+
+    const memberB = await createUser({
+      name: "Adv. Member B",
+      email: "calmemberB@test.com",
+      role: "employee",
+      permissions: {
+        dashboard: true, clients: false, cases: false, tasks: false,
+        documents: false, calendar: true, chat: false, reports: false,
+        employees: false, approvals: false, auditLogs: false, settings: false,
+      },
+    });
+    const tokenB = await createToken(memberB);
+
+    // 1. Create a linked case for hearing testing
+    const testCase = await Case.create({
+      title: "Union of India v. Calendar Test",
+      number: "CAL-2026-9999",
+      court: "High Court of Delhi",
+      judge: "Hon'ble Justice Test",
+      status: "Active",
+      createdBy: adminUser._id,
+      assignedTo: [adminUser._id], // Member A & B are NOT assigned to this case!
+    });
+
+    // 2. Member A creates a firm calendar event (firm meeting)
+    const createEventRes = await request(app)
+      .post("/api/calendar/events")
+      .set("Authorization", `Bearer ${tokenA}`)
+      .send({
+        title: "Firm-wide Strategy Review",
+        description: "Review of quarterly deliverables",
+        type: "firm_event",
+        start: new Date("2026-11-15T10:00:00Z").toISOString(),
+        end: new Date("2026-11-15T11:00:00Z").toISOString(),
+        assignedTo: [memberB._id.toString()], // Member A assigns to Member B!
+      });
+    assert(createEventRes.status === 201, "S45-01a: Member A creates firm calendar event (201)");
+    const firmEvent = createEventRes.body.event;
+    assert(firmEvent && firmEvent.title === "Firm-wide Strategy Review", "S45-01b: Event title matches");
+    assert(firmEvent.assignedTo[0]?.toString() === memberB._id.toString(), "S45-01c: Member A assigned event to Member B");
+
+    // Verify audit log for creation
+    const createAudit = await AuditLog.findOne({
+      resource: "calendar",
+      resourceId: firmEvent._id.toString(),
+      action: "create",
+    }).lean();
+    assert(Boolean(createAudit), "S45-02a: AuditLog recorded for event creation");
+    assert((createAudit as any)?.metadata?.actorRole === "Member", "S45-02b: AuditLog records actorRole: Member");
+    assert(Array.isArray((createAudit as any)?.metadata?.diffs), "S45-02c: AuditLog contains diffs array");
+
+    // 3. Member B views all firm calendar events
+    const listRes = await request(app)
+      .get("/api/calendar/events")
+      .set("Authorization", `Bearer ${tokenB}`);
+    assert(listRes.status === 200, "S45-03a: Member B lists calendar events (200)");
+    const hasFirmEvent = listRes.body.events.some((e: any) => e._id === firmEvent._id);
+    assert(hasFirmEvent, "S45-03b: Member B can view event created by Member A");
+
+    // 4. Member B edits the event created by Member A (changes title, description)
+    const editRes = await request(app)
+      .patch(`/api/calendar/events/${firmEvent._id}`)
+      .set("Authorization", `Bearer ${tokenB}`)
+      .send({
+        title: "Firm-wide Strategy Review (Updated)",
+        description: "Updated agenda by Member B",
+      });
+    assert(editRes.status === 200, "S45-04a: Member B edits event created by Member A (200)");
+    assert(editRes.body.event.title === "Firm-wide Strategy Review (Updated)", "S45-04b: Title updated");
+
+    // Verify audit log for update
+    const updateAudit = await AuditLog.findOne({
+      resource: "calendar",
+      resourceId: firmEvent._id.toString(),
+      action: "update",
+    }).sort({ createdAt: -1 }).lean();
+    assert(Boolean(updateAudit), "S45-05a: AuditLog recorded for event update");
+    assert((updateAudit as any)?.metadata?.actorRole === "Member", "S45-05b: AuditLog records Member B role");
+    assert((updateAudit as any)?.metadata?.previousValues?.title === "Firm-wide Strategy Review", "S45-05c: AuditLog previousValues captured");
+    assert((updateAudit as any)?.metadata?.newValues?.title === "Firm-wide Strategy Review (Updated)", "S45-05d: AuditLog newValues captured");
+
+    // 5. Member A creates a Hearing event linked to a case they are NOT assigned to
+    const hearingStart = new Date("2026-11-20T10:30:00Z");
+    const hearingEventRes = await request(app)
+      .post("/api/calendar/events")
+      .set("Authorization", `Bearer ${tokenA}`)
+      .send({
+        title: "Bail Hearing — State matter",
+        type: "hearing",
+        start: hearingStart.toISOString(),
+        caseId: testCase._id.toString(),
+        assignedTo: [memberA._id.toString()],
+      });
+    assert(hearingEventRes.status === 201, "S45-06a: Member A creates hearing for case (201)");
+    const hearingEvent = hearingEventRes.body.event;
+
+    // Promote to canonical next hearing on testCase
+    testCase.nextHearing = hearingStart;
+    await testCase.save();
+    await CalendarEvent.findByIdAndUpdate(hearingEvent._id, { isNextHearing: true });
+
+    // 6. Member B reschedules the canonical hearing to a new date
+    const rescheduledStart = new Date("2026-11-27T11:00:00Z");
+    const rescheduleRes = await request(app)
+      .patch(`/api/calendar/events/${hearingEvent._id}`)
+      .set("Authorization", `Bearer ${tokenB}`)
+      .send({
+        start: rescheduledStart.toISOString(),
+        remarks: "Adjourned on request of senior counsel",
+      });
+    assert(rescheduleRes.status === 200, "S45-07a: Member B reschedules hearing (200)");
+    assert(Boolean(rescheduleRes.body.event), "S45-07b: Reschedule returns promoted new event");
+    assert(Boolean(rescheduleRes.body.originalEvent), "S45-07c: Reschedule preserves original event");
+
+    // Verify reschedule audit log
+    const rescheduleAudit = await AuditLog.findOne({
+      resource: "calendar",
+      action: "reschedule",
+    }).sort({ createdAt: -1 }).lean();
+    assert(Boolean(rescheduleAudit), "S45-08a: AuditLog recorded with action: reschedule");
+    assert((rescheduleAudit as any)?.metadata?.isRescheduled === true, "S45-08b: AuditLog marked isRescheduled: true");
+    assert((rescheduleAudit as any)?.metadata?.caseId === testCase._id.toString(), "S45-08c: AuditLog contains caseId");
+    assert(Array.isArray((rescheduleAudit as any)?.metadata?.diffs), "S45-08d: AuditLog contains diffs");
+
+    // 7. Member A records hearing outcome & schedules next date
+    const nextHearingDate = new Date("2026-12-10T10:30:00Z");
+    const recordHearingRes = await request(app)
+      .post(`/api/calendar/events/${rescheduleRes.body.event._id}/record-hearing`)
+      .set("Authorization", `Bearer ${tokenA}`)
+      .send({
+        status: "held",
+        remarks: "Arguments concluded in part. Next date for rejoinder.",
+        nextHearingDate: nextHearingDate.toISOString(),
+      });
+    assert(recordHearingRes.status === 200, "S45-09a: Member A records hearing outcome (200)");
+    assert(recordHearingRes.body.currentEvent.hearingStatus === "held", "S45-09b: Hearing status updated to held");
+    assert(Boolean(recordHearingRes.body.nextEvent), "S45-09c: Next hearing event created");
+
+    // Verify Record Hearing AuditLog
+    const recordAudit = await AuditLog.findOne({
+      resource: "calendar",
+      resourceId: rescheduleRes.body.event._id.toString(),
+      "metadata.actionType": "RECORD_HEARING",
+    }).lean();
+    assert(Boolean(recordAudit), "S45-10a: AuditLog recorded for RECORD_HEARING");
+    assert((recordAudit as any)?.metadata?.newValues?.hearingStatus === "held", "S45-10b: Outcome captured in newValues");
+    assert((recordAudit as any)?.metadata?.newValues?.remarks.includes("Arguments concluded"), "S45-10c: Remarks captured in newValues");
+
+    // 8. Member B deletes a calendar event
+    const deleteRes = await request(app)
+      .delete(`/api/calendar/events/${firmEvent._id}`)
+      .set("Authorization", `Bearer ${tokenB}`);
+    assert(deleteRes.status === 200, "S45-11a: Member B deletes firm calendar event (200)");
+
+    // Verify delete was recorded in AuditLog BEFORE removal
+    const deleteAudit = await AuditLog.findOne({
+      resource: "calendar",
+      resourceId: firmEvent._id.toString(),
+      action: "delete",
+    }).lean();
+    assert(Boolean(deleteAudit), "S45-12a: AuditLog recorded for delete");
+    assert((deleteAudit as any)?.metadata?.eventTitle === "Firm-wide Strategy Review (Updated)", "S45-12b: Captured title before removal");
+    assert((deleteAudit as any)?.userId?.toString() === memberB._id.toString(), "S45-12c: Actor ID matches Member B");
+
+    // 9. Admin queries audit logs with filters
+    const auditResourceRes = await request(app)
+      .get("/api/admin/audit-logs?resource=calendar")
+      .set("Authorization", `Bearer ${adminToken}`);
+    assert(auditResourceRes.status === 200, "S45-13a: Admin queries audit logs for resource=calendar (200)");
+    assert(auditResourceRes.body.logs.length >= 4, "S45-13b: Returns calendar audit logs");
+
+    const auditRescheduleRes = await request(app)
+      .get("/api/admin/audit-logs?action=reschedule")
+      .set("Authorization", `Bearer ${adminToken}`);
+    assert(auditRescheduleRes.status === 200, "S45-14a: Admin queries audit logs for action=reschedule (200)");
+    assert(auditRescheduleRes.body.logs.length >= 1, "S45-14b: Returns reschedule audit logs");
+
+    const auditUserRes = await request(app)
+      .get(`/api/admin/audit-logs?userId=${memberB._id}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    assert(auditUserRes.status === 200, "S45-15a: Admin queries audit logs for userId=memberB (200)");
+    assert(auditUserRes.body.logs.every((l: any) => l.userId === memberB._id.toString()), "S45-15b: Filtered strictly to Member B");
+
+    // 10. Unauthenticated user is rejected
+    const unauthRes = await request(app).get("/api/calendar/events");
+    assert(unauthRes.status === 401, "S45-16: Unauthenticated calendar access returns 401");
+  }
+
 
   try {
     if (mongoose.connection.readyState === 1) {

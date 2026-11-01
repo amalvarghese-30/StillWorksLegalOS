@@ -12,6 +12,7 @@ export type AuditAction =
   | "create"
   | "update"
   | "delete"
+  | "reschedule"
   | "approve"
   | "reject"
   | "upload"
@@ -131,6 +132,7 @@ const AuditLogSchema = new Schema<IAuditLog>(
         "create",
         "update",
         "delete",
+        "reschedule",
         "approve",
         "reject",
         "upload",

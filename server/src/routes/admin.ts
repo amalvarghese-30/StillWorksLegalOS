@@ -57,6 +57,15 @@ function buildAuditLogFilter(query: Record<string, string | undefined>): Record<
           { resource: { $in: ["auth", "settings"] } },
         ],
       });
+    } else if (action === "reschedule" || action === "rescheduled") {
+      andConditions.push({
+        $or: [
+          { action: "reschedule" },
+          { "metadata.actionType": "RESCHEDULE" },
+          { "metadata.isRescheduled": true },
+          { details: { $regex: "reschedul", $options: "i" } },
+        ],
+      });
     } else {
       filter["action"] = action;
     }
