@@ -10,6 +10,8 @@ import express from "express";
 import bcrypt from "bcryptjs";
 import { createServer } from "node:http";
 import { Server as SocketIOServer } from "socket.io";
+import path from "node:path";
+import fs from "node:fs";
 
 // Set environment before imports
 process.env["JWT_SECRET"] = "test-secret-that-is-at-least-64-characters-long-for-test-runs-12345";
@@ -57,6 +59,7 @@ const { validateMimeType } = await import("../services/nas.js");
 const { presenceService } = await import("../services/presence.js");
 const { requireAuth } = await import("../middleware/auth.js");
 const { default: helmet } = await import("helmet");
+const { resolveEnvPath, sanitizeProjectRoot, getValidEnvFiles } = await import("../utils/envResolver.js");
 
 function buildApp() {
   const app = express();
@@ -7209,6 +7212,98 @@ const { NotificationService } = await import("../services/notifications.js");
     // 10. Unauthenticated user is rejected
     const unauthRes = await request(app).get("/api/calendar/events");
     assert(unauthRes.status === 401, "S45-16: Unauthenticated calendar access returns 401");
+  }
+
+  // =========================================================================
+  // SUITE 46: Environment Path Resolution & Whitespace Safety
+  // =========================================================================
+  console.log("\n--- SUITE 46: Environment Path Resolution & Whitespace Safety ---");
+  {
+    const dummyRoot = process.platform === "win32" ? "C:\\StillWorksLegalOS" : "/app/StillWorksLegalOS";
+
+    // S46-01: Standard .env resolution
+    const stdEnv = resolveEnvPath(dummyRoot, ".env");
+    assert(path.basename(stdEnv) === ".env", "S46-01a: Resolves standard .env");
+    assert(!stdEnv.endsWith(" "), "S46-01b: Path has no trailing space");
+
+    // S46-02: .env.local resolution
+    const localEnv = resolveEnvPath(dummyRoot, ".env.local");
+    assert(path.basename(localEnv) === ".env.local", "S46-02: Resolves .env.local cleanly");
+
+    // S46-03: .env.development resolution
+    const devEnv = resolveEnvPath(dummyRoot, ".env.development");
+    assert(path.basename(devEnv) === ".env.development", "S46-03: Resolves .env.development cleanly");
+
+    // S46-04: Accidental trailing whitespace in filename (".env ")
+    const trailingEnv = resolveEnvPath(dummyRoot, ".env ");
+    assert(path.basename(trailingEnv) === ".env", "S46-04a: Normalizes accidental trailing space in filename");
+    assert(!trailingEnv.endsWith(" "), "S46-04b: Resolved path does not end with space");
+
+    // S46-05: Accidental leading whitespace in filename
+    const leadingEnv = resolveEnvPath(dummyRoot, "   .env");
+    assert(path.basename(leadingEnv) === ".env", "S46-05: Normalizes leading whitespace in filename");
+
+    // S46-06: Absolute paths
+    const absPath = process.platform === "win32" ? "C:\\Configs\\.env" : "/etc/configs/.env";
+    const resAbs = resolveEnvPath(dummyRoot, absPath);
+    assert(resAbs === path.normalize(absPath), "S46-06: Preserves absolute path");
+
+    // S46-07: Absolute path with accidental trailing whitespace
+    const absWithSpace = process.platform === "win32" ? "C:\\Configs\\.env " : "/etc/configs/.env ";
+    const resAbsSpace = resolveEnvPath(dummyRoot, absWithSpace);
+    assert(!resAbsSpace.endsWith(" "), "S46-07a: Strips trailing whitespace from absolute path");
+    assert(resAbsSpace === path.normalize(absPath), "S46-07b: Matches normalized target");
+
+    // S46-08: Relative project paths
+    const relRes = resolveEnvPath(dummyRoot, "server/.env");
+    assert(relRes === path.resolve(dummyRoot, "server/.env"), "S46-08: Resolves relative project path");
+
+    // S46-09: Missing required environment file
+    let missingCaught = false;
+    try {
+      resolveEnvPath(dummyRoot, ".env.non_existent_file_xyz", { required: true });
+    } catch (err: any) {
+      if (err.message.includes('Required environment file ".env.non_existent_file_xyz" not found')) {
+        missingCaught = true;
+      }
+    }
+    assert(missingCaught, "S46-09: Throws descriptive error for missing required environment file");
+
+    // S46-10: Existing required file
+    const existingReq = resolveEnvPath(process.cwd(), "package.json", { required: true });
+    assert(fs.existsSync(existingReq), "S46-10: Existing required file succeeds");
+
+    // S46-11: Empty filename throws descriptive error
+    let emptyCaught = false;
+    try {
+      resolveEnvPath(dummyRoot, "   ");
+    } catch (err: any) {
+      if (err.message === "Environment filename cannot be empty.") {
+        emptyCaught = true;
+      }
+    }
+    assert(emptyCaught, "S46-11: Empty filename throws descriptive error");
+
+    // S46-12: Non-string filename throws TypeError
+    let typeCaught = false;
+    try {
+      resolveEnvPath(dummyRoot, null as any);
+    } catch (err: any) {
+      if (err instanceof TypeError) {
+        typeCaught = true;
+      }
+    }
+    assert(typeCaught, "S46-12: Non-string filename throws TypeError");
+
+    // S46-13: sanitizeProjectRoot trims trailing whitespace
+    const cleanRoot = sanitizeProjectRoot(dummyRoot + "  ");
+    assert(!cleanRoot.endsWith(" "), "S46-13a: Root directory has no trailing whitespace");
+    assert(cleanRoot === path.resolve(dummyRoot), "S46-13b: Root directory resolves to normalized path");
+
+    // S46-14: getValidEnvFiles returns clean candidates
+    const validFiles = getValidEnvFiles(dummyRoot, "test ");
+    assert(validFiles.length === 4, "S46-14a: Returns 4 environment candidates");
+    assert(validFiles.every((f: string) => !f.endsWith(" ")), "S46-14b: No candidate has trailing whitespace");
   }
 
 

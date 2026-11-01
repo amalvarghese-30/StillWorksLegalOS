@@ -25,6 +25,7 @@
     "release:verify": "node scripts/release-verify.cjs",
     "smoke:test": "node scripts/smoke-test.cjs",
     "test:avatar": "node scripts/test-avatar-resolution.cjs",
+    "test:env": "node scripts/test-env-path-validation.cjs",
     "test": "npm run test --prefix server",
     "lint": "eslint .",
     "format": "prettier --write .",

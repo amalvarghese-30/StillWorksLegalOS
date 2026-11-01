@@ -33,6 +33,7 @@ import { NotificationScheduler } from "./services/notificationScheduler.js";
 import { startReminderScheduler } from "./services/reminderScheduler.js";
 import { seedCategories } from "./scripts/seedCategories.js";
 import { presenceService } from "./services/presence.js";
+import { resolveEnvPath, sanitizeProjectRoot } from "./utils/envResolver.js";
 import rateLimit from "express-rate-limit";
 
 // ---------------------------------------------------------------------------
@@ -51,11 +52,12 @@ function getDirname(): string {
 }
 
 const __dirname = getDirname();
+const cleanCwd = sanitizeProjectRoot(process.cwd());
 const envCandidates = [
-  path.resolve(__dirname, "..", ".env"),
-  path.resolve(__dirname, "..", "..", ".env"),
-  path.resolve(process.cwd(), ".env"),
-  path.resolve(process.cwd(), "server", ".env"),
+  resolveEnvPath(path.resolve(__dirname, ".."), ".env"),
+  resolveEnvPath(path.resolve(__dirname, "..", ".."), ".env"),
+  resolveEnvPath(cleanCwd, ".env"),
+  resolveEnvPath(path.resolve(cleanCwd, "server"), ".env"),
 ];
 for (const p of envCandidates) {
   if (existsSync(p)) {
