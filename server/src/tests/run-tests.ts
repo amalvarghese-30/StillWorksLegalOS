@@ -7662,6 +7662,156 @@ const { NotificationService } = await import("../services/notifications.js");
     assert(addSubRes.body.task.checklist[0].subItems[0].text === "Check 30 years search report", "S48-20: Subitem text saved");
   }
 
+  // --- Suite 49: Approval Centre Employee Identity, Assignment History & Approval Details ---
+  console.log("\n--- Suite 49: Approval Centre Employee Identity, Assignment History & Approval Details ---");
+  {
+    // Create Admin, Assigning Manager, Assignee Staff, and Submitter Staff
+    const s49Admin = await User.create({
+      name: "Advocate Rajesh Sharma",
+      email: `s49admin_${Date.now()}@stillworks.legal`,
+      passwordHash: "hash",
+      role: "admin",
+      permissions: { all: true },
+    });
+    const s49AdminToken = await createToken(s49Admin);
+
+    const s49Manager = await User.create({
+      name: "Advocate Meera Nair",
+      email: `s49mgr_${Date.now()}@stillworks.legal`,
+      passwordHash: "hash",
+      role: "employee",
+      permissions: { tasks: true, cases: true, approvals: true },
+    });
+    const s49ManagerToken = await createToken(s49Manager);
+
+    const s49Assignee = await User.create({
+      name: "Devhraj Yadav",
+      email: `devhraj_${Date.now()}@stillworks.legal`,
+      passwordHash: "hash",
+      role: "employee",
+      permissions: { tasks: true },
+    });
+    const s49AssigneeToken = await createToken(s49Assignee);
+
+    const s49Colleague = await User.create({
+      name: "Sneha Patil",
+      email: `sneha_${Date.now()}@stillworks.legal`,
+      passwordHash: "hash",
+      role: "employee",
+      permissions: { tasks: true },
+    });
+    const s49ColleagueToken = await createToken(s49Colleague);
+
+    // 1. Manager creates a task and assigns to Devhraj Yadav
+    const taskAssignedAt = new Date("2026-10-15T10:30:00.000Z");
+    const taskCreationRes = await request(app)
+      .post("/api/tasks")
+      .set("Authorization", `Bearer ${s49ManagerToken}`)
+      .send({
+        title: "Draft Sale Deed - Devhraj Yadav",
+        description: "Draft conveyance deed and verify stamp duty",
+        priority: "High",
+        status: "pending",
+        assignedTo: s49Assignee._id.toString(),
+        assignedUsers: [s49Assignee._id.toString(), s49Colleague._id.toString()],
+        assignedBy: s49Manager._id.toString(),
+        assignedAt: taskAssignedAt,
+        checklist: [
+          { text: "Draft initial agreement", done: true },
+          { text: "Client review and signing", done: true },
+        ],
+      });
+    assert(taskCreationRes.status === 201, "S49-01: Task created by manager (201)");
+    const createdTask = taskCreationRes.body.task;
+
+    // 2. Colleague Sneha marks task completed -> submits for approval (status: pending_approval)
+    const submitRes = await request(app)
+      .patch(`/api/tasks/${createdTask._id}`)
+      .set("Authorization", `Bearer ${s49ColleagueToken}`)
+      .send({
+        status: "completed", // Employee submitting task completion
+      });
+    assert(submitRes.status === 200, "S49-02: Colleague completes task -> submitted for approval (200)");
+    assert(submitRes.body.task.status === "pending_approval", "S49-03: Task status changed to pending_approval");
+    assert(Boolean(submitRes.body.task.submittedForApprovalAt), "S49-04: submittedForApprovalAt recorded");
+    assert(submitRes.body.task.submittedForApprovalBy?.toString() === s49Colleague._id.toString(), "S49-05: submittedForApprovalBy matches colleague Sneha Patil");
+
+    // 3. Admin lists approvals: GET /api/admin/approvals
+    const listApprovalsRes = await request(app)
+      .get("/api/admin/approvals?category=tasks&status=pending")
+      .set("Authorization", `Bearer ${s49AdminToken}`);
+    assert(listApprovalsRes.status === 200, "S49-06: GET /api/admin/approvals returns 200");
+    const foundTaskApproval = listApprovalsRes.body.approvals.find((a: any) => a._id === `task_${createdTask._id}`);
+    assert(Boolean(foundTaskApproval), "S49-07: Task approval found in queue");
+
+    // 4. Verify explicit 4 identities on the approval item
+    assert(foundTaskApproval.submittedBy?.name === "Sneha Patil", "S49-08: submittedBy displays Sneha Patil (not 'Assignee')");
+    assert(foundTaskApproval.submittedBy?.name !== "Assignee", "S49-09: submittedBy NEVER displays generic 'Assignee'");
+    assert(foundTaskApproval.assignedTo?.name === "Devhraj Yadav", "S49-10: assignedTo displays Devhraj Yadav");
+    assert(foundTaskApproval.assignedBy?.name === "Advocate Meera Nair", "S49-11: assignedBy displays Advocate Meera Nair");
+    assert(Boolean(foundTaskApproval.assignedAt), "S49-12: assignedAt timestamp is returned");
+    assert(Boolean(foundTaskApproval.submittedAt), "S49-13: submittedAt timestamp is returned");
+
+    // 5. Test detail endpoint: GET /api/admin/approvals/:id
+    const detailRes = await request(app)
+      .get(`/api/admin/approvals/task_${createdTask._id}`)
+      .set("Authorization", `Bearer ${s49AdminToken}`);
+    assert(detailRes.status === 200, "S49-14: GET /api/admin/approvals/:id returns 200");
+    assert(Boolean(detailRes.body.approval), "S49-15: Detail response has approval object");
+    assert(detailRes.body.approval.submittedBy?.name === "Sneha Patil", "S49-16: Detail submittedBy is Sneha Patil");
+    assert(detailRes.body.approval.assignedTo?.name === "Devhraj Yadav", "S49-17: Detail assignedTo is Devhraj Yadav");
+    assert(detailRes.body.approval.assignedBy?.name === "Advocate Meera Nair", "S49-18: Detail assignedBy is Advocate Meera Nair");
+    assert(detailRes.body.approval.taskDetails?.checklist?.length === 2, "S49-19: Detail contains checklist subtasks");
+
+    // 6. Test direct ObjectId lookup on detail endpoint: GET /api/admin/approvals/<rawTaskId>
+    const rawDetailRes = await request(app)
+      .get(`/api/admin/approvals/${createdTask._id}`)
+      .set("Authorization", `Bearer ${s49AdminToken}`);
+    assert(rawDetailRes.status === 200, "S49-20: Raw ObjectId lookup on detail returns 200");
+    assert(rawDetailRes.body.approval._id === `task_${createdTask._id}`, "S49-21: Standardizes ID with task_ prefix");
+
+    // 7. Security: Non-admin without approvals permission cannot access detail endpoint
+    const unauthorizedRes = await request(app)
+      .get(`/api/admin/approvals/task_${createdTask._id}`)
+      .set("Authorization", `Bearer ${s49AssigneeToken}`);
+    assert(unauthorizedRes.status === 403, "S49-22: Non-admin without approval permission gets 403");
+
+    // 8. 404 for nonexistent approval
+    const notFoundRes = await request(app)
+      .get("/api/admin/approvals/task_507f1f77bcf86cd799439011")
+      .set("Authorization", `Bearer ${s49AdminToken}`);
+    assert(notFoundRes.status === 404, "S49-23: Non-existent approval returns 404");
+
+    // 9. Legacy Task fallback: Create task without submittedForApprovalBy
+    const legacyTask = await Task.create({
+      title: "Legacy Conveyance Task",
+      category: "Property Law",
+      priority: "Medium",
+      status: "pending_approval",
+      assignedTo: s49Assignee._id,
+      assignedBy: s49Manager._id,
+      assignedAt: new Date("2026-09-01T00:00:00Z"),
+      submittedForApprovalAt: new Date("2026-09-05T12:00:00Z"),
+      createdBy: s49Manager._id,
+    });
+    const legacyDetailRes = await request(app)
+      .get(`/api/admin/approvals/task_${legacyTask._id}`)
+      .set("Authorization", `Bearer ${s49AdminToken}`);
+    assert(legacyDetailRes.status === 200, "S49-24: Legacy task returns 200");
+    assert(legacyDetailRes.body.approval.submittedBy?.name !== "Assignee", "S49-25: Legacy task never returns literal 'Assignee'");
+    assert(legacyDetailRes.body.approval.assignedTo?.name === "Devhraj Yadav", "S49-26: Legacy task assignedTo is Devhraj Yadav");
+    assert(legacyDetailRes.body.approval.assignedBy?.name === "Advocate Meera Nair", "S49-27: Legacy task assignedBy is Advocate Meera Nair");
+
+    // 10. Admin approves the task through existing endpoint POST /api/tasks/:id/approve
+    const approveTaskRes = await request(app)
+      .post(`/api/tasks/${createdTask._id}/approve`)
+      .set("Authorization", `Bearer ${s49AdminToken}`)
+      .send({});
+    assert(approveTaskRes.status === 200, "S49-28: Admin approves task completion -> 200");
+    assert(approveTaskRes.body.task?.status === "completed", "S49-29: Task status transitioned to completed");
+    assert(Boolean(approveTaskRes.body.task?.approvedAt), "S49-30: Task approvedAt timestamp set");
+  }
+
 
   try {
     if (mongoose.connection.readyState === 1) {

@@ -31,13 +31,42 @@ import {
   ArrowRight,
   CheckSquare,
 } from "lucide-react";
-import type { ApprovalItem } from "@/services/admin";
+import { type ApprovalItem, useApprovalDetail } from "@/services/admin";
 import { downloadDocument } from "@/services/documents";
 import { resolveAvatarUrl } from "@/lib/avatarUrl";
 import { toast } from "sonner";
 import { iconForKind, priorityBadge, agingBadge } from "./ApprovalTable";
 import { Link } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
+
+function safeFormatDateTime(iso: any, fallback = "—"): string {
+  if (!iso) return fallback;
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return fallback;
+    return new Intl.DateTimeFormat("en-IN", {
+      timeZone: "Asia/Kolkata",
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(d);
+  } catch {
+    return fallback;
+  }
+}
+
+function safeFormatDateOnly(iso: any, fallback = "—"): string {
+  if (!iso) return fallback;
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return fallback;
+    return new Intl.DateTimeFormat("en-IN", {
+      timeZone: "Asia/Kolkata",
+      dateStyle: "medium",
+    }).format(d);
+  } catch {
+    return fallback;
+  }
+}
 
 interface ApprovalDetailDrawerProps {
   item: ApprovalItem | null;
@@ -49,7 +78,7 @@ interface ApprovalDetailDrawerProps {
 }
 
 export function ApprovalDetailDrawer({
-  item,
+  item: initialItem,
   isOpen,
   onClose,
   onApprove,
@@ -57,6 +86,32 @@ export function ApprovalDetailDrawer({
   isProcessing = false,
 }: ApprovalDetailDrawerProps) {
   const [activeTab, setActiveTab] = useState<string>("overview");
+
+  // Fetch full details by ID when drawer is open
+  const approvalId = initialItem?._id;
+  const { data: detailData, isLoading: isDetailLoading, isError: isDetailError, refetch: refetchDetail } = useApprovalDetail(
+    approvalId,
+    { enabled: isOpen && Boolean(approvalId) }
+  );
+
+  const item = detailData?.approval || initialItem;
+
+  if (!item && !isDetailLoading) return null;
+
+  if (!item && isDetailLoading) {
+    return (
+      <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
+        <SheetContent
+          side="right"
+          className="w-full sm:max-w-xl md:max-w-2xl p-6 flex flex-col items-center justify-center bg-card border-l border-border shadow-2xl z-50"
+        >
+          <Loader2 className="size-8 animate-spin text-primary mb-3" />
+          <p className="text-sm font-medium text-foreground">Loading approval details…</p>
+          <p className="text-xs text-muted-foreground mt-1">Retrieving request history and assignments</p>
+        </SheetContent>
+      </Sheet>
+    );
+  }
 
   if (!item) return null;
 
@@ -97,13 +152,8 @@ export function ApprovalDetailDrawer({
   const doneSubtasks = task?.checklist?.filter((c) => c.done).length ?? 0;
   const subtaskProgress = totalSubtasks > 0 ? Math.round((doneSubtasks / totalSubtasks) * 100) : 0;
 
-  const formattedDate = item.when
-    ? new Intl.DateTimeFormat("en-IN", {
-        timeZone: "Asia/Kolkata",
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(new Date(item.when))
-    : "—";
+  const formattedDate = safeFormatDateTime(item.submittedAt || item.when);
+  const formattedAssignedDate = safeFormatDateTime(item.assignedAt);
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -247,10 +297,16 @@ export function ApprovalDetailDrawer({
 
               {/* People Involved Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {/* 1. Submitted By */}
                 <div className="p-3.5 rounded-xl border border-border/80 bg-muted/20 space-y-1">
-                  <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                    Submitted By
-                  </span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                      Submitted By
+                    </span>
+                    <span className="text-[10px] text-muted-foreground font-mono">
+                      {formattedDate}
+                    </span>
+                  </div>
                   <div className="flex items-center gap-2.5 pt-1">
                     {resolveAvatarUrl(item.submittedBy?.avatarUrl) ? (
                       <img
@@ -274,43 +330,89 @@ export function ApprovalDetailDrawer({
                       </div>
                     )}
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-foreground truncate">
-                        {item.submittedBy?.name || "Employee"}
+                      <p className="text-sm font-semibold text-foreground truncate" title={item.submittedBy?.name}>
+                        {item.submittedBy?.name || "Staff Submitter"}
                       </p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {item.submittedBy?.email || item.submittedBy?.role || "Staff"}
+                      <p className="text-xs text-muted-foreground truncate capitalize">
+                        {item.submittedBy?.role?.replace(/_/g, " ") || item.submittedBy?.email || "Staff"}
                       </p>
                     </div>
                   </div>
                 </div>
 
-                {task?.assignedTo && (
-                  <div className="p-3.5 rounded-xl border border-border/80 bg-muted/20 space-y-1">
-                    <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                      Assigned To
-                    </span>
-                    <div className="flex items-center gap-2.5 pt-1">
-                      <div className="size-8 rounded-full bg-blue-500/10 text-blue-600 grid place-items-center text-xs font-bold shrink-0">
-                        {task.assignedTo.name
-                          ? task.assignedTo.name
-                              .split(" ")
-                              .map((w) => w[0])
-                              .join("")
-                              .slice(0, 2)
-                              .toUpperCase()
-                          : "A"}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-foreground truncate">
-                          {task.assignedTo.name}
-                        </p>
-                        <p className="text-xs text-muted-foreground truncate capitalize">
-                          {task.assignedTo.role?.replace(/_/g, " ") || "Assigned To"}
-                        </p>
-                      </div>
+                {/* 2. Assigned To */}
+                <div className="p-3.5 rounded-xl border border-border/80 bg-muted/20 space-y-1">
+                  <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                    Assigned To
+                  </span>
+                  <div className="flex items-center gap-2.5 pt-1">
+                    <div className="size-8 rounded-full bg-blue-500/10 text-blue-600 grid place-items-center text-xs font-bold shrink-0">
+                      {(item.assignedTo?.name || task?.assignedTo?.name)
+                        ? (item.assignedTo?.name || task?.assignedTo?.name || "A")
+                            .split(" ")
+                            .map((w) => w[0])
+                            .join("")
+                            .slice(0, 2)
+                            .toUpperCase()
+                        : "A"}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-foreground truncate" title={item.assignedTo?.name || task?.assignedTo?.name || "Unassigned"}>
+                        {item.assignedTo?.name || task?.assignedTo?.name || (item.kind === "Task Completion" ? "Unassigned" : "—")}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate capitalize">
+                        {item.assignedTo?.role?.replace(/_/g, " ") || task?.assignedTo?.role?.replace(/_/g, " ") || "Assignee"}
+                      </p>
                     </div>
                   </div>
-                )}
+                </div>
+
+                {/* 3. Assigned By */}
+                <div className="p-3.5 rounded-xl border border-border/80 bg-muted/20 space-y-1">
+                  <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                    Assigned By
+                  </span>
+                  <div className="flex items-center gap-2.5 pt-1">
+                    <div className="size-8 rounded-full bg-amber-500/10 text-amber-600 grid place-items-center text-xs font-bold shrink-0">
+                      {(item.assignedBy?.name || task?.assignedBy?.name)
+                        ? (item.assignedBy?.name || task?.assignedBy?.name || "B")
+                            .split(" ")
+                            .map((w) => w[0])
+                            .join("")
+                            .slice(0, 2)
+                            .toUpperCase()
+                        : "B"}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-foreground truncate" title={item.assignedBy?.name || task?.assignedBy?.name || "Unavailable"}>
+                        {item.assignedBy?.name || task?.assignedBy?.name || (item.kind === "Task Completion" ? "Historical information unavailable" : "—")}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate capitalize">
+                        {item.assignedBy?.role?.replace(/_/g, " ") || task?.assignedBy?.role?.replace(/_/g, " ") || "Assigner"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4. Assignment Date & Time */}
+                <div className="p-3.5 rounded-xl border border-border/80 bg-muted/20 space-y-1">
+                  <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                    Assignment Date & Time
+                  </span>
+                  <div className="flex items-center gap-2.5 pt-1">
+                    <div className="size-8 rounded-full bg-purple-500/10 text-purple-600 grid place-items-center text-xs font-bold shrink-0">
+                      <Clock size={16} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-foreground truncate">
+                        {formattedAssignedDate !== "—" ? formattedAssignedDate : "Historical date unavailable"}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {item.assignedAt ? "Original assignment timestamp" : "Not recorded in early records"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Related Entity Links */}
@@ -403,10 +505,7 @@ export function ApprovalDetailDrawer({
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">Deadline:</span>
                       <span className="font-medium text-foreground">
-                        {new Intl.DateTimeFormat("en-IN", {
-                          timeZone: "Asia/Kolkata",
-                          dateStyle: "medium",
-                        }).format(new Date(task.deadline))}
+                        {safeFormatDateOnly(task.deadline)}
                       </span>
                     </div>
                   )}
@@ -414,11 +513,7 @@ export function ApprovalDetailDrawer({
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">Completed At:</span>
                       <span className="font-medium text-emerald-600 dark:text-emerald-400">
-                        {new Intl.DateTimeFormat("en-IN", {
-                          timeZone: "Asia/Kolkata",
-                          dateStyle: "medium",
-                          timeStyle: "short",
-                        }).format(new Date(task.completedAt))}
+                        {safeFormatDateTime(task.completedAt)}
                       </span>
                     </div>
                   )}
@@ -519,7 +614,7 @@ export function ApprovalDetailDrawer({
                             </h4>
                             <p className="text-xs text-muted-foreground mt-0.5">
                               {d.sizeFormatted || "Document"} • {d.mimeType || "application/pdf"}
-                              {d.createdAt && ` • ${new Intl.DateTimeFormat("en-IN", { dateStyle: "short" }).format(new Date(d.createdAt))}`}
+                              {d.createdAt && ` • ${safeFormatDateOnly(d.createdAt)}`}
                             </p>
                             {d.task?.title && (
                               <p className="text-[11px] text-primary/80 mt-1 font-medium truncate">
@@ -584,33 +679,60 @@ export function ApprovalDetailDrawer({
                   </div>
                 </div>
 
-                {task?.assignmentHistory?.map((hist, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-start gap-3 p-3 rounded-xl border border-border/60 bg-muted/20 text-xs"
-                  >
-                    <span className="grid size-7 place-items-center rounded-full bg-primary/10 text-primary shrink-0 mt-0.5">
-                      <ArrowRight size={13} />
-                    </span>
-                    <div>
-                      <p className="font-semibold text-foreground capitalize">
-                        {hist.action || "Task Assignment"}
-                      </p>
-                      {hist.note && (
-                        <p className="text-muted-foreground text-[11px] mt-0.5 italic">
-                          "{hist.note}"
-                        </p>
-                      )}
-                      <p className="text-muted-foreground text-[10px] mt-1">
-                        {new Intl.DateTimeFormat("en-IN", {
-                          timeZone: "Asia/Kolkata",
-                          dateStyle: "short",
-                          timeStyle: "short",
-                        }).format(new Date(hist.timestamp))}
-                      </p>
-                    </div>
+                {task?.assignmentHistory && task.assignmentHistory.length > 0 ? (
+                  task.assignmentHistory.map((hist: any, idx: number) => {
+                    const fromName = hist.fromUser?.name;
+                    const toName = hist.toUser?.name;
+                    const assignerName = hist.assignedBy?.name;
+                    return (
+                      <div
+                        key={idx}
+                        className="flex items-start gap-3 p-3 rounded-xl border border-border/60 bg-muted/20 text-xs"
+                      >
+                        <span className="grid size-7 place-items-center rounded-full bg-primary/10 text-primary shrink-0 mt-0.5">
+                          <ArrowRight size={13} />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-semibold text-foreground capitalize">
+                              {hist.action || "Task Assignment"}
+                            </p>
+                            <span className="text-[10px] text-muted-foreground font-mono">
+                              {safeFormatDateTime(hist.timestamp)}
+                            </span>
+                          </div>
+                          <p className="text-muted-foreground text-xs mt-0.5">
+                            {toName ? (
+                              <>
+                                Assigned to <strong className="text-foreground">{toName}</strong>
+                                {fromName ? ` (previously ${fromName})` : ""}
+                                {assignerName ? ` by ${assignerName}` : ""}
+                              </>
+                            ) : (
+                              hist.note || "Assignment logged"
+                            )}
+                          </p>
+                          {hist.note && toName && (
+                            <p className="text-muted-foreground text-[11px] mt-0.5 italic">
+                              "{hist.note}"
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="p-3 rounded-xl border border-dashed border-border/70 text-xs text-muted-foreground">
+                    <p>
+                      Current assignment:{" "}
+                      <strong className="text-foreground">
+                        {item.assignedTo?.name || task?.assignedTo?.name || "Unassigned"}
+                      </strong>
+                      {item.assignedBy?.name ? ` by ${item.assignedBy.name}` : ""}
+                      {formattedAssignedDate !== "—" ? ` on ${formattedAssignedDate}` : ""}
+                    </p>
                   </div>
-                ))}
+                )}
 
                 {task?.remarks?.map((rem, idx) => (
                   <div
@@ -624,11 +746,7 @@ export function ApprovalDetailDrawer({
                       <p className="font-semibold text-foreground">{rem.author || "Comment"}</p>
                       <p className="text-muted-foreground text-[11px] mt-0.5">{rem.text}</p>
                       <p className="text-muted-foreground text-[10px] mt-1">
-                        {new Intl.DateTimeFormat("en-IN", {
-                          timeZone: "Asia/Kolkata",
-                          dateStyle: "short",
-                          timeStyle: "short",
-                        }).format(new Date(rem.createdAt))}
+                        {safeFormatDateTime(rem.createdAt)}
                       </p>
                     </div>
                   </div>
@@ -645,11 +763,7 @@ export function ApprovalDetailDrawer({
                       </p>
                       <p className="text-emerald-700 dark:text-emerald-300 text-[11px] mt-0.5">
                         Status: <strong className="capitalize">{item.status}</strong> on{" "}
-                        {new Intl.DateTimeFormat("en-IN", {
-                          timeZone: "Asia/Kolkata",
-                          dateStyle: "medium",
-                          timeStyle: "short",
-                        }).format(new Date(item.reviewedAt))}
+                        {safeFormatDateTime(item.reviewedAt)}
                       </p>
                     </div>
                   </div>

@@ -1698,6 +1698,8 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       } else if (updates["status"] === "pending_approval") {
         updates["completedAt"] = now;
         updates["submittedForApprovalAt"] = now;
+        updates["submittedForApprovalBy"] = new Types.ObjectId(req.userId!);
+        updates["submittedBy"] = new Types.ObjectId(req.userId!);
       } else if (updates["status"] === "completed") {
         updates["completedAt"] = now;
         if (req.user!.role === "admin") {
@@ -2399,6 +2401,8 @@ router.patch("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskId
         task.status = "pending_approval";
         task.completedAt = now;
         task.submittedForApprovalAt = now;
+        task.submittedForApprovalBy = new Types.ObjectId(req.userId!);
+        task.submittedBy = new Types.ObjectId(req.userId!);
       }
 
       const clientName = resolveTaskClientName(task);

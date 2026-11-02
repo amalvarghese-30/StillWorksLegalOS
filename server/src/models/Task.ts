@@ -74,6 +74,8 @@ export interface ITask extends Document {
   startedAt?: Date | null;
   completedAt?: Date | null;
   submittedForApprovalAt?: Date | null;
+  submittedForApprovalBy?: mongoose.Types.ObjectId | null;
+  submittedBy?: mongoose.Types.ObjectId | null;
   approvedAt?: Date | null;
   rejectedAt?: Date | null;
   rejectionReason?: string;
@@ -206,6 +208,8 @@ const TaskSchema = new Schema<ITask>(
     startedAt: { type: Date, default: null },
     completedAt: { type: Date, default: null },
     submittedForApprovalAt: { type: Date, default: null },
+    submittedForApprovalBy: { type: Schema.Types.ObjectId, ref: "User", default: null, index: true },
+    submittedBy: { type: Schema.Types.ObjectId, ref: "User", default: null, index: true },
     approvedAt: { type: Date, default: null },
     rejectedAt: { type: Date, default: null },
     rejectionReason: { type: String, default: "" },

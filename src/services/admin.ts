@@ -91,6 +91,22 @@ export interface ApprovalItem {
     role?: string;
     avatarUrl?: string;
   };
+  assignedTo?: {
+    _id?: string;
+    name: string;
+    email?: string;
+    role?: string;
+    avatarUrl?: string;
+  } | null;
+  assignedBy?: {
+    _id?: string;
+    name: string;
+    email?: string;
+    role?: string;
+    avatarUrl?: string;
+  } | null;
+  assignedAt?: string | null;
+  submittedAt?: string | null;
   rejectionReason?: string;
   decisionRemark?: string;
   reviewedAt?: string;
@@ -147,6 +163,9 @@ export interface ApprovalItem {
       action: string;
       note?: string;
       timestamp: string;
+      toUser?: { _id?: string; name?: string; role?: string } | null;
+      fromUser?: { _id?: string; name?: string; role?: string } | null;
+      assignedBy?: { _id?: string; name?: string; role?: string } | null;
     }>;
     documents?: Array<{
       _id: string;
@@ -614,6 +633,16 @@ export function useApprovalMetrics(options?: { enabled?: boolean }) {
       return failureCount < 1;
     },
     enabled: isEnabled,
+  });
+}
+
+export function useApprovalDetail(id?: string | null, options?: { enabled?: boolean }) {
+  const isEnabled = Boolean(id) && (options?.enabled ?? true);
+  return useQuery<{ approval: ApprovalItem }>({
+    queryKey: ["admin", "approvals", "detail", id],
+    queryFn: () => api.get(`/admin/approvals/${id}`),
+    enabled: isEnabled,
+    staleTime: 10_000,
   });
 }
 

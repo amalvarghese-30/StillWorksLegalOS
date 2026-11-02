@@ -163,8 +163,11 @@ function ApprovalsPage() {
     accessors: {
       title: (a) => a.title,
       kind: (a) => a.kind,
-      userName: (a) => a.userName,
-      when: (a) => a.when,
+      userName: (a) => a.submittedBy?.name || (a as any).userName || "",
+      assignedTo: (a) => a.assignedTo?.name || "",
+      assignedBy: (a) => a.assignedBy?.name || "",
+      assignedAt: (a) => a.assignedAt || "",
+      when: (a) => a.submittedAt || a.when,
       priority: (a) => a.priority,
       status: (a) => a.status,
     },

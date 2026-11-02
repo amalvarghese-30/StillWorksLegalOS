@@ -107,6 +107,24 @@ export function agingBadge(label?: string, status?: string) {
   };
 }
 
+export function formatSafeDateTime(iso: any): string {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "—";
+    return new Intl.DateTimeFormat("en-IN", {
+      timeZone: "Asia/Kolkata",
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    }).format(d);
+  } catch {
+    return "—";
+  }
+}
+
 export function ApprovalTable({
   approvals,
   selectedItem,
@@ -126,8 +144,8 @@ export function ApprovalTable({
     <div className="w-full">
       {/* Desktop Table View (>= lg) */}
       <div className="hidden lg:block rounded-xl border border-border/80 bg-card overflow-hidden shadow-soft">
-        <div className="w-full">
-          <table className="w-full text-left text-sm border-collapse table-fixed">
+        <div className="w-full overflow-x-auto">
+          <table className="w-full min-w-[1100px] text-left text-sm border-collapse table-auto">
             <thead>
               <tr className="border-b border-border bg-muted/40 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {onToggleSelectAll && (
@@ -141,7 +159,7 @@ export function ApprovalTable({
                     />
                   </th>
                 )}
-                <th scope="col" className="px-3 py-3 w-[30%]">
+                <th scope="col" className="px-3 py-3 min-w-[200px]">
                   <SortHeaderButton
                     sortKey="title"
                     currentSortKey={sortKey}
@@ -151,7 +169,7 @@ export function ApprovalTable({
                     Request
                   </SortHeaderButton>
                 </th>
-                <th scope="col" className="px-2 py-3 w-[12%]">
+                <th scope="col" className="px-2 py-3 min-w-[110px]">
                   <SortHeaderButton
                     sortKey="kind"
                     currentSortKey={sortKey}
@@ -161,7 +179,7 @@ export function ApprovalTable({
                     Type
                   </SortHeaderButton>
                 </th>
-                <th scope="col" className="px-2 py-3 w-[16%]">
+                <th scope="col" className="px-2 py-3 min-w-[140px]">
                   <SortHeaderButton
                     sortKey="userName"
                     currentSortKey={sortKey}
@@ -171,7 +189,37 @@ export function ApprovalTable({
                     Submitted By
                   </SortHeaderButton>
                 </th>
-                <th scope="col" className="px-2 py-3 w-[15%]">
+                <th scope="col" className="px-2 py-3 min-w-[140px]">
+                  <SortHeaderButton
+                    sortKey="assignedTo"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={onSort}
+                  >
+                    Assigned To
+                  </SortHeaderButton>
+                </th>
+                <th scope="col" className="px-2 py-3 min-w-[130px]">
+                  <SortHeaderButton
+                    sortKey="assignedBy"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={onSort}
+                  >
+                    Assigned By
+                  </SortHeaderButton>
+                </th>
+                <th scope="col" className="px-2 py-3 min-w-[105px]">
+                  <SortHeaderButton
+                    sortKey="assignedAt"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={onSort}
+                  >
+                    Assigned On
+                  </SortHeaderButton>
+                </th>
+                <th scope="col" className="px-2 py-3 min-w-[120px]">
                   <SortHeaderButton
                     sortKey="when"
                     currentSortKey={sortKey}
@@ -181,7 +229,7 @@ export function ApprovalTable({
                     Submitted On
                   </SortHeaderButton>
                 </th>
-                <th scope="col" className="px-2 py-3 w-[9%]">
+                <th scope="col" className="px-2 py-3 min-w-[85px]">
                   <SortHeaderButton
                     sortKey="priority"
                     currentSortKey={sortKey}
@@ -191,7 +239,7 @@ export function ApprovalTable({
                     Priority
                   </SortHeaderButton>
                 </th>
-                <th scope="col" className="px-2 py-3 w-[8%]">
+                <th scope="col" className="px-2 py-3 min-w-[95px]">
                   <SortHeaderButton
                     sortKey="status"
                     currentSortKey={sortKey}
@@ -201,7 +249,7 @@ export function ApprovalTable({
                     Status
                   </SortHeaderButton>
                 </th>
-                <th scope="col" className="px-3 py-3 text-right w-[10%]">
+                <th scope="col" className="px-3 py-3 text-right min-w-[105px]">
                   Actions
                 </th>
               </tr>
@@ -215,18 +263,13 @@ export function ApprovalTable({
                 const priorityInfo = priorityBadge(a.priority);
                 const agingInfo = agingBadge(a.agingLabel, a.status);
 
-                const formattedDate = a.when
-                  ? new Intl.DateTimeFormat("en-IN", {
-                      timeZone: "Asia/Kolkata",
-                      day: "numeric",
-                      month: "short",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      hour12: true,
-                    }).format(new Date(a.when))
-                  : "—";
-
+                const submittedDate = formatSafeDateTime(a.submittedAt || a.when);
+                const assignedDate = formatSafeDateTime(a.assignedAt);
                 const displayStatus = a.status || "pending";
+
+                const submitterName = a.submittedBy?.name || "Staff Submitter";
+                const assigneeName = a.assignedTo?.name || (a.kind === "Task Completion" ? "Unassigned" : "—");
+                const assignerName = a.assignedBy?.name || (a.kind === "Task Completion" ? "Historical info unavailable" : "—");
 
                 return (
                   <tr
@@ -267,27 +310,27 @@ export function ApprovalTable({
                         >
                           <Icon size={16} />
                         </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="font-medium text-foreground truncate group-hover:text-primary transition-colors">
+                        <div className="min-w-0 max-w-[280px]">
+                          <p className="font-medium text-foreground truncate group-hover:text-primary transition-colors" title={a.title}>
                             {a.title}
                           </p>
-                          <p className="text-xs text-muted-foreground truncate mt-0.5">
+                          <p className="text-xs text-muted-foreground truncate mt-0.5" title={a.context}>
                             {a.context}
                           </p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-2 py-3">
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-muted text-foreground border border-border/80 whitespace-nowrap">
                         {a.kind}
                       </span>
                     </td>
-                    <td className="px-3 py-3">
-                      <div className="flex items-center gap-2">
+                    <td className="px-2 py-3">
+                      <div className="flex items-center gap-2 max-w-[160px]">
                         {resolveAvatarUrl(a.submittedBy?.avatarUrl) ? (
                           <img
                             src={resolveAvatarUrl(a.submittedBy?.avatarUrl)}
-                            alt={a.submittedBy?.name || "User"}
+                            alt={submitterName}
                             className="size-6 rounded-full object-cover shrink-0"
                             onError={(e) => {
                               (e.currentTarget as HTMLElement).style.display = "none";
@@ -295,8 +338,8 @@ export function ApprovalTable({
                           />
                         ) : (
                           <div className="size-6 rounded-full bg-primary/10 text-primary grid place-items-center text-[10px] font-bold shrink-0">
-                            {a.submittedBy?.name
-                              ? a.submittedBy.name
+                            {submitterName
+                              ? submitterName
                                   .split(" ")
                                   .map((w) => w[0])
                                   .join("")
@@ -305,9 +348,9 @@ export function ApprovalTable({
                               : "U"}
                           </div>
                         )}
-                        <div className="min-w-0">
-                          <p className="text-xs font-medium text-foreground truncate">
-                            {a.submittedBy?.name || "Employee"}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium text-foreground truncate" title={submitterName}>
+                            {submitterName}
                           </p>
                           <p className="text-[10px] text-muted-foreground truncate capitalize">
                             {a.submittedBy?.role?.replace(/_/g, " ") || "Staff"}
@@ -315,10 +358,39 @@ export function ApprovalTable({
                         </div>
                       </div>
                     </td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-col gap-1 items-start">
+                    <td className="px-2 py-3">
+                      <div className="min-w-0 max-w-[150px]">
+                        <p className="text-xs font-medium text-foreground truncate" title={assigneeName}>
+                          {assigneeName}
+                        </p>
+                        {a.assignedTo?.role && a.assignedTo.role !== "Unassigned" && (
+                          <p className="text-[10px] text-muted-foreground truncate capitalize">
+                            {a.assignedTo.role.replace(/_/g, " ")}
+                          </p>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-2 py-3">
+                      <div className="min-w-0 max-w-[140px]">
+                        <p className="text-xs font-medium text-foreground truncate" title={assignerName}>
+                          {assignerName}
+                        </p>
+                        {a.assignedBy?.role && (
+                          <p className="text-[10px] text-muted-foreground truncate capitalize">
+                            {a.assignedBy.role.replace(/_/g, " ")}
+                          </p>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-2 py-3">
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        {assignedDate}
+                      </span>
+                    </td>
+                    <td className="px-2 py-3">
+                      <div className="flex flex-col gap-0.5 items-start">
                         <span className="text-xs text-muted-foreground whitespace-nowrap">
-                          {formattedDate}
+                          {submittedDate}
                         </span>
                         <span
                           className={cn(
@@ -330,7 +402,7 @@ export function ApprovalTable({
                         </span>
                       </div>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-2 py-3">
                       <span
                         className={cn(
                           "inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border",
@@ -340,7 +412,7 @@ export function ApprovalTable({
                         {priorityInfo.label}
                       </span>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-2 py-3">
                       {displayStatus === "pending" ? (
                         <StatusPill tone="amber">Pending</StatusPill>
                       ) : displayStatus === "approved" ? (
@@ -350,7 +422,7 @@ export function ApprovalTable({
                       )}
                     </td>
                     <td
-                      className="px-4 py-3 text-right"
+                      className="px-3 py-3 text-right"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div className="flex items-center justify-end gap-1.5">
@@ -359,7 +431,10 @@ export function ApprovalTable({
                           size="sm"
                           className="size-8 p-0 rounded-lg text-muted-foreground hover:text-foreground"
                           title="View Full Details"
-                          onClick={() => onSelectItem(a)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectItem(a);
+                          }}
                         >
                           <Eye size={15} />
                           <span className="sr-only">View</span>
@@ -410,6 +485,12 @@ export function ApprovalTable({
           const agingInfo = agingBadge(a.agingLabel, a.status);
           const displayStatus = a.status || "pending";
 
+          const submitterName = a.submittedBy?.name || "Staff Submitter";
+          const assigneeName = a.assignedTo?.name || (a.kind === "Task Completion" ? "Unassigned" : "—");
+          const assignerName = a.assignedBy?.name || (a.kind === "Task Completion" ? "Historical info unavailable" : "—");
+          const submittedDate = formatSafeDateTime(a.submittedAt || a.when);
+          const assignedDate = formatSafeDateTime(a.assignedAt);
+
           return (
             <div
               key={a._id}
@@ -446,11 +527,32 @@ export function ApprovalTable({
                 </div>
               </div>
 
-              <div className="mt-3 flex flex-wrap items-center gap-2 pt-2 border-t border-border/50 text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">
-                  {a.submittedBy?.name || "Employee"}
-                </span>
-                <span>•</span>
+              <div className="mt-3 grid grid-cols-2 gap-2 pt-2 border-t border-border/50 text-xs">
+                <div>
+                  <span className="text-[10px] uppercase font-semibold text-muted-foreground block">
+                    Submitted By
+                  </span>
+                  <span className="font-medium text-foreground truncate block" title={submitterName}>
+                    {submitterName}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground block">
+                    {submittedDate}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-semibold text-muted-foreground block">
+                    Assigned To
+                  </span>
+                  <span className="font-medium text-foreground truncate block" title={assigneeName}>
+                    {assigneeName}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground block">
+                    By: {assignerName}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <span
                   className={cn(
                     "text-[10px] px-1.5 py-0.2 rounded border font-medium",
@@ -468,6 +570,12 @@ export function ApprovalTable({
                 >
                   {priorityInfo.label}
                 </span>
+                {assignedDate !== "—" && (
+                  <>
+                    <span>•</span>
+                    <span className="text-[10px]">Assigned: {assignedDate}</span>
+                  </>
+                )}
               </div>
 
               <div
@@ -477,7 +585,7 @@ export function ApprovalTable({
                 <button
                   type="button"
                   onClick={() => onSelectItem(a)}
-                  className="text-xs font-semibold text-primary hover:underline flex items-center gap-1"
+                  className="text-xs font-semibold text-primary hover:underline flex items-center gap-1 cursor-pointer"
                 >
                   <Eye size={14} />
                   View details
