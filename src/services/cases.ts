@@ -120,6 +120,7 @@ export interface CasesResponse {
     urgent: number;
     onHold: number;
     closed: number;
+    archived?: number;
   };
 }
 
@@ -160,6 +161,8 @@ export interface CreateCasePayload {
   nextHearing?: string | null;
   localPath?: string;
   parties?: CaseParty[];
+  clientId?: string;
+  clientRole?: string;
   assignedTo?: string | string[] | null;
   assignedUsers?: string[];
   tags?: string[];
@@ -264,6 +267,19 @@ export function useRemoveCaseParty() {
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: caseKeys.detail(vars.caseId) });
       qc.invalidateQueries({ queryKey: caseKeys.all });
+    },
+  });
+}
+
+export function useLinkClientToCase() {
+  const qc = useQueryClient();
+  return useMutation<CaseResponse, Error, { caseId: string; clientId: string; clientRole?: string }>({
+    mutationFn: ({ caseId, clientId, clientRole }) =>
+      api.post(`/cases/${caseId}/link-client`, { clientId, clientRole }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: caseKeys.detail(vars.caseId) });
+      qc.invalidateQueries({ queryKey: caseKeys.all });
+      qc.invalidateQueries({ queryKey: ["clients"] });
     },
   });
 }

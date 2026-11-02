@@ -7306,6 +7306,240 @@ const { NotificationService } = await import("../services/notifications.js");
     assert(validFiles.every((f: string) => !f.endsWith(" ")), "S46-14b: No candidate has trailing whitespace");
   }
 
+  // =========================================================================
+  // SUITE 47: ALL CLIENT CASES LISTING, AUTHORIZATION, ARCHIVED & UNLINKED HANDLING
+  // =========================================================================
+  {
+    console.log("\n--- Suite 47: All Client Cases Listing & Filtering Audit ---");
+
+    const s47Admin = await User.create({
+      name: "S47 Admin Advocate",
+      email: "s47.admin@stillworks.legal",
+      passwordHash: await bcrypt.hash("AdminPass123!", 8),
+      role: "admin",
+      status: "offline",
+      permissions: { cases: true, clients: true },
+    });
+    const s47AdminToken = jwt.sign(
+      { userId: s47Admin._id.toString(), email: s47Admin.email, role: s47Admin.role },
+      JWT_SECRET
+    );
+    await Session.create({
+      userId: s47Admin._id,
+      token: s47AdminToken,
+      refreshTokenHash: "test_s47_admin_refresh_hash",
+      isRevoked: false,
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+    });
+
+    const s47Staff = await User.create({
+      name: "S47 Staff Lawyer",
+      email: "s47.staff@stillworks.legal",
+      passwordHash: await bcrypt.hash("StaffPass123!", 8),
+      role: "junior_advocate",
+      status: "offline",
+      permissions: { cases: true, clients: true },
+    });
+    const s47StaffToken = jwt.sign(
+      { userId: s47Staff._id.toString(), email: s47Staff.email, role: s47Staff.role },
+      JWT_SECRET
+    );
+    await Session.create({
+      userId: s47Staff._id,
+      token: s47StaffToken,
+      refreshTokenHash: "test_s47_staff_refresh_hash",
+      isRevoked: false,
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+    });
+
+    // Create a client
+    const testClient = await Client.create({
+      name: "Global Technologies Corp",
+      email: "legal@globaltech.example.com",
+      phone: "+91 98765 43210",
+      tag: "Corporate",
+      type: "Corporate",
+      address: "123 Tech Park, Bangalore",
+      aadhar: "123456789012",
+      pan: "ABCDE1234F",
+      kyc: "Verified",
+      createdBy: s47Admin._id,
+    });
+
+    // 1. Create cases:
+    // Case A: Active linked to testClient
+    const caseA = await Case.create({
+      number: "SW-S47-0001",
+      title: "Commercial Contract Breach",
+      description: "Arbitration breach matter",
+      category: "Corporate Law",
+      status: "Active",
+      priority: "High",
+      parties: [
+        {
+          clientId: testClient._id,
+          name: testClient.name,
+          role: "Petitioner",
+          type: "client",
+        },
+      ],
+      createdBy: s47Admin._id,
+    });
+
+    // Case B: Urgent with sub_client party but no clientId
+    const caseB = await Case.create({
+      number: "SW-S47-0002",
+      title: "Sub-Contractor Dispute",
+      description: "Work order unpaid fees",
+      category: "Civil Litigation",
+      status: "Urgent",
+      priority: "High",
+      parties: [
+        {
+          name: "Sub Contractor Ltd",
+          role: "Claimant",
+          type: "sub_client",
+        },
+      ],
+      createdBy: s47Admin._id,
+    });
+
+    // Case C: Unlinked case (0 parties)
+    const caseC = await Case.create({
+      number: "SW-S47-0003",
+      title: "Suo Motu High Court Notice",
+      description: "Environmental compliance",
+      category: "Constitutional Law",
+      status: "On Hold",
+      priority: "Medium",
+      parties: [],
+      createdBy: s47Admin._id,
+    });
+
+    // Case D: Archived case
+    const caseD = await Case.create({
+      number: "SW-S47-0004",
+      title: "Old Closed Trademark Dispute",
+      description: "Resolved intellectual property",
+      category: "Intellectual Property",
+      status: "Archived",
+      priority: "Low",
+      parties: [
+        {
+          clientId: testClient._id,
+          name: testClient.name,
+          role: "Applicant",
+          type: "client",
+        },
+      ],
+      createdBy: s47Admin._id,
+    });
+
+    // TEST 1: Default query excludes Archived cases (for normal view)
+    const listDefaultRes = await request(app)
+      .get("/api/cases")
+      .set("Authorization", `Bearer ${s47AdminToken}`);
+    assert(listDefaultRes.status === 200, "S47-01: Default GET /api/cases returns 200");
+    const defaultIds = listDefaultRes.body.cases.map((c: any) => c.number);
+    assert(defaultIds.includes("SW-S47-0001"), "S47-02: Default includes Active case");
+    assert(defaultIds.includes("SW-S47-0002"), "S47-03: Default includes Urgent case");
+    assert(defaultIds.includes("SW-S47-0003"), "S47-04: Default includes Unlinked case");
+    assert(!defaultIds.includes("SW-S47-0004"), "S47-05: Default excludes Archived case");
+
+    // TEST 2: includeArchived=true returns EVERY case including archived
+    const listAllRes = await request(app)
+      .get("/api/cases?includeArchived=true")
+      .set("Authorization", `Bearer ${s47AdminToken}`);
+    assert(listAllRes.status === 200, "S47-06: GET /api/cases?includeArchived=true returns 200");
+    const allIds = listAllRes.body.cases.map((c: any) => c.number);
+    assert(allIds.includes("SW-S47-0004"), "S47-07: includeArchived=true includes Archived case");
+    assert(listAllRes.body.stats && typeof listAllRes.body.stats.archived === "number", "S47-08: Stats includes archived count");
+
+    // TEST 3: Staff member with permissions.cases: true can view all cases even without direct assignment
+    const staffAllRes = await request(app)
+      .get("/api/cases?includeArchived=true")
+      .set("Authorization", `Bearer ${s47StaffToken}`);
+    assert(staffAllRes.status === 200, "S47-09: Staff member with cases:true returns 200");
+    const staffIds = staffAllRes.body.cases.map((c: any) => c.number);
+    assert(staffIds.includes("SW-S47-0001"), "S47-10: Staff can view unassigned case A");
+    assert(staffIds.includes("SW-S47-0002"), "S47-11: Staff can view unassigned case B");
+    assert(staffIds.includes("SW-S47-0003"), "S47-12: Staff can view unassigned case C");
+    assert(staffIds.includes("SW-S47-0004"), "S47-13: Staff can view unassigned case D");
+
+    // TEST 4: parties.clientId is populated with client details
+    const populatedCase = listAllRes.body.cases.find((c: any) => c.number === "SW-S47-0001");
+    assert(populatedCase && populatedCase.parties && populatedCase.parties[0], "S47-14: Case A has party");
+    assert(typeof populatedCase.parties[0].clientId === "object", "S47-15: parties.clientId is populated object");
+    assert(populatedCase.parties[0].clientId.name === "Global Technologies Corp", "S47-16: Populated client name matches");
+
+    // TEST 5: status=Archived query returns archived cases
+    const statusArchivedRes = await request(app)
+      .get("/api/cases?status=Archived")
+      .set("Authorization", `Bearer ${s47AdminToken}`);
+    assert(statusArchivedRes.status === 200, "S47-17: status=Archived query returns 200");
+    const archivedCases = statusArchivedRes.body.cases.map((c: any) => c.number);
+    assert(archivedCases.includes("SW-S47-0004"), "S47-18: status=Archived returns Archived case");
+    assert(!archivedCases.includes("SW-S47-0001"), "S47-19: status=Archived does not include Active case");
+
+    // TEST 6: Search by client name matches cases linked via parties.clientId
+    const searchClientRes = await request(app)
+      .get("/api/cases?search=Global+Technologies&includeArchived=true")
+      .set("Authorization", `Bearer ${s47AdminToken}`);
+    assert(searchClientRes.status === 200, "S47-20: Search by client name returns 200");
+    const clientSearchIds = searchClientRes.body.cases.map((c: any) => c.number);
+    assert(clientSearchIds.includes("SW-S47-0001"), "S47-21: Found case linked to client by name search");
+
+    // TEST 7: Search by unlinked party name
+    const searchSubRes = await request(app)
+      .get("/api/cases?search=Sub+Contractor&includeArchived=true")
+      .set("Authorization", `Bearer ${s47AdminToken}`);
+    assert(searchSubRes.status === 200, "S47-22: Search by party name returns 200");
+    const subSearchIds = searchSubRes.body.cases.map((c: any) => c.number);
+    assert(subSearchIds.includes("SW-S47-0002"), "S47-23: Found unlinked party case");
+
+    // TEST 8: clientLinkage=linked filter
+    const linkedRes = await request(app)
+      .get("/api/cases?clientLinkage=linked&includeArchived=true")
+      .set("Authorization", `Bearer ${s47AdminToken}`);
+    assert(linkedRes.status === 200, "S47-24: clientLinkage=linked returns 200");
+    const linkedIds = linkedRes.body.cases.map((c: any) => c.number);
+    assert(linkedIds.includes("SW-S47-0001"), "S47-25: Linked list includes Case A");
+    assert(!linkedIds.includes("SW-S47-0003"), "S47-26: Linked list excludes Unlinked Case C");
+
+    // TEST 9: clientLinkage=unlinked filter
+    const unlinkedRes = await request(app)
+      .get("/api/cases?clientLinkage=unlinked&includeArchived=true")
+      .set("Authorization", `Bearer ${s47AdminToken}`);
+    assert(unlinkedRes.status === 200, "S47-27: clientLinkage=unlinked returns 200");
+    const unlinkedIds = unlinkedRes.body.cases.map((c: any) => c.number);
+    assert(unlinkedIds.includes("SW-S47-0003"), "S47-28: Unlinked list includes Case C");
+    assert(!unlinkedIds.includes("SW-S47-0001"), "S47-29: Unlinked list excludes Linked Case A");
+
+    // TEST 10: POST /api/cases/:id/link-client links client to unlinked Case C
+    const linkClientRes = await request(app)
+      .post(`/api/cases/${caseC._id}/link-client`)
+      .set("Authorization", `Bearer ${s47AdminToken}`)
+      .send({
+        clientId: testClient._id.toString(),
+        clientRole: "Petitioner",
+      });
+    assert(linkClientRes.status === 200, "S47-30: POST /api/cases/:id/link-client returns 200");
+    assert(linkClientRes.body.case.parties.length >= 1, "S47-31: Case C now has a party");
+    assert(linkClientRes.body.case.parties[0].clientId._id.toString() === testClient._id.toString(), "S47-32: Case C party has client ID");
+    assert(linkClientRes.body.case.parties[0].name === "Global Technologies Corp", "S47-33: Case C party has client name");
+
+    // TEST 11: PATCH /api/cases/:id with top-level clientId
+    const patchClientRes = await request(app)
+      .patch(`/api/cases/${caseB._id}`)
+      .set("Authorization", `Bearer ${s47AdminToken}`)
+      .send({
+        clientId: testClient._id.toString(),
+        clientRole: "Corporate Client",
+      });
+    assert(patchClientRes.status === 200, "S47-34: PATCH with top-level clientId returns 200");
+    assert(patchClientRes.body.case.parties.some((p: any) => p.name === "Global Technologies Corp"), "S47-35: PATCH added client party");
+  }
+
 
   try {
     if (mongoose.connection.readyState === 1) {

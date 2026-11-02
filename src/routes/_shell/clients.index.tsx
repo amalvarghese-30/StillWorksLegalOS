@@ -13,9 +13,13 @@ import {
   UserCheck,
   Calendar,
   Users,
+  ChevronLeft,
   ChevronRight,
   Eye,
   Filter,
+  SlidersHorizontal,
+  X,
+  Link2,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StatusPill } from "@/components/common/StatusPill";
@@ -24,7 +28,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useSocketEvent } from "@/lib/socket";
 import { useClients, clientKeys, type ClientRecord } from "@/services/clients";
 import { useCases, caseKeys, type CaseRecord } from "@/services/cases";
+import { useEmployees } from "@/services/admin";
+import { useCategories } from "@/services/categories";
 import { AddClientDialog } from "@/components/clients/AddClientDialog";
+import { LinkClientDialog } from "@/components/cases/LinkClientDialog";
 import { ErrorState } from "@/components/common/ErrorState";
 import { StaleDataBanner } from "@/components/common/StaleDataBanner";
 import { AddCaseDialog } from "@/components/cases/AddCaseDialog";
@@ -73,6 +80,7 @@ function toneForCaseStatus(s: string): "primary" | "success" | "warning" | "mute
     Urgent: "destructive",
     "On Hold": "warning",
     Closed: "muted",
+    Archived: "muted",
   };
   return map[s] ?? "primary";
 }
@@ -169,7 +177,7 @@ function ClientCard({ c }: { c: ClientRecord }) {
   );
 }
 
-const CASE_STATUS_FILTERS = ["All", "Active", "Urgent", "On Hold", "Closed"] as const;
+const CASE_STATUS_FILTERS = ["All", "Active", "Urgent", "On Hold", "Closed", "Archived"] as const;
 
 function ClientsPage() {
   const searchParams = Route.useSearch();
@@ -177,6 +185,15 @@ function ClientsPage() {
   const [clientSearch, setClientSearch] = useState(searchParams.search || "");
   const [caseSearch, setCaseSearch] = useState("");
   const [caseStatusFilter, setCaseStatusFilter] = useState<string>(searchParams.status || "All");
+  const [casePriorityFilter, setCasePriorityFilter] = useState<string>("All");
+  const [caseCategoryFilter, setCaseCategoryFilter] = useState<string>("All");
+  const [caseStaffFilter, setCaseStaffFilter] = useState<string>("All");
+  const [caseLinkageFilter, setCaseLinkageFilter] = useState<"all" | "linked" | "unlinked">("all");
+  const [showCaseFilters, setShowCaseFilters] = useState(false);
+  const [linkingCase, setLinkingCase] = useState<CaseRecord | null>(null);
+
+  const [casePage, setCasePage] = useState(1);
+  const [caseLimit, setCaseLimit] = useState(24);
 
   const [showAddClientDialog, setShowAddClientDialog] = useState(false);
   const [showAddCaseDialog, setShowAddCaseDialog] = useState(false);
@@ -184,6 +201,11 @@ function ClientsPage() {
 
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+
+  const { data: empData } = useEmployees();
+  const employees = useMemo(() => empData?.employees || [], [empData?.employees]);
+
+  const { data: catData } = useCategories();
 
   const {
     data: clientsData,
@@ -205,9 +227,52 @@ function ClientsPage() {
     {
       search: caseSearch.trim() || undefined,
       status: caseStatusFilter === "All" ? undefined : caseStatusFilter,
+      priority: casePriorityFilter === "All" ? undefined : casePriorityFilter,
+      category: caseCategoryFilter === "All" ? undefined : caseCategoryFilter,
+      assignedTo: caseStaffFilter === "All" ? undefined : caseStaffFilter,
+      clientLinkage: caseLinkageFilter === "all" ? undefined : caseLinkageFilter,
+      includeArchived: "true",
+      page: String(casePage),
+      limit: String(caseLimit),
     } as any,
     { enabled: true }
   );
+
+  const availableCategories = useMemo(() => {
+    const set = new Set<string>();
+    if (catData?.categories) {
+      catData.categories.forEach((c) => {
+        if (c.name) set.add(c.name);
+      });
+    }
+    (casesData?.cases || []).forEach((c) => {
+      if (c.mainCategory) set.add(c.mainCategory);
+      else if (c.category) set.add(c.category);
+      else if (c.practice) set.add(c.practice);
+    });
+    return Array.from(set).sort();
+  }, [catData?.categories, casesData?.cases]);
+
+  const activeCaseFilterCount = useMemo(() => {
+    let count = 0;
+    if (caseStatusFilter !== "All") count++;
+    if (casePriorityFilter !== "All") count++;
+    if (caseCategoryFilter !== "All") count++;
+    if (caseStaffFilter !== "All") count++;
+    if (caseLinkageFilter !== "all") count++;
+    if (caseSearch.trim()) count++;
+    return count;
+  }, [caseStatusFilter, casePriorityFilter, caseCategoryFilter, caseStaffFilter, caseLinkageFilter, caseSearch]);
+
+  const clearAllCaseFilters = () => {
+    setCaseSearch("");
+    setCaseStatusFilter("All");
+    setCasePriorityFilter("All");
+    setCaseCategoryFilter("All");
+    setCaseStaffFilter("All");
+    setCaseLinkageFilter("all");
+    setCasePage(1);
+  };
 
   // Socket sync
   useSocketEvent("client:created", () => {
@@ -231,6 +296,7 @@ function ClientsPage() {
 
   const totalClients = clientsData?.total ?? 0;
   const totalCases = casesData?.total ?? casesData?.cases?.length ?? 0;
+  const caseTotalPages = casesData?.totalPages ?? (Math.ceil(totalCases / caseLimit) || 1);
 
   const rawCasesList = useMemo(() => casesData?.cases || [], [casesData?.cases]);
   const {
@@ -243,8 +309,15 @@ function ClientsPage() {
       number: (c) => c.number,
       title: (c) => c.title,
       clientParty: (c) => {
-        const clientParty = c.parties?.find((p) => p.type === "client") || c.parties?.[0];
-        return clientParty?.name || "";
+        const clientParty =
+          c.parties?.find((p) => p.type === "client" && (p.name || p.clientId)) ||
+          c.parties?.find((p) => Boolean(p.clientId)) ||
+          c.parties?.find((p) => Boolean(p.name?.trim()));
+        const name =
+          (typeof clientParty?.clientId === "object" && (clientParty.clientId as any)?.name) ||
+          clientParty?.name?.trim() ||
+          "";
+        return name || "Unlinked Client";
       },
       status: (c) => c.status,
       assignedTo: (c) =>
@@ -263,7 +336,7 @@ function ClientsPage() {
         subtitle={
           viewMode === "clients"
             ? `${totalClients} client profiles — individuals, corporates, and their legal matters.`
-            : `${totalCases} active and scheduled legal cases across all client portfolios.`
+            : `${totalCases} total legal cases across all client portfolios.`
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -331,7 +404,10 @@ function ClientsPage() {
               <button
                 key={s}
                 type="button"
-                onClick={() => setCaseStatusFilter(s)}
+                onClick={() => {
+                  setCaseStatusFilter(s);
+                  setCasePage(1);
+                }}
                 className={cn(
                   "rounded-pill px-2.5 py-1 text-caption font-medium transition-colors",
                   caseStatusFilter === s
@@ -434,17 +510,156 @@ function ClientsPage() {
       {/* ── ALL CLIENT CASES VIEW ── */}
       {viewMode === "cases" && (
         <>
-          <label className="mb-6 flex items-center gap-3 rounded-pill border border-border bg-card px-4 py-2.5 shadow-soft">
-            <Search size={18} strokeWidth={1.75} className="shrink-0 text-muted-foreground" />
-            <input
-              type="search"
-              aria-label="Search cases"
-              placeholder="Search cases by case number, title, client party, counsel, or court…"
-              value={caseSearch}
-              onChange={(e) => setCaseSearch(e.target.value)}
-              className="min-w-0 flex-1 bg-transparent text-helper outline-none"
-            />
-          </label>
+          {/* Controls Bar: Search & Filters */}
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <label className="flex flex-1 items-center gap-3 rounded-pill border border-border bg-card px-4 py-2.5 shadow-soft">
+              <Search size={18} strokeWidth={1.75} className="shrink-0 text-muted-foreground" />
+              <input
+                type="search"
+                aria-label="Search cases"
+                placeholder="Search cases by case number, title, client party, counsel, or court…"
+                value={caseSearch}
+                onChange={(e) => {
+                  setCaseSearch(e.target.value);
+                  setCasePage(1);
+                }}
+                className="min-w-0 flex-1 bg-transparent text-helper outline-none"
+              />
+              {caseSearch && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCaseSearch("");
+                    setCasePage(1);
+                  }}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X size={15} />
+                </button>
+              )}
+            </label>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant={showCaseFilters || activeCaseFilterCount > 0 ? "default" : "outline"}
+                size="sm"
+                onClick={() => setShowCaseFilters(!showCaseFilters)}
+                className="h-11 gap-2 rounded-pill px-4 text-xs font-medium"
+              >
+                <SlidersHorizontal size={15} />
+                Filters {activeCaseFilterCount > 0 && `(${activeCaseFilterCount})`}
+              </Button>
+
+              {activeCaseFilterCount > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearAllCaseFilters}
+                  className="h-11 text-xs text-muted-foreground hover:text-destructive"
+                >
+                  <X size={15} className="mr-1" /> Reset
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Detailed Filter Drawer */}
+          {showCaseFilters && (
+            <div className="mb-6 rounded-xl border border-border bg-card/95 p-4 shadow-soft backdrop-blur-md animate-in fade-in-50 slide-in-from-top-2">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                {/* Status */}
+                <div>
+                  <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Status</label>
+                  <select
+                    value={caseStatusFilter}
+                    onChange={(e) => {
+                      setCaseStatusFilter(e.target.value);
+                      setCasePage(1);
+                    }}
+                    className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs outline-none focus:border-primary text-foreground"
+                  >
+                    <option value="All">All Statuses</option>
+                    <option value="Active">Active</option>
+                    <option value="Urgent">Urgent</option>
+                    <option value="On Hold">On Hold</option>
+                    <option value="Closed">Closed</option>
+                    <option value="Archived">Archived</option>
+                  </select>
+                </div>
+
+                {/* Client Linkage */}
+                <div>
+                  <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Client Linkage</label>
+                  <select
+                    value={caseLinkageFilter}
+                    onChange={(e) => {
+                      setCaseLinkageFilter(e.target.value as any);
+                      setCasePage(1);
+                    }}
+                    className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs outline-none focus:border-primary text-foreground"
+                  >
+                    <option value="all">All Cases (Linked & Unlinked)</option>
+                    <option value="linked">Linked Clients Only</option>
+                    <option value="unlinked">Unlinked Only (Needs Client)</option>
+                  </select>
+                </div>
+
+                {/* Priority */}
+                <div>
+                  <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Priority</label>
+                  <select
+                    value={casePriorityFilter}
+                    onChange={(e) => {
+                      setCasePriorityFilter(e.target.value);
+                      setCasePage(1);
+                    }}
+                    className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs outline-none focus:border-primary text-foreground"
+                  >
+                    <option value="All">All Priorities</option>
+                    <option value="High">High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                  </select>
+                </div>
+
+                {/* Category / Practice Area */}
+                <div>
+                  <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Category</label>
+                  <select
+                    value={caseCategoryFilter}
+                    onChange={(e) => {
+                      setCaseCategoryFilter(e.target.value);
+                      setCasePage(1);
+                    }}
+                    className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs outline-none focus:border-primary text-foreground"
+                  >
+                    <option value="All">All Categories</option>
+                    {availableCategories.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Assigned Staff */}
+                <div>
+                  <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Assigned Staff</label>
+                  <select
+                    value={caseStaffFilter}
+                    onChange={(e) => {
+                      setCaseStaffFilter(e.target.value);
+                      setCasePage(1);
+                    }}
+                    className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs outline-none focus:border-primary text-foreground"
+                  >
+                    <option value="All">All Staff Members</option>
+                    {employees.map((emp) => (
+                      <option key={emp._id} value={emp._id}>{emp.name} ({emp.role})</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Loading */}
           {isCasesLoading && (
@@ -565,11 +780,18 @@ function ClientsPage() {
                   </thead>
                   <tbody className="divide-y divide-border/60">
                     {sortedCases.map((c) => {
-                      const clientParty = c.parties?.find((p) => p.type === "client") || c.parties?.[0];
+                      const clientParty =
+                        c.parties?.find((p) => p.type === "client" && (p.name || p.clientId)) ||
+                        c.parties?.find((p) => Boolean(p.clientId)) ||
+                        c.parties?.find((p) => Boolean(p.name?.trim()));
                       const clientPartyId =
                         clientParty?.clientId && typeof clientParty.clientId === "object"
                           ? (clientParty.clientId as any)._id
                           : clientParty?.clientId;
+                      const clientPartyName =
+                        (typeof clientParty?.clientId === "object" && (clientParty.clientId as any)?.name) ||
+                        clientParty?.name?.trim() ||
+                        "";
 
                       return (
                         <tr key={c._id} className="transition-colors hover:bg-muted/30">
@@ -593,20 +815,41 @@ function ClientsPage() {
                             </p>
                           </td>
                           <td className="px-4 py-3.5 sm:px-6 whitespace-nowrap">
-                            {clientParty ? (
-                              clientPartyId ? (
-                                <Link
-                                  to="/clients/$clientId"
-                                  params={{ clientId: String(clientPartyId) }}
-                                  className="font-medium text-primary hover:underline"
+                            {clientPartyName ? (
+                              <div className="flex items-center gap-2 group/client">
+                                {clientPartyId ? (
+                                  <Link
+                                    to="/clients/$clientId"
+                                    params={{ clientId: String(clientPartyId) }}
+                                    className="font-medium text-primary hover:underline"
+                                  >
+                                    {clientPartyName}
+                                  </Link>
+                                ) : (
+                                  <span className="font-medium text-foreground">{clientPartyName}</span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => setLinkingCase(c)}
+                                  title="Change or re-link client"
+                                  className="opacity-0 group-hover/client:opacity-100 transition-opacity p-0.5 text-muted-foreground hover:text-primary rounded"
                                 >
-                                  {clientParty.name}
-                                </Link>
-                              ) : (
-                                <span className="text-foreground">{clientParty.name}</span>
-                              )
+                                  <Link2 size={13} />
+                                </button>
+                              </div>
                             ) : (
-                              <span className="text-muted-foreground">—</span>
+                              <div className="flex items-center gap-2">
+                                <span className="inline-flex items-center rounded bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-[11px] font-medium text-amber-600 dark:text-amber-400 italic">
+                                  Unlinked Client
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setLinkingCase(c)}
+                                  className="inline-flex items-center gap-1 rounded bg-primary/10 hover:bg-primary/20 text-primary px-2 py-0.5 text-[11px] font-medium transition-colors"
+                                >
+                                  <Link2 size={12} /> + Link Client
+                                </button>
+                              </div>
                             )}
                           </td>
                           <td className="px-4 py-3.5 sm:px-6 whitespace-nowrap">
@@ -619,20 +862,81 @@ function ClientsPage() {
                             {formatSafeDate(c.nextHearing, "Not scheduled")}
                           </td>
                           <td className="px-4 py-3.5 sm:px-6 text-right whitespace-nowrap">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="rounded-md gap-1 h-8 px-2.5 text-caption"
-                              onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: c._id } })}
-                            >
-                              <Eye size={14} /> View
-                            </Button>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="rounded-md gap-1 h-8 px-2 text-caption text-primary hover:bg-primary/10"
+                                onClick={() => setLinkingCase(c)}
+                                title={clientPartyName ? "Change client linkage" : "Link client to case"}
+                              >
+                                <Link2 size={13} /> {clientPartyName ? "Change Client" : "Link Client"}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="rounded-md gap-1 h-8 px-2.5 text-caption"
+                                onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: c._id } })}
+                              >
+                                <Eye size={14} /> View
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
+              </div>
+
+              {/* Pagination controls */}
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3 sm:px-6">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Rows per page:</span>
+                  <select
+                    value={caseLimit}
+                    onChange={(e) => {
+                      setCaseLimit(Number(e.target.value));
+                      setCasePage(1);
+                    }}
+                    className="h-8 rounded border border-border bg-background px-2 text-xs font-medium text-foreground"
+                  >
+                    <option value={12}>12</option>
+                    <option value={24}>24</option>
+                    <option value={48}>48</option>
+                    <option value={100}>100</option>
+                  </select>
+                  <span className="text-xs text-muted-foreground ml-2">
+                    Showing {sortedCases.length > 0 ? (casePage - 1) * caseLimit + 1 : 0}–
+                    {Math.min(casePage * caseLimit, totalCases)} of {totalCases} cases
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={casePage <= 1}
+                    onClick={() => setCasePage((p) => Math.max(1, p - 1))}
+                    className="h-8 w-8 p-0"
+                    aria-label="Previous page"
+                  >
+                    <ChevronLeft size={16} />
+                  </Button>
+                  <span className="px-2 text-xs font-medium text-foreground">
+                    Page {casePage} of {caseTotalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={casePage >= caseTotalPages}
+                    onClick={() => setCasePage((p) => Math.min(caseTotalPages, p + 1))}
+                    className="h-8 w-8 p-0"
+                    aria-label="Next page"
+                  >
+                    <ChevronRight size={16} />
+                  </Button>
+                </div>
               </div>
             </div>
           )}
@@ -650,6 +954,19 @@ function ClientsPage() {
           open={showAddCaseDialog}
           onClose={() => setShowAddCaseDialog(false)}
           onCaseCreated={() => {
+            queryClient.invalidateQueries({ queryKey: caseKeys.all });
+            queryClient.invalidateQueries({ queryKey: clientKeys.all });
+          }}
+        />
+      )}
+
+      {/* Link Client Dialog */}
+      {linkingCase && (
+        <LinkClientDialog
+          open={Boolean(linkingCase)}
+          onClose={() => setLinkingCase(null)}
+          caseRecord={linkingCase}
+          onSuccess={() => {
             queryClient.invalidateQueries({ queryKey: caseKeys.all });
             queryClient.invalidateQueries({ queryKey: clientKeys.all });
           }}

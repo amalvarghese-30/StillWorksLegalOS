@@ -460,6 +460,7 @@ router.get("/", async (req: Request, res: Response) => {
       updatedTo,
       tag,
       includeArchived,
+      clientLinkage,
       page = "1",
       limit = "24",
     } = req.query as Record<string, string>;
@@ -468,18 +469,21 @@ router.get("/", async (req: Request, res: Response) => {
       isDeleted: { $ne: true },
     };
 
-    // Exclude archived cases by default (only show if explicitly requested)
-    if (!includeArchived || includeArchived === "false") {
+    const shouldIncludeArchived =
+      includeArchived === "true" || includeArchived === "1" || status === "Archived";
+
+    // Exclude archived cases by default (only show if explicitly requested or status is Archived)
+    if (!shouldIncludeArchived) {
       filter["status"] = { $ne: "Archived" };
     }
 
-    // Base accessibility filter for non-admins (only admins see the entire cases)
+    // Base accessibility filter for non-admins (only admins or staff with cases permission see the entire cases)
     const baseAccessibleFilter: Record<string, unknown> = {
       isDeleted: { $ne: true },
-      ...(!includeArchived || includeArchived === "false" ? { status: { $ne: "Archived" } } : {}),
+      ...(!shouldIncludeArchived ? { status: { $ne: "Archived" } } : {}),
     };
 
-    if (req.user!.role !== "admin") {
+    if (req.user!.role !== "admin" && !req.user?.permissions?.cases) {
       const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
       if (accessibleCaseIds.length === 0) {
         res.json({
@@ -487,7 +491,7 @@ router.get("/", async (req: Request, res: Response) => {
           total: 0,
           page: 1,
           totalPages: 1,
-          stats: { total: 0, active: 0, urgent: 0, onHold: 0, closed: 0 },
+          stats: { total: 0, active: 0, urgent: 0, onHold: 0, closed: 0, archived: 0 },
         });
         return;
       }
@@ -574,6 +578,23 @@ router.get("/", async (req: Request, res: Response) => {
       filter["tags"] = tag.trim();
     }
 
+    // Client linkage filter: 'linked' or 'unlinked'
+    if (clientLinkage === "linked") {
+      andConditions.push({
+        $or: [
+          { "parties.clientId": { $exists: true, $ne: null } },
+          { "parties.type": "client" },
+        ],
+      });
+    } else if (clientLinkage === "unlinked") {
+      andConditions.push({
+        $and: [
+          { "parties.clientId": { $not: { $exists: true, $ne: null } } },
+          { "parties.type": { $ne: "client" } },
+        ],
+      });
+    }
+
     // Next hearing date range
     if (hearingFrom || hearingTo) {
       const hearingCond: Record<string, unknown> = {};
@@ -634,6 +655,7 @@ router.get("/", async (req: Request, res: Response) => {
         .populate("assignedUsers", "name email title role avatar avatarUrl")
         .populate("assignedBy", "name email")
         .populate("createdBy", "name")
+        .populate("parties.clientId", "name email phone tag type")
         .sort({ updatedAt: -1 })
         .skip(skip)
         .limit(limitNum)
@@ -662,6 +684,7 @@ router.get("/", async (req: Request, res: Response) => {
       urgent: 0,
       onHold: 0,
       closed: 0,
+      archived: 0,
     };
     for (const sc of statusCounts) {
       stats.total += sc.count;
@@ -669,6 +692,7 @@ router.get("/", async (req: Request, res: Response) => {
       if (sc._id === "Urgent") stats.urgent = sc.count;
       if (sc._id === "On Hold") stats.onHold = sc.count;
       if (sc._id === "Closed") stats.closed = sc.count;
+      if (sc._id === "Archived") stats.archived = sc.count;
     }
 
     res.json({
@@ -1450,6 +1474,40 @@ router.patch("/:id", requireResourceAccess("case"), async (req: Request, res: Re
       updates["parties"] = sanitizedParties;
     }
 
+    // Top-level clientId support in PATCH to quickly link or unlink client
+    if (req.body.clientId !== undefined) {
+      if (req.body.clientId === null || req.body.clientId === "") {
+        const currentParties = (updates["parties"] as any[]) || existing.parties || [];
+        updates["parties"] = currentParties.filter((p: any) => p.type !== "client" && !p.clientId);
+      } else {
+        if (!mongoose.Types.ObjectId.isValid(req.body.clientId)) {
+          res.status(400).json({ message: `Invalid client ID format: ${req.body.clientId}` });
+          return;
+        }
+        const clientDoc = await Client.findById(req.body.clientId).select("_id name").lean();
+        if (!clientDoc) {
+          res.status(400).json({ message: `Client not found with ID: ${req.body.clientId}` });
+          return;
+        }
+        const currentParties = ((updates["parties"] as any[]) || existing.parties || []).slice();
+        const otherParties = currentParties.filter(
+          (p: any) => p.type !== "client" && p.clientId?.toString() !== clientDoc._id.toString()
+        );
+        const role = typeof req.body.clientRole === "string" && req.body.clientRole.trim()
+          ? req.body.clientRole.trim()
+          : "Primary Client";
+        updates["parties"] = [
+          {
+            name: clientDoc.name,
+            role,
+            type: "client",
+            clientId: clientDoc._id as mongoose.Types.ObjectId,
+          },
+          ...otherParties,
+        ];
+      }
+    }
+
     const existingCase = await Case.findById(req.params["id"]);
     if (!existingCase) {
       res.status(404).json({ message: "Case not found" });
@@ -1672,6 +1730,70 @@ router.patch("/:id/follow-up", requireResourceAccess("case"), async (req: Reques
     });
   } catch (err: any) {
     console.error("[cases] Follow-up update error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/cases/:id/link-client — dedicated client linkage endpoint
+// ---------------------------------------------------------------------------
+
+router.post("/:id/link-client", requireResourceAccess("case"), async (req: Request, res: Response) => {
+  try {
+    const { clientId, clientRole = "Primary Client" } = req.body;
+    if (!clientId || !mongoose.Types.ObjectId.isValid(clientId)) {
+      res.status(400).json({ message: "Valid clientId is required" });
+      return;
+    }
+    const [caseDoc, clientDoc] = await Promise.all([
+      Case.findById(req.params["id"]),
+      Client.findById(clientId).select("_id name email phone").lean(),
+    ]);
+    if (!caseDoc) {
+      res.status(404).json({ message: "Case not found" });
+      return;
+    }
+    if (!clientDoc) {
+      res.status(404).json({ message: "Client not found" });
+      return;
+    }
+
+    const otherParties = (caseDoc.parties || []).filter(
+      (p: any) => p.type !== "client" && p.clientId?.toString() !== clientDoc._id.toString()
+    );
+    const newParties = [
+      {
+        name: clientDoc.name,
+        role: String(clientRole || "Primary Client").trim(),
+        type: "client" as const,
+        clientId: clientDoc._id as mongoose.Types.ObjectId,
+      },
+      ...otherParties,
+    ];
+    caseDoc.parties = newParties as any;
+    caseDoc.updatedBy = new mongoose.Types.ObjectId(req.userId!) as any;
+    caseDoc.timeline.push({
+      event: `Linked client ${clientDoc.name}`,
+      by: req.user?.name ?? "Staff",
+      when: new Date(),
+    });
+    await caseDoc.save();
+
+    const populated = await Case.findById(caseDoc._id)
+      .populate("assignedTo", "name email title role avatar avatarUrl")
+      .populate("assignedUsers", "name email title role avatar avatarUrl")
+      .populate("parties.clientId", "name email phone tag type")
+      .lean();
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("case:updated", { caseId: caseDoc._id.toString() });
+      io.emit("client:updated", { clientId: clientDoc._id.toString() });
+    }
+
+    res.json({ case: populated, message: "Client linked successfully" });
+  } catch (err: any) {
+    console.error("[cases] Link client error:", err);
     res.status(500).json({ message: err?.message || "Internal server error" });
   }
 });
