@@ -173,10 +173,19 @@ router.get("/:clientId/cases", requireResourceAccess("client", "clientId"), asyn
       partyQueries.push({ "parties.name": client.name, "parties.type": "client" });
     }
 
-    const cases = await Case.find({
+    const { includeArchived, status } = req.query as Record<string, string>;
+    const caseFilter: Record<string, unknown> = {
       $or: partyQueries,
-      status: { $ne: "Archived" },
-    })
+      isDeleted: { $ne: true },
+    };
+    if (includeArchived !== "true" && includeArchived !== "1" && status !== "Archived") {
+      caseFilter["status"] = { $ne: "Archived" };
+    }
+    if (status && status !== "All") {
+      caseFilter["status"] = status;
+    }
+
+    const cases = await Case.find(caseFilter)
       .populate("assignedTo", "name email title")
       .populate("parties.clientId", "name email phone")
       .sort({ updatedAt: -1 })

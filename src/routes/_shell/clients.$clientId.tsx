@@ -6,7 +6,7 @@ import {
   Phone, Mail, MapPin, Loader2, Edit3, ChevronDown,
   Building2, FileText, Trash2, Archive,
   Download, Eye, RefreshCw, ExternalLink, CheckSquare, AlertTriangle,
-  Activity, List, LayoutGrid, Search, Filter,
+  Activity, List, LayoutGrid, Search, Filter, ArrowRight,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
@@ -411,11 +411,19 @@ function ClientProfile() {
     isFetching,
   } = useClient(clientId);
   const record = data?.client;
-  const [active, setActive] = useState(searchParams.tab || "overview");
+  const [active, setActive] = useState(() => {
+    const t = searchParams.tab;
+    if (t === "contacts") return "subclients";
+    if (t === "matters") return "cases";
+    return t || "overview";
+  });
 
   useEffect(() => {
     if (searchParams.tab) {
-      setActive(searchParams.tab);
+      const t = searchParams.tab;
+      if (t === "contacts") setActive("subclients");
+      else if (t === "matters") setActive("cases");
+      else setActive(t);
     }
   }, [searchParams.tab]);
 
@@ -555,7 +563,7 @@ function ClientProfile() {
     { id: "documents" as const, label: "Documents", icon: FileText, badge: docsData?.documents?.length ?? 0 },
     { id: "kyc" as const, label: "Identity Verification", icon: FileBadge, badge: record?.kyc === "Verified" ? "Verified" : record?.kyc },
     { id: "property" as const, label: "Property", icon: Home, badge: record?.propertyDetails?.address ? 1 : null },
-    { id: "subclients" as const, label: "Sub-clients", icon: Users, badge: record?.subClients?.length ? record.subClients.length : null },
+    { id: "subclients" as const, label: "Contacts & Sub-clients", icon: Users, badge: record?.subClients?.length ? record.subClients.length : null },
     { id: "activity" as const, label: "Activity", icon: Activity, badge: activityItems.length },
   ], [casesData?.cases?.length, tasksData?.tasks?.length, docsData?.documents?.length, record?.kyc, record?.propertyDetails?.address, record?.subClients?.length, activityItems.length]);
 
@@ -767,6 +775,7 @@ function ClientProfile() {
         <div className="min-w-0 space-y-6">
           {/* ── Overview ── */}
           {active === "overview" && (
+            <>
             <SectionCard title="Client details" description="Basic information and contact details." icon={LayoutDashboard}>
               <div className="grid gap-5 sm:grid-cols-2">
                 {[
@@ -808,6 +817,112 @@ function ClientProfile() {
                 ))}
               </div>
             </SectionCard>
+
+            {/* Active Matters on Overview */}
+            <SectionCard
+              title="Active Matters"
+              description="Ongoing legal proceedings and matters associated with this client."
+              icon={Briefcase}
+              action={
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 gap-1.5 rounded-md text-caption"
+                    onClick={() => setActive("cases")}
+                  >
+                    <span>All Matters ({casesData?.cases?.length ?? 0})</span>
+                    <ArrowRight size={13} />
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-8 gap-1 rounded-md gradient-primary text-primary-foreground text-caption"
+                    onClick={() => setShowAddCaseDialog(true)}
+                  >
+                    <Plus size={13} /> Add Case
+                  </Button>
+                </div>
+              }
+            >
+              {isCasesLoading ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 size={24} className="animate-spin text-muted-foreground" />
+                </div>
+              ) : isCasesError ? (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-center">
+                  <p className="text-helper text-destructive font-medium">Failed to load matters.</p>
+                  <Button variant="outline" size="sm" className="mt-2 text-xs" onClick={() => refetchCases()}>
+                    <RefreshCw size={12} className="mr-1" /> Retry
+                  </Button>
+                </div>
+              ) : (casesData?.cases || []).filter((c) => c.status === "Active" || c.status === "Urgent").length === 0 ? (
+                <div className="rounded-lg border border-dashed p-8 text-center">
+                  <Briefcase size={28} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
+                  <p className="mt-3 font-medium text-sm">No active matters</p>
+                  <p className="mt-1 text-helper text-muted-foreground">
+                    This client currently has no active or urgent cases on file.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-3 gap-1.5 rounded-md text-xs"
+                    onClick={() => setShowAddCaseDialog(true)}
+                  >
+                    <Plus size={13} /> Add first case
+                  </Button>
+                </div>
+              ) : (
+                <div className="divide-y divide-border/60">
+                  {(casesData?.cases || [])
+                    .filter((c) => c.status === "Active" || c.status === "Urgent")
+                    .slice(0, 5)
+                    .map((c) => (
+                      <div
+                        key={c._id}
+                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3 hover:bg-muted/30 px-2 -mx-2 rounded-md transition-colors"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono text-xs font-semibold text-primary">{c.number}</span>
+                            <StatusPill tone={toneForStatus(c.status)}>{c.status}</StatusPill>
+                            <StatusPill tone={toneForStatus(c.priority)}>{c.priority} priority</StatusPill>
+                          </div>
+                          <Link
+                            to="/cases/$caseId"
+                            params={{ caseId: c._id }}
+                            className="mt-1 block font-semibold text-foreground hover:text-primary transition-colors text-sm truncate"
+                          >
+                            {c.title}
+                          </Link>
+                          <div className="mt-1 flex flex-wrap items-center gap-3 text-caption text-muted-foreground">
+                            <span>Category: {c.practice || (c as any).category || "General"}</span>
+                            <span>•</span>
+                            <span>Assigned: {c.assignedTo?.name || "Unassigned"}</span>
+                            <span>•</span>
+                            <span>Hearing: {formatDate(c.nextHearing)}</span>
+                            <span>•</span>
+                            <span>Updated: {formatDate(c.updatedAt)}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2.5 text-caption gap-1 text-primary hover:text-primary"
+                            asChild
+                          >
+                            <Link to="/cases/$caseId" params={{ caseId: c._id }}>
+                              <Eye size={13} /> View
+                            </Link>
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </SectionCard>
+          </>
           )}
 
           {/* ── Cases ── */}

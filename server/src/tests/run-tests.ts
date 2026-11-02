@@ -7538,6 +7538,128 @@ const { NotificationService } = await import("../services/notifications.js");
       });
     assert(patchClientRes.status === 200, "S47-34: PATCH with top-level clientId returns 200");
     assert(patchClientRes.body.case.parties.some((p: any) => p.name === "Global Technologies Corp"), "S47-35: PATCH added client party");
+
+    // TEST 12: GET /api/cases?clientId=:id filters cases by client
+    const getCasesByClientRes = await request(app)
+      .get(`/api/cases?clientId=${testClient._id}&includeArchived=true`)
+      .set("Authorization", `Bearer ${s47AdminToken}`);
+    assert(getCasesByClientRes.status === 200, "S47-36: GET /api/cases?clientId returns 200");
+    const clientFilteredNumbers = getCasesByClientRes.body.cases.map((c: any) => c.number);
+    assert(clientFilteredNumbers.includes("SW-S47-0001"), "S47-37: Case A returned in clientId filter");
+    assert(clientFilteredNumbers.includes("SW-S47-0003"), "S47-38: Case C (linked) returned in clientId filter");
+
+    // TEST 13: GET /api/clients/:clientId/cases supports includeArchived
+    const clientCasesRes = await request(app)
+      .get(`/api/clients/${testClient._id}/cases?includeArchived=true`)
+      .set("Authorization", `Bearer ${s47AdminToken}`);
+    assert(clientCasesRes.status === 200, "S47-39: GET /api/clients/:id/cases returns 200");
+    assert(Array.isArray(clientCasesRes.body.cases), "S47-40: Returns cases array for client");
+  }
+
+  // =========================================================================
+  // SUITE 48: Task Management Stabilization & Persistence Verification
+  // =========================================================================
+  console.log("\n--- Suite 48: Task Management Stabilization & Persistence ---");
+  {
+    const s48Admin = await User.create({
+      name: "S48 Task Admin",
+      email: "s48admin@stillworks.legal",
+      passwordHash: await bcrypt.hash("AdminPass123!", 4),
+      role: "admin",
+      status: "online",
+    });
+    const s48AdminToken = await createToken(s48Admin);
+
+    const s48StaffA = await User.create({
+      name: "S48 Staff Alice",
+      email: "s48alice@stillworks.legal",
+      passwordHash: await bcrypt.hash("StaffPass123!", 4),
+      role: "junior_advocate",
+      status: "online",
+      permissions: { tasks: true, cases: true, clients: true },
+    });
+    const s48StaffAToken = await createToken(s48StaffA);
+
+    const s48StaffB = await User.create({
+      name: "S48 Staff Bob",
+      email: "s48bob@stillworks.legal",
+      passwordHash: await bcrypt.hash("StaffPass123!", 4),
+      role: "junior_advocate",
+      status: "online",
+      permissions: { tasks: true, cases: true, clients: true },
+    });
+    const s48StaffBToken = await createToken(s48StaffB);
+
+    // 1. Create task with staff assignment and checklist
+    const createTaskRes = await request(app)
+      .post("/api/tasks")
+      .set("Authorization", `Bearer ${s48StaffAToken}`)
+      .send({
+        title: "Draft Sale Agreement and Deed",
+        description: "Draft initial contract for review",
+        priority: "High",
+        status: "todo", // Should normalize to "pending"
+        assignedTo: [s48StaffB._id.toString()],
+        checklist: [
+          { text: "Obtain Title Certificate", done: false },
+          { text: "Verify NOC from Society", done: false },
+        ],
+      });
+    assert(createTaskRes.status === 201, "S48-01: Task creation succeeds (201)");
+    const createdTask = createTaskRes.body.task;
+    assert(createdTask.status === "pending", "S48-02: Status 'todo' normalized to 'pending'");
+    assert(createdTask.checklist.length === 2, "S48-03: Checklist contains 2 items");
+    assert(createdTask.checklist[0].done === false, "S48-04: Checklist item initially undone");
+
+    // 2. Staff A (creator) can see the task on GET /api/tasks even though assigned to Staff B
+    const staffAListRes = await request(app)
+      .get("/api/tasks")
+      .set("Authorization", `Bearer ${s48StaffAToken}`);
+    assert(staffAListRes.status === 200, "S48-05: Creator lists tasks (200)");
+    const creatorTaskIds = staffAListRes.body.tasks.map((t: any) => t._id.toString());
+    assert(creatorTaskIds.includes(createdTask._id.toString()), "S48-06: Creator can view task assigned to colleague");
+
+    // 3. Toggle checklist item via PATCH /:taskId/checklist/:itemId
+    const firstItemId = createdTask.checklist[0]._id || createdTask.checklist[0].id;
+    const toggleRes = await request(app)
+      .patch(`/api/tasks/${createdTask._id}/checklist/${firstItemId}`)
+      .set("Authorization", `Bearer ${s48StaffBToken}`)
+      .send({ done: true, itemText: "Obtain Title Certificate" });
+    assert(toggleRes.status === 200, "S48-07: Checklist toggle returns 200");
+    assert(toggleRes.body.task.checklist[0].done === true, "S48-08: Toggled checklist item is marked done");
+    assert(toggleRes.body.task.assignedUsers.length >= 1, "S48-09: Checklist response preserves assignedUsers");
+    assert(toggleRes.body.task.assignedTo !== null, "S48-10: Checklist response preserves assignedTo");
+
+    // 4. Verify reopening task via GET /api/tasks/:id has persisted checklist state
+    const getTaskRes = await request(app)
+      .get(`/api/tasks/${createdTask._id}`)
+      .set("Authorization", `Bearer ${s48StaffBToken}`);
+    assert(getTaskRes.status === 200, "S48-11: GET /api/tasks/:id returns 200");
+    assert(getTaskRes.body.task.checklist[0].done === true, "S48-12: Reopened task retains persisted checklist done state");
+
+    // 5. Partial update preserving assignees when malformed undefined array is sent
+    const patchRes = await request(app)
+      .patch(`/api/tasks/${createdTask._id}`)
+      .set("Authorization", `Bearer ${s48StaffBToken}`)
+      .send({
+        description: "Updated description after consultation",
+        status: "in-progress", // Should normalize to in_progress
+        assignedTo: ["undefined"], // Simulated client extraction bug
+      });
+    assert(patchRes.status === 200, "S48-13: PATCH task returns 200");
+    assert(patchRes.body.task.description === "Updated description after consultation", "S48-14: Description updated");
+    assert(patchRes.body.task.status === "in_progress", "S48-15: 'in-progress' status normalized to 'in_progress'");
+    assert(patchRes.body.task.assignedUsers.length >= 1, "S48-16: Malformed assignedTo did not wipe out assignedUsers");
+    assert(patchRes.body.task.assignedTo !== null, "S48-17: Malformed assignedTo did not wipe out assignedTo");
+
+    // 6. Add subitem via POST /:taskId/checklist/:itemId/subitems
+    const addSubRes = await request(app)
+      .post(`/api/tasks/${createdTask._id}/checklist/${firstItemId}/subitems`)
+      .set("Authorization", `Bearer ${s48StaffBToken}`)
+      .send({ text: "Check 30 years search report" });
+    assert(addSubRes.status === 201, "S48-18: Add subitem returns 201");
+    assert(addSubRes.body.task.checklist[0].subItems.length === 1, "S48-19: Subitem added to checklist");
+    assert(addSubRes.body.task.checklist[0].subItems[0].text === "Check 30 years search report", "S48-20: Subitem text saved");
   }
 
 

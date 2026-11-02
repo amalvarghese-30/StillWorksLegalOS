@@ -89,6 +89,27 @@ interface TaskDetailDialogProps {
   task: TaskRecord | null;
 }
 
+function extractAssigneeIds(users?: any[], single?: any): string[] {
+  const ids: string[] = [];
+  if (Array.isArray(users) && users.length > 0) {
+    for (const u of users) {
+      if (!u) continue;
+      const raw = typeof u === "object" ? (u._id || u.id) : u;
+      const s = String(raw || "").trim();
+      if (s && s !== "undefined" && s !== "null" && s !== "[object Object]") {
+        ids.push(s);
+      }
+    }
+  } else if (single) {
+    const raw = typeof single === "object" ? (single._id || single.id) : single;
+    const s = String(raw || "").trim();
+    if (s && s !== "undefined" && s !== "null" && s !== "[object Object]") {
+      ids.push(s);
+    }
+  }
+  return ids;
+}
+
 export function TaskDetailDialog({ open, onClose, task }: TaskDetailDialogProps) {
   if (!open || !task) return null;
   return <TaskDetailDialogInner key={task._id} open={open} onClose={onClose} task={task} />;
@@ -163,10 +184,7 @@ function TaskDetailDialogInner({
   const [deadlineTime, setDeadlineTime] = useState("");
 
   const initialAssigned = useMemo(() => {
-    if (activeTask.assignedUsers && activeTask.assignedUsers.length > 0) {
-      return activeTask.assignedUsers.map((u) => u._id);
-    }
-    return activeTask.assignedTo?._id ? [activeTask.assignedTo._id] : [];
+    return extractAssigneeIds(activeTask.assignedUsers, activeTask.assignedTo);
   }, [activeTask.assignedUsers, activeTask.assignedTo]);
 
   const [assignedTo, setAssignedTo] = useState<string[]>(initialAssigned);
@@ -273,12 +291,7 @@ function TaskDetailDialogInner({
         (activeTask.priority as "High" | "Medium" | "Low") || "Medium"
       );
 
-      const freshAssigned =
-        activeTask.assignedUsers && activeTask.assignedUsers.length > 0
-          ? activeTask.assignedUsers.map((u) => u._id)
-          : activeTask.assignedTo?._id
-          ? [activeTask.assignedTo._id]
-          : [];
+      const freshAssigned = extractAssigneeIds(activeTask.assignedUsers, activeTask.assignedTo);
       setAssignedTo(freshAssigned);
 
       if (activeTask.deadline) {
@@ -328,12 +341,7 @@ function TaskDetailDialogInner({
 
   // Track if changes are dirty
   const isDirty = useMemo(() => {
-    const origAssigned =
-      activeTask.assignedUsers && activeTask.assignedUsers.length > 0
-        ? activeTask.assignedUsers.map((u) => u._id)
-        : activeTask.assignedTo?._id
-        ? [activeTask.assignedTo._id]
-        : [];
+    const origAssigned = extractAssigneeIds(activeTask.assignedUsers, activeTask.assignedTo);
     const assignedChanged =
       assignedTo.length !== origAssigned.length ||
       assignedTo.some((id) => !origAssigned.includes(id));
@@ -394,6 +402,12 @@ function TaskDetailDialogInner({
         activeTask.category ||
         "OTHER WORKS";
 
+      const validAssigned = assignedTo.filter(
+        (id) => Boolean(id) && id !== "undefined" && id !== "null" && id !== "[object Object]"
+      );
+      const origAssigned = extractAssigneeIds(activeTask.assignedUsers, activeTask.assignedTo);
+      const finalAssigned = validAssigned.length > 0 ? validAssigned : (origAssigned.length === 0 ? [] : origAssigned);
+
       const payload: Partial<CreateTaskPayload> = {
         title: title.trim(),
         description: description.trim(),
@@ -407,7 +421,7 @@ function TaskDetailDialogInner({
         caseId: caseId.trim() ? caseId.trim() : null,
         clientId: clientId.trim() ? clientId.trim() : null,
         deadline: combinedDeadline,
-        assignedTo,
+        assignedTo: finalAssigned,
       };
 
       await updateTask.mutateAsync({

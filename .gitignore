@@ -89,4 +89,5 @@ scratch_*.md
 # Application Uploads
 server/uploads/
 uploads/
+server/backups/
 

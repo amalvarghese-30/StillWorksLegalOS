@@ -43,13 +43,25 @@ export const Route = createFileRoute("/_shell/cases/")({
       },
     ],
   }),
-  validateSearch: (search: Record<string, unknown>): { search?: string } => ({
+  validateSearch: (search: Record<string, unknown>): {
+    search?: string;
+    status?: string;
+    clientId?: string;
+    client?: string;
+    priority?: string;
+    category?: string;
+  } => ({
     ...(typeof search["search"] === "string" ? { search: search["search"] } : {}),
+    ...(typeof search["status"] === "string" ? { status: search["status"] } : {}),
+    ...(typeof search["clientId"] === "string" ? { clientId: search["clientId"] } : {}),
+    ...(typeof search["client"] === "string" ? { client: search["client"] } : {}),
+    ...(typeof search["priority"] === "string" ? { priority: search["priority"] } : {}),
+    ...(typeof search["category"] === "string" ? { category: search["category"] } : {}),
   }),
   component: CasesPage,
 });
 
-const STATUS_FILTERS = ["All", "Active", "Urgent", "On Hold", "Closed"] as const;
+const STATUS_FILTERS = ["All", "Active", "Urgent", "On Hold", "Closed", "Archived"] as const;
 
 function toneForStatus(s: string): "primary" | "success" | "warning" | "muted" | "destructive" | "indigo" | "violet" {
   const map: Record<string, "primary" | "success" | "warning" | "muted" | "destructive" | "indigo" | "violet"> = {
@@ -57,6 +69,7 @@ function toneForStatus(s: string): "primary" | "success" | "warning" | "muted" |
     Urgent: "destructive",
     "On Hold": "warning",
     Closed: "muted",
+    Archived: "warning",
     High: "destructive",
     Medium: "warning",
     Low: "muted",
@@ -88,7 +101,11 @@ function CaseCard({
             {c.title}
           </h2>
           <p className="mt-1 truncate text-helper text-muted-foreground">
-            {c.parties?.[0]?.name ?? "—"} · {c.category || c.practice || "General Legal"}
+            <span className={c.parties?.[0]?.name ? "text-foreground/90 font-medium" : "text-amber-600 dark:text-amber-400 font-medium"}>
+              {c.parties?.[0]?.name || "Unlinked Client"}
+            </span>
+            {" · "}
+            {c.category || c.practice || "General Legal"}
           </p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-2">
@@ -156,6 +173,7 @@ const PRACTICE_OPTIONS = [
 ];
 
 import { useCategories, extractCategoryName } from "@/services/categories";
+import { useClients } from "@/services/clients";
 import { useAuth } from "@/lib/auth";
 
 function CasesPage() {
@@ -163,9 +181,10 @@ function CasesPage() {
   const isAdmin = user?.role === "admin";
   const routeSearch = Route.useSearch();
   const [search, setSearch] = useState(routeSearch.search ?? "");
-  const [statusFilter, setStatusFilter] = useState<string>("All");
-  const [priorityFilter, setPriorityFilter] = useState<string>("All");
-  const [categoryFilter, setCategoryFilter] = useState<string>("All");
+  const [statusFilter, setStatusFilter] = useState<string>(routeSearch.status ?? "All");
+  const [priorityFilter, setPriorityFilter] = useState<string>(routeSearch.priority ?? "All");
+  const [categoryFilter, setCategoryFilter] = useState<string>(routeSearch.category ?? "All");
+  const [clientFilter, setClientFilter] = useState<string>(routeSearch.clientId || routeSearch.client || "All");
   const [selectedStaff, setSelectedStaff] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(24);
@@ -173,6 +192,9 @@ function CasesPage() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [reopenTargetCase, setReopenTargetCase] = useState<CaseRecord | null>(null);
+
+  const { data: clientsData } = useClients();
+  const clients = clientsData?.clients ?? [];
 
   const { data: catData } = useCategories();
   const availableCategories = useMemo(() => {
@@ -201,9 +223,19 @@ function CasesPage() {
       f["category"] = categoryFilter;
       f["practice"] = categoryFilter;
     }
+    if (clientFilter !== "All") {
+      if (/^[0-9a-fA-F]{24}$/.test(clientFilter)) {
+        f["clientId"] = clientFilter;
+      } else {
+        f["client"] = clientFilter;
+      }
+    }
+    if (statusFilter === "Archived" || statusFilter === "All") {
+      f["includeArchived"] = "true";
+    }
     if (isAdmin && selectedStaff.length > 0) f["assignedTo"] = selectedStaff.join(",");
     return f;
-  }, [page, limit, search, statusFilter, priorityFilter, categoryFilter, selectedStaff, isAdmin]);
+  }, [page, limit, search, statusFilter, priorityFilter, categoryFilter, clientFilter, selectedStaff, isAdmin]);
 
   // Fetch cases with server-side query parameters
   const queryClient = useQueryClient();
@@ -258,6 +290,7 @@ function CasesPage() {
       urgent: rawCases.filter((c) => c.status === "Urgent").length,
       onHold: rawCases.filter((c) => c.status === "On Hold").length,
       closed: rawCases.filter((c) => c.status === "Closed").length,
+      archived: rawCases.filter((c) => c.status === "Archived").length,
     };
   }, [data?.stats, rawCases]);
 
@@ -309,6 +342,7 @@ function CasesPage() {
     setStatusFilter("All");
     setPriorityFilter("All");
     setCategoryFilter("All");
+    setClientFilter("All");
     setSelectedStaff([]);
     setPage(1);
     resetCaseSort();
@@ -318,6 +352,7 @@ function CasesPage() {
     (statusFilter !== "All" ? 1 : 0) +
     (priorityFilter !== "All" ? 1 : 0) +
     (categoryFilter !== "All" ? 1 : 0) +
+    (clientFilter !== "All" ? 1 : 0) +
     selectedStaff.length +
     (search.trim() ? 1 : 0);
 
@@ -326,7 +361,7 @@ function CasesPage() {
       <PageHeader
         breadcrumb={[{ label: "S & S", to: "/" }, { label: "Cases" }]}
         title="Cases"
-        subtitle={`${filteredCases.length} matters visible · ${stats.active} active · ${stats.urgent} urgent · ${stats.closed} closed.`}
+        subtitle={`${filteredCases.length} matters visible · ${stats.active} active · ${stats.urgent} urgent · ${stats.closed} closed${stats.archived ? ` · ${stats.archived} archived` : ""}.`}
         actions={
           <div className="flex items-center gap-2">
             <ExportImportMenu
@@ -346,19 +381,19 @@ function CasesPage() {
       />
 
       {/* ── Interactive Stat Cards (Click to filter instantly) ── */}
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <button
           type="button"
           onClick={() => setStatusFilter("All")}
-          className={`lift col-span-2 sm:col-span-1 flex flex-col items-start rounded-xl border p-3.5 sm:p-4 text-left transition-all duration-150 ${
+          className={`lift flex flex-col items-start rounded-xl border p-3.5 sm:p-4 text-left transition-all duration-150 ${
             statusFilter === "All"
-              ? "border-primary bg-primary/10 shadow-sm"
+              ? "border-primary bg-primary/10 shadow-sm ring-1 ring-primary/40"
               : "border-border bg-card hover:border-primary/40"
           }`}
         >
           <span className="text-caption font-medium text-muted-foreground">All Matters</span>
           <span className="num mt-1 text-section font-bold">{stats.total}</span>
-          <span className="mt-1 text-[11px] text-muted-foreground">Entire firm repository</span>
+          <span className="mt-1 text-[11px] text-muted-foreground">Entire repository</span>
         </button>
 
         <button
@@ -366,13 +401,13 @@ function CasesPage() {
           onClick={() => setStatusFilter(statusFilter === "Active" ? "All" : "Active")}
           className={`lift flex flex-col items-start rounded-xl border p-4 text-left transition-all duration-150 ${
             statusFilter === "Active"
-              ? "border-success bg-success/10 shadow-sm"
+              ? "border-success bg-success/10 shadow-sm ring-1 ring-success/40"
               : "border-border bg-card hover:border-success/40"
           }`}
         >
           <span className="text-caption font-medium text-success">Active</span>
           <span className="num mt-1 text-section font-bold text-success">{stats.active}</span>
-          <span className="mt-1 text-[11px] text-muted-foreground">Ongoing proceedings</span>
+          <span className="mt-1 text-[11px] text-muted-foreground">Ongoing matters</span>
         </button>
 
         <button
@@ -380,7 +415,7 @@ function CasesPage() {
           onClick={() => setStatusFilter(statusFilter === "Urgent" ? "All" : "Urgent")}
           className={`lift flex flex-col items-start rounded-xl border p-4 text-left transition-all duration-150 ${
             statusFilter === "Urgent"
-              ? "border-destructive bg-destructive/10 shadow-sm"
+              ? "border-destructive bg-destructive/10 shadow-sm ring-1 ring-destructive/40"
               : "border-border bg-card hover:border-destructive/40"
           }`}
         >
@@ -394,7 +429,7 @@ function CasesPage() {
           onClick={() => setStatusFilter(statusFilter === "On Hold" ? "All" : "On Hold")}
           className={`lift flex flex-col items-start rounded-xl border p-4 text-left transition-all duration-150 ${
             statusFilter === "On Hold"
-              ? "border-warning bg-warning/10 shadow-sm"
+              ? "border-warning bg-warning/10 shadow-sm ring-1 ring-warning/40"
               : "border-border bg-card hover:border-warning/40"
           }`}
         >
@@ -415,6 +450,20 @@ function CasesPage() {
           <span className="text-caption font-medium text-muted-foreground">Closed</span>
           <span className="num mt-1 text-section font-bold text-muted-foreground">{stats.closed}</span>
           <span className="mt-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">Reopen anytime</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === "Archived" ? "All" : "Archived")}
+          className={`lift flex flex-col items-start rounded-xl border p-4 text-left transition-all duration-150 ${
+            statusFilter === "Archived"
+              ? "border-amber-500 bg-amber-500/10 shadow-sm ring-1 ring-amber-500/40"
+              : "border-border bg-card hover:border-amber-500/40"
+          }`}
+        >
+          <span className="text-caption font-medium text-amber-600 dark:text-amber-400">Archived</span>
+          <span className="num mt-1 text-section font-bold text-amber-600 dark:text-amber-400">{stats.archived ?? 0}</span>
+          <span className="mt-1 text-[11px] text-muted-foreground">Historical records</span>
         </button>
       </div>
 
@@ -473,7 +522,7 @@ function CasesPage() {
       {/* ── Detailed Filter Drawer ── */}
       {showFilterPanel && (
         <div className="mb-6 rounded-xl border border-border bg-card/95 p-4 shadow-soft backdrop-blur-md animate-in fade-in-50 slide-in-from-top-2">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             {/* Status */}
             <div>
               <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Status</label>
@@ -490,6 +539,27 @@ function CasesPage() {
                 <option value="Urgent">Urgent</option>
                 <option value="On Hold">On Hold</option>
                 <option value="Closed">Closed</option>
+                <option value="Archived">Archived</option>
+              </select>
+            </div>
+
+            {/* Client */}
+            <div>
+              <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Client</label>
+              <select
+                value={clientFilter}
+                onChange={(e) => {
+                  setClientFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-xs outline-none focus:border-primary"
+              >
+                <option value="All">All Clients</option>
+                {clients.map((cli) => (
+                  <option key={cli._id} value={cli._id}>
+                    {cli.name}
+                  </option>
+                ))}
               </select>
             </div>
 

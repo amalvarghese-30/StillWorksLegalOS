@@ -350,8 +350,12 @@ function TasksPage() {
     return rawTasks.filter((t) => {
       const assignedId = typeof t.assignedTo === "object" && t.assignedTo ? (t.assignedTo as any)._id : t.assignedTo;
       const isAssigned =
-        (t.assignedUsers && t.assignedUsers.some((u) => String(u._id) === String(user?._id))) ||
+        (t.assignedUsers && t.assignedUsers.some((u: any) => String(u?._id || u) === String(user?._id))) ||
         (assignedId && String(assignedId) === String(user?._id));
+      const createdById = typeof t.createdBy === "object" && t.createdBy ? (t.createdBy as any)._id : t.createdBy;
+      const isCreatedByMe = createdById && String(createdById) === String(user?._id);
+
+      if (isCreatedByMe) return true;
       if (assignedId || (t.assignedUsers && t.assignedUsers.length > 0)) {
         return isAssigned;
       }

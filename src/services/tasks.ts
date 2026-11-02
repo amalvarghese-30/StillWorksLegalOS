@@ -207,8 +207,8 @@ export function useTask(id?: string | null, initialData?: TaskRecord) {
     queryKey: taskKeys.detail(id || ""),
     queryFn: () => api.get(`/tasks/${id}`),
     enabled: Boolean(id),
-    ...(initialData ? { initialData: { task: initialData } } : {}),
-    staleTime: 5 * 1000,
+    placeholderData: initialData ? { task: initialData } : undefined,
+    staleTime: 0,
   });
 }
 

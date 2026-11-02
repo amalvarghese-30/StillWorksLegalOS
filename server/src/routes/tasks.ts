@@ -44,6 +44,83 @@ function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+export function normalizeTaskStatus(val: unknown): string | undefined {
+  if (!val || typeof val !== "string") return undefined;
+  const clean = val.trim().toLowerCase();
+  switch (clean) {
+    case "pending":
+    case "todo":
+    case "to_do":
+    case "to-do":
+    case "open":
+      return "pending";
+    case "in_progress":
+    case "in-progress":
+    case "progress":
+    case "doing":
+    case "active":
+      return "in_progress";
+    case "pending_approval":
+    case "pending-approval":
+    case "in_review":
+    case "in-review":
+    case "review":
+      return "pending_approval";
+    case "completed":
+    case "done":
+    case "closed":
+      return "completed";
+    case "overdue":
+      return "overdue";
+    default:
+      return clean;
+  }
+}
+
+export function mapTaskRecord(t: any): any {
+  if (!t) return null;
+  const taskObj = t.toObject ? t.toObject() : { ...t };
+  const assignedUsers = Array.isArray(taskObj.assignedUsers) && taskObj.assignedUsers.length > 0
+    ? taskObj.assignedUsers
+    : (taskObj.assignedTo ? [taskObj.assignedTo] : []);
+  taskObj.assignedUsers = assignedUsers;
+  if (!taskObj.assignedTo && assignedUsers.length > 0) {
+    taskObj.assignedTo = assignedUsers[0];
+  }
+
+  let resolvedClientName = taskObj.clientId?.name || taskObj.clientName;
+  let resolvedClientPhone = taskObj.clientId?.phone;
+  if (!resolvedClientName && taskObj.callReminder?.clientName) {
+    resolvedClientName = taskObj.callReminder.clientName;
+    resolvedClientPhone = resolvedClientPhone || taskObj.callReminder.phone;
+  }
+  if (!resolvedClientName && taskObj.caseId && typeof taskObj.caseId === "object" && Array.isArray(taskObj.caseId.parties)) {
+    const primary = taskObj.caseId.parties.find((p: any) => p.role === "Primary Client" || p.type === "client") || taskObj.caseId.parties[0];
+    if (primary) {
+      resolvedClientName = primary.name || primary.partyName;
+    }
+  }
+
+  taskObj.clientName = resolvedClientName || undefined;
+  taskObj.clientPhone = resolvedClientPhone || undefined;
+  return taskObj;
+}
+
+export async function fetchPopulatedTask(id: any): Promise<any> {
+  const task = await Task.findById(id)
+    .populate("assignedTo", "name email title role avatar avatarUrl")
+    .populate("assignedUsers", "name email title role avatar avatarUrl")
+    .populate("assignedBy", "name email title")
+    .populate("createdBy", "name email title")
+    .populate("updatedBy", "name email title")
+    .populate("caseId", "title number parties")
+    .populate("clientId", "name phone")
+    .populate("assignmentHistory.fromUser", "name email")
+    .populate("assignmentHistory.toUser", "name email")
+    .populate("assignmentHistory.assignedBy", "name email");
+  return task ? mapTaskRecord(task) : null;
+}
+
 export function parseChecklistRecursive(items: unknown[]): any[] {
   if (!Array.isArray(items)) return [];
   return items.map((item: any) => {
@@ -223,9 +300,11 @@ function validateTaskInput(data: {
   }
 
   if (data.status !== undefined && data.status !== null) {
-    if (!["pending", "in_progress", "pending_approval", "completed", "overdue"].includes(String(data.status))) {
+    const norm = normalizeTaskStatus(data.status);
+    if (!norm || !["pending", "in_progress", "pending_approval", "completed", "overdue"].includes(norm)) {
       return { valid: false, error: "Invalid status value" };
     }
+    (data as any).status = norm;
   }
 
   if (data.agent !== undefined && data.agent !== null) {
@@ -427,7 +506,7 @@ router.get("/", async (req: Request, res: Response) => {
       });
     }
 
-    // Non-admins only see tasks assigned to them, or unassigned tasks created by them
+    // Non-admins see tasks assigned to them, or tasks created by them
     if (req.user!.role !== "admin") {
       const uid = req.userId;
       const uObjectId = Types.ObjectId.isValid(uid!) ? new Types.ObjectId(uid) : uid;
@@ -437,21 +516,8 @@ router.get("/", async (req: Request, res: Response) => {
           { assignedTo: uObjectId },
           { assignedUsers: uid },
           { assignedUsers: uObjectId },
-          {
-            $and: [
-              { $or: [{ createdBy: uid }, { createdBy: uObjectId }] },
-              {
-                $or: [
-                  { assignedTo: { $exists: false } },
-                  { assignedTo: null },
-                  { assignedTo: uid },
-                  { assignedTo: uObjectId },
-                  { assignedUsers: uid },
-                  { assignedUsers: uObjectId },
-                ],
-              },
-            ],
-          },
+          { createdBy: uid },
+          { createdBy: uObjectId },
         ],
       });
     }
@@ -521,32 +587,7 @@ router.get("/", async (req: Request, res: Response) => {
       Task.find(baseAccessibleTaskFilter, { status: 1, deadline: 1, isCall: 1, callReminder: 1 }).lean(),
     ]);
 
-    const mappedTasks = tasks.map((t: any) => {
-      const assignedUsers = Array.isArray(t.assignedUsers) && t.assignedUsers.length > 0
-        ? t.assignedUsers
-        : (t.assignedTo ? [t.assignedTo] : []);
-      
-      let resolvedClientName = t.clientId?.name || t.clientName;
-      let resolvedClientPhone = t.clientId?.phone;
-      if (!resolvedClientName && t.callReminder?.clientName) {
-        resolvedClientName = t.callReminder.clientName;
-        resolvedClientPhone = resolvedClientPhone || t.callReminder.phone;
-      }
-      if (!resolvedClientName && t.caseId && typeof t.caseId === "object" && Array.isArray(t.caseId.parties)) {
-        const primary = t.caseId.parties.find((p: any) => p.role === "Primary Client" || p.type === "client") || t.caseId.parties[0];
-        if (primary) {
-          resolvedClientName = primary.name || primary.partyName;
-        }
-      }
-
-      return {
-        ...t,
-        assignedUsers,
-        assignedTo: t.assignedTo || (assignedUsers.length > 0 ? assignedUsers[0] : null),
-        clientName: resolvedClientName || undefined,
-        clientPhone: resolvedClientPhone || undefined,
-      };
-    });
+    const mappedTasks = tasks.map((t: any) => mapTaskRecord(t));
 
     const stats = {
       total: allAccessible.length,
@@ -828,12 +869,12 @@ router.post("/reminders/bulk-postpone", handleBulkPostponeReminders);
 router.get("/:id", requireResourceAccess("task"), async (req: Request, res: Response) => {
   try {
     const task = await Task.findById(req.params["id"])
-      .populate("assignedTo", "name email title role avatar")
-      .populate("assignedUsers", "name email title role avatar")
+      .populate("assignedTo", "name email title role avatar avatarUrl")
+      .populate("assignedUsers", "name email title role avatar avatarUrl")
       .populate("assignedBy", "name email title")
       .populate("createdBy", "name email title")
       .populate("updatedBy", "name email title")
-      .populate("caseId", "title number")
+      .populate("caseId", "title number parties")
       .populate("clientId", "name phone")
       .populate("assignmentHistory.fromUser", "name email")
       .populate("assignmentHistory.toUser", "name email")
@@ -842,7 +883,7 @@ router.get("/:id", requireResourceAccess("task"), async (req: Request, res: Resp
       res.status(404).json({ message: "Task not found" });
       return;
     }
-    const taskObj: any = task.toObject();
+    const taskObj: any = mapTaskRecord(task);
     const assignedUsers = Array.isArray(taskObj.assignedUsers) && taskObj.assignedUsers.length > 0
       ? taskObj.assignedUsers
       : (taskObj.assignedTo ? [taskObj.assignedTo] : []);
@@ -1293,7 +1334,7 @@ router.post("/", async (req: Request, res: Response) => {
       { path: "assignedUsers", select: "name email title role avatar avatarUrl" },
     ]);
 
-    const taskObj: any = task.toObject();
+    const taskObj: any = mapTaskRecord(task);
     taskObj.assignedUsers = Array.isArray(taskObj.assignedUsers) && taskObj.assignedUsers.length > 0
       ? taskObj.assignedUsers
       : (taskObj.assignedTo ? [taskObj.assignedTo] : []);
@@ -1359,25 +1400,41 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
     if (rawAssignVal !== undefined) {
       if (Array.isArray(rawAssignVal)) {
         newAssignedUsers = rawAssignVal
-          .map((id: any) => String(id?._id || id).trim())
-          .filter((id: string) => Types.ObjectId.isValid(id))
+          .map((id: any) => {
+            if (!id) return "";
+            if (typeof id === "object") return String(id._id || id.id || "").trim();
+            return String(id).trim();
+          })
+          .filter((id: string) => id && id !== "undefined" && id !== "null" && Types.ObjectId.isValid(id))
           .map((id: string) => new Types.ObjectId(id));
       } else if (typeof rawAssignVal === "string" && rawAssignVal.includes(",")) {
         newAssignedUsers = rawAssignVal
           .split(",")
           .map((id: string) => id.trim())
-          .filter((id: string) => Types.ObjectId.isValid(id))
+          .filter((id: string) => id && id !== "undefined" && id !== "null" && Types.ObjectId.isValid(id))
           .map((id: string) => new Types.ObjectId(id));
-      } else if (rawAssignVal && Types.ObjectId.isValid(String(rawAssignVal))) {
-        newAssignedUsers = [new Types.ObjectId(String(rawAssignVal))];
-      } else if (rawAssignVal === null || rawAssignVal === "") {
+      } else if (rawAssignVal && typeof rawAssignVal === "object" && (rawAssignVal as any)._id && Types.ObjectId.isValid(String((rawAssignVal as any)._id))) {
+        newAssignedUsers = [new Types.ObjectId(String((rawAssignVal as any)._id))];
+      } else if (rawAssignVal && typeof rawAssignVal === "string" && Types.ObjectId.isValid(rawAssignVal.trim())) {
+        newAssignedUsers = [new Types.ObjectId(rawAssignVal.trim())];
+      } else if (rawAssignVal === null || rawAssignVal === "" || (Array.isArray(rawAssignVal) && rawAssignVal.length === 0)) {
         newAssignedUsers = [];
       }
 
       if (newAssignedUsers !== undefined) {
-        updates["assignedUsers"] = newAssignedUsers;
-        updates["assignedTo"] = newAssignedUsers.length > 0 ? newAssignedUsers[0] : null;
+        if (Array.isArray(rawAssignVal) && rawAssignVal.length > 0 && newAssignedUsers.length === 0) {
+          console.warn(`[tasks] Preserved existing assignees for task ${req.params["id"]} due to malformed payload:`, rawAssignVal);
+          delete updates["assignedTo"];
+          delete updates["assignedUsers"];
+        } else {
+          updates["assignedUsers"] = newAssignedUsers;
+          updates["assignedTo"] = newAssignedUsers.length > 0 ? newAssignedUsers[0] : null;
+        }
       }
+    }
+
+    if (updates["status"] !== undefined) {
+      updates["status"] = normalizeTaskStatus(updates["status"]);
     }
 
     if (updates["title"] !== undefined) {
@@ -1653,7 +1710,7 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
     if (updates["assignedTo"] !== undefined && String(updates["assignedTo"] ?? "") !== String(originalTask.assignedTo ?? "")) {
       updates["assignedBy"] = req.userId;
       updates["assignedAt"] = updates["assignedTo"] ? now : null;
-      if (updates["assignedTo"]) {
+      if (updates["assignedTo"] && Types.ObjectId.isValid(String(updates["assignedTo"]))) {
         const histEntry = {
           fromUser: originalTask.assignedTo || null,
           toUser: new Types.ObjectId(String(updates["assignedTo"])),
@@ -2011,16 +2068,7 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
       io.emit("task:updated", taskRealtimePayload(task));
     }
 
-    const taskObj: any = task.toObject ? task.toObject() : task;
-    const assignedUsers = Array.isArray(taskObj.assignedUsers) && taskObj.assignedUsers.length > 0
-      ? taskObj.assignedUsers
-      : (taskObj.assignedTo ? [taskObj.assignedTo] : []);
-    taskObj.assignedUsers = assignedUsers;
-    if (!taskObj.assignedTo && taskObj.assignedUsers.length > 0) {
-      taskObj.assignedTo = taskObj.assignedUsers[0];
-    }
-
-    res.json({ task: taskObj });
+    res.json({ task: mapTaskRecord(task) });
   } catch (err) {
     console.error("[tasks] Update error:", err);
     res.status(500).json({ message: "Internal server error" });
@@ -2174,6 +2222,7 @@ router.post("/:taskId/checklist", requireResourceAccess("task", "taskId"), async
       subItems: parsedSubItems,
     });
 
+    task.markModified("checklist");
     await task.save();
 
     await AuditLog.create({
@@ -2188,18 +2237,10 @@ router.post("/:taskId/checklist", requireResourceAccess("task", "taskId"), async
       userAgent: req.headers["user-agent"],
     });
 
-    const populated = await Task.findById(task._id)
-      .populate("assignedTo", "name email title")
-      .populate("assignedBy", "name email title")
-      .populate("createdBy", "name email title")
-      .populate("caseId", "title number")
-      .populate("clientId", "name phone")
-      .populate("assignmentHistory.fromUser", "name email")
-      .populate("assignmentHistory.toUser", "name email")
-      .populate("assignmentHistory.assignedBy", "name email");
+    const populated = await fetchPopulatedTask(task._id);
 
     const io = req.app.get("io");
-    if (io) {
+    if (io && populated) {
       io.emit("task:updated", taskRealtimePayload(populated));
     }
 
@@ -2226,6 +2267,7 @@ router.delete("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskI
       (c) => (c as any)._id?.toString() !== req.params["itemId"] && c.id !== req.params["itemId"]
     );
 
+    task.markModified("checklist");
     await task.save();
 
     await AuditLog.create({
@@ -2240,18 +2282,10 @@ router.delete("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskI
       userAgent: req.headers["user-agent"],
     });
 
-    const populated = await Task.findById(task._id)
-      .populate("assignedTo", "name email title")
-      .populate("assignedBy", "name email title")
-      .populate("createdBy", "name email title")
-      .populate("caseId", "title number")
-      .populate("clientId", "name phone")
-      .populate("assignmentHistory.fromUser", "name email")
-      .populate("assignmentHistory.toUser", "name email")
-      .populate("assignmentHistory.assignedBy", "name email");
+    const populated = await fetchPopulatedTask(task._id);
 
     const io = req.app.get("io");
-    if (io) {
+    if (io && populated) {
       io.emit("task:updated", taskRealtimePayload(populated));
     }
 
@@ -2437,6 +2471,7 @@ router.patch("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskId
       task.approvedAt = null;
     }
 
+    task.markModified("checklist");
     await task.save();
 
     await AuditLog.create({
@@ -2451,18 +2486,10 @@ router.patch("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskId
       userAgent: req.headers["user-agent"],
     });
 
-    const populated = await Task.findById(task._id)
-      .populate("assignedTo", "name email title")
-      .populate("assignedBy", "name email title")
-      .populate("createdBy", "name email title")
-      .populate("caseId", "title number")
-      .populate("clientId", "name phone")
-      .populate("assignmentHistory.fromUser", "name email")
-      .populate("assignmentHistory.toUser", "name email")
-      .populate("assignmentHistory.assignedBy", "name email");
+    const populated = await fetchPopulatedTask(task._id);
 
     const io = req.app.get("io");
-    if (io) {
+    if (io && populated) {
       io.emit("task:updated", taskRealtimePayload(populated));
     }
 
@@ -2516,20 +2543,13 @@ router.post("/:taskId/checklist/:itemId/subitems", requireResourceAccess("task",
       done: false,
     });
 
+    task.markModified("checklist");
     await task.save();
 
-    const populated = await Task.findById(task._id)
-      .populate("assignedTo", "name email title")
-      .populate("assignedBy", "name email title")
-      .populate("createdBy", "name email title")
-      .populate("caseId", "title number")
-      .populate("clientId", "name phone")
-      .populate("assignmentHistory.fromUser", "name email")
-      .populate("assignmentHistory.toUser", "name email")
-      .populate("assignmentHistory.assignedBy", "name email");
+    const populated = await fetchPopulatedTask(task._id);
 
     const io = req.app.get("io");
-    if (io) {
+    if (io && populated) {
       io.emit("task:updated", taskRealtimePayload(populated));
     }
 
@@ -2575,20 +2595,13 @@ router.delete("/:taskId/checklist/:itemId/subitems/:subId", requireResourceAcces
       );
     }
 
+    task.markModified("checklist");
     await task.save();
 
-    const populated = await Task.findById(task._id)
-      .populate("assignedTo", "name email title")
-      .populate("assignedBy", "name email title")
-      .populate("createdBy", "name email title")
-      .populate("caseId", "title number")
-      .populate("clientId", "name phone")
-      .populate("assignmentHistory.fromUser", "name email")
-      .populate("assignmentHistory.toUser", "name email")
-      .populate("assignmentHistory.assignedBy", "name email");
+    const populated = await fetchPopulatedTask(task._id);
 
     const io = req.app.get("io");
-    if (io) {
+    if (io && populated) {
       io.emit("task:updated", taskRealtimePayload(populated));
     }
 

@@ -461,6 +461,9 @@ router.get("/", async (req: Request, res: Response) => {
       tag,
       includeArchived,
       clientLinkage,
+      clientId,
+      client,
+      subCategory,
       page = "1",
       limit = "24",
     } = req.query as Record<string, string>;
@@ -593,6 +596,29 @@ router.get("/", async (req: Request, res: Response) => {
           { "parties.type": { $ne: "client" } },
         ],
       });
+    }
+
+    // Specific client filter: by clientId or client name
+    if (clientId && mongoose.Types.ObjectId.isValid(clientId)) {
+      const clientObjId = new mongoose.Types.ObjectId(clientId);
+      andConditions.push({
+        $or: [
+          { "parties.clientId": clientObjId },
+        ],
+      });
+    } else if (client && client.trim() && client !== "All") {
+      const clientRegex = new RegExp(client.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      andConditions.push({
+        $or: [
+          { "parties.name": clientRegex },
+        ],
+      });
+    }
+
+    // Specific subcategory filter
+    if (subCategory && subCategory.trim() && subCategory !== "All") {
+      const subCatRegex = new RegExp(subCategory.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      andConditions.push({ subCategory: subCatRegex });
     }
 
     // Next hearing date range
