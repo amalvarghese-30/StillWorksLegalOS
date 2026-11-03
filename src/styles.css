@@ -236,15 +236,23 @@
     scroll-behavior: smooth;
   }
 
-  /* Better touch targets on mobile — scoped to primary interactive elements, not compact inline links */
+  /* Better touch targets on mobile — scoped to primary interactive elements, excluding compact controls (checkboxes, radios, switches) */
   @media (pointer: coarse) {
-    button:not([data-compact]),
-    [role="button"]:not([data-compact]),
+    button:not([data-compact]):not([role="checkbox"]):not([role="radio"]):not([role="switch"]):not([aria-checked]),
+    [role="button"]:not([data-compact]):not([role="checkbox"]):not([role="radio"]):not([role="switch"]):not([aria-checked]),
     input:not([type="checkbox"]):not([type="radio"]),
     select,
     textarea {
       min-height: 44px;
     }
+  }
+
+  /* Enforce strict square geometry for checkbox and compact toggle controls across all media/pointers */
+  [role="checkbox"],
+  [role="radio"],
+  [data-checkbox] {
+    min-height: unset;
+    box-sizing: border-box;
   }
 
   /* Tactile interactive feedback on click for buttons across the app */

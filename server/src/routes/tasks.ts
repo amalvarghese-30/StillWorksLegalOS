@@ -2330,10 +2330,18 @@ router.delete("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskI
     const isNum = /^\d+$/.test(rawItemId);
     const numIdx = isNum ? parseInt(rawItemId, 10) : -1;
 
+    const decodedItemId = decodeURIComponent(rawItemId).trim();
+
     task.checklist = task.checklist.filter((c, i) => {
-      const matchId = (c as any)._id?.toString() === rawItemId || c.id === rawItemId;
+      const matchId =
+        (c as any)._id?.toString() === rawItemId ||
+        (c as any)._id?.toString() === decodedItemId ||
+        c.id === rawItemId ||
+        c.id === decodedItemId;
       const matchIdx = isNum && i === numIdx;
-      const matchText = c.text === rawItemId;
+      const matchText =
+        Boolean(c.text) &&
+        (c.text.trim() === rawItemId.trim() || c.text.trim() === decodedItemId);
       return !matchId && !matchIdx && !matchText;
     });
 

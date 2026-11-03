@@ -98,7 +98,7 @@ export function EmployeeTableView({
                   checked={allSelected ? true : someSelected ? "indeterminate" : false}
                   onCheckedChange={(val) => onSelectAll?.(Boolean(val))}
                   aria-label="Select all employees"
-                  className="translate-y-0.5"
+                  className="translate-y-0.5 shrink-0 aspect-square"
                 />
               </th>
 
@@ -278,7 +278,7 @@ export function EmployeeTableView({
                       checked={isSelected}
                       onCheckedChange={() => onToggleSelect?.(emp._id)}
                       aria-label={`Select ${emp.name}`}
-                      className="translate-y-0.5"
+                      className="translate-y-0.5 shrink-0 aspect-square"
                     />
                   </td>
 
@@ -519,6 +519,28 @@ export function EmployeeTableView({
           Eliminates horizontal scrolling on mobile and tablet screens.
          ───────────────────────────────────────────────────────────── */}
       <div className="lg:hidden space-y-2.5">
+        {employees.length > 0 && onSelectAll && (
+          <div className="flex items-center justify-between px-3 py-2 bg-muted/40 rounded-xl border border-border/70 text-xs">
+            <div
+              className="flex items-center gap-2 cursor-pointer font-medium text-muted-foreground hover:text-foreground touch-manipulation py-1"
+              onClick={() => onSelectAll(!allSelected)}
+            >
+              <Checkbox
+                checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                onCheckedChange={(val) => onSelectAll(Boolean(val))}
+                onClick={(e) => e.stopPropagation()}
+                aria-label="Select all employees"
+                className="shrink-0 aspect-square"
+              />
+              <span className="text-xs font-semibold text-foreground">Select all ({employees.length})</span>
+            </div>
+            {selectedIds.length > 0 && (
+              <span className="text-[11px] font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                {selectedIds.length} selected
+              </span>
+            )}
+          </div>
+        )}
         {employees.map((emp) => {
           const workload = workloadById.get(emp._id);
           const activeCases = workload?.activeCases ?? 0;
@@ -545,11 +567,20 @@ export function EmployeeTableView({
               {/* Top row: Checkbox, Avatar, Name, Role, Actions */}
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <div onClick={(e) => e.stopPropagation()}>
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleSelect?.(emp._id);
+                    }}
+                    className="shrink-0 flex items-center justify-center -m-1.5 p-1.5 min-h-[44px] min-w-[36px] cursor-pointer touch-manipulation"
+                    title={`Select ${emp.name}`}
+                  >
                     <Checkbox
                       checked={isSelected}
                       onCheckedChange={() => onToggleSelect?.(emp._id)}
+                      onClick={(e) => e.stopPropagation()}
                       aria-label={`Select ${emp.name}`}
+                      className="shrink-0 aspect-square"
                     />
                   </div>
                   <EmployeeAvatar

@@ -42,24 +42,24 @@ export function StorageSettings() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full min-w-0 max-w-full">
       {/* Overview Card */}
-      <div className="rounded-lg border border-border bg-card p-5 shadow-soft">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3.5">
+      <div className="rounded-lg border border-border bg-card p-4 sm:p-5 shadow-soft w-full min-w-0">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between w-full min-w-0">
+          <div className="flex items-start gap-3 sm:gap-3.5 min-w-0 flex-1">
             <div className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
               <HardDrive size={20} strokeWidth={1.75} />
             </div>
-            <div>
-              <h3 className="text-body font-semibold text-foreground">
+            <div className="min-w-0 flex-1">
+              <h3 className="text-body font-semibold text-foreground break-words">
                 Application-Managed Filesystem Storage
               </h3>
-              <p className="text-helper text-muted-foreground">
+              <p className="text-helper text-muted-foreground break-words mt-0.5">
                 All confidential legal documents, chat attachments, and profile avatars are stored securely on the application server filesystem.
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2 self-start sm:self-auto">
+          <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
             <span
               className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
                 isWritable
@@ -70,7 +70,7 @@ export function StorageSettings() {
               {isWritable ? (
                 <>
                   <CheckCircle2 size={13} className="shrink-0" />
-                  Storage Active & Writable
+                  Storage Active &amp; Writable
                 </>
               ) : (
                 <>
@@ -82,20 +82,20 @@ export function StorageSettings() {
           </div>
         </div>
 
-        <div className="mt-5 grid gap-4 border-t border-border pt-4 sm:grid-cols-2">
-          <div className="space-y-1">
-            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-border pt-4 w-full min-w-0">
+          <div className="space-y-1 min-w-0">
+            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground block">
               Storage Root Directory
             </span>
-            <p className="font-mono text-helper text-foreground font-medium break-all">
+            <p className="font-mono text-xs sm:text-helper text-foreground font-medium break-all bg-muted/30 p-2 rounded border border-border/40">
               {storagePath}
             </p>
           </div>
-          <div className="space-y-1">
-            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          <div className="space-y-1 min-w-0">
+            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground block">
               Security Model
             </span>
-            <p className="text-helper text-foreground">
+            <p className="text-xs sm:text-helper text-foreground break-words">
               Application-Controlled (Zero direct client filesystem exposure)
             </p>
           </div>
@@ -103,16 +103,16 @@ export function StorageSettings() {
       </div>
 
       {/* Directory Hierarchy Breakdown */}
-      <div className="rounded-lg border border-border bg-card p-5 shadow-soft">
+      <div className="rounded-lg border border-border bg-card p-4 sm:p-5 shadow-soft w-full min-w-0">
         <div className="flex items-center gap-2.5 mb-3">
           <FolderTree size={18} className="text-primary" strokeWidth={1.75} />
           <h4 className="text-helper font-medium text-foreground">Storage Hierarchy</h4>
         </div>
-        <div className="grid gap-2.5 sm:grid-cols-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full min-w-0">
           {storageStructure.map((item) => (
-            <div key={item.name} className="rounded-md border border-border/60 bg-muted/20 p-3">
-              <span className="font-mono text-xs font-semibold text-primary">{item.name}</span>
-              <p className="mt-0.5 text-caption text-muted-foreground">{item.desc}</p>
+            <div key={item.name} className="rounded-md border border-border/60 bg-muted/20 p-3 min-w-0">
+              <span className="font-mono text-xs font-semibold text-primary break-all block">{item.name}</span>
+              <p className="mt-0.5 text-caption text-muted-foreground break-words">{item.desc}</p>
             </div>
           ))}
         </div>
@@ -157,17 +157,18 @@ export function StorageSettings() {
       ) : null}
 
       {/* Action Footer */}
-      <div className="flex items-center gap-3 border-t border-border pt-4">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 border-t border-border pt-4 w-full">
         <Button
           type="button"
           variant="outline"
           onClick={handleTest}
           disabled={testMutation.isPending}
+          className="min-h-[44px] h-11 px-4 text-xs font-semibold w-full sm:w-auto touch-manipulation"
         >
           {testMutation.isPending ? (
-            <Loader2 size={17} className="animate-spin" />
+            <Loader2 size={17} className="animate-spin mr-1.5" />
           ) : (
-            <ShieldCheck size={17} strokeWidth={1.75} />
+            <ShieldCheck size={17} strokeWidth={1.75} className="mr-1.5" />
           )}
           {testMutation.isPending ? "Verifying Storage…" : "Verify Storage Health & Permissions"}
         </Button>

@@ -343,7 +343,7 @@ export function useDeleteChecklistItem() {
   const qc = useQueryClient();
   return useMutation<{ task: TaskRecord }, Error, { taskId: string; itemId: string }>({
     mutationFn: ({ taskId, itemId }) =>
-      api.delete(`/tasks/${taskId}/checklist/${itemId}`),
+      api.delete(`/tasks/${taskId}/checklist/${encodeURIComponent(itemId)}`),
     onSuccess: (res, vars) => {
       if (res?.task) updateTaskInQueryCache(qc, res.task);
       qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
@@ -357,7 +357,7 @@ export function useAddChecklistSubItem() {
   const qc = useQueryClient();
   return useMutation<{ task: TaskRecord }, Error, { taskId: string; itemId: string; text: string }>({
     mutationFn: ({ taskId, itemId, text }) =>
-      api.post(`/tasks/${taskId}/checklist/${itemId}/subitems`, { text }),
+      api.post(`/tasks/${taskId}/checklist/${encodeURIComponent(itemId)}/subitems`, { text }),
     onSuccess: (res, vars) => {
       if (res?.task) updateTaskInQueryCache(qc, res.task);
       qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
@@ -375,7 +375,7 @@ export function useToggleChecklistSubItem() {
     { taskId: string; itemId: string; subId: string; done?: boolean; text?: string; subText?: string }
   >({
     mutationFn: ({ taskId, itemId, subId, done, text, subText }) =>
-      api.patch(`/tasks/${taskId}/checklist/${itemId}`, { subItemId: subId, subDone: done, subText: text || subText }),
+      api.patch(`/tasks/${taskId}/checklist/${encodeURIComponent(itemId)}`, { subItemId: subId, subDone: done, subText: text || subText }),
     onSuccess: (res, vars) => {
       if (res?.task) updateTaskInQueryCache(qc, res.task);
       qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
@@ -389,7 +389,7 @@ export function useDeleteChecklistSubItem() {
   const qc = useQueryClient();
   return useMutation<{ task: TaskRecord }, Error, { taskId: string; itemId: string; subId: string }>({
     mutationFn: ({ taskId, itemId, subId }) =>
-      api.delete(`/tasks/${taskId}/checklist/${itemId}/subitems/${encodeURIComponent(subId)}`),
+      api.delete(`/tasks/${taskId}/checklist/${encodeURIComponent(itemId)}/subitems/${encodeURIComponent(subId)}`),
     onSuccess: (res, vars) => {
       if (res?.task) updateTaskInQueryCache(qc, res.task);
       qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
@@ -407,7 +407,7 @@ export function useUpdateChecklistSubItem() {
     { taskId: string; itemId: string; subId: string; text?: string; done?: boolean; oldText?: string }
   >({
     mutationFn: ({ taskId, itemId, subId, text, done, oldText }) =>
-      api.patch(`/tasks/${taskId}/checklist/${itemId}/subitems/${encodeURIComponent(subId)}`, { text, done, oldText }),
+      api.patch(`/tasks/${taskId}/checklist/${encodeURIComponent(itemId)}/subitems/${encodeURIComponent(subId)}`, { text, done, oldText }),
     onSuccess: (res, vars) => {
       if (res?.task) updateTaskInQueryCache(qc, res.task);
       qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });

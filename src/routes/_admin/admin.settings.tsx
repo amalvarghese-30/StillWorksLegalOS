@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/lib/auth";
@@ -18,7 +19,7 @@ import { TaskOptionsSettings } from "@/components/settings/TaskOptionsSettings";
 import { DesktopUpdateSettings } from "@/components/settings/DesktopUpdateSettings";
 import { useUpdateProfile, useUpdateFirm, useUpdatePreferences } from "@/services/admin";
 import { validatePhone, sanitizePhone } from "@/lib/validation";
-import { MobileSectionNav } from "@/components/layout/MobileSectionNav";
+import { SettingsSectionNav } from "@/components/settings/SettingsSectionNav";
 import { UserAvatar } from "@/components/common/UserAvatar";
 import { isElectron } from "@/platform";
 import { APP_VERSION } from "@/version";
@@ -232,10 +233,10 @@ function SettingsPage() {
         subtitle="Preferences for you and for the firm."
       />
 
-      <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
-        <div className="lg:sticky lg:top-28 lg:self-start">
-          <MobileSectionNav
-            sections={tabs}
+      <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-[240px_minmax(0,1fr)] w-full min-w-0 max-w-full">
+        <div className="w-full min-w-0 lg:sticky lg:top-28 lg:self-start">
+          <SettingsSectionNav
+            tabs={tabs}
             active={tab}
             onChange={(id) => setTab(id)}
             ariaLabel="Settings sections"
@@ -263,7 +264,7 @@ function SettingsPage() {
           </div>
         </div>
 
-        <div className="min-w-0 space-y-6">
+        <div className="w-full min-w-0 max-w-full space-y-6">
           {tab === "updates" ? (
             <DesktopUpdateSettings />
           ) : tab === "notifications" || tab === "security" ? (
@@ -272,23 +273,23 @@ function SettingsPage() {
               description="Choose what reaches you, and how."
               icon={tab === "security" ? Lock : Bell}
             >
-              <form onSubmit={handlePreferencesSave}>
-                <ul className="divide-y divide-border">
+              <form onSubmit={handlePreferencesSave} className="w-full min-w-0 space-y-4">
+                <ul className="divide-y divide-border w-full min-w-0">
                   {(tab === "security" ? securitySettings : notificationSettings).map((setting) => (
-                    <li key={setting.label} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 py-4">
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{setting.label}</p>
-                        <p className="text-helper text-muted-foreground">{setting.description}</p>
+                    <li key={setting.label} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:gap-4 py-3.5 sm:py-4 w-full min-w-0">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-sm text-foreground break-words">{setting.label}</p>
+                        <p className="text-xs sm:text-helper text-muted-foreground break-words mt-0.5">{setting.description}</p>
                       </div>
                       <Switch checked={setting.checked} onCheckedChange={setting.setter} aria-label={setting.label} />
                     </li>
                   ))}
                 </ul>
-                <div className="flex items-center gap-3 pt-4 border-t border-border">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-4 border-t border-border w-full">
                   <Button
                     type="submit"
                     disabled={updatePreferences.isPending}
-                    className="gradient-primary rounded-md text-primary-foreground shadow-soft"
+                    className="gradient-primary rounded-md text-primary-foreground shadow-soft min-h-[44px] h-11 px-5 w-full sm:w-auto text-sm font-semibold"
                   >
                     {updatePreferences.isPending ? <Loader2 size={17} className="animate-spin" /> : null}
                     {updatePreferences.isPending ? "Saving…" : prefsSaved ? "Saved ✓" : "Save changes"}
@@ -314,10 +315,10 @@ function SettingsPage() {
               icon={tabs.find((t) => t.id === tab)?.icon ?? User}
             >
               {tab === "profile" ? (
-                <form className="space-y-5 sm:grid sm:grid-cols-2 sm:gap-5" onSubmit={handleSave}>
+                <form className="space-y-4 sm:space-y-5 sm:grid sm:grid-cols-2 sm:gap-5 w-full min-w-0" onSubmit={handleSave}>
                   {/* Profile Picture Avatar Section */}
-                  <div className="flex flex-col sm:flex-row items-center gap-5 sm:col-span-2 pb-4 border-b border-border/60">
-                    <div className="relative group">
+                  <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-5 sm:col-span-2 pb-4 border-b border-border/60 text-center sm:text-left w-full min-w-0">
+                    <div className="relative group shrink-0">
                       <UserAvatar
                         avatarUrl={user?.avatarUrl}
                         name={user?.name}
@@ -325,9 +326,9 @@ function SettingsPage() {
                         className="size-20 border-2 border-primary/20 shadow-soft text-xl font-bold"
                       />
                     </div>
-                    <div className="space-y-1.5 text-center sm:text-left">
+                    <div className="space-y-1.5 min-w-0 flex-1">
                       <h4 className="text-helper font-semibold text-foreground">Profile Picture</h4>
-                      <p className="text-caption text-muted-foreground">
+                      <p className="text-caption text-muted-foreground break-words">
                         JPEG, PNG or WebP, up to 2MB. Displayed across top navigation, chat, and team directory.
                       </p>
                       <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
@@ -344,7 +345,7 @@ function SettingsPage() {
                           size="sm"
                           disabled={isUploadingAvatar}
                           onClick={() => fileInputRef.current?.click()}
-                          className="h-8 rounded-md text-xs"
+                          className="h-9 min-h-[36px] rounded-md text-xs touch-manipulation"
                         >
                           {isUploadingAvatar ? (
                             <Loader2 size={13} className="animate-spin mr-1.5" />
@@ -360,7 +361,7 @@ function SettingsPage() {
                             size="sm"
                             disabled={isRemovingAvatar}
                             onClick={handleRemoveAvatar}
-                            className="h-8 rounded-md text-xs text-destructive hover:bg-destructive/10"
+                            className="h-9 min-h-[36px] rounded-md text-xs text-destructive hover:bg-destructive/10 touch-manipulation"
                           >
                             {isRemovingAvatar ? (
                               <Loader2 size={13} className="animate-spin mr-1.5" />
@@ -373,24 +374,24 @@ function SettingsPage() {
                       </div>
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label className="text-helper">Full name</Label>
+                  <div className="space-y-2 w-full min-w-0">
+                    <Label className="text-helper font-medium">Full name</Label>
                     <Input
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="h-12 rounded-md"
+                      className="h-11 sm:h-12 rounded-md w-full"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label className="text-helper">Email</Label>
+                  <div className="space-y-2 w-full min-w-0">
+                    <Label className="text-helper font-medium">Email</Label>
                     <Input
                       value={user?.email ?? ""}
                       readOnly
-                      className="h-12 rounded-md bg-muted text-muted-foreground"
+                      className="h-11 sm:h-12 rounded-md bg-muted text-muted-foreground w-full"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label className="text-helper">Phone (10-digit Mobile)</Label>
+                  <div className="space-y-2 w-full min-w-0">
+                    <Label className="text-helper font-medium">Phone (10-digit Mobile)</Label>
                     <Input
                       value={phone}
                       onChange={(e) => {
@@ -398,23 +399,23 @@ function SettingsPage() {
                         if (phoneError) setPhoneError(null);
                       }}
                       placeholder="e.g. 9876543210"
-                      className={`h-12 rounded-md ${phoneError ? "border-destructive focus-visible:ring-destructive" : ""}`}
+                      className={`h-11 sm:h-12 rounded-md w-full ${phoneError ? "border-destructive focus-visible:ring-destructive" : ""}`}
                     />
                     {phoneError && <p className="text-caption text-destructive font-medium">{phoneError}</p>}
                   </div>
-                  <div className="space-y-2">
-                    <Label className="text-helper">Designation</Label>
+                  <div className="space-y-2 w-full min-w-0">
+                    <Label className="text-helper font-medium">Designation</Label>
                     <Input
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
-                      className="h-12 rounded-md"
+                      className="h-11 sm:h-12 rounded-md w-full"
                     />
                   </div>
-                  <div className="flex items-center gap-3 sm:col-span-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:col-span-2 pt-2 border-t border-border/50 w-full">
                     <Button
                       type="submit"
                       disabled={updateProfile.isPending}
-                      className="gradient-primary rounded-md text-primary-foreground shadow-soft"
+                      className="gradient-primary rounded-md text-primary-foreground shadow-soft min-h-[44px] h-11 px-5 w-full sm:w-auto text-sm font-semibold touch-manipulation"
                     >
                       {updateProfile.isPending ? <Loader2 size={17} className="animate-spin" /> : null}
                       {updateProfile.isPending ? "Saving…" : saved ? "Saved ✓" : "Save changes"}
@@ -425,27 +426,49 @@ function SettingsPage() {
                   </div>
                 </form>
               ) : tab === "firm" ? (
-                <form className="grid gap-5 sm:grid-cols-2" onSubmit={handleFirmSave}>
-                  {[
-                    { label: "Firm name", value: firmName, setter: setFirmName },
-                    { label: "Bar registration", value: firmBarRegistration, setter: setFirmBarRegistration },
-                    { label: "Primary court", value: firmPrimaryCourt, setter: setFirmPrimaryCourt },
-                    { label: "Office address", value: firmAddress, setter: setFirmAddress },
-                  ].map(({ label, value, setter }) => (
-                    <div key={label} className="space-y-2">
-                      <Label className="text-helper">{label}</Label>
-                      <Input
-                        value={value}
-                        onChange={(e) => setter(e.target.value)}
-                        className="h-12 rounded-md"
-                      />
-                    </div>
-                  ))}
-                  <div className="flex items-center gap-3 sm:col-span-2">
+                <form className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5 w-full min-w-0" onSubmit={handleFirmSave}>
+                  <div className="space-y-2 w-full min-w-0 sm:col-span-1">
+                    <Label className="text-helper font-medium">Firm name</Label>
+                    <Input
+                      value={firmName}
+                      onChange={(e) => setFirmName(e.target.value)}
+                      placeholder="e.g. S & S Legal-Tech LLP"
+                      className="h-11 sm:h-12 rounded-md w-full"
+                    />
+                  </div>
+                  <div className="space-y-2 w-full min-w-0 sm:col-span-1">
+                    <Label className="text-helper font-medium">Bar registration</Label>
+                    <Input
+                      value={firmBarRegistration}
+                      onChange={(e) => setFirmBarRegistration(e.target.value)}
+                      placeholder="e.g. MAH/1234/2018"
+                      className="h-11 sm:h-12 rounded-md w-full"
+                    />
+                  </div>
+                  <div className="space-y-2 w-full min-w-0 sm:col-span-2">
+                    <Label className="text-helper font-medium">Primary court</Label>
+                    <Input
+                      value={firmPrimaryCourt}
+                      onChange={(e) => setFirmPrimaryCourt(e.target.value)}
+                      placeholder="e.g. High Court of Judicature at Bombay"
+                      className="h-11 sm:h-12 rounded-md w-full"
+                    />
+                  </div>
+                  <div className="space-y-2 w-full min-w-0 sm:col-span-2">
+                    <Label className="text-helper font-medium">Office address</Label>
+                    <Textarea
+                      value={firmAddress}
+                      onChange={(e) => setFirmAddress(e.target.value)}
+                      placeholder="Building name, Chamber/Suite number, Street, City, State, PIN"
+                      rows={3}
+                      className="min-h-[88px] rounded-md w-full resize-y text-sm p-3"
+                    />
+                  </div>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:col-span-2 pt-2 border-t border-border/50 w-full">
                     <Button
                       type="submit"
                       disabled={updateFirm.isPending}
-                      className="gradient-primary rounded-md text-primary-foreground shadow-soft"
+                      className="gradient-primary rounded-md text-primary-foreground shadow-soft min-h-[44px] h-11 px-5 w-full sm:w-auto text-sm font-semibold touch-manipulation"
                     >
                       {updateFirm.isPending ? <Loader2 size={17} className="animate-spin" /> : null}
                       {updateFirm.isPending ? "Saving…" : firmSaved ? "Saved ✓" : "Save changes"}

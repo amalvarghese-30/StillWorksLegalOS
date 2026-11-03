@@ -37,15 +37,15 @@ export function AppearanceSettings() {
   const { theme, setTheme } = useTheme();
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 w-full min-w-0">
       <div>
         <h3 className="text-helper font-medium">Theme</h3>
-        <p className="mt-1 text-helper text-muted-foreground">
+        <p className="mt-1 text-helper text-muted-foreground break-words">
           Choose how StillWorks looks across the whole app. Your choice is saved on this device.
         </p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full min-w-0">
         {OPTIONS.map((option) => {
           const active = theme === option.value;
           return (
@@ -54,23 +54,23 @@ export function AppearanceSettings() {
               type="button"
               onClick={() => setTheme(option.value)}
               aria-pressed={active}
-              className={`group relative rounded-xl border p-3 text-left transition-all duration-150 ${
+              className={`group relative rounded-xl border p-3.5 text-left transition-all duration-150 touch-manipulation min-h-[44px] w-full min-w-0 ${
                 active
                   ? "border-primary bg-primary/5 shadow-soft ring-1 ring-primary"
                   : "border-border bg-card hover:border-primary/40 hover:bg-accent/40"
               }`}
             >
               {active && (
-                <span className="absolute right-2 top-2 grid size-5 place-items-center rounded-full bg-primary text-primary-foreground">
+                <span className="absolute right-2.5 top-2.5 grid size-5 place-items-center rounded-full bg-primary text-primary-foreground">
                   <Check size={12} strokeWidth={2.5} />
                 </span>
               )}
               <ThemePreview value={option.value} />
               <span className="mt-3 flex items-center gap-2">
-                <option.icon size={16} strokeWidth={1.75} className="text-muted-foreground" />
-                <span className="font-medium">{option.label}</span>
+                <option.icon size={16} strokeWidth={1.75} className="text-muted-foreground shrink-0" />
+                <span className="font-medium text-sm text-foreground">{option.label}</span>
               </span>
-              <span className="mt-0.5 block text-caption text-muted-foreground">
+              <span className="mt-0.5 block text-caption text-muted-foreground break-words">
                 {option.description}
               </span>
             </button>

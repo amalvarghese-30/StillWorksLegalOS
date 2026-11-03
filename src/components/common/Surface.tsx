@@ -23,7 +23,7 @@ export function SectionCard({
   return (
     <section
       className={cn(
-        "rounded-xl sm:rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-soft transition-shadow duration-200",
+        "rounded-xl sm:rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-soft transition-shadow duration-200 w-full min-w-0 max-w-full overflow-hidden",
         className,
       )}
     >
@@ -35,15 +35,15 @@ export function SectionCard({
             </span>
           ) : null}
           <div className="min-w-0">
-            <h2 className="truncate text-base sm:text-title font-semibold">{title}</h2>
+            <h2 className="break-words text-base sm:text-title font-semibold">{title}</h2>
             {description ? (
-              <p className="mt-0.5 text-xs sm:text-helper text-muted-foreground">{description}</p>
+              <p className="mt-0.5 text-xs sm:text-helper text-muted-foreground break-words">{description}</p>
             ) : null}
           </div>
         </div>
         {action ? <div className="w-full sm:w-auto shrink-0">{action}</div> : null}
       </header>
-      <div className={cn("mt-4 sm:mt-5 min-w-0", bodyClassName)}>{children}</div>
+      <div className={cn("mt-4 sm:mt-5 w-full min-w-0 max-w-full", bodyClassName)}>{children}</div>
     </section>
   );
 }
