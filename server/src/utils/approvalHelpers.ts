@@ -1303,7 +1303,7 @@ export async function executeRejectAction(
       doc.state = "Rejected";
       doc.rejectedAt = now;
       doc.rejectedBy = new Types.ObjectId(userId);
-      doc.rejectionReason = cleanRemark;
+      doc.rejectedReason = cleanRemark;
       await doc.save();
 
       await AuditLog.create({

@@ -27,6 +27,7 @@ export interface IDocument extends Document {
   approvedBy?: mongoose.Types.ObjectId;
   approvedAt?: Date;
   rejectedBy?: mongoose.Types.ObjectId;
+  rejectedAt?: Date;
   rejectedReason?: string;
   accessRequests: {
     userId: mongoose.Types.ObjectId;
@@ -83,6 +84,7 @@ const DocumentSchema = new Schema<IDocument>(
     approvedBy: { type: Schema.Types.ObjectId, ref: "User" },
     approvedAt: { type: Date },
     rejectedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    rejectedAt: { type: Date },
     rejectedReason: { type: String, default: "" },
     accessRequests: { type: [AccessRequestSchema], default: [] },
   },

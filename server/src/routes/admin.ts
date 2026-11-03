@@ -2606,7 +2606,7 @@ router.patch("/approvals/:id/request-changes", requireAdminOrPermission("approva
 // ---------------------------------------------------------------------------
 router.get("/approvals/task/:taskId", requireAdminOrPermission("approvals"), async (req: Request, res: Response) => {
   try {
-    const { taskId } = req.params;
+    const taskId = String(req.params["taskId"] || "");
     if (!taskId || !Types.ObjectId.isValid(taskId)) {
       res.status(400).json({ message: "Invalid task ID format" });
       return;

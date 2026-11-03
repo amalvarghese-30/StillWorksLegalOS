@@ -486,10 +486,11 @@ router.get("/", async (req: Request, res: Response) => {
       ...(!shouldIncludeArchived ? { status: { $ne: "Archived" } } : {}),
     };
 
+    const userRoleStr = String(req.user?.role || "");
     const userHasCasesPermission =
-      req.user!.role === "admin" ||
+      userRoleStr === "admin" ||
       req.user?.permissions?.cases === true ||
-      (req.user?.permissions?.cases !== false && req.user?.role !== "client");
+      (req.user?.permissions?.cases !== false && userRoleStr !== "client");
 
     if (!userHasCasesPermission) {
       const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
