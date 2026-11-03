@@ -7660,6 +7660,39 @@ const { NotificationService } = await import("../services/notifications.js");
     assert(addSubRes.status === 201, "S48-18: Add subitem returns 201");
     assert(addSubRes.body.task.checklist[0].subItems.length === 1, "S48-19: Subitem added to checklist");
     assert(addSubRes.body.task.checklist[0].subItems[0].text === "Check 30 years search report", "S48-20: Subitem text saved");
+    const subId = addSubRes.body.task.checklist[0].subItems[0]._id || addSubRes.body.task.checklist[0].subItems[0].id;
+    assert(Boolean(subId), "S48-21: Subitem has valid persistent ID");
+
+    // 7. Inline edit checklist step
+    const editStepRes = await request(app)
+      .patch(`/api/tasks/${createdTask._id}/checklist/${firstItemId}`)
+      .set("Authorization", `Bearer ${s48StaffBToken}`)
+      .send({ text: "Collect updated 7/12 extract" });
+    assert(editStepRes.status === 200, "S48-22: Edit checklist step returns 200");
+    assert(editStepRes.body.task.checklist[0].text === "Collect updated 7/12 extract", "S48-23: Checklist step text updated inline");
+
+    // 8. Inline edit subitem
+    const editSubRes = await request(app)
+      .patch(`/api/tasks/${createdTask._id}/checklist/${firstItemId}/subitems/${subId}`)
+      .set("Authorization", `Bearer ${s48StaffBToken}`)
+      .send({ text: "Check 35 years search report" });
+    assert(editSubRes.status === 200, "S48-24: Edit subitem returns 200");
+    assert(editSubRes.body.task.checklist[0].subItems[0].text === "Check 35 years search report", "S48-25: Subitem text updated inline");
+
+    // 9. Delete subitem
+    const delSubRes = await request(app)
+      .delete(`/api/tasks/${createdTask._id}/checklist/${firstItemId}/subitems/${subId}`)
+      .set("Authorization", `Bearer ${s48StaffBToken}`);
+    assert(delSubRes.status === 200, "S48-26: Delete subitem returns 200");
+    assert(delSubRes.body.task.checklist[0].subItems.length === 0, "S48-27: Subitem deleted from checklist");
+
+    // 10. Delete checklist step
+    const delStepRes = await request(app)
+      .delete(`/api/tasks/${createdTask._id}/checklist/${firstItemId}`)
+      .set("Authorization", `Bearer ${s48StaffBToken}`);
+    assert(delStepRes.status === 200, "S48-28: Delete checklist step returns 200");
+    assert(delStepRes.body.task.checklist.length === 1, "S48-29: Checklist step deleted from task");
+    assert(delStepRes.body.task.checklist[0].text === "Verify NOC from Society", "S48-30: Remaining checklist step preserved");
   }
 
   // --- Suite 49: Approval Centre Employee Identity, Assignment History & Approval Details ---

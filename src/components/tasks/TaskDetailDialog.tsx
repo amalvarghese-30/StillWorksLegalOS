@@ -521,6 +521,7 @@ function TaskDetailDialogInner({
       await deleteChecklistItem.mutateAsync({
         taskId: activeTask._id,
         itemId,
+        text: item?.text,
       });
       toast.success("Checklist step removed");
     } catch (err) {
@@ -640,6 +641,7 @@ function TaskDetailDialogInner({
         taskId: activeTask._id,
         itemId: parentId,
         subId: subIdentifier,
+        subText: sub.text,
       });
       toast.success("Subtask deleted");
     } catch (err) {
@@ -1263,14 +1265,15 @@ function TaskDetailDialogInner({
                                     setEditingText(item.text);
                                   }
                                 }}
-                                className={`p-1 rounded transition-colors ${
+                                className={`inline-flex items-center gap-1 px-1.5 py-1 text-[11px] font-medium rounded transition-colors ${
                                   editingIndex === idx
                                     ? "text-primary bg-primary/10"
                                     : "text-muted-foreground hover:text-foreground hover:bg-muted"
                                 }`}
                                 title={editingIndex === idx ? "Close edit" : "Edit step"}
                               >
-                                <Pencil className="h-3.5 w-3.5" />
+                                <Pencil className="h-3 w-3" />
+                                <span className="hidden sm:inline">Edit</span>
                               </button>
 
                               <button
@@ -1379,14 +1382,15 @@ function TaskDetailDialogInner({
                                               setEditingSubText(sub.text);
                                             }
                                           }}
-                                          className={`p-1 rounded transition-colors ${
+                                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded transition-colors ${
                                             isEditingThisSub
                                               ? "text-primary bg-primary/10"
                                               : "text-muted-foreground hover:text-foreground hover:bg-muted"
                                           }`}
                                           title={isEditingThisSub ? "Close edit" : "Edit subtask"}
                                         >
-                                          <Pencil className="h-3 w-3" />
+                                          <Pencil className="h-2.5 w-2.5" />
+                                          <span className="hidden sm:inline">Edit</span>
                                         </button>
                                         <button
                                           type="button"

@@ -125,9 +125,10 @@ export function parseChecklistRecursive(items: unknown[]): any[] {
   if (!Array.isArray(items)) return [];
   return items.map((item: any) => {
     if (!item || typeof item !== "object") return null;
+    const itemId = item.id || (item._id ? String(item._id) : new Types.ObjectId().toString());
     const sanitized: any = {
-      ...(item._id ? { _id: item._id } : {}),
-      id: item.id || (item._id ? String(item._id) : undefined),
+      _id: item._id || itemId,
+      id: itemId,
       text: sanitizeInputText(item.text ?? "", 500),
       done: Boolean(item.done),
     };
@@ -2331,6 +2332,7 @@ router.delete("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskI
     const numIdx = isNum ? parseInt(rawItemId, 10) : -1;
 
     const decodedItemId = decodeURIComponent(rawItemId).trim();
+    const queryText = typeof req.query["text"] === "string" ? decodeURIComponent(String(req.query["text"])).trim() : "";
 
     task.checklist = task.checklist.filter((c, i) => {
       const matchId =
@@ -2341,7 +2343,9 @@ router.delete("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskI
       const matchIdx = isNum && i === numIdx;
       const matchText =
         Boolean(c.text) &&
-        (c.text.trim() === rawItemId.trim() || c.text.trim() === decodedItemId);
+        (c.text.trim() === rawItemId.trim() ||
+          c.text.trim() === decodedItemId ||
+          (Boolean(queryText) && c.text.trim() === queryText));
       return !matchId && !matchIdx && !matchText;
     });
 
@@ -2664,7 +2668,10 @@ router.post("/:taskId/checklist/:itemId/subitems", requireResourceAccess("task",
       item.subItems = [];
     }
 
+    const newSubId = new Types.ObjectId().toString();
     item.subItems.push({
+      _id: newSubId,
+      id: newSubId,
       text: sanitizeInputText(text, 500),
       done: false,
     });
@@ -2721,14 +2728,18 @@ router.delete("/:taskId/checklist/:itemId/subitems/:subId", requireResourceAcces
     }
 
     let deletedSubText = "";
+    const querySubText = typeof req.query["subText"] === "string" ? decodeURIComponent(String(req.query["subText"])).trim() : "";
+
     if (Array.isArray(item.subItems)) {
       const isNumeric = /^\d+$/.test(rawSubId);
       const subNum = isNumeric ? parseInt(rawSubId, 10) : -1;
 
       const targetIdx = item.subItems.findIndex((s, idx) => {
         if ((s as any)._id?.toString() === rawSubId || s.id === rawSubId) return true;
+        if ((s as any)._id?.toString() === decodedSubId || s.id === decodedSubId) return true;
         if (isNumeric && idx === subNum) return true;
         if (s.text && (s.text.trim() === rawSubId || s.text.trim() === decodedSubId)) return true;
+        if (querySubText && s.text && s.text.trim() === querySubText) return true;
         return false;
       });
 
@@ -2737,9 +2748,16 @@ router.delete("/:taskId/checklist/:itemId/subitems/:subId", requireResourceAcces
         item.subItems.splice(targetIdx, 1);
       } else {
         // Fallback filter
-        item.subItems = item.subItems.filter(
-          (s) => (s as any)._id?.toString() !== rawSubId && s.id !== rawSubId
-        );
+        const matchTextVal = querySubText || decodedSubId || rawSubId;
+        item.subItems = item.subItems.filter((s) => {
+          const matchId =
+            (s as any)._id?.toString() === rawSubId ||
+            s.id === rawSubId ||
+            (s as any)._id?.toString() === decodedSubId ||
+            s.id === decodedSubId;
+          const matchTxt = matchTextVal && s.text && s.text.trim() === matchTextVal;
+          return !matchId && !matchTxt;
+        });
       }
     }
 
