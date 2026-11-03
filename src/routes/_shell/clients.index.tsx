@@ -193,7 +193,7 @@ function ClientsPage() {
   const [linkingCase, setLinkingCase] = useState<CaseRecord | null>(null);
 
   const [casePage, setCasePage] = useState(1);
-  const [caseLimit, setCaseLimit] = useState(24);
+  const [caseLimit, setCaseLimit] = useState(50);
 
   const [showAddClientDialog, setShowAddClientDialog] = useState(false);
   const [showAddCaseDialog, setShowAddCaseDialog] = useState(false);
@@ -903,7 +903,7 @@ function ClientsPage() {
                   >
                     <option value={12}>12</option>
                     <option value={24}>24</option>
-                    <option value={48}>48</option>
+                    <option value={50}>50</option>
                     <option value={100}>100</option>
                   </select>
                   <span className="text-xs text-muted-foreground ml-2">

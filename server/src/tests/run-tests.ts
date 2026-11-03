@@ -7812,6 +7812,162 @@ const { NotificationService } = await import("../services/notifications.js");
     assert(Boolean(approveTaskRes.body.task?.approvedAt), "S49-30: Task approvedAt timestamp set");
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // SUITE 50: All Client Cases — Zero-Case Bug (undefined-filter regression)
+  // ─────────────────────────────────────────────────────────────────────────
+  {
+    console.log("\n--- Suite 50: All Client Cases — Zero-Case Bug (undefined filter regression) ---");
+
+    const s50Admin = await User.create({
+      name: "S50 Admin",
+      email: `s50.admin_${Date.now()}@stillworks.legal`,
+      passwordHash: "hash",
+      role: "admin",
+      permissions: { cases: true, clients: true },
+    });
+    const s50AdminToken = await createToken(s50Admin);
+
+    const s50Staff = await User.create({
+      name: "S50 Staff",
+      email: `s50.staff_${Date.now()}@stillworks.legal`,
+      passwordHash: "hash",
+      role: "junior_advocate",
+      permissions: { cases: true, clients: true },
+    });
+    const s50StaffToken = await createToken(s50Staff);
+
+    const s50Client = await Client.create({
+      name: "S50 Test Corp",
+      email: "s50@example.com",
+      phone: "+91 99999 00001",
+      tag: "Corporate",
+      type: "Corporate",
+      kyc: "Verified",
+      createdBy: s50Admin._id,
+    });
+
+    // Create 3 cases: linked, unlinked, archived
+    const s50CaseLinked = await Case.create({
+      number: "SW-S50-0001",
+      title: "S50 Linked Active Case",
+      status: "Active",
+      priority: "High",
+      parties: [{ clientId: s50Client._id, name: s50Client.name, role: "Petitioner", type: "client" }],
+      createdBy: s50Admin._id,
+    });
+
+    const s50CaseUnlinked = await Case.create({
+      number: "SW-S50-0002",
+      title: "S50 Unlinked Matter",
+      status: "Urgent",
+      priority: "Medium",
+      parties: [],
+      createdBy: s50Admin._id,
+    });
+
+    const s50CaseArchived = await Case.create({
+      number: "SW-S50-0003",
+      title: "S50 Archived Case",
+      status: "Archived",
+      priority: "Low",
+      parties: [{ clientId: s50Client._id, name: s50Client.name, role: "Applicant", type: "client" }],
+      createdBy: s50Admin._id,
+    });
+
+    // ── ROOT-CAUSE REGRESSION: "?status=undefined&includeArchived=true" MUST NOT return 0 cases ──
+    // This is the exact query that clients.index.tsx sends when caseStatusFilter === "All"
+    // and useCases() passes { status: undefined, includeArchived: "true" }
+    const bugRes = await request(app)
+      .get("/api/cases?status=undefined&includeArchived=true&page=1&limit=24")
+      .set("Authorization", `Bearer ${s50AdminToken}`);
+    assert(bugRes.status === 200, "S50-01: GET ?status=undefined returns 200 (not rejected)");
+    const bugNumbers = bugRes.body.cases.map((c: any) => c.number);
+    assert(bugNumbers.includes("SW-S50-0001"), "S50-02: status=undefined does NOT filter out Active case");
+    assert(bugNumbers.includes("SW-S50-0002"), "S50-03: status=undefined does NOT filter out Unlinked/Urgent case");
+    assert(bugNumbers.includes("SW-S50-0003"), "S50-04: status=undefined includes Archived case when includeArchived=true");
+
+    // ── "?priority=undefined" should be ignored, not filter to 0 results ──
+    const bugPriRes = await request(app)
+      .get("/api/cases?priority=undefined&includeArchived=true")
+      .set("Authorization", `Bearer ${s50AdminToken}`);
+    assert(bugPriRes.status === 200, "S50-05: GET ?priority=undefined returns 200");
+    const bugPriNumbers = bugPriRes.body.cases.map((c: any) => c.number);
+    assert(bugPriNumbers.includes("SW-S50-0001"), "S50-06: priority=undefined does NOT filter out High priority case");
+
+    // ── Valid status filter still works ──
+    const activeRes = await request(app)
+      .get("/api/cases?status=Active")
+      .set("Authorization", `Bearer ${s50AdminToken}`);
+    assert(activeRes.status === 200, "S50-07: ?status=Active returns 200");
+    const activeNumbers = activeRes.body.cases.map((c: any) => c.number);
+    assert(activeNumbers.includes("SW-S50-0001"), "S50-08: status=Active includes Active case");
+    assert(!activeNumbers.includes("SW-S50-0002"), "S50-09: status=Active excludes Urgent case");
+
+    // ── Archived excluded by default ──
+    const defaultRes = await request(app)
+      .get("/api/cases?page=1&limit=50")
+      .set("Authorization", `Bearer ${s50AdminToken}`);
+    assert(defaultRes.status === 200, "S50-10: Default query returns 200");
+    const defaultNumbers = defaultRes.body.cases.map((c: any) => c.number);
+    assert(defaultNumbers.includes("SW-S50-0001"), "S50-11: Default includes Active case");
+    assert(defaultNumbers.includes("SW-S50-0002"), "S50-12: Default includes Unlinked Urgent case");
+    assert(!defaultNumbers.includes("SW-S50-0003"), "S50-13: Default excludes Archived case");
+
+    // ── includeArchived=true returns all 3 ──
+    const allRes = await request(app)
+      .get("/api/cases?includeArchived=true&page=1&limit=50")
+      .set("Authorization", `Bearer ${s50AdminToken}`);
+    assert(allRes.status === 200, "S50-14: includeArchived=true returns 200");
+    const allNumbers = allRes.body.cases.map((c: any) => c.number);
+    assert(allNumbers.includes("SW-S50-0001"), "S50-15: includeArchived=true includes Active case");
+    assert(allNumbers.includes("SW-S50-0002"), "S50-16: includeArchived=true includes Unlinked case");
+    assert(allNumbers.includes("SW-S50-0003"), "S50-17: includeArchived=true includes Archived case");
+
+    // ── Staff with cases:true sees all ──
+    const staffRes = await request(app)
+      .get("/api/cases?includeArchived=true")
+      .set("Authorization", `Bearer ${s50StaffToken}`);
+    assert(staffRes.status === 200, "S50-18: Staff with cases:true gets 200");
+    const staffNumbers = staffRes.body.cases.map((c: any) => c.number);
+    assert(staffNumbers.includes("SW-S50-0001"), "S50-19: Staff sees linked Active case");
+    assert(staffNumbers.includes("SW-S50-0002"), "S50-20: Staff sees Unlinked case");
+    assert(staffNumbers.includes("SW-S50-0003"), "S50-21: Staff sees Archived case");
+
+    // ── Unlinked case remains visible and has clientLinkage=unlinked support ──
+    const unlinkedRes = await request(app)
+      .get("/api/cases?clientLinkage=unlinked&includeArchived=true")
+      .set("Authorization", `Bearer ${s50AdminToken}`);
+    assert(unlinkedRes.status === 200, "S50-22: clientLinkage=unlinked returns 200");
+    const unlinkedNumbers = unlinkedRes.body.cases.map((c: any) => c.number);
+    assert(unlinkedNumbers.includes("SW-S50-0002"), "S50-23: Unlinked case shows in clientLinkage=unlinked");
+    assert(!unlinkedNumbers.includes("SW-S50-0001"), "S50-24: Linked case excluded from clientLinkage=unlinked");
+
+    // ── Linked filter only includes the linked case ──
+    const linkedRes = await request(app)
+      .get("/api/cases?clientLinkage=linked&includeArchived=true")
+      .set("Authorization", `Bearer ${s50AdminToken}`);
+    assert(linkedRes.status === 200, "S50-25: clientLinkage=linked returns 200");
+    const linkedNumbers = linkedRes.body.cases.map((c: any) => c.number);
+    assert(linkedNumbers.includes("SW-S50-0001"), "S50-26: Linked Active case shown in clientLinkage=linked");
+    assert(linkedNumbers.includes("SW-S50-0003"), "S50-27: Linked Archived case shown in clientLinkage=linked");
+    assert(!linkedNumbers.includes("SW-S50-0002"), "S50-28: Unlinked case excluded from clientLinkage=linked");
+
+    // ── search works for case with no client ──
+    const searchRes = await request(app)
+      .get("/api/cases?search=S50+Unlinked")
+      .set("Authorization", `Bearer ${s50AdminToken}`);
+    assert(searchRes.status === 200, "S50-29: Search for unlinked case title returns 200");
+    const searchNumbers = searchRes.body.cases.map((c: any) => c.number);
+    assert(searchNumbers.includes("SW-S50-0002"), "S50-30: Unlinked case found by title search");
+
+    // ── total count must not be 0 when cases exist ──
+    assert(typeof allRes.body.total === "number", "S50-31: total is a number");
+    assert(allRes.body.total > 0, "S50-32: total > 0 when cases exist (not 0)");
+    assert(typeof allRes.body.stats === "object", "S50-33: stats object returned");
+    assert(typeof allRes.body.stats.active === "number", "S50-34: stats.active is a number");
+    assert(typeof allRes.body.stats.archived === "number", "S50-35: stats.archived is a number");
+  }
+
 
   try {
     if (mongoose.connection.readyState === 1) {

@@ -486,7 +486,12 @@ router.get("/", async (req: Request, res: Response) => {
       ...(!shouldIncludeArchived ? { status: { $ne: "Archived" } } : {}),
     };
 
-    if (req.user!.role !== "admin" && !req.user?.permissions?.cases) {
+    const userHasCasesPermission =
+      req.user!.role === "admin" ||
+      req.user?.permissions?.cases === true ||
+      (req.user?.permissions?.cases !== false && req.user?.role !== "client");
+
+    if (!userHasCasesPermission) {
       const accessibleCaseIds = await getAccessibleCaseIds(req.userId!, req.user!.role);
       if (accessibleCaseIds.length === 0) {
         res.json({
@@ -506,21 +511,31 @@ router.get("/", async (req: Request, res: Response) => {
     }
 
     // Status filter: single or comma-separated
-    if (status && status !== "All") {
+    // Guard: ignore "undefined" or "null" strings that arrive when the frontend
+    // accidentally serialises JS undefined via URLSearchParams.
+    const KNOWN_CASE_STATUSES = new Set(["Active", "Urgent", "On Hold", "Closed", "Archived"]);
+    const statusIsValid = status && status !== "All" && status !== "undefined" && status !== "null";
+    if (statusIsValid) {
       if (status.includes(",")) {
-        const statuses = status.split(",").map((s) => s.trim()).filter(Boolean);
-        filter["status"] = { $in: statuses };
-      } else {
+        const statuses = status.split(",").map((s) => s.trim()).filter((s) => KNOWN_CASE_STATUSES.has(s));
+        if (statuses.length > 0) {
+          filter["status"] = { $in: statuses };
+        }
+      } else if (KNOWN_CASE_STATUSES.has(status)) {
         filter["status"] = status;
       }
     }
 
     // Priority filter: single or comma-separated
-    if (priority && priority !== "All") {
+    const KNOWN_PRIORITIES = new Set(["High", "Medium", "Low"]);
+    const priorityIsValid = priority && priority !== "All" && priority !== "undefined" && priority !== "null";
+    if (priorityIsValid) {
       if (priority.includes(",")) {
-        const priorities = priority.split(",").map((p) => p.trim()).filter(Boolean);
-        filter["priority"] = { $in: priorities };
-      } else {
+        const priorities = priority.split(",").map((p) => p.trim()).filter((p) => KNOWN_PRIORITIES.has(p));
+        if (priorities.length > 0) {
+          filter["priority"] = { $in: priorities };
+        }
+      } else if (KNOWN_PRIORITIES.has(priority)) {
         filter["priority"] = priority;
       }
     }

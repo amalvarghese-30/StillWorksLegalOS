@@ -187,7 +187,7 @@ function CasesPage() {
   const [clientFilter, setClientFilter] = useState<string>(routeSearch.clientId || routeSearch.client || "All");
   const [selectedStaff, setSelectedStaff] = useState<string[]>([]);
   const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(24);
+  const [limit, setLimit] = useState(50);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
@@ -361,7 +361,7 @@ function CasesPage() {
       <PageHeader
         breadcrumb={[{ label: "S & S", to: "/" }, { label: "Cases" }]}
         title="Cases"
-        subtitle={`${filteredCases.length} matters visible · ${stats.active} active · ${stats.urgent} urgent · ${stats.closed} closed${stats.archived ? ` · ${stats.archived} archived` : ""}.`}
+        subtitle={`${totalItems > filteredCases.length ? `Showing ${filteredCases.length} of ${totalItems}` : `${filteredCases.length}`} matters visible · ${stats.active} active · ${stats.urgent} urgent · ${stats.closed} closed${stats.archived ? ` · ${stats.archived} archived` : ""}.`}
         actions={
           <div className="flex items-center gap-2">
             <ExportImportMenu
@@ -777,7 +777,8 @@ function CasesPage() {
               >
                 <option value={12}>12</option>
                 <option value={24}>24</option>
-                <option value={48}>48</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
               </select>
             </div>
 

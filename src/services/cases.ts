@@ -184,10 +184,21 @@ export const caseKeys = {
 // Hooks
 // ---------------------------------------------------------------------------
 
-export function useCases(filters: Record<string, string> = {}, options?: { enabled?: boolean }) {
-  const params = new URLSearchParams(filters).toString();
+export function useCases(
+  filters: Record<string, string | undefined> = {},
+  options?: { enabled?: boolean }
+) {
+  // Strip undefined / null / empty values so URLSearchParams never sends
+  // "status=undefined" or "priority=undefined" which would match zero MongoDB docs.
+  const cleanFilters: Record<string, string> = {};
+  for (const [k, v] of Object.entries(filters)) {
+    if (v !== undefined && v !== null && v !== "" && v !== "undefined" && v !== "null") {
+      cleanFilters[k] = v;
+    }
+  }
+  const params = new URLSearchParams(cleanFilters).toString();
   return useQuery<CasesResponse>({
-    queryKey: caseKeys.list(filters),
+    queryKey: caseKeys.list(cleanFilters),
     queryFn: () => api.get(`/cases${params ? `?${params}` : ""}`),
     enabled: options?.enabled ?? true,
   });
