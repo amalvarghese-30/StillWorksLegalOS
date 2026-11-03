@@ -1355,10 +1355,10 @@ router.post("/", async (req: Request, res: Response) => {
 });
 
 // ---------------------------------------------------------------------------
-// PATCH /api/tasks/:id — partial update (with authorization)
+// PATCH & PUT /api/tasks/:id — update (with authorization)
 // ---------------------------------------------------------------------------
 
-router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Response) => {
+async function handleUpdateTask(req: Request, res: Response) {
   try {
     const taskValidation = validateTaskInput(req.body, false);
     if (!taskValidation.valid) {
@@ -2009,6 +2009,51 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
           },
         }, req.app.get("io"));
       }
+
+      // Synchronize ApprovalRequest in MongoDB
+      if (isPendingApproval) {
+        try {
+          await ApprovalRequest.findOneAndUpdate(
+            { entityId: task._id, type: "task_completion", status: "pending" },
+            {
+              $set: {
+                requesterId: new Types.ObjectId(req.userId!),
+                originalAssigneeId: task.assignedTo || null,
+                reason: (typeof req.body.remark === "string" && req.body.remark.trim()) || "Task submitted for completion review",
+                status: "pending",
+                metadata: {
+                  taskTitle: task.title,
+                  priority: task.priority,
+                  deadline: task.deadline,
+                  clientName,
+                  caseId: task.caseId,
+                  clientId: task.clientId,
+                },
+              },
+              $setOnInsert: {
+                type: "task_completion",
+                entityType: "Task",
+                entityId: task._id,
+              },
+            },
+            { upsert: true, new: true }
+          );
+        } catch (apprErr) {
+          console.error("[tasks] Failed to upsert ApprovalRequest on pending_approval:", apprErr);
+        }
+      } else if (updates["status"] === "completed") {
+        await ApprovalRequest.updateMany(
+          { entityId: task._id, type: "task_completion", status: "pending" },
+          {
+            $set: {
+              status: "approved",
+              reviewedBy: new Types.ObjectId(req.userId!),
+              reviewedAt: new Date(),
+              decisionRemark: (typeof req.body.remark === "string" && req.body.remark.trim()) || req.body.decisionRemark || "Approved",
+            },
+          }
+        );
+      }
     }
 
     // Notify assignee and creator if admin requested changes (moved from pending_approval back to in_progress/pending)
@@ -2034,6 +2079,18 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
         recipientIds: [assigneeTargetId, creatorTargetId, ...coAssigneeIds],
         io: req.app.get("io"),
       });
+
+      await ApprovalRequest.updateMany(
+        { entityId: task._id, type: "task_completion", status: "pending" },
+        {
+          $set: {
+            status: "rejected",
+            reviewedBy: new Types.ObjectId(req.userId!),
+            reviewedAt: new Date(),
+            decisionRemark: cleanRejectionReason || "Returned to in_progress",
+          },
+        }
+      );
     }
 
 
@@ -2075,7 +2132,10 @@ router.patch("/:id", requireResourceAccess("task"), async (req: Request, res: Re
     console.error("[tasks] Update error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
-});
+}
+
+router.patch("/:id", requireResourceAccess("task"), handleUpdateTask);
+router.put("/:id", requireResourceAccess("task"), handleUpdateTask);
 
 // ---------------------------------------------------------------------------
 // POST /api/tasks/import-excel — batch update tasks from validated Excel import
@@ -2468,11 +2528,53 @@ router.patch("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskId
           req.app.get("io")
         );
       }
+
+      if (isPendingApproval) {
+        try {
+          await ApprovalRequest.findOneAndUpdate(
+            { entityId: task._id, type: "task_completion", status: "pending" },
+            {
+              $set: {
+                requesterId: new Types.ObjectId(req.userId!),
+                originalAssigneeId: task.assignedTo || null,
+                reason: "Task checklist completed and submitted for review",
+                status: "pending",
+                metadata: {
+                  taskTitle: task.title,
+                  priority: task.priority,
+                  deadline: task.deadline,
+                  clientName,
+                  caseId: task.caseId,
+                  clientId: task.clientId,
+                },
+              },
+              $setOnInsert: {
+                type: "task_completion",
+                entityType: "Task",
+                entityId: task._id,
+              },
+            },
+            { upsert: true, new: true }
+          );
+        } catch (apprErr) {
+          console.error("[tasks] Failed to upsert ApprovalRequest on checklist completion:", apprErr);
+        }
+      }
     } else if (!isAllDone && (task.status === "completed" || task.status === "pending_approval")) {
       task.status = "in_progress";
       task.completedAt = null;
       task.submittedForApprovalAt = null;
       task.approvedAt = null;
+
+      await ApprovalRequest.updateMany(
+        { entityId: task._id, type: "task_completion", status: "pending" },
+        {
+          $set: {
+            status: "cancelled",
+            decisionRemark: "Checklist uncompleted or task returned to in_progress",
+          },
+        }
+      );
     }
 
     task.markModified("checklist");
@@ -2640,6 +2742,18 @@ router.post("/:id/approve", requireResourceAccess("task"), async (req: Request, 
     task.rejectedAt = null;
     await task.save();
 
+    await ApprovalRequest.updateMany(
+      { entityId: task._id, type: "task_completion", status: "pending" },
+      {
+        $set: {
+          status: "approved",
+          reviewedBy: new Types.ObjectId(req.userId!),
+          reviewedAt: now,
+          decisionRemark: (typeof req.body.remark === "string" && req.body.remark.trim()) || req.body.decisionRemark || "Approved",
+        },
+      }
+    );
+
     const populated = await Task.findById(task._id)
       .populate("assignedTo", "name email title")
       .populate("assignedBy", "name email title")
@@ -2741,6 +2855,18 @@ router.post("/:id/reject", requireResourceAccess("task"), async (req: Request, r
       });
     }
     await task.save();
+
+    await ApprovalRequest.updateMany(
+      { entityId: task._id, type: "task_completion", status: "pending" },
+      {
+        $set: {
+          status: "rejected",
+          reviewedBy: new Types.ObjectId(req.userId!),
+          reviewedAt: now,
+          decisionRemark: reasonClean,
+        },
+      }
+    );
 
     const populated = await Task.findById(task._id)
       .populate("assignedTo", "name email title")

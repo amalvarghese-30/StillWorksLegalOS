@@ -7968,6 +7968,199 @@ const { NotificationService } = await import("../services/notifications.js");
     assert(typeof allRes.body.stats.archived === "number", "S50-35: stats.archived is a number");
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // SUITE 51: Approval Centre Workflow, Persistence & Endpoints
+  // ─────────────────────────────────────────────────────────────────────────
+  {
+    console.log("\n--- Suite 51: Approval Centre Workflow, Persistence & Endpoints ---");
+
+    const s51Admin = await User.create({
+      name: "S51 Admin",
+      email: `s51.admin_${Date.now()}@stillworks.legal`,
+      passwordHash: "hash",
+      role: "admin",
+      permissions: { approvals: true, tasks: true, cases: true },
+    });
+    const s51AdminToken = await createToken(s51Admin);
+
+    const s51Staff = await User.create({
+      name: "S51 Staff Devhraj",
+      email: `s51.staff_${Date.now()}@stillworks.legal`,
+      passwordHash: "hash",
+      role: "junior_advocate",
+      permissions: { tasks: true },
+    });
+    const s51StaffToken = await createToken(s51Staff);
+
+    const s51Client = await Client.create({
+      name: "S51 Client Trust",
+      email: "s51client@example.com",
+      phone: "+91 99999 51515",
+      tag: "Corporate",
+      type: "Corporate",
+      kyc: "Verified",
+      createdBy: s51Admin._id,
+    });
+
+    // 1. Create a task assigned to s51Staff
+    const s51Task = await Task.create({
+      title: "S51 Draft Bail Application",
+      description: "Prepare and file bail application",
+      status: "in_progress",
+      priority: "High",
+      assignedTo: s51Staff._id,
+      assignedBy: s51Admin._id,
+      assignedAt: new Date(),
+      clientId: s51Client._id,
+      createdBy: s51Admin._id,
+      checklist: [
+        { id: "c1", text: "Collect affidavits", done: false },
+        { id: "c2", text: "Draft application", done: false },
+      ],
+    });
+
+    // 2. Staff updates task status to completed -> should transition to pending_approval and upsert ApprovalRequest
+    const staffSubmitRes = await request(app)
+      .put(`/api/tasks/${s51Task._id}`)
+      .set("Authorization", `Bearer ${s51StaffToken}`)
+      .send({ status: "completed", remark: "All draft work finished, ready for sign-off" });
+
+    assert(staffSubmitRes.status === 200, "S51-01: Staff submit task returns 200");
+    assert(staffSubmitRes.body.task.status === "pending_approval", "S51-02: Non-admin status converts to pending_approval");
+
+    // Verify ApprovalRequest document created in MongoDB
+    const persistedReq = await ApprovalRequest.findOne({
+      entityId: s51Task._id,
+      type: "task_completion",
+      status: "pending",
+    });
+    assert(persistedReq !== null, "S51-03: ApprovalRequest document was persisted in MongoDB");
+    assert(persistedReq?.requesterId.toString() === s51Staff._id.toString(), "S51-04: Requester ID is correctly stored");
+    assert(persistedReq?.originalAssigneeId?.toString() === s51Staff._id.toString(), "S51-05: Original Assignee ID is correctly stored");
+
+    // 3. Test GET /api/approvals
+    const listRes = await request(app)
+      .get("/api/approvals?status=pending")
+      .set("Authorization", `Bearer ${s51AdminToken}`);
+    assert(listRes.status === 200, "S51-06: GET /api/approvals returns 200");
+    assert(Array.isArray(listRes.body.approvals), "S51-07: Returns approvals array");
+    assert(listRes.body.total > 0, "S51-08: Total is greater than zero");
+
+    // 4. Test GET /api/approvals/metrics & GET /api/approvals/stats
+    const metricsRes = await request(app)
+      .get("/api/approvals/metrics")
+      .set("Authorization", `Bearer ${s51AdminToken}`);
+    assert(metricsRes.status === 200, "S51-09: GET /api/approvals/metrics returns 200");
+    assert(typeof metricsRes.body.awaitingReview === "number", "S51-10: awaitingReview is a number");
+    assert(metricsRes.body.awaitingReview > 0, "S51-11: awaitingReview reflects pending items");
+
+    const statsRes = await request(app)
+      .get("/api/approvals/stats")
+      .set("Authorization", `Bearer ${s51AdminToken}`);
+    assert(statsRes.status === 200, "S51-12: GET /api/approvals/stats returns 200");
+    assert(typeof statsRes.body.total === "number", "S51-13: stats.total is a number");
+
+    // 5. Test GET /api/approvals/task/:taskId
+    const taskApprovalsRes = await request(app)
+      .get(`/api/approvals/task/${s51Task._id}`)
+      .set("Authorization", `Bearer ${s51AdminToken}`);
+    assert(taskApprovalsRes.status === 200, "S51-14: GET /api/approvals/task/:taskId returns 200");
+    assert(taskApprovalsRes.body.total > 0, "S51-15: Found approval request for task");
+
+    // 6. Test GET /api/approvals/:id using task_<id> and raw approval ID
+    const getTaskItemRes = await request(app)
+      .get(`/api/approvals/task_${s51Task._id}`)
+      .set("Authorization", `Bearer ${s51AdminToken}`);
+    assert(getTaskItemRes.status === 200, "S51-16: GET /api/approvals/task_<id> returns 200");
+    assert(getTaskItemRes.body.approval.title === s51Task.title, "S51-17: Item title matches task title");
+    assert(getTaskItemRes.body.approval.submittedBy?.name === s51Staff.name, "S51-18: Submitter displays real employee name");
+    assert(getTaskItemRes.body.approval.assignedTo?.name === s51Staff.name, "S51-19: Assignee displays real employee name");
+
+    const getReqItemRes = await request(app)
+      .get(`/api/approvals/approval_req_${persistedReq?._id}`)
+      .set("Authorization", `Bearer ${s51AdminToken}`);
+    assert(getReqItemRes.status === 200, "S51-20: GET /api/approvals/approval_req_<id> returns 200");
+
+    // 7. Non-admin self-approval prevention (returns 403)
+    const selfApproveRes = await request(app)
+      .post(`/api/approvals/task_${s51Task._id}/approve`)
+      .set("Authorization", `Bearer ${s51StaffToken}`)
+      .send({ remark: "Self-approving my own task" });
+    assert(selfApproveRes.status === 403, "S51-21: Non-admin cannot self-approve their own request (403)");
+
+    // 8. Rejection without remark returns 400
+    const rejectNoRemarkRes = await request(app)
+      .post(`/api/approvals/task_${s51Task._id}/reject`)
+      .set("Authorization", `Bearer ${s51AdminToken}`)
+      .send({});
+    assert(rejectNoRemarkRes.status === 400, "S51-22: Rejection without remark returns 400");
+
+    // 9. PATCH /api/approvals/:id/request-changes with remark
+    const reqChangesRes = await request(app)
+      .patch(`/api/approvals/task_${s51Task._id}/request-changes`)
+      .set("Authorization", `Bearer ${s51AdminToken}`)
+      .send({ remark: "Please include the medical annexures" });
+    assert(reqChangesRes.status === 200, "S51-23: PATCH /api/approvals/:id/request-changes returns 200");
+
+    // Verify task reverted to in_progress with remark in task.remarks
+    const updatedTaskAfterReject = await Task.findById(s51Task._id);
+    assert(updatedTaskAfterReject?.status === "in_progress", "S51-24: Task reverted to in_progress after request-changes");
+    assert(updatedTaskAfterReject?.rejectionReason === "Please include the medical annexures", "S51-25: Rejection reason recorded");
+    const hasRemark = updatedTaskAfterReject?.remarks.some((r) => r.text.includes("medical annexures"));
+    assert(Boolean(hasRemark), "S51-26: Rejection remark saved in task remarks timeline");
+
+    // Verify ApprovalRequest updated to rejected
+    const rejectedReqDoc = await ApprovalRequest.findById(persistedReq?._id);
+    assert(rejectedReqDoc?.status === "rejected", "S51-27: ApprovalRequest status updated to rejected");
+
+    // 10. Checklist completion workflow
+    // Toggle all checklist items to true
+    await request(app)
+      .patch(`/api/tasks/${s51Task._id}/checklist/c1`)
+      .set("Authorization", `Bearer ${s51StaffToken}`)
+      .send({ done: true });
+    const checkToggle2 = await request(app)
+      .patch(`/api/tasks/${s51Task._id}/checklist/c2`)
+      .set("Authorization", `Bearer ${s51StaffToken}`)
+      .send({ done: true });
+    assert(checkToggle2.status === 200, "S51-28: Checklist toggle returns 200");
+    const checkTask = await Task.findById(s51Task._id);
+    assert(checkTask?.status === "pending_approval", "S51-29: Checklist full completion sets status to pending_approval");
+
+    // 11. Admin approves via POST /api/approvals/:id/approve
+    const approveRes = await request(app)
+      .post(`/api/approvals/task_${s51Task._id}/approve`)
+      .set("Authorization", `Bearer ${s51AdminToken}`)
+      .send({ remark: "All annexures verified, approved" });
+    assert(approveRes.status === 200, "S51-30: POST /api/approvals/:id/approve returns 200");
+
+    const finalTask = await Task.findById(s51Task._id);
+    assert(finalTask?.status === "completed", "S51-31: Task is now completed");
+    assert(finalTask?.approvedAt !== null, "S51-32: Task approvedAt is set");
+
+    // 12. Test PATCH /api/admin/approvals/:id/approve and reject
+    const s51Task2 = await Task.create({
+      title: "S51 Secondary Review Matter",
+      status: "pending_approval",
+      priority: "Medium",
+      assignedTo: s51Staff._id,
+      assignedBy: s51Admin._id,
+      clientId: s51Client._id,
+      createdBy: s51Admin._id,
+    });
+    const patchApproveAdminRes = await request(app)
+      .patch(`/api/admin/approvals/task_${s51Task2._id}/approve`)
+      .set("Authorization", `Bearer ${s51AdminToken}`)
+      .send({ remark: "Approved via admin endpoint" });
+    assert(patchApproveAdminRes.status === 200, "S51-33: PATCH /api/admin/approvals/:id/approve returns 200");
+    const approvedTask2 = await Task.findById(s51Task2._id);
+    assert(approvedTask2?.status === "completed", "S51-34: Task approved via admin endpoint is completed");
+
+    // 13. Verify Audit Log was created
+    const auditLogs = await AuditLog.find({ resourceId: s51Task._id.toString() });
+    assert(auditLogs.length > 0, "S51-35: Audit log entries created for approval workflow operations");
+  }
+
 
   try {
     if (mongoose.connection.readyState === 1) {

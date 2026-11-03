@@ -18,6 +18,11 @@ import { ApprovalRequest } from "../models/ApprovalRequest.js";
 import busboy from "busboy";
 import { testConnection, getLocalPath, STORAGE_ROOT, StorageService } from "../services/storage.js";
 import { requireAuth, requireAdmin, requireAdminOrPermission } from "../middleware/auth.js";
+import {
+  executeApproveAction,
+  executeRejectAction,
+  validateRemark,
+} from "../utils/approvalHelpers.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -1400,9 +1405,83 @@ router.get("/approvals/metrics", requireAdminOrPermission("approvals"), async (r
       submittedToday,
       approvedThisMonth,
       rejectedThisMonth,
+      total: awaitingReview + approvedThisMonth + rejectedThisMonth,
+      pending: awaitingReview,
+      approved: approvedThisMonth,
+      rejected: rejectedThisMonth,
     });
   } catch (err) {
     console.error("[admin] Approvals metrics error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+router.get("/approvals/stats", requireAdminOrPermission("approvals"), async (_req: Request, res: Response) => {
+  try {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+    const [
+      pendingTasks,
+      pendingRequests,
+      pendingDocs,
+      todayTasks,
+      todayRequests,
+      monthApprovedTasks,
+      monthApprovedRequests,
+      monthRejectedTasks,
+      monthRejectedRequests,
+    ] = await Promise.all([
+      Task.countDocuments({ status: "pending_approval", isDeleted: { $ne: true } }),
+      ApprovalRequest.countDocuments({ status: "pending" }),
+      DocumentModel.countDocuments({ state: "Pending", isDeleted: { $ne: true } }),
+      Task.countDocuments({
+        status: "pending_approval",
+        submittedForApprovalAt: { $gte: startOfToday, $lte: endOfToday },
+        isDeleted: { $ne: true },
+      }),
+      ApprovalRequest.countDocuments({
+        createdAt: { $gte: startOfToday, $lte: endOfToday },
+      }),
+      Task.countDocuments({
+        status: "completed",
+        approvedAt: { $gte: startOfMonth, $lte: endOfMonth },
+        isDeleted: { $ne: true },
+      }),
+      ApprovalRequest.countDocuments({
+        status: "approved",
+        reviewedAt: { $gte: startOfMonth, $lte: endOfMonth },
+      }),
+      Task.countDocuments({
+        rejectedAt: { $gte: startOfMonth, $lte: endOfMonth },
+        isDeleted: { $ne: true },
+      }),
+      ApprovalRequest.countDocuments({
+        status: "rejected",
+        reviewedAt: { $gte: startOfMonth, $lte: endOfMonth },
+      }),
+    ]);
+
+    const awaitingReview = pendingTasks + pendingRequests + pendingDocs;
+    const submittedToday = todayTasks + todayRequests;
+    const approvedThisMonth = monthApprovedTasks + monthApprovedRequests;
+    const rejectedThisMonth = monthRejectedTasks + monthRejectedRequests;
+
+    res.json({
+      awaitingReview,
+      submittedToday,
+      approvedThisMonth,
+      rejectedThisMonth,
+      total: awaitingReview + approvedThisMonth + rejectedThisMonth,
+      pending: awaitingReview,
+      approved: approvedThisMonth,
+      rejected: rejectedThisMonth,
+    });
+  } catch (err) {
+    console.error("[admin] Approvals stats error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -1644,6 +1723,7 @@ function formatRequestApprovalItem(r: any, computeAging: (d: any, p: boolean) =>
   if (r.type === "task_reassign") { kind = "Task Reassignment"; category = "tasks"; }
   else if (r.type === "task_forward") { kind = "Task Forward"; category = "tasks"; }
   else if (r.type === "task_delete") { kind = "Task Deletion"; category = "tasks"; }
+  else if (r.type === "task_completion") { kind = "Task Completion"; category = "tasks"; }
   else if (r.type === "case_delete") { kind = "Case Deletion"; category = "cases"; }
   else if (r.type === "case_reassign") { kind = "Case Reassignment"; category = "cases"; }
   else if (r.type === "case_completion") { kind = "Case Completion"; category = "cases"; }
@@ -1655,6 +1735,11 @@ function formatRequestApprovalItem(r: any, computeAging: (d: any, p: boolean) =>
   const isPending = r.status === "pending";
   const when = r.createdAt;
   const aging = computeAging(when, isPending);
+
+  let title = `${kind}${targetName}`;
+  if (r.type === "task_completion") {
+    title = r.metadata?.taskTitle || (r.entityId && typeof r.entityId === "object" && (r.entityId as any).title) || "Task Completion";
+  }
 
   const subUser = r.requesterId ? {
     _id: r.requesterId._id?.toString(),
@@ -1685,7 +1770,7 @@ function formatRequestApprovalItem(r: any, computeAging: (d: any, p: boolean) =>
     kind,
     type: kind,
     category,
-    title: `${kind}${targetName}`,
+    title,
     context: `Requested by ${requesterName}: "${r.reason || "No remark"}"`,
     when,
     submittedAt: r.createdAt,
@@ -2405,6 +2490,140 @@ router.get("/approvals/:id", requireAdminOrPermission("approvals"), async (req: 
   } catch (err: any) {
     console.error("[admin] Get approval detail error:", err);
     res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST & PATCH /api/admin/approvals/:id/approve
+// ---------------------------------------------------------------------------
+async function handleAdminApprove(req: Request, res: Response) {
+  try {
+    const remarkCheck = validateRemark(req.body.remark || req.body.decisionRemark);
+    if (!remarkCheck.valid) {
+      res.status(400).json({ message: remarkCheck.error, field: "remark" });
+      return;
+    }
+
+    const rawId = String(req.params["id"] || "");
+    const result = await executeApproveAction({
+      rawId,
+      user: req.user,
+      userId: req.userId!,
+      cleanRemark: remarkCheck.clean!,
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+      io: req.app.get("io"),
+    });
+
+    res.status(result.status).json(result.body);
+  } catch (err: any) {
+    console.error("[admin] Approve error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+}
+
+router.post("/approvals/:id/approve", requireAdminOrPermission("approvals"), handleAdminApprove);
+router.patch("/approvals/:id/approve", requireAdminOrPermission("approvals"), handleAdminApprove);
+
+// ---------------------------------------------------------------------------
+// POST & PATCH /api/admin/approvals/:id/reject
+// ---------------------------------------------------------------------------
+async function handleAdminReject(req: Request, res: Response) {
+  try {
+    const rawRemark = req.body.remark || req.body.reason || req.body.decisionRemark;
+    const remarkCheck = validateRemark(rawRemark);
+    if (!remarkCheck.valid) {
+      res.status(400).json({ message: remarkCheck.error, field: "remark" });
+      return;
+    }
+    if (!remarkCheck.clean) {
+      res.status(400).json({ message: "A reason or remark is required when rejecting a request", field: "remark" });
+      return;
+    }
+
+    const rawId = String(req.params["id"] || "");
+    const result = await executeRejectAction({
+      rawId,
+      user: req.user,
+      userId: req.userId!,
+      cleanRemark: remarkCheck.clean,
+      isRequestChanges: false,
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+      io: req.app.get("io"),
+    });
+
+    res.status(result.status).json(result.body);
+  } catch (err: any) {
+    console.error("[admin] Reject error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+}
+
+router.post("/approvals/:id/reject", requireAdminOrPermission("approvals"), handleAdminReject);
+router.patch("/approvals/:id/reject", requireAdminOrPermission("approvals"), handleAdminReject);
+
+// ---------------------------------------------------------------------------
+// POST & PATCH /api/admin/approvals/:id/request-changes
+// ---------------------------------------------------------------------------
+async function handleAdminRequestChanges(req: Request, res: Response) {
+  try {
+    const rawRemark = req.body.remark || req.body.reason || req.body.decisionRemark;
+    const remarkCheck = validateRemark(rawRemark);
+    if (!remarkCheck.valid) {
+      res.status(400).json({ message: remarkCheck.error, field: "remark" });
+      return;
+    }
+    if (!remarkCheck.clean) {
+      res.status(400).json({ message: "A reason or remark is required when requesting changes", field: "remark" });
+      return;
+    }
+
+    const rawId = String(req.params["id"] || "");
+    const result = await executeRejectAction({
+      rawId,
+      user: req.user,
+      userId: req.userId!,
+      cleanRemark: remarkCheck.clean,
+      isRequestChanges: true,
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+      io: req.app.get("io"),
+    });
+
+    res.status(result.status).json(result.body);
+  } catch (err: any) {
+    console.error("[admin] Request changes error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+}
+
+router.post("/approvals/:id/request-changes", requireAdminOrPermission("approvals"), handleAdminRequestChanges);
+router.patch("/approvals/:id/request-changes", requireAdminOrPermission("approvals"), handleAdminRequestChanges);
+
+// ---------------------------------------------------------------------------
+// GET /api/admin/approvals/task/:taskId
+// ---------------------------------------------------------------------------
+router.get("/approvals/task/:taskId", requireAdminOrPermission("approvals"), async (req: Request, res: Response) => {
+  try {
+    const { taskId } = req.params;
+    if (!taskId || !Types.ObjectId.isValid(taskId)) {
+      res.status(400).json({ message: "Invalid task ID format" });
+      return;
+    }
+
+    const requests = await ApprovalRequest.find({ entityId: taskId })
+      .populate("requesterId", "name email role avatarUrl")
+      .populate("targetUserId", "name email role avatarUrl")
+      .populate("originalAssigneeId", "name email role avatarUrl")
+      .populate("reviewedBy", "name email role")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json({ approvals: requests, total: requests.length });
+  } catch (err) {
+    console.error("[admin] Task approvals error:", err);
+    res.status(500).json({ message: "Internal server error" });
   }
 });
 
