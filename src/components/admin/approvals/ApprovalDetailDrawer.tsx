@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Sheet,
   SheetContent,
@@ -39,7 +39,10 @@ import { iconForKind, priorityBadge, agingBadge } from "./ApprovalTable";
 import { Link } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 
-function safeFormatDateTime(iso: any, fallback = "—"): string {
+function safeFormatDateTime(
+  iso: string | number | Date | null | undefined,
+  fallback = "—",
+): string {
   if (!iso) return fallback;
   try {
     const d = new Date(iso);
@@ -54,7 +57,10 @@ function safeFormatDateTime(iso: any, fallback = "—"): string {
   }
 }
 
-function safeFormatDateOnly(iso: any, fallback = "—"): string {
+function safeFormatDateOnly(
+  iso: string | number | Date | null | undefined,
+  fallback = "—",
+): string {
   if (!iso) return fallback;
   try {
     const d = new Date(iso);
@@ -85,18 +91,45 @@ export function ApprovalDetailDrawer({
   onReject,
   isProcessing = false,
 }: ApprovalDetailDrawerProps) {
+  // ── Stable Hooks (MUST be called unconditionally on EVERY render) ─────────
   const [activeTab, setActiveTab] = useState<string>("overview");
+  const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
 
   // Fetch full details by ID when drawer is open
   const approvalId = initialItem?._id;
-  const { data: detailData, isLoading: isDetailLoading, isError: isDetailError, refetch: refetchDetail } = useApprovalDetail(
-    approvalId,
-    { enabled: isOpen && Boolean(approvalId) }
-  );
+  const {
+    data: detailData,
+    isLoading: isDetailLoading,
+    isError: isDetailError,
+    refetch: refetchDetail,
+  } = useApprovalDetail(approvalId, { enabled: isOpen && Boolean(approvalId) });
 
+  // Reset tab & download state when selected item or drawer state changes
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab("overview");
+      setDownloadingDocId(null);
+    }
+  }, [isOpen, approvalId]);
+
+  const handleDownloadDoc = useCallback(async (docId: string, name?: string) => {
+    setDownloadingDocId(docId);
+    try {
+      await downloadDocument(docId);
+      toast.success(`Downloaded ${name || "document"}`);
+    } catch (err) {
+      console.error("Download failed:", err);
+      toast.error("Failed to download document");
+    } finally {
+      setDownloadingDocId(null);
+    }
+  }, []);
+
+  // ── Derived data ──────────────────────────────────────────────────────────
   const item = detailData?.approval || initialItem;
 
-  if (!item && !isDetailLoading) return null;
+  // ── Conditional UI returns (ALL hooks have executed above) ────────────────
+  if (!item && !isDetailLoading && !isDetailError) return null;
 
   if (!item && isDetailLoading) {
     return (
@@ -107,7 +140,34 @@ export function ApprovalDetailDrawer({
         >
           <Loader2 className="size-8 animate-spin text-primary mb-3" />
           <p className="text-sm font-medium text-foreground">Loading approval details…</p>
-          <p className="text-xs text-muted-foreground mt-1">Retrieving request history and assignments</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Retrieving request history and assignments
+          </p>
+        </SheetContent>
+      </Sheet>
+    );
+  }
+
+  if (!item && isDetailError) {
+    return (
+      <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
+        <SheetContent
+          side="right"
+          className="w-full sm:max-w-xl md:max-w-2xl p-6 flex flex-col items-center justify-center bg-card border-l border-border shadow-2xl z-50"
+        >
+          <AlertTriangle className="size-8 text-destructive mb-3" />
+          <p className="text-sm font-medium text-foreground">Failed to load approval details</p>
+          <p className="text-xs text-muted-foreground mt-1 mb-4">
+            The approval record could not be retrieved from the server.
+          </p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => refetchDetail()}>
+              Retry
+            </Button>
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Close
+            </Button>
+          </div>
         </SheetContent>
       </Sheet>
     );
@@ -123,29 +183,35 @@ export function ApprovalDetailDrawer({
   const task = item.taskDetails;
   const doc = item.documentDetails;
   const req = item.requestDetails;
-  const caseData = task?.case || doc?.case || item.caseDetails || (item.requestDetails as any)?.case;
+  const caseData =
+    task?.case ||
+    doc?.case ||
+    item.caseDetails ||
+    (
+      req as
+        { case?: { _id: string; title: string; number: string; courtCaseId?: string } } | undefined
+    )?.case;
   const clientData = task?.client || doc?.client;
 
-  const allDocs = (doc
-    ? [doc]
-    : task?.documents && task.documents.length > 0
-    ? task.documents
-    : item.documents || []) as any[];
+  interface AttachedDoc {
+    _id: string;
+    name: string;
+    originalName?: string;
+    size?: number;
+    sizeFormatted?: string;
+    mimeType?: string;
+    state?: string;
+    createdAt?: string;
+    task?: { _id: string; title: string; status?: string } | null;
+  }
 
-  const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
-
-  const handleDownloadDoc = async (docId: string, name?: string) => {
-    setDownloadingDocId(docId);
-    try {
-      await downloadDocument(docId);
-      toast.success(`Downloaded ${name || "document"}`);
-    } catch (err) {
-      console.error("Download failed:", err);
-      toast.error("Failed to download document");
-    } finally {
-      setDownloadingDocId(null);
-    }
-  };
+  const allDocs: AttachedDoc[] = (
+    doc
+      ? [doc]
+      : task?.documents && task.documents.length > 0
+        ? task.documents
+        : item.documents || []
+  ) as AttachedDoc[];
 
   // Subtask statistics
   const totalSubtasks = task?.checklist?.length ?? 0;
@@ -171,7 +237,7 @@ export function ApprovalDetailDrawer({
               <span
                 className={cn(
                   "inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border",
-                  priorityInfo.className
+                  priorityInfo.className,
                 )}
               >
                 {priorityInfo.label}
@@ -201,7 +267,7 @@ export function ApprovalDetailDrawer({
             <span
               className={cn(
                 "text-[10px] px-1.5 py-0.2 rounded border font-medium",
-                agingInfo.className
+                agingInfo.className,
               )}
             >
               {agingInfo.label}
@@ -290,7 +356,10 @@ export function ApprovalDetailDrawer({
                 </h4>
                 <div className="p-3.5 rounded-xl border border-border/80 bg-muted/30 text-sm text-foreground">
                   <p className="whitespace-pre-wrap leading-relaxed">
-                    {task?.description || req?.reason || item.context || "No additional description provided."}
+                    {task?.description ||
+                      req?.reason ||
+                      item.context ||
+                      "No additional description provided."}
                   </p>
                 </div>
               </div>
@@ -330,11 +399,16 @@ export function ApprovalDetailDrawer({
                       </div>
                     )}
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-foreground truncate" title={item.submittedBy?.name}>
+                      <p
+                        className="text-sm font-semibold text-foreground truncate"
+                        title={item.submittedBy?.name}
+                      >
                         {item.submittedBy?.name || "Staff Submitter"}
                       </p>
                       <p className="text-xs text-muted-foreground truncate capitalize">
-                        {item.submittedBy?.role?.replace(/_/g, " ") || item.submittedBy?.email || "Staff"}
+                        {item.submittedBy?.role?.replace(/_/g, " ") ||
+                          item.submittedBy?.email ||
+                          "Staff"}
                       </p>
                     </div>
                   </div>
@@ -347,7 +421,7 @@ export function ApprovalDetailDrawer({
                   </span>
                   <div className="flex items-center gap-2.5 pt-1">
                     <div className="size-8 rounded-full bg-blue-500/10 text-blue-600 grid place-items-center text-xs font-bold shrink-0">
-                      {(item.assignedTo?.name || task?.assignedTo?.name)
+                      {item.assignedTo?.name || task?.assignedTo?.name
                         ? (item.assignedTo?.name || task?.assignedTo?.name || "A")
                             .split(" ")
                             .map((w) => w[0])
@@ -357,11 +431,18 @@ export function ApprovalDetailDrawer({
                         : "A"}
                     </div>
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-foreground truncate" title={item.assignedTo?.name || task?.assignedTo?.name || "Unassigned"}>
-                        {item.assignedTo?.name || task?.assignedTo?.name || (item.kind === "Task Completion" ? "Unassigned" : "—")}
+                      <p
+                        className="text-sm font-semibold text-foreground truncate"
+                        title={item.assignedTo?.name || task?.assignedTo?.name || "Unassigned"}
+                      >
+                        {item.assignedTo?.name ||
+                          task?.assignedTo?.name ||
+                          (item.kind === "Task Completion" ? "Unassigned" : "—")}
                       </p>
                       <p className="text-xs text-muted-foreground truncate capitalize">
-                        {item.assignedTo?.role?.replace(/_/g, " ") || task?.assignedTo?.role?.replace(/_/g, " ") || "Assignee"}
+                        {item.assignedTo?.role?.replace(/_/g, " ") ||
+                          task?.assignedTo?.role?.replace(/_/g, " ") ||
+                          "Assignee"}
                       </p>
                     </div>
                   </div>
@@ -374,7 +455,7 @@ export function ApprovalDetailDrawer({
                   </span>
                   <div className="flex items-center gap-2.5 pt-1">
                     <div className="size-8 rounded-full bg-amber-500/10 text-amber-600 grid place-items-center text-xs font-bold shrink-0">
-                      {(item.assignedBy?.name || task?.assignedBy?.name)
+                      {item.assignedBy?.name || task?.assignedBy?.name
                         ? (item.assignedBy?.name || task?.assignedBy?.name || "B")
                             .split(" ")
                             .map((w) => w[0])
@@ -384,11 +465,20 @@ export function ApprovalDetailDrawer({
                         : "B"}
                     </div>
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-foreground truncate" title={item.assignedBy?.name || task?.assignedBy?.name || "Unavailable"}>
-                        {item.assignedBy?.name || task?.assignedBy?.name || (item.kind === "Task Completion" ? "Historical information unavailable" : "—")}
+                      <p
+                        className="text-sm font-semibold text-foreground truncate"
+                        title={item.assignedBy?.name || task?.assignedBy?.name || "Unavailable"}
+                      >
+                        {item.assignedBy?.name ||
+                          task?.assignedBy?.name ||
+                          (item.kind === "Task Completion"
+                            ? "Historical information unavailable"
+                            : "—")}
                       </p>
                       <p className="text-xs text-muted-foreground truncate capitalize">
-                        {item.assignedBy?.role?.replace(/_/g, " ") || task?.assignedBy?.role?.replace(/_/g, " ") || "Assigner"}
+                        {item.assignedBy?.role?.replace(/_/g, " ") ||
+                          task?.assignedBy?.role?.replace(/_/g, " ") ||
+                          "Assigner"}
                       </p>
                     </div>
                   </div>
@@ -405,10 +495,14 @@ export function ApprovalDetailDrawer({
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-foreground truncate">
-                        {formattedAssignedDate !== "—" ? formattedAssignedDate : "Historical date unavailable"}
+                        {formattedAssignedDate !== "—"
+                          ? formattedAssignedDate
+                          : "Historical date unavailable"}
                       </p>
                       <p className="text-xs text-muted-foreground truncate">
-                        {item.assignedAt ? "Original assignment timestamp" : "Not recorded in early records"}
+                        {item.assignedAt
+                          ? "Original assignment timestamp"
+                          : "Not recorded in early records"}
                       </p>
                     </div>
                   </div>
@@ -441,7 +535,10 @@ export function ApprovalDetailDrawer({
                           </span>
                         </div>
                       </div>
-                      <ExternalLink size={14} className="text-muted-foreground group-hover:text-primary shrink-0" />
+                      <ExternalLink
+                        size={14}
+                        className="text-muted-foreground group-hover:text-primary shrink-0"
+                      />
                     </Link>
                   ) : null}
 
@@ -459,14 +556,17 @@ export function ApprovalDetailDrawer({
                           <span className="font-semibold text-foreground group-hover:text-primary transition-colors truncate block">
                             {clientData.name}
                           </span>
-                          {(clientData as any)?.phone && (
+                          {"phone" in clientData && clientData.phone ? (
                             <span className="text-[11px] text-muted-foreground">
-                              {(clientData as any).phone}
+                              {clientData.phone}
                             </span>
-                          )}
+                          ) : null}
                         </div>
                       </div>
-                      <ExternalLink size={14} className="text-muted-foreground group-hover:text-primary shrink-0" />
+                      <ExternalLink
+                        size={14}
+                        className="text-muted-foreground group-hover:text-primary shrink-0"
+                      />
                     </Link>
                   ) : null}
 
@@ -496,7 +596,9 @@ export function ApprovalDetailDrawer({
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Category:</span>
                     <span className="font-medium text-foreground">
-                      {[task.mainCategory, task.category, task.subCategory].filter(Boolean).join(" › ") ||
+                      {[task.mainCategory, task.category, task.subCategory]
+                        .filter(Boolean)
+                        .join(" › ") ||
                         task.category ||
                         "General Legal Work"}
                     </span>
@@ -546,7 +648,7 @@ export function ApprovalDetailDrawer({
                           "flex items-start gap-3 p-3 rounded-xl border transition-all text-xs",
                           item.done
                             ? "border-emerald-500/30 bg-emerald-500/5 text-foreground"
-                            : "border-border/80 bg-card text-muted-foreground"
+                            : "border-border/80 bg-card text-muted-foreground",
                         )}
                       >
                         <span
@@ -554,7 +656,7 @@ export function ApprovalDetailDrawer({
                             "grid size-5 rounded shrink-0 place-items-center mt-0.5",
                             item.done
                               ? "bg-emerald-600 text-white"
-                              : "border border-border bg-background"
+                              : "border border-border bg-background",
                           )}
                         >
                           {item.done && <Check size={12} strokeWidth={3} />}
@@ -563,7 +665,7 @@ export function ApprovalDetailDrawer({
                           <p
                             className={cn(
                               "font-medium",
-                              item.done && "line-through text-muted-foreground"
+                              item.done && "line-through text-muted-foreground",
                             )}
                           >
                             {item.text}
@@ -579,7 +681,7 @@ export function ApprovalDetailDrawer({
                             "text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0",
                             item.done
                               ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                              : "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                              : "bg-amber-500/15 text-amber-700 dark:text-amber-300",
                           )}
                         >
                           {item.done ? "Done" : "Pending"}
@@ -595,10 +697,20 @@ export function ApprovalDetailDrawer({
             <TabsContent value="documents" className="mt-0 space-y-4">
               {allDocs.length > 0 ? (
                 <div className="space-y-3">
-                  {allDocs.map((d: any) => {
+                  {allDocs.map((d) => {
                     const docState = (d.state || "Pending").toLowerCase();
-                    const stateTone: "success" | "danger" | "warning" = docState === "approved" ? "success" : docState === "rejected" ? "danger" : "warning";
-                    const stateLabel = docState === "approved" ? "Approved" : docState === "rejected" ? "Rejected" : "Pending Review";
+                    const stateTone: "success" | "danger" | "warning" =
+                      docState === "approved"
+                        ? "success"
+                        : docState === "rejected"
+                          ? "danger"
+                          : "warning";
+                    const stateLabel =
+                      docState === "approved"
+                        ? "Approved"
+                        : docState === "rejected"
+                          ? "Rejected"
+                          : "Pending Review";
                     return (
                       <div
                         key={d._id}
@@ -609,7 +721,10 @@ export function ApprovalDetailDrawer({
                             <FileText size={20} />
                           </span>
                           <div className="min-w-0 flex-1">
-                            <h4 className="font-semibold text-sm text-foreground truncate" title={d.name}>
+                            <h4
+                              className="font-semibold text-sm text-foreground truncate"
+                              title={d.name}
+                            >
                               {d.name}
                             </h4>
                             <p className="text-xs text-muted-foreground mt-0.5">
@@ -680,7 +795,7 @@ export function ApprovalDetailDrawer({
                 </div>
 
                 {task?.assignmentHistory && task.assignmentHistory.length > 0 ? (
-                  task.assignmentHistory.map((hist: any, idx: number) => {
+                  task.assignmentHistory.map((hist, idx: number) => {
                     const fromName = hist.fromUser?.name;
                     const toName = hist.toUser?.name;
                     const assignerName = hist.assignedBy?.name;

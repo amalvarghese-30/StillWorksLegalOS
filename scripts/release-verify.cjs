@@ -78,8 +78,12 @@ async function verifyRelease() {
   run("node scripts/smoke-test.cjs");
 
   // 7. Release Safety & Fail-Closed Validation Tests
-  console.log("\n[Step 7/7] Running Release Safety & Fail-Closed Regression Suite...");
+  console.log("\n[Step 7/8] Running Release Safety & Fail-Closed Regression Suite...");
   run("node scripts/test-release-safety.cjs");
+
+  // 8. Approval Center React Hook Order Regression Suite
+  console.log("\n[Step 8/8] Running Approval Centre Hook Order Regression Suite...");
+  run("node scripts/test-approval-hook-order.cjs");
 
   console.log("\n==================================================");
   console.log("✓ ALL RELEASE VERIFICATION CHECKS PASSED CLEANLY!");
