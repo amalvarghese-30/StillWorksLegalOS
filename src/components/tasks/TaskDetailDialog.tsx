@@ -1205,7 +1205,7 @@ function TaskDetailDialogInner({
                                     size="sm"
                                     variant="ghost"
                                     onClick={() => handleSaveInlineChecklistText(idx)}
-                                    className="h-7 px-2 text-xs text-emerald-600 hover:text-emerald-700"
+                                    className="h-7 px-2 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950"
                                     title="Save step"
                                   >
                                     <Check className="h-3.5 w-3.5" />
@@ -1221,43 +1221,29 @@ function TaskDetailDialogInner({
                                   </Button>
                                 </div>
                               ) : (
-                                <div className="flex items-center gap-1.5 flex-1 min-w-0 group/parent">
-                                  <span
-                                    onClick={() => {
-                                      setEditingIndex(idx);
-                                      setEditingText(item.text);
-                                    }}
-                                    className={`text-xs font-medium cursor-pointer truncate hover:text-primary transition-colors ${
-                                      item.done ? "line-through text-muted-foreground" : "text-foreground"
-                                    }`}
-                                    title="Click to edit step"
-                                  >
-                                    {item.text}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setEditingIndex(idx);
-                                      setEditingText(item.text);
-                                    }}
-                                    className="opacity-0 group-hover/parent:opacity-100 text-muted-foreground/70 hover:text-foreground p-0.5 transition-opacity"
-                                    title="Edit step"
-                                  >
-                                    <Pencil className="h-3 w-3" />
-                                  </button>
-                                </div>
+                                <span
+                                  onClick={() => {
+                                    setEditingIndex(idx);
+                                    setEditingText(item.text);
+                                  }}
+                                  className={`text-xs font-medium cursor-pointer flex-1 truncate hover:text-primary transition-colors ${
+                                    item.done ? "line-through text-muted-foreground" : "text-foreground"
+                                  }`}
+                                  title="Click to edit step"
+                                >
+                                  {item.text}
+                                </span>
                               )}
                             </div>
 
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1 shrink-0">
                               {hasSubs && (
                                 <button
                                   type="button"
                                   onClick={() =>
                                     setExpandedItems((prev) => ({ ...prev, [itemId]: !isExpanded }))
                                   }
-                                  className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-0.5 px-1 py-0.5 rounded bg-muted/40"
+                                  className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-0.5 px-1 py-0.5 rounded bg-muted/40 mr-0.5"
                                 >
                                   <span>{subsDone}/{item.subItems!.length}</span>
                                   {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
@@ -1266,8 +1252,31 @@ function TaskDetailDialogInner({
 
                               <button
                                 type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  if (editingIndex === idx) {
+                                    setEditingIndex(null);
+                                    setEditingText("");
+                                  } else {
+                                    setEditingIndex(idx);
+                                    setEditingText(item.text);
+                                  }
+                                }}
+                                className={`p-1 rounded transition-colors ${
+                                  editingIndex === idx
+                                    ? "text-primary bg-primary/10"
+                                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                                }`}
+                                title={editingIndex === idx ? "Close edit" : "Edit step"}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+
+                              <button
+                                type="button"
                                 onClick={(e) => handleRemoveChecklistItem(idx, e)}
-                                className="text-muted-foreground hover:text-destructive p-1 rounded transition-colors"
+                                className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 p-1 rounded transition-colors"
                                 title="Delete step"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -1286,7 +1295,7 @@ function TaskDetailDialogInner({
                                   return (
                                     <div
                                       key={subKey}
-                                      className="flex items-center justify-between gap-2 group text-xs py-0.5"
+                                      className="flex items-center justify-between gap-2 group text-xs py-1 px-1 rounded hover:bg-muted/30 transition-colors"
                                     >
                                       <div className="flex items-center gap-2 flex-1 min-w-0">
                                         <input
@@ -1322,7 +1331,7 @@ function TaskDetailDialogInner({
                                               size="sm"
                                               variant="ghost"
                                               onClick={() => handleSaveInlineSubItemText(item, sub, idx, sIdx)}
-                                              className="h-6 px-1.5 text-xs text-emerald-600 hover:text-emerald-700"
+                                              className="h-6 px-1.5 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950"
                                               title="Save subtask"
                                             >
                                               <Check className="h-3 w-3" />
@@ -1341,44 +1350,53 @@ function TaskDetailDialogInner({
                                             </Button>
                                           </div>
                                         ) : (
-                                          <div className="flex items-center gap-1.5 flex-1 min-w-0 group/sub">
-                                            <span
-                                              onClick={() => {
-                                                setEditingSubKey(subKey);
-                                                setEditingSubText(sub.text);
-                                              }}
-                                              className={`truncate text-xs cursor-pointer select-none hover:text-primary transition-colors ${
-                                                sub.done ? "line-through text-muted-foreground" : "text-foreground/90"
-                                              }`}
-                                              title="Click to edit subtask"
-                                            >
-                                              {sub.text}
-                                            </span>
-                                            <button
-                                              type="button"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                e.preventDefault();
-                                                setEditingSubKey(subKey);
-                                                setEditingSubText(sub.text);
-                                              }}
-                                              className="opacity-0 group-hover/sub:opacity-100 text-muted-foreground/70 hover:text-foreground p-0.5 transition-opacity"
-                                              title="Edit subtask"
-                                            >
-                                              <Pencil className="h-2.5 w-2.5" />
-                                            </button>
-                                          </div>
+                                          <span
+                                            onClick={() => {
+                                              setEditingSubKey(subKey);
+                                              setEditingSubText(sub.text);
+                                            }}
+                                            className={`truncate text-xs cursor-pointer select-none hover:text-primary transition-colors flex-1 ${
+                                              sub.done ? "line-through text-muted-foreground" : "text-foreground/90"
+                                            }`}
+                                            title="Click to edit subtask"
+                                          >
+                                            {sub.text}
+                                          </span>
                                         )}
                                       </div>
 
-                                      <button
-                                        type="button"
-                                        onClick={(e) => handleDeleteSubItem(item, sub, idx, sIdx, e)}
-                                        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive p-0.5 rounded transition-opacity"
-                                        title="Delete subtask"
-                                      >
-                                        <Trash2 className="h-3 w-3" />
-                                      </button>
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            e.preventDefault();
+                                            if (isEditingThisSub) {
+                                              setEditingSubKey(null);
+                                              setEditingSubText("");
+                                            } else {
+                                              setEditingSubKey(subKey);
+                                              setEditingSubText(sub.text);
+                                            }
+                                          }}
+                                          className={`p-1 rounded transition-colors ${
+                                            isEditingThisSub
+                                              ? "text-primary bg-primary/10"
+                                              : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                                          }`}
+                                          title={isEditingThisSub ? "Close edit" : "Edit subtask"}
+                                        >
+                                          <Pencil className="h-3 w-3" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => handleDeleteSubItem(item, sub, idx, sIdx, e)}
+                                          className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 p-1 rounded transition-colors"
+                                          title="Delete subtask"
+                                        >
+                                          <Trash2 className="h-3 w-3" />
+                                        </button>
+                                      </div>
                                     </div>
                                   );
                                 })}
