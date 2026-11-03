@@ -24,6 +24,7 @@ import {
   useAddSubItem,
   useToggleSubItem,
   useDeleteSubItem,
+  useUpdateSubItem,
   useTaskAuditLogs,
   taskKeys,
   type TaskRecord,
@@ -73,6 +74,7 @@ import {
   History,
   MessageSquare,
   Check,
+  Pencil,
 } from "lucide-react";
 
 // Decomposed Subcomponents
@@ -196,6 +198,8 @@ function TaskDetailDialogInner({
   const [newChecklistText, setNewChecklistText] = useState("");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingText, setEditingText] = useState("");
+  const [editingSubKey, setEditingSubKey] = useState<string | null>(null);
+  const [editingSubText, setEditingSubText] = useState("");
   const [expandedItems, setExpandedItems] = useState<{ [itemId: string]: boolean }>({});
   const [newSubItemText, setNewSubItemText] = useState<{ [itemId: string]: string }>({});
 
@@ -241,6 +245,7 @@ function TaskDetailDialogInner({
   const addSubItem = useAddSubItem();
   const toggleSubItem = useToggleSubItem();
   const deleteSubItem = useDeleteSubItem();
+  const updateSubItem = useUpdateSubItem();
 
   const { data: auditLogsData, isLoading: isLoadingAuditLogs } = useTaskAuditLogs(activeTask._id);
   const auditLogs = auditLogsData?.logs ?? [];
@@ -502,7 +507,11 @@ function TaskDetailDialogInner({
     }
   };
 
-  const handleRemoveChecklistItem = async (indexToRemove: number) => {
+  const handleRemoveChecklistItem = async (indexToRemove: number, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
     const item = checklist[indexToRemove];
     const itemId = item?._id || item?.id || String(indexToRemove);
 
@@ -513,16 +522,20 @@ function TaskDetailDialogInner({
         taskId: activeTask._id,
         itemId,
       });
-      toast.success("Checklist item removed");
+      toast.success("Checklist step removed");
     } catch (err) {
       console.error("Failed to remove checklist item:", err);
       setLiveChecklist(activeTask.checklist ?? []);
-      toast.error("Failed to remove checklist item");
+      toast.error("Failed to remove checklist step");
     }
   };
 
   const handleSaveInlineChecklistText = async (idx: number) => {
-    if (!editingText.trim()) return;
+    if (!editingText.trim()) {
+      setEditingIndex(null);
+      setEditingText("");
+      return;
+    }
     const item = checklist[idx];
     const itemId = item?._id || item?.id || String(idx);
     const newText = editingText.trim();
@@ -544,6 +557,95 @@ function TaskDetailDialogInner({
       console.error("Failed to update checklist item:", err);
       setLiveChecklist(activeTask.checklist ?? []);
       toast.error("Failed to update checklist item");
+    }
+  };
+
+  const handleSaveInlineSubItemText = async (
+    item: ChecklistItem,
+    sub: ChecklistSubItem,
+    itemIdx: number,
+    subIdx: number
+  ) => {
+    const trimmed = editingSubText.trim();
+    if (!trimmed) {
+      setEditingSubKey(null);
+      setEditingSubText("");
+      return;
+    }
+
+    const parentId = item._id || item.id || String(itemIdx);
+    const rawSubId = sub._id || sub.id || String(subIdx);
+    const subIdentifier = rawSubId !== "undefined" && rawSubId !== "null" && rawSubId ? rawSubId : String(subIdx);
+    const oldText = sub.text;
+
+    setLiveChecklist((prev) =>
+      prev.map((ci, cI) =>
+        cI === itemIdx
+          ? {
+              ...ci,
+              subItems: (ci.subItems || []).map((s, sI) =>
+                sI === subIdx ? { ...s, text: trimmed } : s
+              ),
+            }
+          : ci
+      )
+    );
+    setEditingSubKey(null);
+    setEditingSubText("");
+
+    try {
+      await updateSubItem.mutateAsync({
+        taskId: activeTask._id,
+        itemId: parentId,
+        subId: subIdentifier,
+        text: trimmed,
+        oldText,
+      });
+      toast.success("Subtask updated");
+    } catch (err) {
+      console.error("Failed to update subtask:", err);
+      setLiveChecklist(activeTask.checklist ?? []);
+      toast.error("Failed to update subtask");
+    }
+  };
+
+  const handleDeleteSubItem = async (
+    item: ChecklistItem,
+    sub: ChecklistSubItem,
+    itemIdx: number,
+    subIdx: number,
+    e?: React.MouseEvent
+  ) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    const parentId = item._id || item.id || String(itemIdx);
+    const rawSubId = sub._id || sub.id || String(subIdx);
+    const subIdentifier = rawSubId !== "undefined" && rawSubId !== "null" && rawSubId ? rawSubId : String(subIdx);
+
+    setLiveChecklist((prev) =>
+      prev.map((ci, cI) =>
+        cI === itemIdx
+          ? {
+              ...ci,
+              subItems: (ci.subItems || []).filter((_, i) => i !== subIdx),
+            }
+          : ci
+      )
+    );
+
+    try {
+      await deleteSubItem.mutateAsync({
+        taskId: activeTask._id,
+        itemId: parentId,
+        subId: subIdentifier,
+      });
+      toast.success("Subtask deleted");
+    } catch (err) {
+      console.error("Failed to delete subtask:", err);
+      setLiveChecklist(activeTask.checklist ?? []);
+      toast.error(err instanceof Error ? err.message : "Failed to delete subtask");
     }
   };
 
@@ -1092,7 +1194,7 @@ function TaskDetailDialogInner({
                                   <Input
                                     value={editingText}
                                     onChange={(e) => setEditingText(e.target.value)}
-                                    className="h-7 text-xs py-0"
+                                    className="h-7 text-xs py-0 flex-1 bg-background"
                                     autoFocus
                                     onKeyDown={(e) => {
                                       if (e.key === "Enter") handleSaveInlineChecklistText(idx);
@@ -1103,24 +1205,48 @@ function TaskDetailDialogInner({
                                     size="sm"
                                     variant="ghost"
                                     onClick={() => handleSaveInlineChecklistText(idx)}
-                                    className="h-7 px-2 text-xs"
+                                    className="h-7 px-2 text-xs text-emerald-600 hover:text-emerald-700"
+                                    title="Save step"
                                   >
                                     <Check className="h-3.5 w-3.5" />
                                   </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => setEditingIndex(null)}
+                                    className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                                    title="Cancel"
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                  </Button>
                                 </div>
                               ) : (
-                                <span
-                                  onClick={() => {
-                                    setEditingIndex(idx);
-                                    setEditingText(item.text);
-                                  }}
-                                  className={`text-xs font-medium cursor-pointer flex-1 truncate ${
-                                    item.done ? "line-through text-muted-foreground" : "text-foreground"
-                                  }`}
-                                  title="Click to edit text"
-                                >
-                                  {item.text}
-                                </span>
+                                <div className="flex items-center gap-1.5 flex-1 min-w-0 group/parent">
+                                  <span
+                                    onClick={() => {
+                                      setEditingIndex(idx);
+                                      setEditingText(item.text);
+                                    }}
+                                    className={`text-xs font-medium cursor-pointer truncate hover:text-primary transition-colors ${
+                                      item.done ? "line-through text-muted-foreground" : "text-foreground"
+                                    }`}
+                                    title="Click to edit step"
+                                  >
+                                    {item.text}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditingIndex(idx);
+                                      setEditingText(item.text);
+                                    }}
+                                    className="opacity-0 group-hover/parent:opacity-100 text-muted-foreground/70 hover:text-foreground p-0.5 transition-opacity"
+                                    title="Edit step"
+                                  >
+                                    <Pencil className="h-3 w-3" />
+                                  </button>
+                                </div>
                               )}
                             </div>
 
@@ -1140,8 +1266,8 @@ function TaskDetailDialogInner({
 
                               <button
                                 type="button"
-                                onClick={() => handleRemoveChecklistItem(idx)}
-                                className="text-muted-foreground hover:text-destructive p-1 rounded"
+                                onClick={(e) => handleRemoveChecklistItem(idx, e)}
+                                className="text-muted-foreground hover:text-destructive p-1 rounded transition-colors"
                                 title="Delete step"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -1155,46 +1281,100 @@ function TaskDetailDialogInner({
                               {hasSubs &&
                                 item.subItems!.map((sub, sIdx) => {
                                   const subKey = sub._id || sub.id || `${itemId}-${sIdx}`;
+                                  const isEditingThisSub = editingSubKey === subKey;
+
                                   return (
                                     <div
                                       key={subKey}
                                       className="flex items-center justify-between gap-2 group text-xs py-0.5"
                                     >
-                                      <label className="flex items-center gap-2 flex-1 cursor-pointer min-w-0">
+                                      <div className="flex items-center gap-2 flex-1 min-w-0">
                                         <input
                                           type="checkbox"
                                           checked={Boolean(sub.done)}
-                                          onChange={() => handleToggleSubItem(item, sub, idx, sIdx)}
-                                          className="h-3.5 w-3.5 rounded border-border text-primary focus:ring-primary cursor-pointer shrink-0"
+                                          onChange={(e) => {
+                                            e.stopPropagation();
+                                            handleToggleSubItem(item, sub, idx, sIdx);
+                                          }}
+                                          className="h-3.5 w-3.5 rounded border-border text-primary focus:ring-primary cursor-pointer shrink-0 mt-0.5"
                                         />
-                                        <span
-                                          className={`truncate text-xs ${
-                                            sub.done ? "line-through text-muted-foreground" : "text-foreground/90"
-                                          }`}
-                                        >
-                                          {sub.text}
-                                        </span>
-                                      </label>
+
+                                        {isEditingThisSub ? (
+                                          <div className="flex items-center gap-1 flex-1 min-w-0">
+                                            <Input
+                                              value={editingSubText}
+                                              onChange={(e) => setEditingSubText(e.target.value)}
+                                              className="h-6 text-xs py-0 px-2 flex-1 bg-background"
+                                              autoFocus
+                                              onKeyDown={(e) => {
+                                                if (e.key === "Enter") {
+                                                  e.preventDefault();
+                                                  handleSaveInlineSubItemText(item, sub, idx, sIdx);
+                                                }
+                                                if (e.key === "Escape") {
+                                                  e.preventDefault();
+                                                  setEditingSubKey(null);
+                                                  setEditingSubText("");
+                                                }
+                                              }}
+                                            />
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              onClick={() => handleSaveInlineSubItemText(item, sub, idx, sIdx)}
+                                              className="h-6 px-1.5 text-xs text-emerald-600 hover:text-emerald-700"
+                                              title="Save subtask"
+                                            >
+                                              <Check className="h-3 w-3" />
+                                            </Button>
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              onClick={() => {
+                                                setEditingSubKey(null);
+                                                setEditingSubText("");
+                                              }}
+                                              className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+                                              title="Cancel"
+                                            >
+                                              <X className="h-3 w-3" />
+                                            </Button>
+                                          </div>
+                                        ) : (
+                                          <div className="flex items-center gap-1.5 flex-1 min-w-0 group/sub">
+                                            <span
+                                              onClick={() => {
+                                                setEditingSubKey(subKey);
+                                                setEditingSubText(sub.text);
+                                              }}
+                                              className={`truncate text-xs cursor-pointer select-none hover:text-primary transition-colors ${
+                                                sub.done ? "line-through text-muted-foreground" : "text-foreground/90"
+                                              }`}
+                                              title="Click to edit subtask"
+                                            >
+                                              {sub.text}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                e.preventDefault();
+                                                setEditingSubKey(subKey);
+                                                setEditingSubText(sub.text);
+                                              }}
+                                              className="opacity-0 group-hover/sub:opacity-100 text-muted-foreground/70 hover:text-foreground p-0.5 transition-opacity"
+                                              title="Edit subtask"
+                                            >
+                                              <Pencil className="h-2.5 w-2.5" />
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
+
                                       <button
                                         type="button"
-                                        onClick={async () => {
-                                          await deleteSubItem.mutateAsync({
-                                            taskId: activeTask._id,
-                                            itemId,
-                                            subId: sub._id || sub.id || String(sIdx),
-                                          });
-                                          setLiveChecklist((prev) =>
-                                            prev.map((ci, cI) =>
-                                              cI === idx
-                                                ? {
-                                                    ...ci,
-                                                    subItems: (ci.subItems || []).filter((_, i) => i !== sIdx),
-                                                  }
-                                                : ci
-                                            )
-                                          );
-                                        }}
-                                        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive p-0.5"
+                                        onClick={(e) => handleDeleteSubItem(item, sub, idx, sIdx, e)}
+                                        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive p-0.5 rounded transition-opacity"
                                         title="Delete subtask"
                                       >
                                         <Trash2 className="h-3 w-3" />

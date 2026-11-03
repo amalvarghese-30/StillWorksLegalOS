@@ -2319,15 +2319,23 @@ router.post("/:taskId/checklist", requireResourceAccess("task", "taskId"), async
 
 router.delete("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskId"), async (req: Request, res: Response) => {
   try {
-    const task = await Task.findById(req.params["taskId"]);
+    const rawTaskId = String(req.params["taskId"] || "");
+    const rawItemId = String(req.params["itemId"] || "");
+    const task = await Task.findById(rawTaskId);
     if (!task) {
       res.status(404).json({ message: "Task not found" });
       return;
     }
 
-    task.checklist = task.checklist.filter(
-      (c) => (c as any)._id?.toString() !== req.params["itemId"] && c.id !== req.params["itemId"]
-    );
+    const isNum = /^\d+$/.test(rawItemId);
+    const numIdx = isNum ? parseInt(rawItemId, 10) : -1;
+
+    task.checklist = task.checklist.filter((c, i) => {
+      const matchId = (c as any)._id?.toString() === rawItemId || c.id === rawItemId;
+      const matchIdx = isNum && i === numIdx;
+      const matchText = c.text === rawItemId;
+      return !matchId && !matchIdx && !matchText;
+    });
 
     task.markModified("checklist");
     await task.save();
@@ -2423,8 +2431,12 @@ router.patch("/:taskId/checklist/:itemId", requireResourceAccess("task", "taskId
           sub = item.subItems[sIdx];
         }
       }
-      if (!sub && subText) {
-        sub = item.subItems.find((s) => s.text === subText);
+      if (!sub) {
+        // Fallback: match by current subItemId if it was passed as the existing text or oldText
+        const oldText = (req.body.oldText || subItemId || "").trim();
+        if (oldText) {
+          sub = item.subItems.find((s) => s.text === oldText);
+        }
       }
       if (sub) {
         if (subDone !== undefined) sub.done = Boolean(subDone);
@@ -2674,7 +2686,8 @@ router.delete("/:taskId/checklist/:itemId/subitems/:subId", requireResourceAcces
   try {
     const taskId = String(req.params["taskId"] || "");
     const itemId = String(req.params["itemId"] || "");
-    const subId = String(req.params["subId"] || "");
+    const rawSubId = String(req.params["subId"] || "");
+    const decodedSubId = decodeURIComponent(rawSubId).trim();
     const task = await Task.findById(taskId);
     if (!task) {
       res.status(404).json({ message: "Task not found" });
@@ -2691,18 +2704,60 @@ router.delete("/:taskId/checklist/:itemId/subitems/:subId", requireResourceAcces
       }
     }
     if (!item) {
+      const decodedItemId = decodeURIComponent(itemId).trim();
+      item = task.checklist.find((c) => c.text && c.text.trim() === decodedItemId);
+    }
+    if (!item) {
       res.status(404).json({ message: "Checklist item not found" });
       return;
     }
 
+    let deletedSubText = "";
     if (Array.isArray(item.subItems)) {
-      item.subItems = item.subItems.filter(
-        (s) => (s as any)._id?.toString() !== subId && s.id !== subId
-      );
+      const isNumeric = /^\d+$/.test(rawSubId);
+      const subNum = isNumeric ? parseInt(rawSubId, 10) : -1;
+
+      const targetIdx = item.subItems.findIndex((s, idx) => {
+        if ((s as any)._id?.toString() === rawSubId || s.id === rawSubId) return true;
+        if (isNumeric && idx === subNum) return true;
+        if (s.text && (s.text.trim() === rawSubId || s.text.trim() === decodedSubId)) return true;
+        return false;
+      });
+
+      if (targetIdx !== -1) {
+        deletedSubText = item.subItems[targetIdx]?.text || "";
+        item.subItems.splice(targetIdx, 1);
+      } else {
+        // Fallback filter
+        item.subItems = item.subItems.filter(
+          (s) => (s as any)._id?.toString() !== rawSubId && s.id !== rawSubId
+        );
+      }
+    }
+
+    // If sub-items now exist and all are done, maintain parent state
+    if (Array.isArray(item.subItems) && item.subItems.length > 0) {
+      if (item.subItems.every((s) => s.done)) {
+        item.done = true;
+      }
     }
 
     task.markModified("checklist");
     await task.save();
+
+    await AuditLog.create({
+      userId: req.userId,
+      userName: req.user?.name ?? "Unknown",
+      action: "delete",
+      resource: "task",
+      resourceId: task._id.toString(),
+      resourceName: task.title,
+      details: deletedSubText
+        ? `Deleted subtask "${deletedSubText}" from step "${item.text}"`
+        : `Deleted subtask from checklist step "${item.text}"`,
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
 
     const populated = await fetchPopulatedTask(task._id);
 
@@ -2714,6 +2769,110 @@ router.delete("/:taskId/checklist/:itemId/subitems/:subId", requireResourceAcces
     res.json({ task: populated });
   } catch (err: any) {
     console.error("[tasks] Delete sub-item error:", err);
+    res.status(500).json({ message: err?.message || "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/tasks/:taskId/checklist/:itemId/subitems/:subId — update sub-item
+// ---------------------------------------------------------------------------
+
+router.patch("/:taskId/checklist/:itemId/subitems/:subId", requireResourceAccess("task", "taskId"), async (req: Request, res: Response) => {
+  try {
+    const taskId = String(req.params["taskId"] || "");
+    const itemId = String(req.params["itemId"] || "");
+    const rawSubId = String(req.params["subId"] || "");
+    const decodedSubId = decodeURIComponent(rawSubId).trim();
+    const { text, done } = req.body;
+
+    const task = await Task.findById(taskId);
+    if (!task) {
+      res.status(404).json({ message: "Task not found" });
+      return;
+    }
+
+    let item = task.checklist.find(
+      (c) => (c as any)._id?.toString() === itemId || c.id === itemId
+    );
+    if (!item && /^\d+$/.test(itemId)) {
+      const idx = parseInt(itemId, 10);
+      if (idx >= 0 && idx < task.checklist.length) {
+        item = task.checklist[idx];
+      }
+    }
+    if (!item) {
+      const decodedItemId = decodeURIComponent(itemId).trim();
+      item = task.checklist.find((c) => c.text && c.text.trim() === decodedItemId);
+    }
+    if (!item) {
+      res.status(404).json({ message: "Checklist item not found" });
+      return;
+    }
+
+    if (!Array.isArray(item.subItems)) {
+      item.subItems = [];
+    }
+
+    const isNumeric = /^\d+$/.test(rawSubId);
+    const subNum = isNumeric ? parseInt(rawSubId, 10) : -1;
+
+    let sub = item.subItems.find((s, idx) => {
+      if ((s as any)._id?.toString() === rawSubId || s.id === rawSubId) return true;
+      if (isNumeric && idx === subNum) return true;
+      if (s.text && (s.text.trim() === rawSubId || s.text.trim() === decodedSubId)) return true;
+      return false;
+    });
+
+    if (!sub && req.body.oldText) {
+      const oldText = String(req.body.oldText).trim();
+      sub = item.subItems.find((s) => s.text && s.text.trim() === oldText);
+    }
+
+    if (!sub) {
+      res.status(404).json({ message: "Subtask not found" });
+      return;
+    }
+
+    if (text !== undefined && typeof text === "string" && text.trim()) {
+      sub.text = sanitizeInputText(text, 500);
+    }
+    if (done !== undefined) {
+      sub.done = Boolean(done);
+    }
+
+    // Auto-update parent item done if all subitems are done
+    if (item.subItems.length > 0) {
+      const allDone = item.subItems.every((s) => s.done);
+      if (allDone && !item.done) {
+        item.done = true;
+      }
+    }
+
+    task.markModified("checklist");
+    await task.save();
+
+    await AuditLog.create({
+      userId: req.userId,
+      userName: req.user?.name ?? "Unknown",
+      action: "update",
+      resource: "task",
+      resourceId: task._id.toString(),
+      resourceName: task.title,
+      details: text !== undefined ? `Updated subtask text: "${sub.text}"` : `Toggled subtask: "${sub.text}"`,
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    const populated = await fetchPopulatedTask(task._id);
+
+    const io = req.app.get("io");
+    if (io && populated) {
+      io.emit("task:updated", taskRealtimePayload(populated));
+    }
+
+    res.json({ task: populated });
+  } catch (err: any) {
+    console.error("[tasks] Update sub-item error:", err);
     res.status(500).json({ message: err?.message || "Internal server error" });
   }
 });

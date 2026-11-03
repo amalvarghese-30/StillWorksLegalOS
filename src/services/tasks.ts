@@ -389,7 +389,25 @@ export function useDeleteChecklistSubItem() {
   const qc = useQueryClient();
   return useMutation<{ task: TaskRecord }, Error, { taskId: string; itemId: string; subId: string }>({
     mutationFn: ({ taskId, itemId, subId }) =>
-      api.delete(`/tasks/${taskId}/checklist/${itemId}/subitems/${subId}`),
+      api.delete(`/tasks/${taskId}/checklist/${itemId}/subitems/${encodeURIComponent(subId)}`),
+    onSuccess: (res, vars) => {
+      if (res?.task) updateTaskInQueryCache(qc, res.task);
+      qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
+      qc.invalidateQueries({ queryKey: taskKeys.all });
+      qc.invalidateQueries({ queryKey: reportKeys.all });
+    },
+  });
+}
+
+export function useUpdateChecklistSubItem() {
+  const qc = useQueryClient();
+  return useMutation<
+    { task: TaskRecord },
+    Error,
+    { taskId: string; itemId: string; subId: string; text?: string; done?: boolean; oldText?: string }
+  >({
+    mutationFn: ({ taskId, itemId, subId, text, done, oldText }) =>
+      api.patch(`/tasks/${taskId}/checklist/${itemId}/subitems/${encodeURIComponent(subId)}`, { text, done, oldText }),
     onSuccess: (res, vars) => {
       if (res?.task) updateTaskInQueryCache(qc, res.task);
       qc.invalidateQueries({ queryKey: taskKeys.detail(vars.taskId) });
@@ -402,6 +420,7 @@ export function useDeleteChecklistSubItem() {
 export const useAddSubItem = useAddChecklistSubItem;
 export const useToggleSubItem = useToggleChecklistSubItem;
 export const useDeleteSubItem = useDeleteChecklistSubItem;
+export const useUpdateSubItem = useUpdateChecklistSubItem;
 
 export function useApproveTask() {
   const qc = useQueryClient();
