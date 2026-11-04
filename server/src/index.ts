@@ -708,7 +708,7 @@ async function start() {
       console.error("[server] Warning: Category auto-seeding encountered an issue:", seedErr);
     }
 
-    httpServer.listen(PORT, "0.0.0.0", () => {
+    httpServer.listen(PORT, HOST, () => {
       console.log(`[server] StillWorks LegalOS API running on http://localhost:${PORT}`);
       console.log(`[server] CORS origins: ${ALLOWED_ORIGINS.join(", ")}`);
       console.log(`[server] Environment: ${process.env["NODE_ENV"] ?? "development"}`);
