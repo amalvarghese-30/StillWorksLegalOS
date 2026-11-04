@@ -1938,6 +1938,40 @@ function EmployeeDetailReportView({
   const [empDrilldownSubtitle, setEmpDrilldownSubtitle] = useState("");
   const [empCustomTasks, setEmpCustomTasks] = useState<any[] | undefined>(undefined);
 
+  const rawTasks = useMemo(() => data?.tasks || [], [data?.tasks]);
+  const {
+    sortedData: sortedTasks,
+    sortKey: empTaskSortKey,
+    sortDirection: empTaskSortDir,
+    onSort: handleEmpTaskSort,
+  } = useTableSorting(rawTasks, {
+    accessors: {
+      title: (t) => t.title,
+      caseTitle: (t) => t.caseId?.title || "",
+      clientName: (t) => t.clientId?.name || "",
+      priority: (t) => t.priority,
+      deadline: (t) => t.deadline || "",
+      status: (t) => t.status,
+    },
+  });
+
+  const rawCases = useMemo(() => data?.cases || [], [data?.cases]);
+  const {
+    sortedData: sortedCases,
+    sortKey: empCaseSortKey,
+    sortDirection: empCaseSortDir,
+    onSort: handleEmpCaseSort,
+  } = useTableSorting(rawCases, {
+    accessors: {
+      number: (c) => c.number,
+      title: (c) => c.title,
+      practice: (c) => c.practice || c.category || "",
+      court: (c) => c.court || "",
+      nextHearing: (c) => c.nextHearing || "",
+      status: (c) => c.status,
+    },
+  });
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -1947,14 +1981,6 @@ function EmployeeDetailReportView({
   }
 
   if (!data?.employee) {
-    if (isLoading) {
-      return (
-        <div className="flex justify-center py-16">
-          <Loader2 size={32} className="animate-spin text-muted-foreground" />
-        </div>
-      );
-    }
-
     return (
       <div className="rounded-xl border border-border p-8 text-center bg-card">
         <AlertTriangle size={32} className="mx-auto text-destructive mb-2" />
@@ -1967,49 +1993,10 @@ function EmployeeDetailReportView({
     );
   }
 
-  const { employee, metrics, tasks, cases, auditLogs } = data;
-
-  const {
-    sortedData: sortedTasks,
-    sortKey: empTaskSortKey,
-    sortDirection: empTaskSortDir,
-    onSort: handleEmpTaskSort,
-  } = useTableSorting(tasks, {
-    accessors: {
-      title: (t) => t.title,
-      caseTitle: (t) => t.caseId?.title || "",
-      clientName: (t) => t.clientId?.name || "",
-      priority: (t) => t.priority,
-      deadline: (t) => t.deadline || "",
-      status: (t) => t.status,
-    },
-  });
-
-  const {
-    sortedData: sortedCases,
-    sortKey: empCaseSortKey,
-    sortDirection: empCaseSortDir,
-    onSort: handleEmpCaseSort,
-  } = useTableSorting(cases, {
-    accessors: {
-      number: (c) => c.number,
-      title: (c) => c.title,
-      practice: (c) => c.practice || c.category || "",
-      court: (c) => c.court || "",
-      nextHearing: (c) => c.nextHearing || "",
-      status: (c) => c.status,
-    },
-  });
+  const { employee, metrics, auditLogs } = data;
 
   return (
     <div className="space-y-6 printable-report">
-      {isError && (
-        <StaleDataBanner
-          message="Could not refresh the latest client metrics from the server. Showing cached report."
-          onRefresh={() => refetch()}
-          className="mb-4 no-print"
-        />
-      )}
       {isError && (
         <StaleDataBanner
           message="Could not refresh the latest employee metrics from the server. Showing cached report."
