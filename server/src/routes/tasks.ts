@@ -479,8 +479,10 @@ router.get("/", async (req: Request, res: Response) => {
 
     if (overdue === "true") {
       andConditions.push({
-        deadline: { $lt: new Date() },
-        status: { $ne: "completed" },
+        $or: [
+          { deadline: { $lt: new Date() }, status: { $nin: ["completed", "pending_approval"] } },
+          { status: "overdue" },
+        ],
       });
     }
 
@@ -607,10 +609,15 @@ router.get("/", async (req: Request, res: Response) => {
         if (t.status === "pending_approval") stats.inReview++;
         else stats.inProgress++;
 
-        if (t.deadline) {
+        const isOverdue =
+          (t.status === "overdue" || (t.deadline && new Date(t.deadline) < now)) &&
+          t.status !== "pending_approval";
+
+        if (isOverdue) {
+          stats.overdue++;
+        } else if (t.deadline) {
           const d = new Date(t.deadline);
-          if (d < now) stats.overdue++;
-          else if (d >= startOfToday && d <= endOfToday) stats.dueToday++;
+          if (d >= startOfToday && d <= endOfToday) stats.dueToday++;
         }
       }
       if (t.isCall || (t as any).callReminder?.scheduledAt) {

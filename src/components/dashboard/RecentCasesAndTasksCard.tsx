@@ -110,6 +110,7 @@ export function RecentCasesAndTasksCard({
         </div>
         <Link
           to="/tasks"
+          search={{ tab: "list" }}
           className="inline-flex items-center gap-1 text-xs font-medium text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 transition-colors"
         >
           View all <ArrowRight size={13} strokeWidth={2} />

@@ -274,12 +274,23 @@ export function PendingCasesAndTasksSection({
             </p>
           </div>
         </div>
-        <Link
-          to="/tasks"
-          className="inline-flex items-center gap-1 text-xs font-medium text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 transition-colors self-start sm:self-auto"
+        <button
+          type="button"
+          onClick={() => {
+            if (activeTab === "overdue") {
+              navigate({ to: "/tasks", search: { tab: "list", status: "overdue" } });
+            } else if (activeTab === "cases") {
+              navigate({ to: "/cases" });
+            } else if (activeTab === "tasks") {
+              navigate({ to: "/tasks", search: { tab: "list", status: "in_progress" } });
+            } else {
+              navigate({ to: "/tasks", search: { tab: "list" } });
+            }
+          }}
+          className="inline-flex items-center gap-1 text-xs font-medium text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 transition-colors self-start sm:self-auto cursor-pointer"
         >
           View all <ArrowRight size={13} strokeWidth={2} />
-        </Link>
+        </button>
       </div>
 
       {/* Tabs & Sort Controls */}

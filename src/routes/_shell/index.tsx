@@ -251,14 +251,14 @@ function Dashboard() {
     [rawCases, today],
   );
 
-  const overdueCount = overdueTasks.length + overdueCases.length;
-  const pendingTasksCount = pendingTasks.length;
+  const overdueCount = tasksData?.stats ? tasksData.stats.overdue : overdueTasks.length;
+  const pendingTasksCount = tasksData?.stats ? tasksData.stats.inProgress : pendingTasks.length;
   const activeCasesCount =
     summary?.activeCases ??
     rawCases.filter((c) => c.status === "Active" || c.status === "Urgent").length;
   const totalClientsCount = summary?.totalClients ?? 0;
   const tasksCompletedCount =
-    summary?.tasksCompleted ?? allTasks.filter((t) => t.status === "completed").length;
+    tasksData?.stats ? tasksData.stats.completed : (summary?.tasksCompleted ?? allTasks.filter((t) => t.status === "completed").length);
 
   const runApproval = (a: ApprovalItem, action: "approved" | "rejected") => {
     const target = approvalTarget(a);
@@ -303,7 +303,7 @@ function Dashboard() {
 
   const subtitle = `${dateStr} • ${hearings.length} ${
     hearings.length === 1 ? "hearing" : "hearings"
-  }, ${pendingTasksCount} pending tasks, ${overdueCount} overdue items${
+  }, ${pendingTasksCount} pending tasks, ${overdueCount} overdue tasks${
     hasApprovalsAccess ? `, ${approvals.length} approvals waiting` : ""
   }.`;
 

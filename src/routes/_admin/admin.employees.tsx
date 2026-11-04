@@ -30,6 +30,7 @@ import { useEmployees, type EmployeeRecord } from "@/services/admin";
 import { ErrorState } from "@/components/common/ErrorState";
 import { StaleDataBanner } from "@/components/common/StaleDataBanner";
 import { useEmployeeWorkload } from "@/services/reports";
+import { useTasks } from "@/services/tasks";
 import { useCreateDirectChat } from "@/services/chat";
 import { useFloatingChat } from "@/lib/floatingChat";
 import { useAuth } from "@/lib/auth";
@@ -325,18 +326,26 @@ function EmployeesPage() {
   const totalEmployees = employees.length;
   const activeEmployees = employees.filter((e) => isOnline(e._id) || e.status === "online").length;
 
-  const totalTasksSum = Array.from(workloadById.values()).reduce(
-    (sum, w) => sum + (w.totalTasks ?? w.pendingTasks + w.completedTasks),
-    0
-  );
-  const pendingTasksSum = Array.from(workloadById.values()).reduce(
-    (sum, w) => sum + (w.pendingTasks ?? 0),
-    0
-  );
-  const overdueTasksSum = Array.from(workloadById.values()).reduce(
-    (sum, w) => sum + (w.overdueTasks ?? 0),
-    0
-  );
+  const { data: tasksData } = useTasks({ limit: "1" });
+
+  const totalTasksSum = tasksData?.stats
+    ? tasksData.stats.total
+    : Array.from(workloadById.values()).reduce(
+        (sum, w) => sum + (w.totalTasks ?? w.pendingTasks + w.completedTasks),
+        0
+      );
+  const pendingTasksSum = tasksData?.stats
+    ? tasksData.stats.inProgress
+    : Array.from(workloadById.values()).reduce(
+        (sum, w) => sum + (w.pendingTasks ?? 0),
+        0
+      );
+  const overdueTasksSum = tasksData?.stats
+    ? tasksData.stats.overdue
+    : Array.from(workloadById.values()).reduce(
+        (sum, w) => sum + (w.overdueTasks ?? 0),
+        0
+      );
 
   // If employeeId is in route search param, render EmployeeDetailWorkspace
   if (routeSearch.employeeId) {
@@ -421,7 +430,10 @@ function EmployeesPage() {
         </div>
 
         {/* 3. Total Tasks */}
-        <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card p-3 shadow-2xs hover:shadow-xs transition-all">
+        <div
+          onClick={() => navigate({ to: "/tasks", search: { tab: "list" } })}
+          className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card p-3 shadow-2xs hover:shadow-xs transition-all cursor-pointer hover:border-primary/40"
+        >
           <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-600 border border-sky-100 dark:bg-sky-950/60 dark:text-sky-400 dark:border-sky-900/60">
             <ClipboardList size={18} strokeWidth={1.8} />
           </div>
@@ -432,7 +444,10 @@ function EmployeesPage() {
         </div>
 
         {/* 4. Pending Tasks */}
-        <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card p-3 shadow-2xs hover:shadow-xs transition-all">
+        <div
+          onClick={() => navigate({ to: "/tasks", search: { tab: "list", status: "in_progress" } })}
+          className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card p-3 shadow-2xs hover:shadow-xs transition-all cursor-pointer hover:border-amber-500/40"
+        >
           <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600 border border-amber-100 dark:bg-amber-950/60 dark:text-amber-400 dark:border-amber-900/60">
             <Clock3 size={18} strokeWidth={1.8} />
           </div>
@@ -443,7 +458,10 @@ function EmployeesPage() {
         </div>
 
         {/* 5. Overdue Tasks */}
-        <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card p-3 shadow-2xs hover:shadow-xs transition-all">
+        <div
+          onClick={() => navigate({ to: "/tasks", search: { tab: "list", status: "overdue" } })}
+          className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card p-3 shadow-2xs hover:shadow-xs transition-all cursor-pointer hover:border-destructive/40"
+        >
           <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600 border border-rose-100 dark:bg-rose-950/60 dark:text-rose-400 dark:border-rose-900/60">
             <AlertTriangle size={18} strokeWidth={1.8} />
           </div>

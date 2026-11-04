@@ -49,10 +49,16 @@ export const Route = createFileRoute("/_shell/tasks")({
       },
     ],
   }),
-  validateSearch: (search: Record<string, unknown>): { taskId?: string; search?: string; tab?: string } => ({
+  validateSearch: (search: Record<string, unknown>): {
+    taskId?: string;
+    search?: string;
+    tab?: string;
+    status?: string;
+  } => ({
     ...(typeof search["taskId"] === "string" ? { taskId: search["taskId"] } : {}),
     ...(typeof search["search"] === "string" ? { search: search["search"] } : {}),
     ...(typeof search["tab"] === "string" ? { tab: search["tab"] } : {}),
+    ...(typeof search["status"] === "string" ? { status: search["status"] } : {}),
   }),
   component: TasksPage,
 });
@@ -237,16 +243,34 @@ function TasksPage() {
   const navigate = useNavigate();
   const routeSearch = Route.useSearch();
   const { data: deepTaskData } = useTask(routeSearch.taskId);
-  const [view, setView] = useState<string>(routeSearch.tab || "upcoming");
+  const [view, setView] = useState<string>(
+    routeSearch.tab || (routeSearch.status ? "list" : "upcoming")
+  );
   const [dateRange, setDateRange] = useState<string>("this_month");
   const [search, setSearch] = useState(routeSearch.search ?? "");
-  const [statusFilter, setStatusFilter] = useState<string>("All");
+  const [statusFilter, setStatusFilter] = useState<string>(routeSearch.status ?? "All");
   const [priorityFilter, setPriorityFilter] = useState<string>("All");
   const [categoryFilter, setCategoryFilter] = useState<string>("All");
   const [selectedStaff, setSelectedStaff] = useState<string[]>([]);
   const [dueFrom, setDueFrom] = useState("");
   const [dueTo, setDueTo] = useState("");
   const [page, setPage] = useState(1);
+
+  // Synchronize view and status filter with URL search parameters
+  useEffect(() => {
+    if (routeSearch.status && routeSearch.status !== statusFilter) {
+      setStatusFilter(routeSearch.status);
+      setView("list");
+    } else if (routeSearch.status === undefined && statusFilter !== "All" && routeSearch.tab === "upcoming") {
+      setStatusFilter("All");
+    }
+  }, [routeSearch.status, routeSearch.tab]);
+
+  useEffect(() => {
+    if (routeSearch.tab && routeSearch.tab !== view) {
+      setView(routeSearch.tab);
+    }
+  }, [routeSearch.tab]);
   const [limit, setLimit] = useState(24);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -304,7 +328,7 @@ function TasksPage() {
     if (statusFilter !== "All") {
       if (statusFilter === "overdue") f["overdue"] = "true";
       else if (statusFilter === "due_today") f["dueToday"] = "true";
-      else if (statusFilter === "in_progress") f["status"] = "in_progress,pending";
+      else if (statusFilter === "in_progress" || statusFilter === "pending") f["status"] = "in_progress,pending";
       else if (statusFilter === "in_review") f["status"] = "pending_approval";
       else if (statusFilter === "completed") f["status"] = "completed";
       else if (statusFilter === "calls") f["isCall"] = "true";
@@ -697,8 +721,11 @@ function TasksPage() {
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <button
           type="button"
-          onClick={() => setStatusFilter(statusFilter === "All" ? "All" : "All")}
-          className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 ${
+          onClick={() => {
+            setStatusFilter("All");
+            navigate({ search: (prev) => ({ ...prev, tab: "list", status: undefined }) });
+          }}
+          className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 cursor-pointer ${
             statusFilter === "All"
               ? "border-primary bg-primary/10 shadow-sm"
               : "border-border bg-card hover:border-primary/40"
@@ -711,8 +738,12 @@ function TasksPage() {
 
         <button
           type="button"
-          onClick={() => setStatusFilter(statusFilter === "overdue" ? "All" : "overdue")}
-          className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 ${
+          onClick={() => {
+            const next = statusFilter === "overdue" ? "All" : "overdue";
+            setStatusFilter(next);
+            navigate({ search: (prev) => ({ ...prev, tab: "list", status: next === "All" ? undefined : next }) });
+          }}
+          className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 cursor-pointer ${
             statusFilter === "overdue"
               ? "border-destructive bg-destructive/10 shadow-sm"
               : "border-border bg-card hover:border-destructive/40"
@@ -725,8 +756,12 @@ function TasksPage() {
 
         <button
           type="button"
-          onClick={() => setStatusFilter(statusFilter === "due_today" ? "All" : "due_today")}
-          className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 ${
+          onClick={() => {
+            const next = statusFilter === "due_today" ? "All" : "due_today";
+            setStatusFilter(next);
+            navigate({ search: (prev) => ({ ...prev, tab: "list", status: next === "All" ? undefined : next }) });
+          }}
+          className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 cursor-pointer ${
             statusFilter === "due_today"
               ? "border-amber-500 bg-amber-500/10 shadow-sm"
               : "border-border bg-card hover:border-amber-500/40"
@@ -739,22 +774,30 @@ function TasksPage() {
 
         <button
           type="button"
-          onClick={() => setStatusFilter(statusFilter === "in_progress" ? "All" : "in_progress")}
-          className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 ${
-            statusFilter === "in_progress"
+          onClick={() => {
+            const next = statusFilter === "in_progress" || statusFilter === "pending" ? "All" : "in_progress";
+            setStatusFilter(next);
+            navigate({ search: (prev) => ({ ...prev, tab: "list", status: next === "All" ? undefined : next }) });
+          }}
+          className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 cursor-pointer ${
+            statusFilter === "in_progress" || statusFilter === "pending"
               ? "border-indigo-500 bg-indigo-500/10 shadow-sm"
               : "border-border bg-card hover:border-indigo-500/40"
           }`}
         >
-          <span className="text-caption font-medium text-indigo">In Progress</span>
+          <span className="text-caption font-medium text-indigo">Pending / In Progress</span>
           <span className="num mt-1 text-section font-bold text-indigo">{stats.inProgress}</span>
-          <span className="mt-1 text-[11px] text-muted-foreground">Currently open</span>
+          <span className="mt-1 text-[11px] text-muted-foreground">Awaiting completion</span>
         </button>
 
         <button
           type="button"
-          onClick={() => setStatusFilter(statusFilter === "completed" ? "All" : "completed")}
-          className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 ${
+          onClick={() => {
+            const next = statusFilter === "completed" ? "All" : "completed";
+            setStatusFilter(next);
+            navigate({ search: (prev) => ({ ...prev, tab: "list", status: next === "All" ? undefined : next }) });
+          }}
+          className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 cursor-pointer ${
             statusFilter === "completed"
               ? "border-success bg-success/10 shadow-sm"
               : "border-border bg-card hover:border-success/40"
@@ -767,8 +810,12 @@ function TasksPage() {
 
         <button
           type="button"
-          onClick={() => setStatusFilter(statusFilter === "calls" ? "All" : "calls")}
-          className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 ${
+          onClick={() => {
+            const next = statusFilter === "calls" ? "All" : "calls";
+            setStatusFilter(next);
+            navigate({ search: (prev) => ({ ...prev, tab: "list", status: next === "All" ? undefined : next }) });
+          }}
+          className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 cursor-pointer ${
             statusFilter === "calls"
               ? "border-violet bg-violet/10 shadow-sm"
               : "border-border bg-card hover:border-violet/40"

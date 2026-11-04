@@ -40,6 +40,10 @@ export const Route = createFileRoute("/_shell/calendar")({
       },
     ],
   }),
+  validateSearch: (search: Record<string, unknown>): { date?: string; filter?: string } => ({
+    ...(typeof search["date"] === "string" ? { date: search["date"] } : {}),
+    ...(typeof search["filter"] === "string" ? { filter: search["filter"] } : {}),
+  }),
   component: CalendarPage,
 });
 
@@ -69,18 +73,42 @@ const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 function CalendarPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const routeSearch = Route.useSearch();
   const today = new Date();
-  const [currentYear, setCurrentYear] = useState(today.getFullYear());
-  const [currentMonth, setCurrentMonth] = useState(today.getMonth());
+  const [currentYear, setCurrentYear] = useState(() => {
+    if (routeSearch.date) {
+      const parsed = new Date(routeSearch.date);
+      if (!Number.isNaN(parsed.getTime())) return parsed.getFullYear();
+    }
+    return today.getFullYear();
+  });
+  const [currentMonth, setCurrentMonth] = useState(() => {
+    if (routeSearch.date) {
+      const parsed = new Date(routeSearch.date);
+      if (!Number.isNaN(parsed.getTime())) return parsed.getMonth();
+    }
+    return today.getMonth();
+  });
   const [view, setView] = useState(() =>
     typeof window !== "undefined" && window.innerWidth < 640 ? "Agenda" : "Month"
   );
   const [search, setSearch] = useState("");
   const [filterEmployee, setFilterEmployee] = useState("all");
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string | null>(routeSearch.date || null);
   const [initialScheduleDate, setInitialScheduleDate] = useState<string | undefined>(undefined);
   const [eventToEdit, setEventToEdit] = useState<CalendarEvent | null>(null);
+
+  useEffect(() => {
+    if (routeSearch.date) {
+      setSelectedDate(routeSearch.date);
+      const parsed = new Date(routeSearch.date);
+      if (!Number.isNaN(parsed.getTime())) {
+        setCurrentYear(parsed.getFullYear());
+        setCurrentMonth(parsed.getMonth());
+      }
+    }
+  }, [routeSearch.date]);
 
   const handleScheduleForDate = (dateStr: string) => {
     setEventToEdit(null);

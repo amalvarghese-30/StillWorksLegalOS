@@ -38,16 +38,19 @@ export function DashboardMetricCards({
       hint: "Court appearances",
       icon: Gavel,
       isGradient: true,
-      onClick: () => navigate({ to: "/calendar" }),
+      onClick: () => {
+        const todayStr = new Date().toISOString().split("T")[0];
+        navigate({ to: "/calendar", search: { date: todayStr } });
+      },
     },
     {
-      label: "Overdue items",
+      label: "Overdue tasks",
       value: formatValue(overdueCount),
-      hint: "Tasks & Cases",
+      hint: "Passed deadline",
       icon: AlertTriangle,
       iconColor: "text-rose-600 dark:text-rose-400",
       iconBg: "bg-rose-50 dark:bg-rose-950/40 border border-rose-200/50 dark:border-rose-900/40",
-      onClick: () => navigate({ to: "/tasks" }),
+      onClick: () => navigate({ to: "/tasks", search: { tab: "list", status: "overdue" } }),
     },
     {
       label: "Pending tasks",
@@ -57,7 +60,7 @@ export function DashboardMetricCards({
       iconColor: "text-amber-600 dark:text-amber-400",
       iconBg:
         "bg-amber-50 dark:bg-amber-950/40 border border-amber-200/50 dark:border-amber-900/40",
-      onClick: () => navigate({ to: "/tasks" }),
+      onClick: () => navigate({ to: "/tasks", search: { tab: "list", status: "in_progress" } }),
     },
     {
       label: "Active cases",
@@ -86,7 +89,7 @@ export function DashboardMetricCards({
       iconColor: "text-emerald-600 dark:text-emerald-400",
       iconBg:
         "bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/50 dark:border-emerald-900/40",
-      onClick: () => navigate({ to: "/tasks" }),
+      onClick: () => navigate({ to: "/tasks", search: { tab: "list", status: "completed" } }),
     },
   ];
 

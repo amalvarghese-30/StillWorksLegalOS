@@ -36,6 +36,7 @@ export function TodaysHearingsCard({
         </div>
         <Link
           to="/calendar"
+          search={{ date: new Date().toISOString().split("T")[0] }}
           className="inline-flex items-center gap-1 text-xs font-medium text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 transition-colors"
         >
           View calendar <ArrowRight size={13} strokeWidth={2} />
