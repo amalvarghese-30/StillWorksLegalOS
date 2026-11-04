@@ -223,11 +223,12 @@ router.post("/login", async (req: Request, res: Response) => {
     setRefreshCookie(res, refreshToken, rememberMe, req);
 
     // If user has securityLoginAlerts enabled, trigger alert notification
+    const currentUserId = user._id;
     if (user.securityLoginAlerts !== false) {
       import("../services/notifications.js").then(({ NotificationService }) => {
         NotificationService.createNotification(
           {
-            userId: user._id,
+            userId: currentUserId,
             type: "SYSTEM_ALERT",
             title: "New sign-in detected",
             message: `Account signed in from ${device.slice(0, 45)} (${ip || "Local network"}) at ${new Date().toLocaleTimeString("en-IN")}.`,
