@@ -7,8 +7,8 @@ import fs from "node:fs";
 import type { ServerResponse, ClientRequest } from "node:http";
 import { sanitizeProjectRoot, resolveEnvPath } from "./src/lib/envResolver.ts";
 
-function viteEnvProtectionPlugin(projectRoot: string) {
-  const isEnvTarget = (id: string) => {
+function viteSecurityProtectionPlugin(projectRoot: string) {
+  const isSensitiveTarget = (id: string) => {
     if (!id) return false;
     let cleanId = id.split("?")[0].trim().replace(/\\/g, "/");
     try {
@@ -17,23 +17,26 @@ function viteEnvProtectionPlugin(projectRoot: string) {
       // ignore URI malformed
     }
     return (
+      /(^|\/)\.git(\/|$)/i.test(cleanId) ||
       cleanId === ".env" ||
       cleanId.endsWith("/.env") ||
-      /(^|\/)\.env(\.[a-zA-Z0-9_-]+)?$/i.test(cleanId)
+      /(^|\/)\.env(\.[a-zA-Z0-9_-]+)?$/i.test(cleanId) ||
+      /(^|\/)\.(svn|hg|bzr)(\/|$)/i.test(cleanId) ||
+      /\.(sqlite|sqlite3|db|key|pem|crt|p12|pfx)(\?|$)/i.test(cleanId)
     );
   };
 
   return {
-    name: "vite-env-protection",
+    name: "vite-security-protection",
     enforce: "pre" as const,
     resolveId(id: string) {
-      if (isEnvTarget(id)) {
-        return "\0virtual:blocked-env";
+      if (isSensitiveTarget(id)) {
+        return "\0virtual:blocked-sensitive";
       }
       return null;
     },
     load(id: string) {
-      if (id === "\0virtual:blocked-env" || isEnvTarget(id)) {
+      if (id === "\0virtual:blocked-sensitive" || isSensitiveTarget(id)) {
         return "export default {};";
       }
       return null;
@@ -48,7 +51,10 @@ function viteEnvProtectionPlugin(projectRoot: string) {
             if (
               trimmed === "/.env" ||
               trimmed.startsWith("/.env.") ||
-              /(^|\/)\.env(\.[a-zA-Z0-9_-]+)?$/i.test(trimmed)
+              /(^|\/)\.env(\.[a-zA-Z0-9_-]+)?$/i.test(trimmed) ||
+              /(^|\/)\.git(\/|$)/i.test(trimmed) ||
+              /(^|\/)\.(svn|hg|bzr)(\/|$)/i.test(trimmed) ||
+              /\.(sqlite|sqlite3|db|key|pem|crt|p12|pfx)(\?|$)/i.test(trimmed)
             ) {
               res.statusCode = 404;
               res.setHeader("Content-Type", "text/plain");
@@ -80,7 +86,7 @@ export default defineConfig(({ mode }) => {
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version || "1.0.12"),
     },
-    plugins: [TanStackRouterVite(), tailwindcss(), react(), viteEnvProtectionPlugin(projectRoot)],
+    plugins: [TanStackRouterVite(), tailwindcss(), react(), viteSecurityProtectionPlugin(projectRoot)],
     resolve: {
       alias: {
         "@": path.resolve(import.meta.dirname, "src"),
@@ -89,7 +95,17 @@ export default defineConfig(({ mode }) => {
     server: {
       fs: {
         strict: true,
-        deny: [".env", ".env.*", ".env *", "**/.env*", "*.{crt,pem,key,p12,pfx,cer,der}"],
+        deny: [
+          "**/.git/**",
+          "**/.git*",
+          ".env",
+          ".env.*",
+          ".env *",
+          "**/.env*",
+          "*.{crt,pem,key,p12,pfx,cer,der}",
+          "**/*.sqlite*",
+          "**/*.db*",
+        ],
       },
       host: "0.0.0.0",
       port: 5174,
@@ -148,6 +164,7 @@ export default defineConfig(({ mode }) => {
       },
       watch: {
         ignored: [
+          "**/.git/**",
           "**/*.zip",
           "**/dist-electron.zip",
           "**/release/**",
