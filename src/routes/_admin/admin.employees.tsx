@@ -8,7 +8,6 @@ import {
   AlertTriangle,
   Users,
   UsersRound,
-  Scale,
   ClipboardList,
   Clock3,
   Activity,
@@ -322,19 +321,9 @@ function EmployeesPage() {
     toast.success(`Exported ${targetList.length} employee record(s) to CSV`);
   };
 
-  // 7 Summary Metrics calculations
+  // Summary Metrics calculations
   const totalEmployees = employees.length;
   const activeEmployees = employees.filter((e) => isOnline(e._id) || e.status === "online").length;
-  const advocatesCount = employees.filter((e) => {
-    const roleLower = (e.role || "").toLowerCase();
-    const titleLower = (e.title || "").toLowerCase();
-    return roleLower.includes("advocate") || titleLower.includes("advocate");
-  }).length;
-  const supportStaffCount = employees.filter((e) => {
-    const roleLower = (e.role || "").toLowerCase();
-    const titleLower = (e.title || "").toLowerCase();
-    return !roleLower.includes("advocate") && !titleLower.includes("advocate") && e.role !== "admin";
-  }).length;
 
   const totalTasksSum = Array.from(workloadById.values()).reduce(
     (sum, w) => sum + (w.totalTasks ?? w.pendingTasks + w.completedTasks),
@@ -407,8 +396,8 @@ function EmployeesPage() {
         }
       />
 
-      {/* ── 7 Summary Metric Cards in a Single Row ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+      {/* ── Summary Metric Cards ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {/* 1. Total Employees */}
         <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card p-3 shadow-2xs hover:shadow-xs transition-all">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 border border-blue-100 dark:bg-blue-950/60 dark:text-blue-400 dark:border-blue-900/60">
@@ -431,29 +420,7 @@ function EmployeesPage() {
           </div>
         </div>
 
-        {/* 3. Advocates */}
-        <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card p-3 shadow-2xs hover:shadow-xs transition-all">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600 border border-violet-100 dark:bg-violet-950/60 dark:text-violet-400 dark:border-violet-900/60">
-            <Scale size={18} strokeWidth={1.8} />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[11px] font-medium text-muted-foreground truncate">Advocates</p>
-            <p className="font-display text-xl font-bold text-foreground mt-0.5 tracking-tight">{advocatesCount}</p>
-          </div>
-        </div>
-
-        {/* 4. Support Staff */}
-        <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card p-3 shadow-2xs hover:shadow-xs transition-all">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-purple-50 text-purple-600 border border-purple-100 dark:bg-purple-950/60 dark:text-purple-400 dark:border-purple-900/60">
-            <Users size={18} strokeWidth={1.8} />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[11px] font-medium text-muted-foreground truncate">Support Staff</p>
-            <p className="font-display text-xl font-bold text-foreground mt-0.5 tracking-tight">{supportStaffCount}</p>
-          </div>
-        </div>
-
-        {/* 5. Total Tasks */}
+        {/* 3. Total Tasks */}
         <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card p-3 shadow-2xs hover:shadow-xs transition-all">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-600 border border-sky-100 dark:bg-sky-950/60 dark:text-sky-400 dark:border-sky-900/60">
             <ClipboardList size={18} strokeWidth={1.8} />
@@ -464,7 +431,7 @@ function EmployeesPage() {
           </div>
         </div>
 
-        {/* 6. Pending Tasks */}
+        {/* 4. Pending Tasks */}
         <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card p-3 shadow-2xs hover:shadow-xs transition-all">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600 border border-amber-100 dark:bg-amber-950/60 dark:text-amber-400 dark:border-amber-900/60">
             <Clock3 size={18} strokeWidth={1.8} />
@@ -475,7 +442,7 @@ function EmployeesPage() {
           </div>
         </div>
 
-        {/* 7. Overdue Tasks */}
+        {/* 5. Overdue Tasks */}
         <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card p-3 shadow-2xs hover:shadow-xs transition-all">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600 border border-rose-100 dark:bg-rose-950/60 dark:text-rose-400 dark:border-rose-900/60">
             <AlertTriangle size={18} strokeWidth={1.8} />
