@@ -217,7 +217,7 @@ export function exportToPDF({ entity, records, filename, scopeDescription, userR
     tasks: "UPCOMING & OPERATIONAL TASKS REGISTER",
   };
 
-  const title = `S & S ASSOCIATES LEGAL-TECH LLP — ${titleMap[entity] || entity.toUpperCase()}`;
+  const title = `SS ASSOCIATES LEGAL-TECH LLP — ${titleMap[entity] || entity.toUpperCase()}`;
   const exportDate = `Exported on: ${formatDateDDMMYYYY(new Date())}`;
   const scope = scopeDescription ? `Filter Scope: ${scopeDescription}` : `Total Records: ${records.length}`;
 
@@ -447,7 +447,7 @@ export async function exportToWord({ entity, records, filename, scopeDescription
           new Paragraph({
             children: [
               new TextRun({
-                text: "S & S ASSOCIATES LEGAL-TECH LLP",
+                text: "SS ASSOCIATES LEGAL-TECH LLP",
                 bold: true,
                 size: 28,
                 color: "1E293B",

@@ -31,12 +31,12 @@ import {
 export const Route = createFileRoute("/_shell/cases/")({
   head: () => ({
     meta: [
-      { title: "Cases · S & S Legal-Tech LLP" },
+      { title: "Cases · SS Associates Legal-Tech LLP" },
       {
         name: "description",
         content: "Every matter in one workspace — status, priority, next hearing and assigned counsel.",
       },
-      { property: "og:title", content: "Cases · S & S Legal-Tech LLP" },
+      { property: "og:title", content: "Cases · SS Associates Legal-Tech LLP" },
       {
         property: "og:description",
         content: "Every matter in one workspace with status, hearings and counsel.",
@@ -359,7 +359,7 @@ function CasesPage() {
   return (
     <div>
       <PageHeader
-        breadcrumb={[{ label: "S & S", to: "/" }, { label: "Cases" }]}
+        breadcrumb={[{ label: "SS Associates", to: "/" }, { label: "Cases" }]}
         title="Cases"
         subtitle={`${totalItems > filteredCases.length ? `Showing ${filteredCases.length} of ${totalItems}` : `${filteredCases.length}`} matters visible · ${stats.active} active · ${stats.urgent} urgent · ${stats.closed} closed${stats.archived ? ` · ${stats.archived} archived` : ""}.`}
         actions={

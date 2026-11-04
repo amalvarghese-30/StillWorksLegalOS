@@ -45,12 +45,12 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/_admin/admin/approvals")({
   head: () => ({
     meta: [
-      { title: "Approval Centre · S & S Legal-Tech LLP" },
+      { title: "Approval Centre · SS Associates Legal-Tech LLP" },
       {
         name: "description",
         content: "Professional approval queue for tasks, document uploads, access requests, and case operations.",
       },
-      { property: "og:title", content: "Approval Centre · S & S Legal-Tech LLP" },
+      { property: "og:title", content: "Approval Centre · SS Associates Legal-Tech LLP" },
       {
         property: "og:description",
         content: "Review and manage firm-wide requests, task sign-offs, and administrative authorizations.",
@@ -398,7 +398,7 @@ function ApprovalsPage() {
       {/* Page Header */}
       <PageHeader
         breadcrumb={[
-          { label: "S & S", to: "/" },
+          { label: "SS Associates", to: "/" },
           { label: "Admin Console", to: "/admin" },
           { label: "Approval Centre" },
         ]}

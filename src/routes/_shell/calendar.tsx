@@ -28,12 +28,12 @@ export function getLocalDateKey(value: string | Date): string {
 export const Route = createFileRoute("/_shell/calendar")({
   head: () => ({
     meta: [
-      { title: "Calendar · S & S Legal-Tech LLP" },
+      { title: "Calendar · SS Associates Legal-Tech LLP" },
       {
         name: "description",
         content: "Hearings, tasks, call reminders and firm events across month, week, day and agenda views.",
       },
-      { property: "og:title", content: "Calendar · S & S Legal-Tech LLP" },
+      { property: "og:title", content: "Calendar · SS Associates Legal-Tech LLP" },
       {
         property: "og:description",
         content: "Hearings, tasks, call reminders and firm events in one schedule.",
@@ -220,7 +220,7 @@ function CalendarPage() {
   return (
     <div>
       <PageHeader
-        breadcrumb={[{ label: "S & S", to: "/" }, { label: "Calendar" }]}
+        breadcrumb={[{ label: "SS Associates", to: "/" }, { label: "Calendar" }]}
         title={`${monthNames[currentMonth]} ${currentYear}`}
         subtitle={`${events.length} events · ${hearingCount} hearings this month`}
         actions={

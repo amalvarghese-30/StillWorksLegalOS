@@ -31,13 +31,13 @@ import { PendingCasesAndTasksSection } from "@/components/dashboard/PendingCases
 export const Route = createFileRoute("/_shell/")({
   head: () => ({
     meta: [
-      { title: "Dashboard · S & S Legal-Tech LLP" },
+      { title: "Dashboard · SS Associates Legal-Tech LLP" },
       {
         name: "description",
         content:
           "Executive command centre: hearings, overdue items, pending tasks, active cases, documents and approvals.",
       },
-      { property: "og:title", content: "Dashboard · S & S Legal-Tech LLP" },
+      { property: "og:title", content: "Dashboard · SS Associates Legal-Tech LLP" },
       {
         property: "og:description",
         content: "Hearings, overdue items, pending tasks, and live legal activity.",
@@ -311,7 +311,7 @@ function Dashboard() {
     <div className="space-y-6 pb-8">
       {/* ── Page Header ── */}
       <PageHeader
-        breadcrumb={[{ label: "S & S", to: "/" }, { label: "Dashboard" }]}
+        breadcrumb={[{ label: "SS Associates", to: "/" }, { label: "Dashboard" }]}
         title="What should I work on today?"
         subtitle={subtitle}
         actions={

@@ -1,5 +1,5 @@
 /**
- * Enterprise Validation Utilities for S & S Associates LegalOS
+ * Enterprise Validation Utilities for SS Associates LegalOS
  * Validates Indian & International Phone Numbers, Aadhaar, PAN, and Emails.
  */
 

@@ -115,7 +115,7 @@ function createWindow(): BrowserWindow {
     height: 900,
     minWidth: 960,
     minHeight: 640,
-    title: "S & S Legal-Tech LLP",
+    title: "SS Associates Legal-Tech LLP",
     icon: path.join(__dirname, "..", "public", "icon.png"),
     webPreferences: {
       // Preload script (CommonJS for Electron compatibility)
@@ -296,7 +296,7 @@ function updateTrayMenu(): void {
   if (!appTray) return;
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: "Open S & S LegalOS",
+      label: "Open SS Associates LegalOS",
       click: () => {
         if (mainWindow) {
           if (mainWindow.isMinimized()) mainWindow.restore();
@@ -330,7 +330,7 @@ function createTray(): void {
     const iconPath = path.join(__dirname, "..", "public", "icon.png");
     if (fs.existsSync(iconPath)) {
       appTray = new Tray(iconPath);
-      appTray.setToolTip("S & S Associates Legal-Tech LLP");
+      appTray.setToolTip("SS Associates Legal-Tech LLP");
       updateTrayMenu();
       appTray.on("double-click", () => {
         if (mainWindow) {
@@ -576,7 +576,7 @@ ipcMain.handle("notification:show", async (event: Electron.IpcMainInvokeEvent, o
   try {
     const iconPath = path.join(__dirname, "..", "public", "icon.png");
     const notif = new Notification({
-      title: options.title || "S & S Legal-Tech LLP",
+      title: options.title || "SS Associates Legal-Tech LLP",
       body: options.body || "",
       icon: fs.existsSync(iconPath) ? iconPath : undefined,
       silent: options.sound === false,
@@ -657,7 +657,7 @@ ipcMain.handle("dialog:saveFile", async (event: Electron.IpcMainInvokeEvent, opt
   try {
     const result = await dialog.showSaveDialog(mainWindow, {
       defaultPath: options.defaultFilename || "download",
-      title: "Save File · S & S LegalOS",
+      title: "Save File · SS Associates LegalOS",
     });
     if (result.canceled || !result.filePath) {
       return { canceled: true };

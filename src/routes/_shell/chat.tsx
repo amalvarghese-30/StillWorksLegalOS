@@ -65,9 +65,9 @@ import { StaleDataBanner } from "@/components/common/StaleDataBanner";
 export const Route = createFileRoute("/_shell/chat")({
   head: () => ({
     meta: [
-      { title: "Chat · S & S Legal-Tech LLP" },
+      { title: "Chat · SS Associates Legal-Tech LLP" },
       { name: "description", content: "Private, WhatsApp-style team messaging for the firm." },
-      { property: "og:title", content: "Chat · S & S Legal-Tech LLP" },
+      { property: "og:title", content: "Chat · SS Associates Legal-Tech LLP" },
       { property: "og:description", content: "Private team messaging for the firm, without the noise." },
     ],
   }),
@@ -660,7 +660,7 @@ function ChatPage() {
       <Toaster position="top-right" richColors />
       <div className={activeGroupId ? "hidden md:block" : "block"}>
         <PageHeader
-          breadcrumb={[{ label: "S & S", to: "/" }, { label: "Chat" }]}
+          breadcrumb={[{ label: "SS Associates", to: "/" }, { label: "Chat" }]}
           title="Chat"
           subtitle="Private, encrypted messaging for the firm."
           actions={

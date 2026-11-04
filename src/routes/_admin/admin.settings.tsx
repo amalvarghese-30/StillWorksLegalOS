@@ -30,12 +30,12 @@ export const Route = createFileRoute("/_admin/admin/settings")({
   }),
   head: () => ({
     meta: [
-      { title: "Settings · S & S Legal-Tech LLP" },
+      { title: "Settings · SS Associates Legal-Tech LLP" },
       {
         name: "description",
         content: "Manage your profile, firm details, notifications, security and storage preferences.",
       },
-      { property: "og:title", content: "Settings · S & S Legal-Tech LLP" },
+      { property: "og:title", content: "Settings · SS Associates Legal-Tech LLP" },
       {
         property: "og:description",
         content: "Profile, firm details, notifications, security and storage preferences.",
@@ -245,7 +245,7 @@ function SettingsPage() {
           <div className="mt-4 hidden rounded-xl border border-border/70 bg-card/60 p-3.5 shadow-2xs lg:block">
             <div className="flex items-center gap-2">
               <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
-              <p className="text-xs font-semibold text-foreground">S &amp; S LegalOS</p>
+              <p className="text-xs font-semibold text-foreground">SS Associates LegalOS</p>
             </div>
             <div className="mt-2.5 space-y-1.5 text-[11px] text-muted-foreground border-t border-border/50 pt-2">
               <div className="flex items-center justify-between">
@@ -432,7 +432,7 @@ function SettingsPage() {
                     <Input
                       value={firmName}
                       onChange={(e) => setFirmName(e.target.value)}
-                      placeholder="e.g. S & S Legal-Tech LLP"
+                      placeholder="e.g. SS Associates Legal-Tech LLP"
                       className="h-11 sm:h-12 rounded-md w-full"
                     />
                   </div>

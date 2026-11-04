@@ -1,6 +1,6 @@
 {
-  "name": "S & S Legal-Tech LLP",
-  "short_name": "S & S Legal",
+  "name": "SS Associates Legal-Tech LLP",
+  "short_name": "SS Associates",
   "description": "Premium legal practice management for modern law firms.",
   "start_url": "./",
   "scope": "./",
@@ -10,9 +10,15 @@
   "theme_color": "#6366F1",
   "icons": [
     {
-      "src": "./favicon.ico",
-      "sizes": "48x48 64x64 128x128 256x256",
-      "type": "image/x-icon",
+      "src": "./logo.png",
+      "sizes": "192x192 512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icon.png",
+      "sizes": "256x256",
+      "type": "image/png",
       "purpose": "any"
     }
   ]

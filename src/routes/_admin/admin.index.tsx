@@ -13,13 +13,13 @@ import { AdminRecentActivity } from "@/components/admin/dashboard/AdminRecentAct
 export const Route = createFileRoute("/_admin/admin/")({
   head: () => ({
     meta: [
-      { title: "Admin Console · S & S Legal-Tech LLP" },
+      { title: "Admin Console · SS Associates Legal-Tech LLP" },
       {
         name: "description",
         content:
           "Firm-wide administration: team capacity, approval queue, audit trail and governance controls.",
       },
-      { property: "og:title", content: "Admin Console · S & S Legal-Tech LLP" },
+      { property: "og:title", content: "Admin Console · SS Associates Legal-Tech LLP" },
       {
         property: "og:description",
         content: "Team capacity, approvals, audit trail and governance in one console.",

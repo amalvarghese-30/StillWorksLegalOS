@@ -43,12 +43,12 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/_shell/clients/")({
   head: () => ({
     meta: [
-      { title: "Clients & Cases · S & S Legal-Tech LLP" },
+      { title: "Clients & Cases · SS Associates Legal-Tech LLP" },
       {
         name: "description",
         content: "Client profiles, linked cases, and legal relationships in one centralized workspace.",
       },
-      { property: "og:title", content: "Clients & Cases · S & S Legal-Tech LLP" },
+      { property: "og:title", content: "Clients & Cases · SS Associates Legal-Tech LLP" },
       {
         property: "og:description",
         content: "Client profiles, linked cases, and legal relationships in one centralized workspace.",
@@ -331,7 +331,7 @@ function ClientsPage() {
   return (
     <div>
       <PageHeader
-        breadcrumb={[{ label: "S & S", to: "/" }, { label: "Clients & Cases" }]}
+        breadcrumb={[{ label: "SS Associates", to: "/" }, { label: "Clients & Cases" }]}
         title="Clients & Cases"
         subtitle={
           viewMode === "clients"

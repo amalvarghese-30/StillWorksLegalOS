@@ -65,12 +65,12 @@ export const Route = createFileRoute("/_admin/admin/employees")({
   }),
   head: () => ({
     meta: [
-      { title: "Employees · S & S Legal-Tech LLP" },
+      { title: "Employees · SS Associates Legal-Tech LLP" },
       {
         name: "description",
         content: "Team management for the firm — roles, workload, cases and profiles.",
       },
-      { property: "og:title", content: "Employees · S & S Legal-Tech LLP" },
+      { property: "og:title", content: "Employees · SS Associates Legal-Tech LLP" },
       { property: "og:description", content: "Roles, workload, cases and profiles for your team." },
     ],
   }),

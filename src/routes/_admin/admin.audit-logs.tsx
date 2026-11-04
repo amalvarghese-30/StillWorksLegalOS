@@ -39,12 +39,12 @@ import { useTableSorting } from "@/hooks/useTableSorting";
 export const Route = createFileRoute("/_admin/admin/audit-logs")({
   head: () => ({
     meta: [
-      { title: "Audit Logs · S & S Legal-Tech LLP" },
+      { title: "Audit Logs · SS Associates Legal-Tech LLP" },
       {
         name: "description",
         content: "A tamper-evident audit record of every firm operation, case transition, and administrative sign-off.",
       },
-      { property: "og:title", content: "Audit Logs · S & S Legal-Tech LLP" },
+      { property: "og:title", content: "Audit Logs · SS Associates Legal-Tech LLP" },
       { property: "og:description", content: "Firm-wide operational audit trail and cryptographic ledger." },
     ],
   }),
@@ -249,7 +249,7 @@ function AuditLogsPage() {
       {/* Top Header */}
       <PageHeader
         breadcrumb={[
-          { label: "S & S", to: "/" },
+          { label: "SS Associates", to: "/" },
           { label: "Admin", to: "/admin" },
           { label: "Audit Logs" },
         ]}

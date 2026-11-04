@@ -9,16 +9,17 @@ import { useAuth } from "@/lib/auth";
 import { validateEmail } from "@/lib/validation";
 import stillworksLogoLight from "@/assets/stillworks-logo-light.jpg";
 import stillworksLogoDark from "@/assets/stillworks-logo-dark.jpg";
+import logoImg from "@/assets/logo.png";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
     meta: [
-      { title: "Sign in · S & S Legal-Tech LLP" },
+      { title: "Sign in · SS Associates Legal-Tech LLP" },
       {
         name: "description",
-        content: "Sign in to S & S Associates Legal-Tech LLP — Enterprise Legal Practice Management.",
+        content: "Sign in to SS Associates Legal-Tech LLP — Enterprise Legal Practice Management.",
       },
-      { property: "og:title", content: "Sign in · S & S Legal-Tech LLP" },
+      { property: "og:title", content: "Sign in · SS Associates Legal-Tech LLP" },
       { property: "og:description", content: "Enterprise Legal Practice Management for modern law firms." },
     ],
   }),
@@ -143,12 +144,12 @@ function LoginPage() {
         <div className="w-full max-w-[400px] relative z-10 rounded-2xl border border-slate-200/90 dark:border-border/80 bg-card/95 backdrop-blur-xl shadow-xl shadow-slate-900/5 p-6 sm:p-7">
           {/* Centered Law Firm Branding with slightly larger font, compact box */}
           <div className="flex flex-col items-center text-center">
-            <span className="gradient-primary grid size-12 place-items-center rounded-xl text-primary-foreground shadow-sm mb-2.5">
-              <Scale size={24} strokeWidth={1.8} />
-            </span>
+            <div className="size-14 overflow-hidden rounded-2xl border border-border/80 bg-white p-1.5 shadow-soft flex items-center justify-center mb-2.5">
+              <img src={logoImg} alt="SS Associates" className="size-full object-contain" />
+            </div>
 
             <h2 className="text-lg sm:text-xl font-bold tracking-wide text-foreground font-display uppercase">
-              S &amp; S Associates
+              SS Associates
             </h2>
             <p className="text-xs font-semibold text-primary tracking-wider uppercase font-mono mt-0.5">
               Legal-Tech LLP
@@ -331,7 +332,7 @@ function LoginPage() {
             <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
           </div>
           <div className="text-xs font-medium text-white/60 tracking-wider uppercase font-mono">
-            S &amp; S Legal-Tech
+            SS Associates Legal-Tech
           </div>
         </div>
 

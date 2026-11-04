@@ -101,13 +101,13 @@ import { UploadDocumentDialog } from "@/components/documents/UploadDocumentDialo
 export const Route = createFileRoute("/_shell/cases/$caseId")({
   head: () => ({
     meta: [
-      { title: "Case workspace · S & S Legal-Tech LLP" },
+      { title: "Case workspace · SS Associates Legal-Tech LLP" },
       {
         name: "description",
         content:
           "A single operating screen for a matter: hearings, documents, tasks, parties and timeline.",
       },
-      { property: "og:title", content: "Case workspace · S & S Legal-Tech LLP" },
+      { property: "og:title", content: "Case workspace · SS Associates Legal-Tech LLP" },
       {
         property: "og:description",
         content: "Hearings, documents, tasks, parties and timeline for one matter.",
@@ -712,7 +712,7 @@ function CaseWorkspace() {
       )}
       <PageHeader
         breadcrumb={[
-          { label: "S & S", to: "/" },
+          { label: "SS Associates", to: "/" },
           { label: "Cases", to: "/cases" },
           { label: record.number },
         ]}

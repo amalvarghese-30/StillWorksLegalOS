@@ -60,9 +60,9 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/_shell/clients/$clientId")({
   head: () => ({
     meta: [
-      { title: "Client profile · S & S Legal-Tech LLP" },
+      { title: "Client profile · SS Associates Legal-Tech LLP" },
       { name: "description", content: "Client details, Identity Verification, property, and sub-client records." },
-      { property: "og:title", content: "Client profile · S & S Legal-Tech LLP" },
+      { property: "og:title", content: "Client profile · SS Associates Legal-Tech LLP" },
       { property: "og:description", content: "Client details, Identity Verification, property, and sub-client records." },
     ],
   }),
@@ -673,7 +673,7 @@ function ClientProfile() {
       )}
       <PageHeader
         breadcrumb={[
-          { label: "S & S", to: "/" },
+          { label: "SS Associates", to: "/" },
           { label: "Clients", to: "/clients" },
           { label: record.name },
         ]}

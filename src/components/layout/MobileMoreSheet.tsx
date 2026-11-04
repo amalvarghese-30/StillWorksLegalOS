@@ -108,7 +108,7 @@ export function MobileMoreSheet({ open, onOpenChange }: MobileMoreSheetProps) {
             </span>
           </div>
           <SheetDescription className="text-xs text-muted-foreground">
-            S &amp; S Associates Legal-Tech LLP
+            SS Associates Legal-Tech LLP
           </SheetDescription>
         </SheetHeader>
 

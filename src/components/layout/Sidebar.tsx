@@ -14,6 +14,7 @@ import {
   Scale,
   LogOut,
 } from "lucide-react";
+import logoImg from "@/assets/logo.png";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { APP_VERSION } from "@/version";
@@ -95,11 +96,11 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="glass flex h-full w-[290px] flex-col rounded-2xl p-4">
       <div className="flex items-center gap-3 px-2 py-3">
-        <span className="gradient-primary grid size-11 shrink-0 place-items-center rounded-md text-primary-foreground shadow-soft">
-          <Scale size={21} strokeWidth={1.75} />
-        </span>
+        <div className="size-11 shrink-0 overflow-hidden rounded-xl border border-border/80 bg-white p-1 shadow-soft flex items-center justify-center">
+          <img src={logoImg} alt="SS Associates" className="size-full object-contain" />
+        </div>
         <div className="min-w-0">
-          <p className="truncate font-display text-body font-semibold">S &amp; S Associates</p>
+          <p className="truncate font-display text-body font-semibold text-foreground">SS Associates</p>
           <p className="truncate text-caption text-muted-foreground">Legal-Tech LLP</p>
         </div>
       </div>

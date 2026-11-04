@@ -72,9 +72,9 @@ import { useTableSorting } from "@/hooks/useTableSorting";
 export const Route = createFileRoute("/_shell/reports")({
   head: () => ({
     meta: [
-      { title: "Reports · S & S Legal-Tech LLP" },
+      { title: "Reports · SS Associates Legal-Tech LLP" },
       { name: "description", content: "Operational insight for the firm: employee daily reporting, case mix, growth, workload and completion rates." },
-      { property: "og:title", content: "Reports · S & S Legal-Tech LLP" },
+      { property: "og:title", content: "Reports · SS Associates Legal-Tech LLP" },
       { property: "og:description", content: "Employee daily reporting, case mix, growth, workload and completion rates at a glance." },
     ],
   }),
@@ -249,7 +249,7 @@ function ReportsPage() {
   return (
     <div className="space-y-6 pb-12">
       <PageHeader
-        breadcrumb={[{ label: "S & S", to: "/" }, { label: "Reports" }]}
+        breadcrumb={[{ label: "SS Associates", to: "/" }, { label: "Reports" }]}
         title="Reports & Daily Activity"
         subtitle={
           isAdmin
@@ -2062,7 +2062,7 @@ function EmployeeDetailReportView({
 
       {/* Printable Report Header */}
       <div className="hidden print:block border-b border-gray-300 pb-4 mb-4">
-        <h1 className="text-xl font-bold">S & S ASSOCIATES LEGAL-TECH LLP</h1>
+        <h1 className="text-xl font-bold">SS ASSOCIATES LEGAL-TECH LLP</h1>
         <h2 className="text-sm font-semibold text-gray-700 mt-1">OFFICIAL EMPLOYEE WORKLOAD & PERFORMANCE AUDIT</h2>
         <div className="grid grid-cols-2 text-xs mt-3">
           <div>
@@ -2642,7 +2642,7 @@ function ClientDetailReportView({
 
       {/* Printable Report Header */}
       <div className="hidden print:block border-b border-gray-300 pb-4 mb-4">
-        <h1 className="text-xl font-bold">S & S ASSOCIATES LEGAL-TECH LLP</h1>
+        <h1 className="text-xl font-bold">SS ASSOCIATES LEGAL-TECH LLP</h1>
         <h2 className="text-sm font-semibold text-gray-700 mt-1">CLIENT DOSSIER & COMPREHENSIVE MATTER REPORT</h2>
         <div className="grid grid-cols-2 text-xs mt-3">
           <div>

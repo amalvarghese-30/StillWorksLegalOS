@@ -37,12 +37,12 @@ import { SortHeaderButton } from "@/components/common/table/SortableTableHeader"
 export const Route = createFileRoute("/_shell/tasks")({
   head: () => ({
     meta: [
-      { title: "Upcoming Tasks · S & S Legal-Tech LLP" },
+      { title: "Upcoming Tasks · SS Associates Legal-Tech LLP" },
       {
         name: "description",
         content: "A calm reminders-style task list: overdue, due today, upcoming and call reminders.",
       },
-      { property: "og:title", content: "Upcoming Tasks · S & S Legal-Tech LLP" },
+      { property: "og:title", content: "Upcoming Tasks · SS Associates Legal-Tech LLP" },
       {
         property: "og:description",
         content: "Tasks grouped by client with upcoming deadlines.",
@@ -607,7 +607,7 @@ function TasksPage() {
   return (
     <div>
       <PageHeader
-        breadcrumb={[{ label: "S & S", to: "/" }, { label: "Tasks" }]}
+        breadcrumb={[{ label: "SS Associates", to: "/" }, { label: "Tasks" }]}
         title={view === "upcoming" ? "Upcoming Tasks" : "Tasks"}
         subtitle={
           view === "upcoming"
