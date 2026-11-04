@@ -13,6 +13,7 @@ import { Task } from "../models/Task.js";
 import { DocumentModel } from "../models/Document.js";
 import { FileIntegrity, computeFileHash, type FileIntegrityStatus } from "../models/FileIntegrity.js";
 import { CalendarEvent } from "../models/CalendarEvent.js";
+import { HearingRecord } from "../models/HearingRecord.js";
 import { AppSettings } from "../models/AppSettings.js";
 import { ApprovalRequest } from "../models/ApprovalRequest.js";
 import busboy from "busboy";
@@ -2745,6 +2746,651 @@ router.put("/task-options", requireAdminOrPermission("settings"), async (req: Re
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
+// GET /api/admin/reports/firm-analytics — Consolidated Enterprise Analytics Dashboard
+// ---------------------------------------------------------------------------
+
+router.get("/reports/firm-analytics", requireAdminOrPermission("reports"), async (req: Request, res: Response) => {
+  try {
+    // 1. Determine reporting timezone from AppSettings or query
+    let timezone = "Asia/Kolkata";
+    try {
+      const workingHours = await (AppSettings as any).getWorkingHoursConfig();
+      if (workingHours?.timezone) timezone = workingHours.timezone;
+    } catch {}
+    if (typeof req.query.timezone === "string" && req.query.timezone.trim()) {
+      timezone = req.query.timezone.trim();
+    }
+
+    const now = new Date();
+
+    // Helper to get offset string in reporting timezone (e.g. +05:30)
+    let tzOffsetString = "+05:30";
+    try {
+      const tzFormatter = new Intl.DateTimeFormat("en-US", { timeZone: timezone, timeZoneName: "longOffset" });
+      const tzPart = tzFormatter.formatToParts(now).find((p) => p.type === "timeZoneName")?.value;
+      if (tzPart && tzPart.startsWith("GMT")) {
+        tzOffsetString = tzPart.replace("GMT", "") || "+00:00";
+      }
+    } catch {}
+
+    const getTzYMD = (d: Date): string => {
+      return new Intl.DateTimeFormat("en-CA", {
+        timeZone: timezone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(d);
+    };
+
+    const todayYMD = getTzYMD(now);
+    const [currentYearStr, currentMonthStr] = todayYMD.split("-");
+    const currentYear = parseInt(currentYearStr, 10);
+    const currentMonth = parseInt(currentMonthStr, 10);
+
+    const period = typeof req.query.period === "string" ? req.query.period : "30d";
+    let startYMD = todayYMD;
+    let endYMD = todayYMD;
+
+    if (period === "7d") {
+      const d = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000);
+      startYMD = getTzYMD(d);
+      endYMD = todayYMD;
+    } else if (period === "30d") {
+      const d = new Date(now.getTime() - 29 * 24 * 60 * 60 * 1000);
+      startYMD = getTzYMD(d);
+      endYMD = todayYMD;
+    } else if (period === "90d") {
+      const d = new Date(now.getTime() - 89 * 24 * 60 * 60 * 1000);
+      startYMD = getTzYMD(d);
+      endYMD = todayYMD;
+    } else if (period === "month") {
+      startYMD = `${currentYearStr}-${currentMonthStr}-01`;
+      const lastDay = new Date(currentYear, currentMonth, 0).getDate();
+      endYMD = `${currentYearStr}-${currentMonthStr}-${String(lastDay).padStart(2, "0")}`;
+    } else if (period === "last_month") {
+      const lmYear = currentMonth === 1 ? currentYear - 1 : currentYear;
+      const lmMonth = currentMonth === 1 ? 12 : currentMonth - 1;
+      const lmMonthStr = String(lmMonth).padStart(2, "0");
+      const lastDay = new Date(lmYear, lmMonth, 0).getDate();
+      startYMD = `${lmYear}-${lmMonthStr}-01`;
+      endYMD = `${lmYear}-${lmMonthStr}-${String(lastDay).padStart(2, "0")}`;
+    } else if (period === "quarter") {
+      const qStartMonth = Math.floor((currentMonth - 1) / 3) * 3 + 1;
+      const qEndMonth = qStartMonth + 2;
+      const lastDay = new Date(currentYear, qEndMonth, 0).getDate();
+      startYMD = `${currentYear}-${String(qStartMonth).padStart(2, "0")}-01`;
+      endYMD = `${currentYear}-${String(qEndMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    } else if (period === "year") {
+      startYMD = `${currentYear}-01-01`;
+      endYMD = `${currentYear}-12-31`;
+    } else if (period === "all") {
+      startYMD = "2020-01-01";
+      endYMD = todayYMD;
+    } else if (typeof req.query.startDate === "string" && typeof req.query.endDate === "string") {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(req.query.startDate) && /^\d{4}-\d{2}-\d{2}$/.test(req.query.endDate)) {
+        startYMD = req.query.startDate;
+        endYMD = req.query.endDate;
+      }
+    }
+
+    const startDate = new Date(`${startYMD}T00:00:00.000${tzOffsetString}`);
+    const endDate = new Date(`${endYMD}T23:59:59.999${tzOffsetString}`);
+    const periodMs = Math.max(86400000, endDate.getTime() - startDate.getTime());
+    const prevEndDate = new Date(startDate.getTime() - 1);
+    const prevStartDate = new Date(prevEndDate.getTime() - periodMs + 1);
+
+    const computePctDiff = (curr: number, prev: number): number | null => {
+      if (prev === 0) return curr > 0 ? 100 : 0;
+      return Math.round(((curr - prev) / prev) * 100);
+    };
+
+    // 2. Execute Aggregations Concurrently
+    const [
+      // Snapshot: Active Matters
+      activeCases,
+      // Snapshot: Active Clients
+      activeClients,
+      // Snapshot: Open Tasks
+      openTasks,
+      // Snapshot: Overdue Tasks (authoritative predicate matching task router)
+      overdueTasks,
+      // Snapshot: Pending Approvals
+      pendingApprovals,
+      // Snapshot: Upcoming Hearings
+      upcomingHearings,
+
+      // Period Metrics
+      newCases,
+      newCasesPrev,
+      closedCases,
+      closedCasesPrev,
+      tasksCompleted,
+      tasksCompletedPrev,
+      docsApproved,
+      docsApprovedPrev,
+      newClients,
+      newClientsPrev,
+      hearingsHeld,
+      hearingsHeldPrev,
+
+      // Case Status Breakdown
+      caseActive,
+      caseUrgent,
+      caseOnHold,
+      caseClosed,
+      caseArchived,
+
+      // Case Ageing
+      age0to30,
+      age31to90,
+      age91to180,
+      age180plus,
+
+      // Task Status Mutually Exclusive Counts
+      taskOverdue,
+      taskPendingApproval,
+      taskCompletedCount,
+      taskInProgress,
+      taskPending,
+
+      // Task Priority
+      taskHigh,
+      taskMedium,
+      taskLow,
+
+      // Client Totals
+      totalClients,
+      corporateClients,
+      individualClients,
+
+      // Document Totals
+      totalDocs,
+      docsUploadedInPeriod,
+      docsPending,
+      docsRejected,
+      docsDraft,
+
+      // Upcoming Hearings list
+      upcomingHearingsRaw,
+    ] = await Promise.all([
+      Case.countDocuments({ status: { $nin: ["Closed", "Archived"] }, isDeleted: { $ne: true } }),
+      Client.countDocuments({ tag: { $ne: "Archived" } }),
+      Task.countDocuments({ status: { $nin: ["completed"] }, isDeleted: { $ne: true } }),
+      Task.countDocuments({
+        isDeleted: { $ne: true },
+        status: { $nin: ["completed", "pending_approval"] },
+        $or: [{ deadline: { $lt: now } }, { status: "overdue" }],
+      }),
+      ApprovalRequest.countDocuments({ status: "pending" }),
+      CalendarEvent.countDocuments({ type: "hearing", start: { $gte: now }, hearingStatus: { $nin: ["cancelled", "held"] } }),
+
+      // Period counts
+      Case.countDocuments({ createdAt: { $gte: startDate, $lte: endDate }, isDeleted: { $ne: true } }),
+      Case.countDocuments({ createdAt: { $gte: prevStartDate, $lte: prevEndDate }, isDeleted: { $ne: true } }),
+      Case.countDocuments({ status: "Closed", isDeleted: { $ne: true }, $or: [{ completedAt: { $gte: startDate, $lte: endDate } }, { completedAt: null, updatedAt: { $gte: startDate, $lte: endDate } }] }),
+      Case.countDocuments({ status: "Closed", isDeleted: { $ne: true }, $or: [{ completedAt: { $gte: prevStartDate, $lte: prevEndDate } }, { completedAt: null, updatedAt: { $gte: prevStartDate, $lte: prevEndDate } }] }),
+      Task.countDocuments({ status: "completed", isDeleted: { $ne: true }, $or: [{ completedAt: { $gte: startDate, $lte: endDate } }, { completedAt: null, updatedAt: { $gte: startDate, $lte: endDate } }] }),
+      Task.countDocuments({ status: "completed", isDeleted: { $ne: true }, $or: [{ completedAt: { $gte: prevStartDate, $lte: prevEndDate } }, { completedAt: null, updatedAt: { $gte: prevStartDate, $lte: prevEndDate } }] }),
+      DocumentModel.countDocuments({ state: "Approved", $or: [{ approvedAt: { $gte: startDate, $lte: endDate } }, { approvedAt: null, updatedAt: { $gte: startDate, $lte: endDate } }] }),
+      DocumentModel.countDocuments({ state: "Approved", $or: [{ approvedAt: { $gte: prevStartDate, $lte: prevEndDate } }, { approvedAt: null, updatedAt: { $gte: prevStartDate, $lte: prevEndDate } }] }),
+      Client.countDocuments({ createdAt: { $gte: startDate, $lte: endDate } }),
+      Client.countDocuments({ createdAt: { $gte: prevStartDate, $lte: prevEndDate } }),
+      HearingRecord.countDocuments({ status: "held", hearingDate: { $gte: startDate, $lte: endDate } }),
+      HearingRecord.countDocuments({ status: "held", hearingDate: { $gte: prevStartDate, $lte: prevEndDate } }),
+
+      // Case status
+      Case.countDocuments({ status: "Active", isDeleted: { $ne: true } }),
+      Case.countDocuments({ status: "Urgent", isDeleted: { $ne: true } }),
+      Case.countDocuments({ status: "On Hold", isDeleted: { $ne: true } }),
+      Case.countDocuments({ status: "Closed", isDeleted: { $ne: true } }),
+      Case.countDocuments({ status: "Archived", isDeleted: { $ne: true } }),
+
+      // Case ageing
+      Case.countDocuments({ status: { $nin: ["Closed", "Archived"] }, isDeleted: { $ne: true }, createdAt: { $gte: new Date(now.getTime() - 30 * 86400000) } }),
+      Case.countDocuments({ status: { $nin: ["Closed", "Archived"] }, isDeleted: { $ne: true }, createdAt: { $gte: new Date(now.getTime() - 90 * 86400000), $lt: new Date(now.getTime() - 30 * 86400000) } }),
+      Case.countDocuments({ status: { $nin: ["Closed", "Archived"] }, isDeleted: { $ne: true }, createdAt: { $gte: new Date(now.getTime() - 180 * 86400000), $lt: new Date(now.getTime() - 90 * 86400000) } }),
+      Case.countDocuments({ status: { $nin: ["Closed", "Archived"] }, isDeleted: { $ne: true }, createdAt: { $lt: new Date(now.getTime() - 180 * 86400000) } }),
+
+      // Tasks mutually exclusive
+      Task.countDocuments({
+        isDeleted: { $ne: true },
+        status: { $nin: ["completed", "pending_approval"] },
+        $or: [{ deadline: { $lt: now } }, { status: "overdue" }],
+      }),
+      Task.countDocuments({ isDeleted: { $ne: true }, status: "pending_approval" }),
+      Task.countDocuments({ isDeleted: { $ne: true }, status: "completed" }),
+      Task.countDocuments({
+        isDeleted: { $ne: true },
+        status: "in_progress",
+        $or: [{ deadline: null }, { deadline: { $gte: now } }],
+      }),
+      Task.countDocuments({
+        isDeleted: { $ne: true },
+        status: "pending",
+        $or: [{ deadline: null }, { deadline: { $gte: now } }],
+      }),
+
+      // Task priority
+      Task.countDocuments({ isDeleted: { $ne: true }, status: { $ne: "completed" }, priority: "High" }),
+      Task.countDocuments({ isDeleted: { $ne: true }, status: { $ne: "completed" }, priority: "Medium" }),
+      Task.countDocuments({ isDeleted: { $ne: true }, status: { $ne: "completed" }, priority: "Low" }),
+
+      // Client counts
+      Client.countDocuments({}),
+      Client.countDocuments({ type: "Corporate", tag: { $ne: "Archived" } }),
+      Client.countDocuments({ type: "Individual", tag: { $ne: "Archived" } }),
+
+      // Document counts
+      DocumentModel.countDocuments({}),
+      DocumentModel.countDocuments({ createdAt: { $gte: startDate, $lte: endDate } }),
+      DocumentModel.countDocuments({ state: "Pending" }),
+      DocumentModel.countDocuments({ state: "Rejected" }),
+      DocumentModel.countDocuments({ state: "Draft" }),
+
+      // Upcoming hearings list
+      CalendarEvent.find({
+        type: "hearing",
+        start: { $gte: now },
+        hearingStatus: { $nin: ["cancelled", "held"] },
+      })
+        .sort({ start: 1 })
+        .limit(8)
+        .populate("caseId", "number title court judge")
+        .lean(),
+    ]);
+
+    const totalCasesCount = caseActive + caseUrgent + caseOnHold + caseClosed + caseArchived;
+    const totalTasksCount = taskOverdue + taskPendingApproval + taskCompletedCount + taskInProgress + taskPending;
+
+    // 3. Case Trajectory Monthly Growth (Trailing 7 Months)
+    const growthTrend = [];
+    for (let i = 6; i >= 0; i--) {
+      const mDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const mStart = new Date(mDate.getFullYear(), mDate.getMonth(), 1, 0, 0, 0);
+      const mEnd = new Date(mDate.getFullYear(), mDate.getMonth() + 1, 0, 23, 59, 59, 999);
+      const monthLabel = mStart.toLocaleDateString("en-US", { month: "short" });
+
+      const [mCases, mClosed] = await Promise.all([
+        Case.countDocuments({ createdAt: { $gte: mStart, $lte: mEnd }, isDeleted: { $ne: true } }),
+        Case.countDocuments({
+          status: "Closed",
+          isDeleted: { $ne: true },
+          $or: [{ completedAt: { $gte: mStart, $lte: mEnd } }, { completedAt: null, updatedAt: { $gte: mStart, $lte: mEnd } }],
+        }),
+      ]);
+      growthTrend.push({
+        month: monthLabel,
+        cases: mCases,
+        closed: mClosed,
+        net: mCases - mClosed,
+      });
+    }
+
+    // 4. Practice Area Distribution (complete categories, handling unclassified, sorted descending)
+    const practiceDistributionRaw = await Case.aggregate([
+      { $match: { isDeleted: { $ne: true }, status: { $ne: "Archived" } } },
+      {
+        $project: {
+          area: {
+            $trim: {
+              input: {
+                $ifNull: [
+                  { $cond: [{ $gt: [{ $strLenCP: { $ifNull: ["$practice", ""] } }, 0] }, "$practice", null] },
+                  { $cond: [{ $gt: [{ $strLenCP: { $ifNull: ["$category", ""] } }, 0] }, "$category", "Unclassified"] },
+                ],
+              },
+            },
+          },
+        },
+      },
+      {
+        $group: {
+          _id: { $cond: [{ $eq: ["$area", ""] }, "Unclassified", "$area"] },
+          value: { $sum: 1 },
+        },
+      },
+      { $sort: { value: -1 } },
+    ]);
+
+    const activeMattersDenominator = Math.max(1, activeCases);
+    const practiceDistribution = practiceDistributionRaw.map((p) => ({
+      name: p._id || "Unclassified",
+      value: p.value,
+      percentage: Math.round((p.value / activeMattersDenominator) * 100),
+    }));
+
+    // 5. Active Employee Workload
+    const activeEmployees = await User.find({ status: { $ne: "deleted" } })
+      .select("_id name role title avatarUrl email phone")
+      .lean();
+
+    const employeeWorkload = await Promise.all(
+      activeEmployees.map(async (emp) => {
+        const [empCases, empAssigned, empOpen, empCompletedPeriod, empOverdue, empApprovals] = await Promise.all([
+          Case.countDocuments({
+            $or: [{ assignedTo: emp._id }, { assignedUsers: emp._id }],
+            status: { $nin: ["Closed", "Archived"] },
+            isDeleted: { $ne: true },
+          }),
+          Task.countDocuments({
+            $or: [{ assignedTo: emp._id }, { assignedUsers: emp._id }],
+            isDeleted: { $ne: true },
+          }),
+          Task.countDocuments({
+            $or: [{ assignedTo: emp._id }, { assignedUsers: emp._id }],
+            status: { $nin: ["completed"] },
+            isDeleted: { $ne: true },
+          }),
+          Task.countDocuments({
+            $and: [
+              { $or: [{ assignedTo: emp._id }, { assignedUsers: emp._id }] },
+              { status: "completed", isDeleted: { $ne: true } },
+              { $or: [{ completedAt: { $gte: startDate, $lte: endDate } }, { completedAt: null, updatedAt: { $gte: startDate, $lte: endDate } }] },
+            ],
+          }),
+          Task.countDocuments({
+            $and: [
+              { $or: [{ assignedTo: emp._id }, { assignedUsers: emp._id }] },
+              { status: { $nin: ["completed", "pending_approval"] }, isDeleted: { $ne: true } },
+              { $or: [{ deadline: { $lt: now } }, { status: "overdue" }] },
+            ],
+          }),
+          ApprovalRequest.countDocuments({
+            status: "pending",
+            $or: [{ requesterId: emp._id }, { targetUserId: emp._id }, { originalAssigneeId: emp._id }],
+          }),
+        ]);
+
+        return {
+          _id: emp._id,
+          name: emp.name,
+          role: emp.role,
+          title: emp.title || "",
+          avatarUrl: emp.avatarUrl || "",
+          activeCases: empCases,
+          assignedTasks: empAssigned,
+          openTasks: empOpen,
+          completedInPeriod: empCompletedPeriod,
+          overdueTasks: empOverdue,
+          pendingApprovals: empApprovals,
+        };
+      })
+    );
+
+    // 6. Top Clients by Linked Matters (No PAN/Aadhaar)
+    let topClientsList: Array<{ _id: string; name: string; type: string; tag: string; totalCases: number; activeCases: number }> = [];
+    try {
+      const topAgg = await Case.aggregate([
+        { $match: { isDeleted: { $ne: true }, status: { $ne: "Archived" } } },
+        { $unwind: "$parties" },
+        { $match: { "parties.clientId": { $exists: true, $ne: null } } },
+        {
+          $group: {
+            _id: "$parties.clientId",
+            totalCases: { $sum: 1 },
+            activeCases: {
+              $sum: { $cond: [{ $in: ["$status", ["Closed", "Archived"]] }, 0, 1] },
+            },
+          },
+        },
+        { $sort: { totalCases: -1 } },
+        { $limit: 10 },
+        {
+          $lookup: {
+            from: "clients",
+            localField: "_id",
+            foreignField: "_id",
+            as: "clientDoc",
+          },
+        },
+        { $unwind: "$clientDoc" },
+        {
+          $project: {
+            _id: 1,
+            name: "$clientDoc.name",
+            type: "$clientDoc.type",
+            tag: "$clientDoc.tag",
+            totalCases: 1,
+            activeCases: 1,
+          },
+        },
+      ]);
+      topClientsList = topAgg;
+    } catch (e) {
+      console.warn("[analytics] Top clients aggregate warning:", e);
+    }
+
+    // 7. Format Upcoming Hearings
+    const upcomingHearingsFormatted = upcomingHearingsRaw.map((h: any) => {
+      const c = h.caseId as any;
+      return {
+        _id: h._id,
+        title: h.title,
+        date: h.start,
+        court: c?.court || "District Court",
+        judge: c?.judge || "Hon'ble Court",
+        caseId: c?._id || null,
+        caseNumber: c?.number || "—",
+        caseTitle: c?.title || h.title,
+      };
+    });
+
+    // 8. Deterministic Data-Backed Insights
+    const insights: Array<{ id: string; type: "info" | "warning" | "success" | "neutral"; title: string; message: string; metricValue?: string }> = [];
+
+    if (openTasks > 0 && overdueTasks > 0) {
+      const overduePct = Math.round((overdueTasks / openTasks) * 100);
+      if (overduePct >= 15) {
+        insights.push({
+          id: "overdue_spike",
+          type: "warning",
+          title: "Overdue Workload Notice",
+          message: `${overdueTasks} pending tasks (${overduePct}% of active work) are past their statutory or assigned deadline.`,
+          metricValue: `${overduePct}%`,
+        });
+      }
+    }
+
+    if (practiceDistribution.length > 0 && practiceDistribution[0].percentage >= 25) {
+      insights.push({
+        id: "practice_focus",
+        type: "info",
+        title: "Primary Practice Concentration",
+        message: `${practiceDistribution[0].name} represents ${practiceDistribution[0].percentage}% of all active firm matters (${practiceDistribution[0].value} matters).`,
+        metricValue: `${practiceDistribution[0].percentage}%`,
+      });
+    }
+
+    if (age180plus > 0) {
+      insights.push({
+        id: "mature_matters",
+        type: "warning",
+        title: "Long-standing Matters",
+        message: `${age180plus} active matters have been in litigation for over 180 days. Review status and court milestones for closure readiness.`,
+        metricValue: `${age180plus} matters`,
+      });
+    }
+
+    if (pendingApprovals > 0) {
+      insights.push({
+        id: "pending_approvals",
+        type: "info",
+        title: "Approvals Queue Backlog",
+        message: `${pendingApprovals} requests (reassignments, completions, or deletions) await administrative authorization.`,
+        metricValue: `${pendingApprovals}`,
+      });
+    }
+
+    if (upcomingHearings > 0) {
+      insights.push({
+        id: "hearings_scheduled",
+        type: "success",
+        title: "Court Listings",
+        message: `${upcomingHearings} court hearings are listed on the upcoming docket.`,
+        metricValue: `${upcomingHearings}`,
+      });
+    }
+
+    if (tasksCompleted > 0 && tasksCompletedPrev > 0) {
+      const diff = computePctDiff(tasksCompleted, tasksCompletedPrev);
+      if (diff !== null && diff !== 0) {
+        insights.push({
+          id: "task_velocity",
+          type: diff > 0 ? "success" : "neutral",
+          title: "Task Resolution Velocity",
+          message: `Team completed ${tasksCompleted} tasks in this period (${diff > 0 ? `+${diff}%` : `${diff}%`} compared to previous cycle).`,
+          metricValue: `${diff > 0 ? `+${diff}%` : `${diff}%`}`,
+        });
+      }
+    }
+
+    // 9. Structured Final Response
+    res.json({
+      generatedAt: now.toISOString(),
+      filters: {
+        startDate: startYMD,
+        endDate: endYMD,
+        period,
+        timezone,
+      },
+      overview: {
+        // Snapshot
+        activeCases,
+        activeClients,
+        openTasks,
+        overdueTasks,
+        pendingApprovals,
+        upcomingHearings,
+
+        // Period
+        tasksCompleted,
+        tasksCompletedPrev,
+        tasksCompletedDiffPct: computePctDiff(tasksCompleted, tasksCompletedPrev),
+
+        docsApproved,
+        docsApprovedPrev,
+        docsApprovedDiffPct: computePctDiff(docsApproved, docsApprovedPrev),
+
+        newCases,
+        newCasesPrev,
+        newCasesDiffPct: computePctDiff(newCases, newCasesPrev),
+
+        closedCases,
+        closedCasesPrev,
+        closedCasesDiffPct: computePctDiff(closedCases, closedCasesPrev),
+
+        newClients,
+        newClientsPrev,
+        newClientsDiffPct: computePctDiff(newClients, newClientsPrev),
+
+        hearingsHeld,
+        hearingsHeldPrev,
+        hearingsHeldDiffPct: computePctDiff(hearingsHeld, hearingsHeldPrev),
+      },
+      cases: {
+        summary: {
+          active: caseActive,
+          urgent: caseUrgent,
+          onHold: caseOnHold,
+          closed: caseClosed,
+          archived: caseArchived,
+          total: totalCasesCount,
+        },
+        growth: growthTrend,
+        statusDistribution: [
+          { name: "Active", value: caseActive, color: "var(--chart-2)" },
+          { name: "Urgent", value: caseUrgent, color: "var(--chart-1)" },
+          { name: "On Hold", value: caseOnHold, color: "var(--chart-4)" },
+          { name: "Closed", value: caseClosed, color: "var(--chart-3)" },
+          { name: "Archived", value: caseArchived, color: "var(--chart-5, #94a3b8)" },
+        ],
+        practiceDistribution,
+        ageing: [
+          { range: "0–30 Days", count: age0to30, label: "Recent filings" },
+          { range: "31–90 Days", count: age31to90, label: "In active progress" },
+          { range: "91–180 Days", count: age91to180, label: "Mature matters" },
+          { range: "180+ Days", count: age180plus, label: "Extended matters" },
+        ],
+      },
+      tasks: {
+        summary: {
+          total: totalTasksCount,
+          pending: taskPending,
+          in_progress: taskInProgress,
+          pending_approval: taskPendingApproval,
+          overdue: taskOverdue,
+          completed: taskCompletedCount,
+          completionRate: totalTasksCount > 0 ? Math.round((taskCompletedCount / totalTasksCount) * 100) : 0,
+        },
+        statusDistribution: [
+          { name: "Overdue", value: taskOverdue, color: "var(--destructive, #ef4444)" },
+          { name: "In Progress", value: taskInProgress, color: "var(--chart-1, #6366f1)" },
+          { name: "Pending", value: taskPending, color: "var(--chart-4, #f59e0b)" },
+          { name: "Pending Approval", value: taskPendingApproval, color: "var(--chart-5, #8b5cf6)" },
+          { name: "Completed", value: taskCompletedCount, color: "var(--chart-3, #10b981)" },
+        ],
+        priorityDistribution: [
+          { priority: "High", count: taskHigh, color: "#ef4444" },
+          { priority: "Medium", count: taskMedium, color: "#f59e0b" },
+          { priority: "Low", count: taskLow, color: "#10b981" },
+        ],
+      },
+      employees: {
+        summary: {
+          totalActiveEmployees: activeEmployees.length,
+          totalAssignedTasks: openTasks,
+          averageTasksPerEmployee: activeEmployees.length > 0 ? Math.round(openTasks / activeEmployees.length) : 0,
+        },
+        workload: employeeWorkload,
+      },
+      clients: {
+        summary: {
+          totalClients,
+          activeClients,
+          corporateClients,
+          individualClients,
+          newInPeriod: newClients,
+        },
+        portfolioDistribution: [
+          { name: "Individual", value: individualClients, color: "var(--chart-1, #6366f1)" },
+          { name: "Corporate", value: corporateClients, color: "var(--chart-2, #3b82f6)" },
+        ],
+        topClients: topClientsList,
+      },
+      documents: {
+        summary: {
+          totalDocs,
+          uploadedInPeriod: docsUploadedInPeriod,
+          approvedInPeriod: docsApproved,
+          pendingDocs: docsPending,
+          rejectedDocs: docsRejected,
+          draftDocs: docsDraft,
+          approvalRate: (docsApproved + docsRejected) > 0 ? Math.round((docsApproved / (docsApproved + docsRejected)) * 100) : 100,
+        },
+        statusDistribution: [
+          { name: "Approved", value: docsApproved, color: "#10b981" },
+          { name: "Pending", value: docsPending, color: "#f59e0b" },
+          { name: "Rejected", value: docsRejected, color: "#ef4444" },
+          { name: "Draft", value: docsDraft, color: "#94a3b8" },
+        ],
+      },
+      hearings: {
+        summary: {
+          upcomingCount: upcomingHearings,
+          heldInPeriod: hearingsHeld,
+          hearingsHeldPrev,
+        },
+        upcoming: upcomingHearingsFormatted,
+      },
+      insights,
+    });
+  } catch (err) {
+    console.error("[reports] Firm analytics error:", err);
+    res.status(500).json({ message: "Internal server error generating firm analytics" });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/reports/summary — key metrics
 // ---------------------------------------------------------------------------
 
@@ -2810,8 +3456,27 @@ router.get("/reports/case-growth", requireAdminOrPermission("reports"), async (_
 router.get("/reports/practice-areas", requireAdminOrPermission("reports"), async (_req: Request, res: Response) => {
   try {
     const distribution = await Case.aggregate([
-      { $match: { status: { $ne: "Archived" } } },
-      { $group: { _id: "$practice", value: { $sum: 1 } } },
+      { $match: { isDeleted: { $ne: true }, status: { $ne: "Archived" } } },
+      {
+        $project: {
+          area: {
+            $trim: {
+              input: {
+                $ifNull: [
+                  { $cond: [{ $gt: [{ $strLenCP: { $ifNull: ["$practice", ""] } }, 0] }, "$practice", null] },
+                  { $cond: [{ $gt: [{ $strLenCP: { $ifNull: ["$category", ""] } }, 0] }, "$category", "Unclassified"] },
+                ],
+              },
+            },
+          },
+        },
+      },
+      {
+        $group: {
+          _id: { $cond: [{ $eq: ["$area", ""] }, "Unclassified", "$area"] },
+          value: { $sum: 1 },
+        },
+      },
       { $sort: { value: -1 } },
       { $project: { name: "$_id", value: 1, _id: 0 } },
     ]);

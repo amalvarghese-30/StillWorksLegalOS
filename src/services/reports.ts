@@ -190,6 +190,185 @@ export interface MyPerformanceResponse {
   performance: PerformanceItem[];
 }
 
+export interface FirmAnalyticsFilters {
+  startDate?: string;
+  endDate?: string;
+  period?: "7d" | "30d" | "90d" | "month" | "last_month" | "quarter" | "year" | "all" | "custom" | string;
+  timezone?: string;
+}
+
+export interface FirmAnalyticsOverview {
+  activeCases: number;
+  activeClients: number;
+  openTasks: number;
+  overdueTasks: number;
+  pendingApprovals: number;
+  upcomingHearings: number;
+  tasksCompleted: number;
+  tasksCompletedPrev: number;
+  tasksCompletedDiffPct: number | null;
+  docsApproved: number;
+  docsApprovedPrev: number;
+  docsApprovedDiffPct: number | null;
+  newCases: number;
+  newCasesPrev: number;
+  newCasesDiffPct: number | null;
+  closedCases: number;
+  closedCasesPrev: number;
+  closedCasesDiffPct: number | null;
+  newClients: number;
+  newClientsPrev: number;
+  newClientsDiffPct: number | null;
+  hearingsHeld: number;
+  hearingsHeldPrev: number;
+  hearingsHeldDiffPct: number | null;
+}
+
+export interface FirmAnalyticsCaseGrowth {
+  month: string;
+  cases: number;
+  closed: number;
+  net: number;
+}
+
+export interface FirmAnalyticsCaseStatus {
+  name: string;
+  value: number;
+  color: string;
+}
+
+export interface FirmAnalyticsPracticeItem {
+  name: string;
+  value: number;
+  percentage: number;
+}
+
+export interface FirmAnalyticsCaseAgeing {
+  range: string;
+  count: number;
+  label: string;
+}
+
+export interface FirmAnalyticsEmployeeItem {
+  _id: string;
+  name: string;
+  role: string;
+  title: string;
+  avatarUrl: string;
+  activeCases: number;
+  assignedTasks: number;
+  openTasks: number;
+  completedInPeriod: number;
+  overdueTasks: number;
+  pendingApprovals: number;
+}
+
+export interface FirmAnalyticsTopClient {
+  _id: string;
+  name: string;
+  type: string;
+  tag: string;
+  totalCases: number;
+  activeCases: number;
+}
+
+export interface FirmAnalyticsUpcomingHearing {
+  _id: string;
+  title: string;
+  date: string;
+  court: string;
+  judge: string;
+  caseId: string | null;
+  caseNumber: string;
+  caseTitle: string;
+}
+
+export interface FirmAnalyticsInsight {
+  id: string;
+  type: "info" | "warning" | "success" | "neutral";
+  title: string;
+  message: string;
+  metricValue?: string;
+}
+
+export interface FirmAnalyticsResponse {
+  generatedAt: string;
+  filters: {
+    startDate: string;
+    endDate: string;
+    period: string;
+    timezone: string;
+  };
+  overview: FirmAnalyticsOverview;
+  cases: {
+    summary: {
+      active: number;
+      urgent: number;
+      onHold: number;
+      closed: number;
+      archived: number;
+      total: number;
+    };
+    growth: FirmAnalyticsCaseGrowth[];
+    statusDistribution: FirmAnalyticsCaseStatus[];
+    practiceDistribution: FirmAnalyticsPracticeItem[];
+    ageing: FirmAnalyticsCaseAgeing[];
+  };
+  tasks: {
+    summary: {
+      total: number;
+      pending: number;
+      in_progress: number;
+      pending_approval: number;
+      overdue: number;
+      completed: number;
+      completionRate: number;
+    };
+    statusDistribution: Array<{ name: string; value: number; color: string }>;
+    priorityDistribution: Array<{ priority: string; count: number; color: string }>;
+  };
+  employees: {
+    summary: {
+      totalActiveEmployees: number;
+      totalAssignedTasks: number;
+      averageTasksPerEmployee: number;
+    };
+    workload: FirmAnalyticsEmployeeItem[];
+  };
+  clients: {
+    summary: {
+      totalClients: number;
+      activeClients: number;
+      corporateClients: number;
+      individualClients: number;
+      newInPeriod: number;
+    };
+    portfolioDistribution: Array<{ name: string; value: number; color: string }>;
+    topClients: FirmAnalyticsTopClient[];
+  };
+  documents: {
+    summary: {
+      totalDocs: number;
+      uploadedInPeriod: number;
+      approvedInPeriod: number;
+      pendingDocs: number;
+      rejectedDocs: number;
+      draftDocs: number;
+      approvalRate: number;
+    };
+    statusDistribution: Array<{ name: string; value: number; color: string }>;
+  };
+  hearings: {
+    summary: {
+      upcomingCount: number;
+      heldInPeriod: number;
+      hearingsHeldPrev: number;
+    };
+    upcoming: FirmAnalyticsUpcomingHearing[];
+  };
+  insights: FirmAnalyticsInsight[];
+}
+
 // ---------------------------------------------------------------------------
 // Query keys
 // ---------------------------------------------------------------------------
@@ -205,11 +384,29 @@ export const reportKeys = {
   taskStatusBreakdown: ["reports", "taskStatusBreakdown"] as const,
   myPerformance: ["reports", "myPerformance"] as const,
   dailyEmployee: (date?: string, employeeId?: string) => ["reports", "dailyEmployee", date ?? "", employeeId ?? ""] as const,
+  firmAnalytics: (filters?: FirmAnalyticsFilters) => ["reports", "firmAnalytics", filters ?? {}] as const,
 };
 
 // ---------------------------------------------------------------------------
 // Hooks
 // ---------------------------------------------------------------------------
+
+export function useFirmAnalytics(filters?: FirmAnalyticsFilters, enabled = true) {
+  return useQuery<FirmAnalyticsResponse>({
+    queryKey: reportKeys.firmAnalytics(filters),
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (filters?.period) params.set("period", filters.period);
+      if (filters?.startDate) params.set("startDate", filters.startDate);
+      if (filters?.endDate) params.set("endDate", filters.endDate);
+      if (filters?.timezone) params.set("timezone", filters.timezone);
+      const queryStr = params.toString();
+      return api.get(`/admin/reports/firm-analytics${queryStr ? `?${queryStr}` : ""}`);
+    },
+    enabled,
+    refetchInterval: 60_000,
+  });
+}
 
 export function useReportsSummary() {
   return useQuery<SummaryResponse>({

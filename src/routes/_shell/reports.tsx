@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, LabelList,
 } from "recharts";
 import {
   BarChart3,
@@ -34,6 +34,8 @@ import {
   Printer,
   Download,
   Search,
+  Info,
+  Sparkles,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
@@ -50,6 +52,7 @@ import { useAuth } from "@/lib/auth";
 import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { UserAvatar } from "@/components/common/UserAvatar";
 import {
   useReportsSummary,
   useCaseGrowth,
@@ -62,6 +65,9 @@ import {
   useClientReports,
   useClientDetailReport,
   useEmployeeDetailReport,
+  useFirmAnalytics,
+  type FirmAnalyticsResponse,
+  type FirmAnalyticsFilters,
   EmployeeDailyReport,
 } from "@/services/reports";
 import { useRecordClientVisit } from "@/services/clients";
@@ -791,130 +797,17 @@ function ReportsPage() {
 
       {/* ── SECTION 3: FIRM ANALYTICS (Charts & High-level Overview) ── */}
       {activeTab === "firm_analytics" && (
-        <div className="space-y-6">
-          {/* Summary stats */}
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {[
-              { label: "Active Cases", value: summary?.activeCases ?? "—", icon: Gavel, change: summary?.period ?? "" },
-              { label: "Total Clients", value: summary?.totalClients ?? "—", icon: TrendingUp, change: summary?.period ?? "" },
-              { label: "Tasks Completed", value: summary?.tasksCompleted ?? "—", icon: CheckSquare, change: summary?.period ?? "" },
-              { label: "Docs Approved", value: summary?.docsApproved ?? "—", icon: FileText, change: summary?.period ?? "" },
-            ].map((item) => (
-              <article key={item.label} className="rounded-xl border border-border bg-card p-5 shadow-soft">
-                <div className="flex items-center gap-3">
-                  <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-                    <item.icon size={18} strokeWidth={1.75} />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-caption text-muted-foreground">{item.label}</p>
-                    <p className="num text-section font-semibold">{item.value}</p>
-                  </div>
-                </div>
-                <p className="mt-2 text-caption text-success">{item.change}</p>
-              </article>
-            ))}
-          </div>
-
-          {/* Charts Grid */}
-          <div className="grid gap-6 xl:grid-cols-2">
-            <SectionCard
-              title="Monthly Case Trajectory"
-              description="Comparison of newly instituted client matters vs. successfully resolved/closed matters."
-              icon={TrendingUp}
-            >
-              <div className="h-72">
-                {growthLoading ? (
-                  <div className="flex h-full items-center justify-center"><Loader2 className="animate-spin text-muted-foreground" size={24} /></div>
-                ) : growthError ? (
-                  <div className="flex h-full items-center justify-center"><ErrorState title="Couldn't load case growth" onRetry={refetchGrowth} /></div>
-                ) : growth.length === 0 ? (
-                  <div className="flex h-full items-center justify-center text-muted-foreground text-helper">No historical case data available yet</div>
-                ) : (
-                  <CaseGrowthChart growth={growth} />
-                )}
-              </div>
-            </SectionCard>
-
-            <SectionCard
-              title="Practice Area Distribution"
-              description="Active client matters categorized across specialized legal domains."
-              icon={BarChart3}
-            >
-              <div className="h-72">
-                {practiceLoading ? (
-                  <div className="flex h-full items-center justify-center"><Loader2 className="animate-spin text-muted-foreground" size={24} /></div>
-                ) : practiceError ? (
-                  <div className="flex h-full items-center justify-center"><ErrorState title="Couldn't load practice areas" onRetry={refetchPractice} /></div>
-                ) : distribution.length === 0 ? (
-                  <div className="flex h-full items-center justify-center text-muted-foreground text-helper">No active practice area records yet</div>
-                ) : (
-                  <PracticeAreaChart distribution={distribution} />
-                )}
-              </div>
-            </SectionCard>
-
-            <SectionCard
-              title="Case Status Distribution"
-              description="Firm matters partitioned by current lifecycle stage."
-              icon={PieIcon}
-            >
-              <div className="h-72">
-                <CaseStatusChart caseStatusBreakdown={caseStatusBreakdown} />
-              </div>
-              <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 border-t border-border/40 pt-3">
-                {[
-                  { label: "Active", count: caseStatusBreakdown.Active, color: "text-emerald-600 dark:text-emerald-400" },
-                  { label: "Urgent", count: caseStatusBreakdown.Urgent, color: "text-rose-600 dark:text-rose-400" },
-                  { label: "On Hold", count: caseStatusBreakdown["On Hold"], color: "text-amber-600 dark:text-amber-400" },
-                  { label: "Closed", count: caseStatusBreakdown.Closed, color: "text-muted-foreground" },
-                ].map((s) => (
-                  <div key={s.label} className="rounded-md bg-muted/40 p-2 text-center">
-                    <p className="text-[11px] text-muted-foreground">{s.label}</p>
-                    <p className={`num text-base font-semibold ${s.color}`}>{s.count}</p>
-                  </div>
-                ))}
-              </div>
-            </SectionCard>
-
-            {isAdmin ? (
-              <SectionCard title="Employee workload" description="Capacity used this month." icon={Users}>
-                {workloadLoading ? (
-                  <div className="flex items-center justify-center py-12"><Loader2 className="animate-spin text-muted-foreground" size={24} /></div>
-                ) : workloadError ? (
-                  <ErrorState title="Couldn't load employee workload" onRetry={refetchWorkload} />
-                ) : workloads.length === 0 ? (
-                  <div className="py-8 text-center text-helper text-muted-foreground">No workload data yet</div>
-                ) : (
-                  <ul className="space-y-4">
-                    {workloads.map((w) => (
-                      <li key={w._id}>
-                        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-                          <p className="truncate text-helper font-medium">{w.name}</p>
-                          <span className="num text-caption text-muted-foreground">{w.workload}%</span>
-                        </div>
-                        <Progress value={w.workload} className="mt-2 h-1.5" />
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </SectionCard>
-            ) : (
-              <SectionCard title="Your performance" description="Your contributions so far." icon={Trophy}>
-                <ul className="space-y-4">
-                  {performance.map((item) => (
-                    <li key={item.label}>
-                      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-                        <p className="truncate text-helper">{item.label}</p>
-                        <span className="num text-caption text-muted-foreground">{item.done}/{item.total}</span>
-                      </div>
-                      <Progress value={item.total > 0 ? (item.done / item.total) * 100 : 0} className="mt-2 h-1.5" />
-                    </li>
-                  ))}
-                </ul>
-              </SectionCard>
-            )}
-          </div>
-        </div>
+        <FirmAnalyticsView
+          isAdmin={isAdmin}
+          onSelectEmployee={(id) => {
+            setActiveTab("employees");
+            setDrilldownEmployeeId(id);
+          }}
+          onSelectClient={(id) => {
+            setActiveTab("clients");
+            setDrilldownClientId(id);
+          }}
+        />
       )}
 
       {/* Authoritative Task Detail Dialog Modal */}
@@ -930,7 +823,219 @@ function ReportsPage() {
 }
 
 // ---------------------------------------------------------------------------
-// Charts
+// CSV Export for Firm Analytics
+// ---------------------------------------------------------------------------
+
+function exportFirmAnalyticsCSV(analytics: FirmAnalyticsResponse) {
+  const lines: string[] = [];
+  lines.push(`SS ASSOCIATES LEGAL-TECH LLP — FIRM ANALYTICS REPORT`);
+  lines.push(`Generated At,${analytics.generatedAt}`);
+  lines.push(`Reporting Period,${analytics.filters.period} (${analytics.filters.startDate} to ${analytics.filters.endDate})`);
+  lines.push(`Timezone,${analytics.filters.timezone}`);
+  lines.push(``);
+  lines.push(`EXECUTIVE OVERVIEW (SNAPSHOT & PERIOD METRICS)`);
+  lines.push(`Metric,Value,Type,Period Comparison`);
+  lines.push(`Active Matters,${analytics.overview.activeCases},Current Snapshot,—`);
+  lines.push(`Active Clients,${analytics.overview.activeClients},Current Snapshot,—`);
+  lines.push(`Open Tasks,${analytics.overview.openTasks},Current Snapshot,—`);
+  lines.push(`Overdue Tasks,${analytics.overview.overdueTasks},Current Snapshot,—`);
+  lines.push(`Pending Approvals,${analytics.overview.pendingApprovals},Current Snapshot,—`);
+  lines.push(`Upcoming Hearings,${analytics.overview.upcomingHearings},Current Snapshot,—`);
+  lines.push(`Tasks Completed,${analytics.overview.tasksCompleted},Selected Period,${analytics.overview.tasksCompletedDiffPct != null ? `${analytics.overview.tasksCompletedDiffPct}% vs prev` : "—"}`);
+  lines.push(`Documents Approved,${analytics.overview.docsApproved},Selected Period,${analytics.overview.docsApprovedDiffPct != null ? `${analytics.overview.docsApprovedDiffPct}% vs prev` : "—"}`);
+  lines.push(`New Matters Filed,${analytics.overview.newCases},Selected Period,${analytics.overview.newCasesDiffPct != null ? `${analytics.overview.newCasesDiffPct}% vs prev` : "—"}`);
+  lines.push(`Matters Closed,${analytics.overview.closedCases},Selected Period,${analytics.overview.closedCasesDiffPct != null ? `${analytics.overview.closedCasesDiffPct}% vs prev` : "—"}`);
+  lines.push(`New Clients Registered,${analytics.overview.newClients},Selected Period,${analytics.overview.newClientsDiffPct != null ? `${analytics.overview.newClientsDiffPct}% vs prev` : "—"}`);
+  lines.push(`Hearings Held,${analytics.overview.hearingsHeld},Selected Period,${analytics.overview.hearingsHeldDiffPct != null ? `${analytics.overview.hearingsHeldDiffPct}% vs prev` : "—"}`);
+  lines.push(``);
+  lines.push(`PRACTICE AREA DISTRIBUTION`);
+  lines.push(`Practice Area,Active Matters,Percentage`);
+  analytics.cases.practiceDistribution.forEach((p) => {
+    lines.push(`"${p.name.replace(/"/g, '""')}",${p.value},${p.percentage}%`);
+  });
+  lines.push(``);
+  lines.push(`EMPLOYEE WORKLOAD & ACTIVITY`);
+  lines.push(`Employee Name,Role,Active Cases,Assigned Tasks,Open Tasks,Completed in Period,Overdue Tasks`);
+  analytics.employees.workload.forEach((e) => {
+    lines.push(`"${e.name.replace(/"/g, '""')}",${e.role},${e.activeCases},${e.assignedTasks},${e.openTasks},${e.completedInPeriod},${e.overdueTasks}`);
+  });
+
+  const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `SS_Associates_Firm_Analytics_${analytics.filters.startDate}_to_${analytics.filters.endDate}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ---------------------------------------------------------------------------
+// Word-wrapping helper for Recharts SVG labels
+// ---------------------------------------------------------------------------
+
+function wrapText(text: string, maxCharsPerLine = 24): string[] {
+  if (!text) return ["Unclassified"];
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let currentLine = "";
+
+  for (const word of words) {
+    if (!currentLine) {
+      currentLine = word;
+    } else if ((currentLine + " " + word).length <= maxCharsPerLine) {
+      currentLine += " " + word;
+    } else {
+      lines.push(currentLine);
+      currentLine = word;
+    }
+  }
+  if (currentLine) lines.push(currentLine);
+  return lines;
+}
+
+const CustomYAxisTick = (props: any) => {
+  const { x, y, payload } = props;
+  const lines = wrapText(payload.value, 26);
+  const lineHeight = 13;
+  const startY = y - ((lines.length - 1) * lineHeight) / 2;
+
+  return (
+    <g transform={`translate(${x},${startY})`}>
+      <text
+        x={-8}
+        y={0}
+        textAnchor="end"
+        className="fill-foreground font-medium text-[11px] sm:text-xs"
+        dominantBaseline="central"
+      >
+        {lines.map((line, idx) => (
+          <tspan key={idx} x={-8} dy={idx === 0 ? 0 : lineHeight}>
+            {line}
+          </tspan>
+        ))}
+      </text>
+    </g>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Practice Area Distribution Chart
+// ---------------------------------------------------------------------------
+
+function PracticeAreaChart({
+  distribution,
+  onSelectCategory,
+}: {
+  distribution: Array<{ name: string; value: number; percentage: number }>;
+  onSelectCategory?: (category: string) => void;
+}) {
+  const sorted = useMemo(() => {
+    return [...distribution].sort((a, b) => b.value - a.value);
+  }, [distribution]);
+
+  const maxVal = Math.max(1, ...sorted.map((s) => s.value));
+  const rowHeight = 44;
+  const dynamicHeight = Math.max(260, sorted.length * rowHeight);
+
+  if (sorted.length === 0) {
+    return (
+      <div className="flex h-56 items-center justify-center text-helper text-muted-foreground">
+        No active practice area records yet
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full">
+      {/* Mobile Stacked View (< 640px) */}
+      <div className="sm:hidden space-y-2.5">
+        {sorted.map((item) => (
+          <div
+            key={item.name}
+            onClick={() => onSelectCategory?.(item.name)}
+            className="group rounded-lg border border-border/60 bg-muted/20 p-2.5 transition-colors hover:bg-muted/40 cursor-pointer active:scale-[0.99]"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <span className="text-xs font-semibold text-foreground group-hover:text-primary transition-colors leading-tight">
+                {item.name}
+              </span>
+              <span className="shrink-0 text-xs font-bold text-foreground num">
+                {item.value} <span className="text-[10px] text-muted-foreground font-normal">({item.percentage}%)</span>
+              </span>
+            </div>
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary transition-all duration-300"
+                style={{ width: `${Math.round((item.value / maxVal) * 100)}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop / Tablet Horizontal Bar Chart (>= 640px) */}
+      <div className="hidden sm:block">
+        <div className="max-h-[460px] overflow-y-auto pr-1">
+          <ResponsiveContainer width="100%" height={dynamicHeight}>
+            <BarChart
+              data={sorted}
+              layout="vertical"
+              barCategoryGap={10}
+              margin={{ left: 10, right: 36, top: 10, bottom: 10 }}
+              onClick={(state) => {
+                if (state && state.activePayload && state.activePayload.length > 0) {
+                  const clickedName = state.activePayload[0].payload.name;
+                  if (clickedName) onSelectCategory?.(clickedName);
+                }
+              }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+              <XAxis type="number" tickLine={false} axisLine={false} fontSize={12} allowDecimals={false} />
+              <YAxis
+                type="category"
+                dataKey="name"
+                tickLine={false}
+                axisLine={false}
+                width={230}
+                tick={<CustomYAxisTick />}
+                interval={0}
+              />
+              <Tooltip
+                cursor={{ fill: "var(--muted)", opacity: 0.4 }}
+                contentStyle={{
+                  borderRadius: "var(--radius-medium)",
+                  border: "1px solid var(--border)",
+                  backgroundColor: "var(--card)",
+                  boxShadow: "var(--shadow-soft)",
+                }}
+                formatter={(value: any, name: any, item: any) => [
+                  `${value} active matters (${item?.payload?.percentage ?? 0}%)`,
+                  "Specialization Scope",
+                ]}
+                labelFormatter={(label) => `Practice Area: ${label}`}
+              />
+              <Bar
+                dataKey="value"
+                radius={[0, 6, 6, 0]}
+                fill="var(--chart-2)"
+                barSize={18}
+                name="Active Matters"
+                className="cursor-pointer hover:opacity-85 transition-opacity"
+              >
+                <LabelList dataKey="value" position="right" className="fill-muted-foreground text-xs font-semibold" offset={8} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Case Growth Chart
 // ---------------------------------------------------------------------------
 
 function CaseGrowthChart({ growth }: { growth: any[] }) {
@@ -978,82 +1083,805 @@ function CaseGrowthChart({ growth }: { growth: any[] }) {
   );
 }
 
-function PracticeAreaChart({ distribution }: { distribution: any[] }) {
+// ---------------------------------------------------------------------------
+// Case Status Distribution Chart
+// ---------------------------------------------------------------------------
+
+function CaseStatusChart({
+  statusDistribution,
+  onSelectStatus,
+}: {
+  statusDistribution: Array<{ name: string; value: number; color: string }>;
+  onSelectStatus?: (status: string) => void;
+}) {
+  const total = useMemo(() => statusDistribution.reduce((acc, curr) => acc + curr.value, 0), [statusDistribution]);
+
   return (
-    <ResponsiveContainer width="100%" height="100%" minHeight={240}>
-      <BarChart
-        data={distribution}
-        layout="vertical"
-        margin={{ left: 24, right: 30, top: 8, bottom: 0 }}
-      >
-        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-        <XAxis type="number" tickLine={false} axisLine={false} fontSize={12} allowDecimals={false} />
-        <YAxis
-          type="category"
-          dataKey="name"
-          tickLine={false}
-          axisLine={false}
-          fontSize={12}
-          width={150}
-          tickFormatter={(val: string) => (val && val.length > 22 ? `${val.slice(0, 20)}…` : val)}
-        />
-        <Tooltip
-          cursor={{ fill: "var(--muted)" }}
-          contentStyle={{
-            borderRadius: "var(--radius-medium)",
-            border: "1px solid var(--border)",
-            backgroundColor: "var(--card)",
-          }}
-          formatter={(value: any) => [`${value} active matters`, "Active Matters"]}
-        />
-        <Bar dataKey="value" radius={[0, 6, 6, 0]} fill="var(--chart-2)" barSize={16} name="Active Matters" />
-      </BarChart>
-    </ResponsiveContainer>
+    <div className="w-full">
+      <div className="h-60 relative flex items-center justify-center">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={statusDistribution}
+              dataKey="value"
+              nameKey="name"
+              innerRadius={64}
+              outerRadius={92}
+              paddingAngle={3}
+              stroke="none"
+              onClick={(state) => {
+                if (state && state.name) onSelectStatus?.(state.name);
+              }}
+              className="cursor-pointer"
+            >
+              {statusDistribution.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={entry.color} />
+              ))}
+            </Pie>
+            <Tooltip
+              contentStyle={{
+                borderRadius: "var(--radius-medium)",
+                border: "1px solid var(--border)",
+                backgroundColor: "var(--card)",
+              }}
+              formatter={(value: any, name: any) => [`${value} matters`, `${name} Stage`]}
+            />
+          </PieChart>
+        </ResponsiveContainer>
+
+        {/* Center Total Summary */}
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+          <span className="text-2xl font-bold font-display text-foreground num leading-none">{total}</span>
+          <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mt-1">Total Matters</span>
+        </div>
+      </div>
+
+      {/* Clickable Status Filter Badges */}
+      <div className="mt-4 grid grid-cols-2 sm:grid-cols-5 gap-2 border-t border-border/60 pt-3">
+        {statusDistribution.map((s) => (
+          <button
+            key={s.name}
+            type="button"
+            onClick={() => onSelectStatus?.(s.name)}
+            className="group rounded-lg border border-border/60 bg-muted/20 p-2 text-center transition-all hover:bg-muted/50 hover:border-border active:scale-95 cursor-pointer"
+          >
+            <p className="text-[11px] text-muted-foreground group-hover:text-foreground transition-colors font-medium">{s.name}</p>
+            <p className="num text-base font-bold text-foreground mt-0.5">{s.value}</p>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
-function CaseStatusChart({ caseStatusBreakdown }: { caseStatusBreakdown: any }) {
+// ---------------------------------------------------------------------------
+// Consolidated Firm Analytics Management Dashboard Component
+// ---------------------------------------------------------------------------
+
+function FirmAnalyticsView({
+  isAdmin,
+  onSelectEmployee,
+  onSelectClient,
+}: {
+  isAdmin: boolean;
+  onSelectEmployee: (id: string) => void;
+  onSelectClient: (id: string) => void;
+}) {
+  const navigate = useNavigate();
+  const [period, setPeriod] = useState<string>("30d");
+  const [customStart, setCustomStart] = useState<string>("");
+  const [customEnd, setCustomEnd] = useState<string>("");
+
+  const { data: analytics, isLoading, isError, refetch, isRefetching } = useFirmAnalytics({
+    period,
+    startDate: period === "custom" && customStart ? customStart : undefined,
+    endDate: period === "custom" && customEnd ? customEnd : undefined,
+  });
+
+  const handleRefresh = async () => {
+    try {
+      await refetch();
+      toast.success("Firm analytics refreshed with authoritative records");
+    } catch {
+      toast.error("Failed to refresh analytics");
+    }
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const handleExport = () => {
+    if (!analytics) return;
+    exportFirmAnalyticsCSV(analytics);
+  };
+
+  const PRESET_OPTIONS = [
+    { id: "7d", label: "Last 7 Days" },
+    { id: "30d", label: "Last 30 Days" },
+    { id: "90d", label: "Last 90 Days" },
+    { id: "month", label: "This Month" },
+    { id: "last_month", label: "Last Month" },
+    { id: "quarter", label: "This Quarter" },
+    { id: "year", label: "This Year" },
+    { id: "all", label: "All Time" },
+    { id: "custom", label: "Custom Range" },
+  ];
+
   return (
-    <ResponsiveContainer width="100%" height="100%" minHeight={240}>
-      <PieChart>
-        <Pie
-          data={[
-            { name: "Active", value: caseStatusBreakdown.Active, color: "var(--chart-2)" },
-            { name: "Urgent", value: caseStatusBreakdown.Urgent, color: "var(--chart-1)" },
-            { name: "On Hold", value: caseStatusBreakdown["On Hold"], color: "var(--chart-4)" },
-            { name: "Closed", value: caseStatusBreakdown.Closed, color: "var(--chart-3)" },
-          ]}
-          dataKey="value"
-          nameKey="name"
-          innerRadius={62}
-          outerRadius={92}
-          paddingAngle={3}
-          stroke="none"
-        >
-          <Cell fill="var(--chart-2)" />
-          <Cell fill="var(--chart-1)" />
-          <Cell fill="var(--chart-4)" />
-          <Cell fill="var(--chart-3)" />
-        </Pie>
-        <Tooltip
-          contentStyle={{
-            borderRadius: "var(--radius-medium)",
-            border: "1px solid var(--border)",
-            backgroundColor: "var(--card)",
-          }}
-          formatter={(value: any, name: any) => [`${value} matters`, `${name} Stage`]}
-        />
-        <Legend
-          verticalAlign="bottom"
-          height={36}
-          formatter={(val) => (
-            <span className="text-caption font-medium text-foreground">
-              {val} Matters
-            </span>
+    <div className="space-y-6">
+      {/* Printable Report Header (Print media only) */}
+      <div className="hidden print:block border-b-2 border-gray-400 pb-4 mb-6">
+        <h1 className="text-2xl font-bold tracking-tight text-black">SS ASSOCIATES LEGAL-TECH LLP</h1>
+        <h2 className="text-base font-semibold text-gray-700 mt-1 uppercase tracking-wide">
+          Official Executive Firm Analytics &amp; Management Dashboard Report
+        </h2>
+        <div className="grid grid-cols-2 text-xs mt-3 text-gray-800">
+          <div>
+            <p><strong>Reporting Scope:</strong> Entire Firm · All Specializations &amp; Courts</p>
+            <p><strong>Selected Period:</strong> {analytics?.filters.period.toUpperCase()} ({analytics?.filters.startDate} to {analytics?.filters.endDate})</p>
+          </div>
+          <div className="text-right">
+            <p><strong>Generated On:</strong> {new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</p>
+            <p><strong>Timezone:</strong> Asia/Kolkata (IST)</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Interactive Controls & Preset Filters Header (No print) */}
+      <div className="flex flex-col gap-4 rounded-2xl border border-border/80 bg-card/60 p-4 shadow-soft no-print">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="font-display text-base font-semibold text-foreground flex items-center gap-2">
+              <BarChart3 className="size-5 text-primary" />
+              <span>Practice Analytics &amp; Firm Intelligence</span>
+            </h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Live operational monitoring backed by MongoDB records · Period: <span className="font-medium text-foreground">{analytics?.filters.startDate ?? "—"}</span> to <span className="font-medium text-foreground">{analytics?.filters.endDate ?? "—"}</span>
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={isRefetching || isLoading}
+              className="h-8.5 rounded-lg text-xs gap-1.5"
+            >
+              <RefreshCw className={cn("size-3.5", (isRefetching || isLoading) && "animate-spin")} />
+              <span>Refresh</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExport}
+              disabled={!analytics}
+              className="h-8.5 rounded-lg text-xs gap-1.5"
+            >
+              <Download className="size-3.5" />
+              <span>Export CSV</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePrint}
+              disabled={!analytics}
+              className="h-8.5 rounded-lg text-xs gap-1.5"
+            >
+              <Printer className="size-3.5" />
+              <span>Print Report</span>
+            </Button>
+          </div>
+        </div>
+
+        {/* Preset Range Selector Buttons */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-border/60">
+          {PRESET_OPTIONS.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => setPeriod(opt.id)}
+              className={cn(
+                "rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
+                period === opt.id
+                  ? "bg-primary text-primary-foreground shadow-2xs font-semibold"
+                  : "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+
+          {period === "custom" && (
+            <div className="flex items-center gap-2 ml-auto w-full sm:w-auto mt-2 sm:mt-0">
+              <Input
+                type="date"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="h-8 text-xs w-36 rounded-lg bg-background"
+                placeholder="Start Date"
+              />
+              <span className="text-xs text-muted-foreground">to</span>
+              <Input
+                type="date"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="h-8 text-xs w-36 rounded-lg bg-background"
+                placeholder="End Date"
+              />
+            </div>
           )}
+        </div>
+      </div>
+
+      {/* Main Analytics Content */}
+      {isLoading ? (
+        <div className="flex flex-col items-center justify-center py-24 space-y-3">
+          <Loader2 className="animate-spin text-primary size-8" />
+          <p className="text-sm font-medium text-muted-foreground">Aggregating live practice data across firm collections...</p>
+        </div>
+      ) : isError || !analytics ? (
+        <ErrorState
+          title="Could not load firm analytics"
+          description="Failed to aggregate reporting metrics from the database."
+          onRetry={handleRefresh}
         />
-      </PieChart>
-    </ResponsiveContainer>
+      ) : (
+        <div className="space-y-6">
+          {/* ── 1. EXECUTIVE OVERVIEW KPI GRID (8 ACTIONABLE CARDS) ── */}
+          <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+            {/* Active Matters (Snapshot) */}
+            <div
+              onClick={() => navigate({ to: "/cases", search: { status: "Active" } })}
+              className="group relative rounded-xl border border-border bg-card p-4.5 shadow-soft transition-all hover:border-primary/50 hover:shadow-md cursor-pointer"
+            >
+              <div className="flex items-start justify-between">
+                <span className="grid size-10 place-items-center rounded-lg bg-primary/10 text-primary">
+                  <Gavel size={20} strokeWidth={1.8} />
+                </span>
+                <span className="rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                  Snapshot
+                </span>
+              </div>
+              <div className="mt-3">
+                <p className="text-xs font-medium text-muted-foreground">Active Matters</p>
+                <div className="flex items-baseline justify-between mt-1">
+                  <p className="num text-2xl font-bold text-foreground">{analytics.overview.activeCases}</p>
+                  <ArrowUpRight className="size-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">Excludes closed &amp; archived matters</p>
+              </div>
+            </div>
+
+            {/* Active Clients (Snapshot) */}
+            <div
+              onClick={() => navigate({ to: "/clients" })}
+              className="group relative rounded-xl border border-border bg-card p-4.5 shadow-soft transition-all hover:border-primary/50 hover:shadow-md cursor-pointer"
+            >
+              <div className="flex items-start justify-between">
+                <span className="grid size-10 place-items-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                  <Users size={20} strokeWidth={1.8} />
+                </span>
+                <span className="rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                  Snapshot
+                </span>
+              </div>
+              <div className="mt-3">
+                <p className="text-xs font-medium text-muted-foreground">Active Clients</p>
+                <div className="flex items-baseline justify-between mt-1">
+                  <p className="num text-2xl font-bold text-foreground">{analytics.overview.activeClients}</p>
+                  <ArrowUpRight className="size-4 text-muted-foreground group-hover:text-blue-500 transition-colors" />
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  {analytics.clients.summary.corporateClients} Corporate · {analytics.clients.summary.individualClients} Individual
+                </p>
+              </div>
+            </div>
+
+            {/* Open Tasks (Snapshot) */}
+            <div
+              onClick={() => navigate({ to: "/tasks" })}
+              className="group relative rounded-xl border border-border bg-card p-4.5 shadow-soft transition-all hover:border-primary/50 hover:shadow-md cursor-pointer"
+            >
+              <div className="flex items-start justify-between">
+                <span className="grid size-10 place-items-center rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                  <CheckSquare size={20} strokeWidth={1.8} />
+                </span>
+                <span className="rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                  Snapshot
+                </span>
+              </div>
+              <div className="mt-3">
+                <p className="text-xs font-medium text-muted-foreground">Open Tasks</p>
+                <div className="flex items-baseline justify-between mt-1">
+                  <p className="num text-2xl font-bold text-foreground">{analytics.overview.openTasks}</p>
+                  <ArrowUpRight className="size-4 text-muted-foreground group-hover:text-indigo-500 transition-colors" />
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  {analytics.tasks.summary.in_progress} In Progress · {analytics.tasks.summary.pending} Pending
+                </p>
+              </div>
+            </div>
+
+            {/* Overdue Tasks (Snapshot Alert) */}
+            <div
+              onClick={() => navigate({ to: "/tasks", search: { tab: "Overdue" } })}
+              className={cn(
+                "group relative rounded-xl border p-4.5 shadow-soft transition-all hover:shadow-md cursor-pointer",
+                analytics.overview.overdueTasks > 0
+                  ? "border-rose-300 dark:border-rose-900/60 bg-rose-50/50 dark:bg-rose-950/20"
+                  : "border-border bg-card hover:border-primary/50"
+              )}
+            >
+              <div className="flex items-start justify-between">
+                <span className={cn(
+                  "grid size-10 place-items-center rounded-lg",
+                  analytics.overview.overdueTasks > 0
+                    ? "bg-rose-500/15 text-rose-600 dark:text-rose-400"
+                    : "bg-muted text-muted-foreground"
+                )}>
+                  <Clock size={20} strokeWidth={1.8} />
+                </span>
+                <span className={cn(
+                  "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                  analytics.overview.overdueTasks > 0
+                    ? "bg-rose-500/15 text-rose-700 dark:text-rose-400"
+                    : "bg-muted/60 text-muted-foreground"
+                )}>
+                  {analytics.overview.overdueTasks > 0 ? "Action Required" : "Snapshot"}
+                </span>
+              </div>
+              <div className="mt-3">
+                <p className="text-xs font-medium text-muted-foreground">Overdue Tasks</p>
+                <div className="flex items-baseline justify-between mt-1">
+                  <p className={cn(
+                    "num text-2xl font-bold",
+                    analytics.overview.overdueTasks > 0 ? "text-rose-600 dark:text-rose-400" : "text-foreground"
+                  )}>
+                    {analytics.overview.overdueTasks}
+                  </p>
+                  <ArrowUpRight className="size-4 text-muted-foreground group-hover:text-rose-500 transition-colors" />
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  {analytics.overview.overdueTasks > 0 ? "Past statutory deadline" : "All deadlines on schedule"}
+                </p>
+              </div>
+            </div>
+
+            {/* Tasks Completed (Period) */}
+            <div
+              onClick={() => navigate({ to: "/tasks", search: { tab: "Completed" } })}
+              className="group relative rounded-xl border border-border bg-card p-4.5 shadow-soft transition-all hover:border-primary/50 hover:shadow-md cursor-pointer"
+            >
+              <div className="flex items-start justify-between">
+                <span className="grid size-10 place-items-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 size={20} strokeWidth={1.8} />
+                </span>
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary uppercase tracking-wide">
+                  Period Activity
+                </span>
+              </div>
+              <div className="mt-3">
+                <p className="text-xs font-medium text-muted-foreground">Tasks Completed</p>
+                <div className="flex items-baseline justify-between mt-1">
+                  <p className="num text-2xl font-bold text-foreground">{analytics.overview.tasksCompleted}</p>
+                  {analytics.overview.tasksCompletedDiffPct != null && (
+                    <span className={cn(
+                      "text-xs font-semibold num",
+                      analytics.overview.tasksCompletedDiffPct >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"
+                    )}>
+                      {analytics.overview.tasksCompletedDiffPct >= 0 ? `+${analytics.overview.tasksCompletedDiffPct}%` : `${analytics.overview.tasksCompletedDiffPct}%`}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Prev period: {analytics.overview.tasksCompletedPrev} completed
+                </p>
+              </div>
+            </div>
+
+            {/* Pending Approvals (Snapshot) */}
+            <div
+              onClick={() => navigate({ to: "/admin/approvals" })}
+              className="group relative rounded-xl border border-border bg-card p-4.5 shadow-soft transition-all hover:border-primary/50 hover:shadow-md cursor-pointer"
+            >
+              <div className="flex items-start justify-between">
+                <span className="grid size-10 place-items-center rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400">
+                  <Shield size={20} strokeWidth={1.8} />
+                </span>
+                <span className="rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                  Snapshot
+                </span>
+              </div>
+              <div className="mt-3">
+                <p className="text-xs font-medium text-muted-foreground">Pending Approvals</p>
+                <div className="flex items-baseline justify-between mt-1">
+                  <p className="num text-2xl font-bold text-foreground">{analytics.overview.pendingApprovals}</p>
+                  <ArrowUpRight className="size-4 text-muted-foreground group-hover:text-purple-500 transition-colors" />
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">Reassignments, sign-offs &amp; deletions</p>
+              </div>
+            </div>
+
+            {/* Upcoming Hearings (Snapshot) */}
+            <div
+              onClick={() => navigate({ to: "/calendar" })}
+              className="group relative rounded-xl border border-border bg-card p-4.5 shadow-soft transition-all hover:border-primary/50 hover:shadow-md cursor-pointer"
+            >
+              <div className="flex items-start justify-between">
+                <span className="grid size-10 place-items-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                  <Calendar size={20} strokeWidth={1.8} />
+                </span>
+                <span className="rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                  Snapshot
+                </span>
+              </div>
+              <div className="mt-3">
+                <p className="text-xs font-medium text-muted-foreground">Upcoming Hearings</p>
+                <div className="flex items-baseline justify-between mt-1">
+                  <p className="num text-2xl font-bold text-foreground">{analytics.overview.upcomingHearings}</p>
+                  <ArrowUpRight className="size-4 text-muted-foreground group-hover:text-amber-500 transition-colors" />
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  {analytics.overview.hearingsHeld} held in selected period
+                </p>
+              </div>
+            </div>
+
+            {/* Documents Approved (Period) */}
+            <div
+              onClick={() => navigate({ to: "/documents" })}
+              className="group relative rounded-xl border border-border bg-card p-4.5 shadow-soft transition-all hover:border-primary/50 hover:shadow-md cursor-pointer"
+            >
+              <div className="flex items-start justify-between">
+                <span className="grid size-10 place-items-center rounded-lg bg-teal-500/10 text-teal-600 dark:text-teal-400">
+                  <FileText size={20} strokeWidth={1.8} />
+                </span>
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary uppercase tracking-wide">
+                  Period Activity
+                </span>
+              </div>
+              <div className="mt-3">
+                <p className="text-xs font-medium text-muted-foreground">Documents Approved</p>
+                <div className="flex items-baseline justify-between mt-1">
+                  <p className="num text-2xl font-bold text-foreground">{analytics.overview.docsApproved}</p>
+                  {analytics.overview.docsApprovedDiffPct != null && (
+                    <span className={cn(
+                      "text-xs font-semibold num",
+                      analytics.overview.docsApprovedDiffPct >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"
+                    )}>
+                      {analytics.overview.docsApprovedDiffPct >= 0 ? `+${analytics.overview.docsApprovedDiffPct}%` : `${analytics.overview.docsApprovedDiffPct}%`}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  {analytics.documents.summary.uploadedInPeriod} uploaded in period
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* ── 2. DETERMINISTIC MANAGEMENT INSIGHTS (DERIVED FROM DATA) ── */}
+          {analytics.insights && analytics.insights.length > 0 && (
+            <div className="rounded-2xl border border-border/80 bg-card/70 p-4.5 shadow-soft space-y-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="size-4.5 text-primary" />
+                <h4 className="text-sm font-semibold text-foreground">Operational Intelligence &amp; Observations</h4>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {analytics.insights.map((ins) => (
+                  <div
+                    key={ins.id}
+                    className={cn(
+                      "rounded-xl border p-3.5 space-y-1.5 transition-colors",
+                      ins.type === "warning" && "border-amber-500/30 bg-amber-500/5 text-amber-900 dark:text-amber-200",
+                      ins.type === "info" && "border-blue-500/30 bg-blue-500/5 text-blue-900 dark:text-blue-200",
+                      ins.type === "success" && "border-emerald-500/30 bg-emerald-500/5 text-emerald-900 dark:text-emerald-200",
+                      ins.type === "neutral" && "border-border/60 bg-muted/20 text-foreground"
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-bold leading-tight flex items-center gap-1.5">
+                        <Info className="size-3.5 shrink-0" />
+                        <span>{ins.title}</span>
+                      </p>
+                      {ins.metricValue && (
+                        <span className="font-mono text-[11px] font-bold px-1.5 py-0.5 rounded bg-background/80 border border-border/40 shadow-2xs">
+                          {ins.metricValue}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      {ins.message}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── 3. CASE & LEGAL MATTER ANALYTICS ── */}
+          <div className="grid gap-6 xl:grid-cols-2">
+            {/* Trajectory */}
+            <SectionCard
+              title="Monthly Matter Trajectory"
+              description="New matters instituted vs. closed and resolved matters across trailing 7 months."
+              icon={TrendingUp}
+            >
+              <div className="h-72">
+                <CaseGrowthChart growth={analytics.cases.growth} />
+              </div>
+            </SectionCard>
+
+            {/* Case Status Distribution */}
+            <SectionCard
+              title="Case Status Distribution"
+              description="Current lifecycle stage breakdown of active, on-hold, and concluded matters."
+              icon={PieIcon}
+            >
+              <CaseStatusChart
+                statusDistribution={analytics.cases.statusDistribution}
+                onSelectStatus={(status) => navigate({ to: "/cases", search: { status } })}
+              />
+            </SectionCard>
+
+            {/* Practice Area Distribution — Multi-line wrapped & responsive */}
+            <SectionCard
+              title="Practice Area Distribution"
+              description="Categorization across specialized legal domains. Bars show active matter counts."
+              icon={BarChart3}
+            >
+              <PracticeAreaChart
+                distribution={analytics.cases.practiceDistribution}
+                onSelectCategory={(cat) => navigate({ to: "/cases", search: { category: cat } })}
+              />
+            </SectionCard>
+
+            {/* Case Ageing Analysis */}
+            <SectionCard
+              title="Case Ageing &amp; Matter Duration"
+              description="Active matters categorized by duration since institution date."
+              icon={Clock}
+            >
+              <div className="space-y-4 py-2">
+                {analytics.cases.ageing.map((item) => {
+                  const pct = analytics.overview.activeCases > 0
+                    ? Math.round((item.count / analytics.overview.activeCases) * 100)
+                    : 0;
+                  return (
+                    <div key={item.range} className="space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-semibold text-foreground">{item.range} <span className="text-muted-foreground font-normal">({item.label})</span></span>
+                        <span className="font-bold num text-foreground">{item.count} matters <span className="text-muted-foreground font-normal">({pct}%)</span></span>
+                      </div>
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className={cn(
+                            "h-full rounded-full transition-all duration-300",
+                            item.range.includes("180+") ? "bg-amber-500" : "bg-primary"
+                          )}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </SectionCard>
+          </div>
+
+          {/* ── 4. TASK LIFECYCLE & PRODUCTIVITY ── */}
+          <div className="grid gap-6 xl:grid-cols-2">
+            {/* Task Status */}
+            <SectionCard
+              title="Task Operational Lifecycle"
+              description="Mutually exclusive operational task stages. Total tasks: "
+              icon={CheckSquare}
+            >
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  {analytics.tasks.statusDistribution.map((item) => (
+                    <div
+                      key={item.name}
+                      onClick={() => navigate({ to: "/tasks", search: { tab: item.name } })}
+                      className="rounded-lg border border-border/60 bg-muted/20 p-2.5 text-center cursor-pointer hover:bg-muted/40 transition-colors"
+                    >
+                      <span className="text-[11px] font-medium text-muted-foreground block truncate">{item.name}</span>
+                      <span className="text-lg font-bold text-foreground num mt-0.5 block">{item.value}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="rounded-xl border border-border/60 bg-card p-3.5 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold text-foreground">Task Completion Velocity</p>
+                    <p className="text-[11px] text-muted-foreground">Based on completed tasks vs total active lifecycle work</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xl font-bold font-display text-emerald-600 dark:text-emerald-400 num">
+                      {analytics.tasks.summary.completionRate}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </SectionCard>
+
+            {/* Task Priority Breakdown */}
+            <SectionCard
+              title="Task Priority Distribution"
+              description="Open operational workload segmented by urgency level."
+              icon={AlertTriangle}
+            >
+              <div className="grid grid-cols-3 gap-3 py-4">
+                {analytics.tasks.priorityDistribution.map((p) => (
+                  <div
+                    key={p.priority}
+                    className="rounded-xl border border-border/60 bg-muted/20 p-3.5 text-center space-y-1"
+                  >
+                    <span
+                      className="inline-block size-2.5 rounded-full"
+                      style={{ backgroundColor: p.color }}
+                    />
+                    <p className="text-xs font-semibold text-foreground">{p.priority} Priority</p>
+                    <p className="text-2xl font-bold text-foreground num">{p.count}</p>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          </div>
+
+          {/* ── 5. ADVOCATE & STAFF WORKLOAD ── */}
+          <SectionCard
+            title="Advocate &amp; Employee Workload Matrix"
+            description="Measurable assignments, open work, period completions, and active cases per team member."
+            icon={Users}
+          >
+            {analytics.employees.workload.length === 0 ? (
+              <p className="py-8 text-center text-xs text-muted-foreground">No active employees found.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-border/80 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      <th className="py-2.5 px-3">Team Member</th>
+                      <th className="py-2.5 px-3 text-center">Active Cases</th>
+                      <th className="py-2.5 px-3 text-center">Assigned Tasks</th>
+                      <th className="py-2.5 px-3 text-center">Open Tasks</th>
+                      <th className="py-2.5 px-3 text-center">Completed in Period</th>
+                      <th className="py-2.5 px-3 text-center">Overdue</th>
+                      <th className="py-2.5 px-3 text-right no-print">Full Report</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/50">
+                    {analytics.employees.workload.map((emp) => (
+                      <tr
+                        key={emp._id}
+                        className="transition-colors hover:bg-muted/40 cursor-pointer"
+                        onClick={() => onSelectEmployee(emp._id)}
+                      >
+                        <td className="py-2.5 px-3">
+                          <div className="flex items-center gap-2.5">
+                            <UserAvatar
+                              avatarUrl={emp.avatarUrl}
+                              name={emp.name}
+                              initials={emp.name.slice(0, 2).toUpperCase()}
+                              className="size-7.5 text-[11px]"
+                            />
+                            <div className="min-w-0">
+                              <p className="font-semibold text-foreground truncate">{emp.name}</p>
+                              <p className="text-[10px] text-muted-foreground capitalize">{emp.role}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-3 text-center num font-medium text-foreground">{emp.activeCases}</td>
+                        <td className="py-2.5 px-3 text-center num font-medium text-foreground">{emp.assignedTasks}</td>
+                        <td className="py-2.5 px-3 text-center num font-semibold text-foreground">{emp.openTasks}</td>
+                        <td className="py-2.5 px-3 text-center num font-medium text-emerald-600 dark:text-emerald-400">{emp.completedInPeriod}</td>
+                        <td className="py-2.5 px-3 text-center num font-semibold">
+                          <span className={emp.overdueTasks > 0 ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground"}>
+                            {emp.overdueTasks}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-right no-print">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectEmployee(emp._id);
+                            }}
+                            className="h-7 text-xs text-primary hover:text-primary"
+                          >
+                            <span>Inspect</span>
+                            <ArrowUpRight className="size-3.5 ml-1" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </SectionCard>
+
+          {/* ── 6. CLIENT PORTFOLIO & TOP CLIENTS ── */}
+          <div className="grid gap-6 xl:grid-cols-2">
+            {/* Top Clients by Case Count */}
+            <SectionCard
+              title="Top Client Portfolios"
+              description="Clients with the highest number of active and total firm matters."
+              icon={Briefcase}
+            >
+              {analytics.clients.topClients.length === 0 ? (
+                <p className="py-8 text-center text-xs text-muted-foreground">No linked client matter associations found.</p>
+              ) : (
+                <div className="space-y-2">
+                  {analytics.clients.topClients.map((c) => (
+                    <div
+                      key={c._id}
+                      onClick={() => onSelectClient(c._id)}
+                      className="group flex items-center justify-between p-2.5 rounded-lg border border-border/60 hover:bg-muted/40 transition-colors cursor-pointer"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold text-foreground group-hover:text-primary transition-colors truncate">
+                          {c.name}
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="text-[10px] text-muted-foreground uppercase">{c.type}</span>
+                          <span className="text-[10px] text-muted-foreground">·</span>
+                          <span className="text-[10px] text-muted-foreground">{c.tag}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <p className="text-xs font-bold text-foreground num">{c.activeCases} Active</p>
+                          <p className="text-[10px] text-muted-foreground num">{c.totalCases} Total</p>
+                        </div>
+                        <ArrowUpRight className="size-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </SectionCard>
+
+            {/* Upcoming Court Hearings Docket */}
+            <SectionCard
+              title="Court Hearings Docket"
+              description="Scheduled matters appearing before court benches in upcoming dates."
+              icon={Calendar}
+            >
+              {analytics.hearings.upcoming.length === 0 ? (
+                <p className="py-8 text-center text-xs text-muted-foreground">No upcoming court hearings currently scheduled.</p>
+              ) : (
+                <div className="space-y-2.5">
+                  {analytics.hearings.upcoming.map((h) => (
+                    <div
+                      key={h._id}
+                      onClick={() => h.caseId && navigate({ to: "/cases/$caseId", params: { caseId: h.caseId } })}
+                      className="flex items-start justify-between p-2.5 rounded-lg border border-border/60 hover:bg-muted/40 transition-colors cursor-pointer"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold text-foreground truncate">{h.caseTitle}</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">{h.court} · {h.judge}</p>
+                        <span className="inline-block text-[10px] font-mono text-primary bg-primary/10 px-1.5 py-0.2 rounded mt-1">
+                          {h.caseNumber}
+                        </span>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-xs font-bold text-foreground num">{formatSafeDate(h.date)}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase mt-0.5">Hearing Date</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </SectionCard>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
