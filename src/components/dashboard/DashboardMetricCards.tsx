@@ -110,19 +110,23 @@ export function DashboardMetricCards({
                   c.onClick();
                 }
               }}
-              className="group relative flex cursor-pointer flex-col justify-between overflow-hidden rounded-xl bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 p-4 text-white shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md active:translate-y-0"
+              className="group relative flex cursor-pointer flex-col justify-between overflow-hidden rounded-xl gradient-primary p-4 text-primary-foreground shadow-soft transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lift active:translate-y-0"
             >
               <div className="flex items-start justify-between gap-2">
-                <span className="text-xs font-medium text-white/90 truncate">{c.label}</span>
-                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-white/20 text-white backdrop-blur-xs transition-transform duration-200 group-hover:scale-105">
+                <span className="text-xs font-medium text-primary-foreground/90 truncate">
+                  {c.label}
+                </span>
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-white/20 text-primary-foreground backdrop-blur-xs transition-transform duration-200 group-hover:scale-105">
                   <Icon size={17} strokeWidth={2} />
                 </span>
               </div>
               <div className="mt-2.5">
-                <div className="text-2xl font-bold tracking-tight text-white">
+                <div className="text-2xl font-bold tracking-tight text-primary-foreground">
                   {loading ? "…" : c.value}
                 </div>
-                <div className="mt-0.5 text-[11px] font-medium text-white/80">{c.hint}</div>
+                <div className="mt-0.5 text-[11px] font-medium text-primary-foreground/80">
+                  {c.hint}
+                </div>
               </div>
             </div>
           );

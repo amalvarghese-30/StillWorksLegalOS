@@ -1,14 +1,6 @@
 import { useState } from "react";
-import {
-  Search,
-  Menu,
-  Sun,
-  Moon,
-  Briefcase,
-  User,
-  FileText,
-  CheckSquare,
-} from "lucide-react";
+import { Search, Menu, Sun, Moon, Briefcase, User, FileText, CheckSquare } from "lucide-react";
+import { ThemeSwitcher } from "@/components/common/ThemeSwitcher";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { AdminSidebar } from "./AdminSidebar";
@@ -43,7 +35,7 @@ export function AdminTopbar() {
         onSuccess: (res) => {
           floatingChatStore.open(res.group._id);
         },
-      }
+      },
     );
   };
 
@@ -52,7 +44,12 @@ export function AdminTopbar() {
       {/* Navigation Sheet */}
       <Sheet open={navOpen} onOpenChange={setNavOpen}>
         <SheetTrigger asChild>
-          <Button variant="ghost" size="icon" className="size-9 sm:size-10 rounded-md lg:hidden shrink-0" aria-label="Open navigation">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-9 sm:size-10 rounded-md lg:hidden shrink-0"
+            aria-label="Open navigation"
+          >
             <Menu size={19} strokeWidth={1.75} />
           </Button>
         </SheetTrigger>
@@ -85,9 +82,7 @@ export function AdminTopbar() {
             searchResults.documents.length === 0 &&
             searchResults.tasks.length === 0 &&
             searchResults.users.length === 0 ? (
-              <div className="px-4 py-2 text-sm text-muted-foreground">
-                No results found
-              </div>
+              <div className="px-4 py-2 text-sm text-muted-foreground">No results found</div>
             ) : (
               <>
                 {/* Cases */}
@@ -97,7 +92,9 @@ export function AdminTopbar() {
                     variant="ghost"
                     size="sm"
                     className="w-full text-left px-3 py-2 border-b border-border/50 hover:bg-muted"
-                    onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: caseItem._id } })}
+                    onClick={() =>
+                      navigate({ to: "/cases/$caseId", params: { caseId: caseItem._id } })
+                    }
                   >
                     <div className="flex items-center gap-3">
                       <div className="shrink-0">
@@ -106,9 +103,7 @@ export function AdminTopbar() {
                       <div className="min-w-0">
                         <p className="font-medium">{caseItem.title}</p>
                         {caseItem.number && (
-                          <p className="text-xs text-muted-foreground">
-                            Case #{caseItem.number}
-                          </p>
+                          <p className="text-xs text-muted-foreground">Case #{caseItem.number}</p>
                         )}
                       </div>
                     </div>
@@ -121,7 +116,9 @@ export function AdminTopbar() {
                     variant="ghost"
                     size="sm"
                     className="w-full text-left px-3 py-2 border-b border-border/50 hover:bg-muted"
-                    onClick={() => navigate({ to: "/clients/$clientId", params: { clientId: clientItem._id } })}
+                    onClick={() =>
+                      navigate({ to: "/clients/$clientId", params: { clientId: clientItem._id } })
+                    }
                   >
                     <div className="flex items-center gap-3">
                       <div className="shrink-0">
@@ -130,9 +127,7 @@ export function AdminTopbar() {
                       <div className="min-w-0">
                         <p className="font-medium">{clientItem.name}</p>
                         {clientItem.kycStatus && (
-                          <p className="text-xs text-muted-foreground">
-                            {clientItem.kycStatus}
-                          </p>
+                          <p className="text-xs text-muted-foreground">{clientItem.kycStatus}</p>
                         )}
                       </div>
                     </div>
@@ -154,9 +149,7 @@ export function AdminTopbar() {
                       <div className="min-w-0">
                         <p className="font-medium">{docItem.name}</p>
                         {docItem.state && (
-                          <p className="text-xs text-muted-foreground">
-                            {docItem.state}
-                          </p>
+                          <p className="text-xs text-muted-foreground">{docItem.state}</p>
                         )}
                       </div>
                     </div>
@@ -178,9 +171,7 @@ export function AdminTopbar() {
                       <div className="min-w-0">
                         <p className="font-medium">{taskItem.title}</p>
                         {taskItem.status && (
-                          <p className="text-xs text-muted-foreground">
-                            {taskItem.status}
-                          </p>
+                          <p className="text-xs text-muted-foreground">{taskItem.status}</p>
                         )}
                       </div>
                     </div>
@@ -202,9 +193,7 @@ export function AdminTopbar() {
                       <div className="min-w-0">
                         <p className="font-medium">{userItem.name}</p>
                         {userItem.role && (
-                          <p className="text-xs text-muted-foreground">
-                            {userItem.role}
-                          </p>
+                          <p className="text-xs text-muted-foreground">{userItem.role}</p>
                         )}
                       </div>
                     </div>
@@ -237,8 +226,16 @@ export function AdminTopbar() {
           onClick={toggleTheme}
           aria-label="Toggle theme"
         >
-          {resolvedTheme === "dark" ? <Sun size={19} strokeWidth={1.75} /> : <Moon size={19} strokeWidth={1.75} />}
+          {resolvedTheme === "dark" ? (
+            <Sun size={19} strokeWidth={1.75} />
+          ) : (
+            <Moon size={19} strokeWidth={1.75} />
+          )}
         </Button>
+        {/* Visual Theme Switcher */}
+        <div className="hidden sm:block">
+          <ThemeSwitcher />
+        </div>
         <span className="ml-1 hidden text-right md:block">
           <span className="block truncate text-helper font-medium">{user?.name}</span>
           <span className="block truncate text-caption text-muted-foreground">Administrator</span>

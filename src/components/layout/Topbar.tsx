@@ -1,19 +1,17 @@
 import { useState } from "react";
 import {
-  Bell,
-  Dot,
   Search,
   Sparkles,
   Menu,
   Sun,
   Moon,
   Plus,
-  X,
   Briefcase,
   User,
   FileText,
   CheckSquare,
 } from "lucide-react";
+import { ThemeSwitcher } from "@/components/common/ThemeSwitcher";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { Sidebar } from "./Sidebar";
@@ -51,7 +49,7 @@ export function Topbar() {
         onSuccess: (res) => {
           floatingChatStore.open(res.group._id);
         },
-      }
+      },
     );
   };
 
@@ -60,7 +58,12 @@ export function Topbar() {
       {/* Navigation Sheet */}
       <Sheet open={navOpen} onOpenChange={setNavOpen}>
         <SheetTrigger asChild>
-          <Button variant="ghost" size="icon" className="size-9 sm:size-10 rounded-md lg:hidden shrink-0" aria-label="Open navigation">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-9 sm:size-10 rounded-md lg:hidden shrink-0"
+            aria-label="Open navigation"
+          >
             <Menu size={19} strokeWidth={1.75} />
           </Button>
         </SheetTrigger>
@@ -93,10 +96,7 @@ export function Topbar() {
         />
         {/* Backdrop for click outside dismiss */}
         {searchTerm.trim() !== "" && (
-          <div
-            className="fixed inset-0 z-10"
-            onClick={() => setSearchTerm("")}
-          />
+          <div className="fixed inset-0 z-10" onClick={() => setSearchTerm("")} />
         )}
         {/* Search Results Dropdown */}
         {!isLoading && !isError && searchTerm.trim() !== "" ? (
@@ -106,9 +106,7 @@ export function Topbar() {
             searchResults.documents.length === 0 &&
             searchResults.tasks.length === 0 &&
             searchResults.users.length === 0 ? (
-              <div className="px-4 py-2 text-sm text-muted-foreground">
-                No results found
-              </div>
+              <div className="px-4 py-2 text-sm text-muted-foreground">No results found</div>
             ) : (
               <>
                 {/* Cases */}
@@ -130,9 +128,7 @@ export function Topbar() {
                       <div className="min-w-0">
                         <p className="font-medium">{caseItem.title}</p>
                         {caseItem.number && (
-                          <p className="text-xs text-muted-foreground">
-                            Case #{caseItem.number}
-                          </p>
+                          <p className="text-xs text-muted-foreground">Case #{caseItem.number}</p>
                         )}
                       </div>
                     </div>
@@ -157,9 +153,7 @@ export function Topbar() {
                       <div className="min-w-0">
                         <p className="font-medium">{clientItem.name}</p>
                         {clientItem.kycStatus && (
-                          <p className="text-xs text-muted-foreground">
-                            {clientItem.kycStatus}
-                          </p>
+                          <p className="text-xs text-muted-foreground">{clientItem.kycStatus}</p>
                         )}
                       </div>
                     </div>
@@ -184,9 +178,7 @@ export function Topbar() {
                       <div className="min-w-0">
                         <p className="font-medium">{docItem.name}</p>
                         {docItem.state && (
-                          <p className="text-xs text-muted-foreground">
-                            {docItem.state}
-                          </p>
+                          <p className="text-xs text-muted-foreground">{docItem.state}</p>
                         )}
                       </div>
                     </div>
@@ -211,9 +203,7 @@ export function Topbar() {
                       <div className="min-w-0">
                         <p className="font-medium">{taskItem.title}</p>
                         {taskItem.status && (
-                          <p className="text-xs text-muted-foreground">
-                            {taskItem.status}
-                          </p>
+                          <p className="text-xs text-muted-foreground">{taskItem.status}</p>
                         )}
                       </div>
                     </div>
@@ -235,9 +225,7 @@ export function Topbar() {
                       <div className="min-w-0">
                         <p className="font-medium">{userItem.name}</p>
                         {userItem.role && (
-                          <p className="text-xs text-muted-foreground">
-                            {userItem.role}
-                          </p>
+                          <p className="text-xs text-muted-foreground">{userItem.role}</p>
                         )}
                       </div>
                     </div>
@@ -265,7 +253,13 @@ export function Topbar() {
         <div className="hidden sm:block">
           <QuickActionsMenu
             renderTrigger={(toggle) => (
-              <Button variant="ghost" size="icon" className="rounded-md" aria-label="Quick actions" onClick={toggle}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="rounded-md"
+                aria-label="Quick actions"
+                onClick={toggle}
+              >
                 <Sparkles size={19} strokeWidth={1.75} />
               </Button>
             )}
@@ -281,8 +275,16 @@ export function Topbar() {
           onClick={toggleTheme}
           aria-label="Toggle theme"
         >
-          {resolvedTheme === "dark" ? <Sun size={19} strokeWidth={1.75} /> : <Moon size={19} strokeWidth={1.75} />}
+          {resolvedTheme === "dark" ? (
+            <Sun size={19} strokeWidth={1.75} />
+          ) : (
+            <Moon size={19} strokeWidth={1.75} />
+          )}
         </Button>
+        {/* Visual Theme Switcher */}
+        <div className="hidden sm:block">
+          <ThemeSwitcher />
+        </div>
         {/* New Case Button */}
         <Button
           className="gradient-primary hidden rounded-md text-primary-foreground shadow-soft transition-transform duration-200 hover:-translate-y-0.5 sm:inline-flex"

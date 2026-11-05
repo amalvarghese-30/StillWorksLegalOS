@@ -257,8 +257,9 @@ function Dashboard() {
     summary?.activeCases ??
     rawCases.filter((c) => c.status === "Active" || c.status === "Urgent").length;
   const totalClientsCount = summary?.totalClients ?? 0;
-  const tasksCompletedCount =
-    tasksData?.stats ? tasksData.stats.completed : (summary?.tasksCompleted ?? allTasks.filter((t) => t.status === "completed").length);
+  const tasksCompletedCount = tasksData?.stats
+    ? tasksData.stats.completed
+    : (summary?.tasksCompleted ?? allTasks.filter((t) => t.status === "completed").length);
 
   const runApproval = (a: ApprovalItem, action: "approved" | "rejected") => {
     const target = approvalTarget(a);
@@ -335,7 +336,7 @@ function Dashboard() {
             <QuickActionsMenu
               renderTrigger={(toggle) => (
                 <Button
-                  className="rounded-lg bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white font-medium text-xs sm:text-sm shadow-xs transition-transform duration-200 hover:-translate-y-0.5 cursor-pointer"
+                  className="rounded-lg gradient-primary text-primary-foreground font-medium text-xs sm:text-sm shadow-soft transition-transform duration-200 hover:-translate-y-0.5 cursor-pointer"
                   onClick={toggle}
                 >
                   <Plus size={16} strokeWidth={2} />

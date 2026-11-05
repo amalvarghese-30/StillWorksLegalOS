@@ -18,6 +18,7 @@ import {
   Moon,
   Laptop,
   CheckCircle2,
+  Palette,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
@@ -46,7 +47,7 @@ interface MobileMoreSheetProps {
 export function MobileMoreSheet({ open, onOpenChange }: MobileMoreSheetProps) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
-  const { resolvedTheme, setTheme } = useTheme();
+  const { resolvedTheme, setTheme, visualTheme, setVisualTheme } = useTheme();
 
   const isAdmin = user?.role === "admin";
   const permissions = (user?.permissions as Record<string, boolean> | undefined) ?? {};
@@ -122,20 +123,41 @@ export function MobileMoreSheet({ open, onOpenChange }: MobileMoreSheetProps) {
               className="size-11 text-sm"
             />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-foreground">{user?.name ?? "Signed In"}</p>
+              <p className="truncate text-sm font-semibold text-foreground">
+                {user?.name ?? "Signed In"}
+              </p>
               <p className="truncate text-xs text-muted-foreground capitalize">
                 {user?.title || user?.role || "Staff"}
               </p>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-9 rounded-lg"
-              onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
-              aria-label="Toggle theme"
-            >
-              {resolvedTheme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-9 rounded-lg"
+                onClick={() => setVisualTheme(visualTheme === "blue" ? "sage" : "blue")}
+                title={`Switch to ${visualTheme === "blue" ? "Premium Sage" : "Modern Blue"} theme`}
+                aria-label="Switch visual theme"
+              >
+                <Palette
+                  size={17}
+                  className={
+                    visualTheme === "sage"
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-blue-600 dark:text-blue-400"
+                  }
+                />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-9 rounded-lg"
+                onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+                aria-label="Toggle brightness mode"
+              >
+                {resolvedTheme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -177,7 +199,8 @@ export function MobileMoreSheet({ open, onOpenChange }: MobileMoreSheetProps) {
               <AlertDialogHeader>
                 <AlertDialogTitle>Sign out of LegalOS?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Are you sure you want to end your session? Make sure any in-progress work is saved.
+                  Are you sure you want to end your session? Make sure any in-progress work is
+                  saved.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter className="gap-2 sm:gap-0">
@@ -197,7 +220,8 @@ export function MobileMoreSheet({ open, onOpenChange }: MobileMoreSheetProps) {
           </AlertDialog>
 
           <p className="mt-3 text-center text-[11px] text-muted-foreground">
-            Powered by <span className="font-semibold text-primary">stillworks.in</span> · {isElectron() ? "Desktop" : "Web App"}
+            Powered by <span className="font-semibold text-primary">stillworks.in</span> ·{" "}
+            {isElectron() ? "Desktop" : "Web App"}
           </p>
         </div>
       </SheetContent>

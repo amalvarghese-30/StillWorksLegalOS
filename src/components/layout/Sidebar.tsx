@@ -17,6 +17,7 @@ import {
 import logoImg from "@/assets/logo.png";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
+import { useTheme } from "@/lib/theme";
 import { APP_VERSION } from "@/version";
 import {
   AlertDialog,
@@ -33,7 +34,13 @@ import { buttonVariants } from "@/components/ui/button";
 import { UserAvatar } from "@/components/common/UserAvatar";
 
 const primary = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true, permission: "dashboard" as const },
+  {
+    to: "/",
+    label: "Dashboard",
+    icon: LayoutDashboard,
+    exact: true,
+    permission: "dashboard" as const,
+  },
   { to: "/clients", label: "Clients", icon: Users, permission: "clients" as const },
   { to: "/tasks", label: "Tasks", icon: CheckSquare, permission: "tasks" as const },
   { to: "/calendar", label: "Calendar", icon: CalendarDays, permission: "calendar" as const },
@@ -44,6 +51,8 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const { visualTheme } = useTheme();
+  const isSage = visualTheme === "sage";
 
   const visiblePrimary = primary.filter((item) => {
     if (user?.role === "admin") return true;
@@ -68,7 +77,11 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const renderItem = (item: {
     to: string;
     label: string;
-    icon: React.ComponentType<{ size?: number | string; strokeWidth?: number | string; className?: string }>;
+    icon: React.ComponentType<{
+      size?: number | string;
+      strokeWidth?: number | string;
+      className?: string;
+    }>;
     exact?: boolean;
     permission?: string;
   }) => {
@@ -82,8 +95,12 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           className={cn(
             "group flex min-h-11 items-center gap-3 rounded-md px-3.5 py-2.5 text-helper font-medium transition-all duration-200",
             active
-              ? "gradient-primary text-primary-foreground shadow-soft"
-              : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              ? isSage
+                ? "bg-sidebar-primary/90 text-sidebar-primary-foreground shadow-soft"
+                : "gradient-primary text-primary-foreground shadow-soft"
+              : isSage
+                ? "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground",
           )}
         >
           <item.icon size={19} strokeWidth={1.75} className="shrink-0" />
@@ -94,14 +111,38 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   };
 
   return (
-    <div className="glass flex h-full w-[290px] flex-col rounded-2xl p-4">
+    <div
+      className={cn(
+        "flex h-full w-[290px] flex-col rounded-2xl p-4",
+        isSage ? "sidebar-glass" : "glass",
+      )}
+    >
       <div className="flex items-center gap-3 px-2 py-3">
-        <div className="size-11 shrink-0 overflow-hidden rounded-xl border border-border/80 bg-white p-1 shadow-soft flex items-center justify-center">
+        <div
+          className={cn(
+            "size-11 shrink-0 overflow-hidden rounded-xl border p-1 shadow-soft flex items-center justify-center",
+            isSage ? "border-sidebar-border/60 bg-sidebar-accent/40" : "border-border/80 bg-white",
+          )}
+        >
           <img src={logoImg} alt="SS Associates" className="size-full object-contain" />
         </div>
         <div className="min-w-0">
-          <p className="truncate font-display text-body font-semibold text-foreground">SS Associates</p>
-          <p className="truncate text-caption text-muted-foreground">Legal-Tech LLP</p>
+          <p
+            className={cn(
+              "truncate font-display text-body font-semibold",
+              isSage ? "text-sidebar-foreground" : "text-foreground",
+            )}
+          >
+            SS Associates
+          </p>
+          <p
+            className={cn(
+              "truncate text-caption",
+              isSage ? "text-sidebar-foreground/60" : "text-muted-foreground",
+            )}
+          >
+            Legal-Tech LLP
+          </p>
         </div>
       </div>
 
@@ -109,15 +150,24 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         <ul className="space-y-1">{visiblePrimary.map(renderItem)}</ul>
         {hasAnyAdminPerm ? (
           <>
-            <p className="px-3.5 pt-6 pb-2 text-caption font-medium tracking-wide text-muted-foreground/70 uppercase">
+            <p
+              className={cn(
+                "px-3.5 pt-6 pb-2 text-caption font-medium tracking-wide uppercase",
+                isSage ? "text-sidebar-foreground/50" : "text-muted-foreground/70",
+              )}
+            >
               Administration
             </p>
             <ul className="space-y-1">
               {renderItem({ to: "/admin", label: "Admin Console", icon: ShieldCheck, exact: true })}
-              {canEmployees && renderItem({ to: "/admin/employees", label: "Members", icon: UserCog })}
-              {canApprovals && renderItem({ to: "/admin/approvals", label: "Approvals", icon: ShieldAlert })}
-              {canAudit && renderItem({ to: "/admin/audit-logs", label: "Audit Logs", icon: ScrollText })}
-              {canSettings && renderItem({ to: "/admin/settings", label: "Firm Settings", icon: Settings })}
+              {canEmployees &&
+                renderItem({ to: "/admin/employees", label: "Members", icon: UserCog })}
+              {canApprovals &&
+                renderItem({ to: "/admin/approvals", label: "Approvals", icon: ShieldAlert })}
+              {canAudit &&
+                renderItem({ to: "/admin/audit-logs", label: "Audit Logs", icon: ScrollText })}
+              {canSettings &&
+                renderItem({ to: "/admin/settings", label: "Firm Settings", icon: Settings })}
             </ul>
           </>
         ) : null}
@@ -126,7 +176,14 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         </ul>
       </nav>
 
-      <div className="mt-4 rounded-md border border-border/70 bg-card/70 p-3">
+      <div
+        className={cn(
+          "mt-4 rounded-md border p-3 transition-colors",
+          isSage
+            ? "border-sidebar-border/60 bg-sidebar-accent/40 text-sidebar-foreground"
+            : "border-border/70 bg-card/70",
+        )}
+      >
         <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
           <UserAvatar
             avatarUrl={user?.avatarUrl}
@@ -135,15 +192,34 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             className="size-10 text-helper"
           />
           <div className="min-w-0">
-            <p className="truncate text-helper font-medium">{user?.name ?? "Signed out"}</p>
-            <p className="truncate text-caption text-muted-foreground">{user?.title ?? "—"}</p>
+            <p
+              className={cn(
+                "truncate text-helper font-medium",
+                isSage && "text-sidebar-foreground",
+              )}
+            >
+              {user?.name ?? "Signed out"}
+            </p>
+            <p
+              className={cn(
+                "truncate text-caption",
+                isSage ? "text-sidebar-foreground/60" : "text-muted-foreground",
+              )}
+            >
+              {user?.title ?? "—"}
+            </p>
           </div>
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <button
                 type="button"
                 aria-label="Sign out"
-                className="grid size-9 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground active:scale-95"
+                className={cn(
+                  "grid size-9 shrink-0 place-items-center rounded-sm transition-colors duration-150 active:scale-95",
+                  isSage
+                    ? "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                )}
               >
                 <LogOut size={17} strokeWidth={1.75} />
               </button>
@@ -152,7 +228,8 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
               <AlertDialogHeader>
                 <AlertDialogTitle>Sign out of LegalOS?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Are you sure you want to end your session? Make sure any in-progress changes or notes have been saved.
+                  Are you sure you want to end your session? Make sure any in-progress changes or
+                  notes have been saved.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -173,9 +250,24 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </div>
 
       {/* StillWorks attribution & Version Badge */}
-      <div className="mt-3 flex items-center justify-between rounded-md border border-border/40 bg-muted/30 px-3 py-2">
-        <span className="text-xs font-semibold tracking-wide text-muted-foreground">
-          Powered by <span className="text-primary">stillworks.in</span>
+      <div
+        className={cn(
+          "mt-3 flex items-center justify-between rounded-md border px-3 py-2 transition-colors",
+          isSage
+            ? "border-sidebar-border/40 bg-sidebar-accent/30 text-sidebar-foreground/80"
+            : "border-border/40 bg-muted/30",
+        )}
+      >
+        <span
+          className={cn(
+            "text-xs font-semibold tracking-wide",
+            isSage ? "text-sidebar-foreground/70" : "text-muted-foreground",
+          )}
+        >
+          Powered by{" "}
+          <span className={cn(isSage ? "text-sidebar-primary" : "text-primary")}>
+            stillworks.in
+          </span>
         </span>
         <button
           type="button"
@@ -184,7 +276,12 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             navigate({ to: "/settings", search: { tab: "updates" } });
           }}
           title={`LegalOS Release v${APP_VERSION} · Click to check for updates`}
-          className="inline-flex items-center gap-1 rounded bg-background/80 border border-border/60 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground shadow-2xs hover:text-foreground hover:border-primary/40 transition-colors cursor-pointer"
+          className={cn(
+            "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold shadow-2xs transition-colors cursor-pointer",
+            isSage
+              ? "bg-sidebar-accent/50 border-sidebar-border/60 text-sidebar-foreground/80 hover:text-sidebar-foreground hover:border-sidebar-primary/40"
+              : "bg-background/80 border-border/60 text-muted-foreground hover:text-foreground hover:border-primary/40",
+          )}
         >
           v{APP_VERSION}
         </button>
