@@ -286,6 +286,7 @@ export function EmployeeDetailWorkspace({
     accessors: {
       title: (t) => t.title,
       caseTitle: (t) => (typeof t.caseId === "object" ? (t.caseId as any)?.title : t.caseName || ""),
+      createdAt: (t) => (t.createdAt ? new Date(t.createdAt).getTime() : 0),
       priority: (t) => t.priority,
       deadline: (t) => t.deadline || "",
       status: (t) => t.status,
@@ -1058,6 +1059,16 @@ export function EmployeeDetailWorkspace({
                     </th>
                     <th className="py-3 px-4">
                       <SortHeaderButton
+                        sortKey="createdAt"
+                        currentSortKey={taskSortKey}
+                        currentDirection={taskSortDir}
+                        onSort={onTaskSort}
+                      >
+                        Created On
+                      </SortHeaderButton>
+                    </th>
+                    <th className="py-3 px-4">
+                      <SortHeaderButton
                         sortKey="priority"
                         currentSortKey={taskSortKey}
                         currentDirection={taskSortDir}
@@ -1107,6 +1118,15 @@ export function EmployeeDetailWorkspace({
                         </td>
                         <td className="py-3 px-4 text-muted-foreground max-w-xs truncate">
                           {t.caseId ? (t.caseId as any).title || "Case Matter" : t.clientName || "—"}
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          {t.createdAt && formatSafeDate(t.createdAt) !== "—" ? (
+                            <span className="font-mono text-[11px] text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded">
+                              {formatSafeDate(t.createdAt)}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground/60">—</span>
+                          )}
                         </td>
                         <td className="py-3 px-4">
                           <span
