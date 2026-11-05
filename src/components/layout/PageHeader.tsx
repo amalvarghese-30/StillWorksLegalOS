@@ -39,9 +39,9 @@ export function PageHeader({
       </nav>
       <div className="mt-2.5 sm:mt-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl lg:text-page font-semibold tracking-tight leading-tight">{title}</h1>
+          <h1 className="font-display text-xl sm:text-2xl lg:text-page font-bold tracking-tight leading-tight text-foreground">{title}</h1>
           {subtitle ? (
-            <p className="mt-1 max-w-2xl text-xs sm:text-sm lg:text-body text-muted-foreground leading-normal">{subtitle}</p>
+            <p className="mt-1 max-w-2xl text-xs sm:text-sm lg:text-body text-muted-foreground leading-relaxed">{subtitle}</p>
           ) : null}
         </div>
         {actions ? <div className="flex flex-wrap items-center gap-2 shrink-0">{actions}</div> : null}

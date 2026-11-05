@@ -1,7 +1,19 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
-  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, LabelList,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+  LabelList,
 } from "recharts";
 import {
   BarChart3,
@@ -46,7 +58,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
-import { ReportDrilldownDialog, type DrilldownType } from "@/components/reports/ReportDrilldownDialog";
+import {
+  ReportDrilldownDialog,
+  type DrilldownType,
+} from "@/components/reports/ReportDrilldownDialog";
 import { formatSafeDate, formatSafeDateTime } from "@/lib/dates";
 import { useAuth } from "@/lib/auth";
 import { useState, useMemo } from "react";
@@ -79,9 +94,17 @@ export const Route = createFileRoute("/_shell/reports")({
   head: () => ({
     meta: [
       { title: "Reports · SS Associates Legal-Tech LLP" },
-      { name: "description", content: "Operational insight for the firm: employee daily reporting, case mix, growth, workload and completion rates." },
+      {
+        name: "description",
+        content:
+          "Operational insight for the firm: employee daily reporting, case mix, growth, workload and completion rates.",
+      },
       { property: "og:title", content: "Reports · SS Associates Legal-Tech LLP" },
-      { property: "og:description", content: "Employee daily reporting, case mix, growth, workload and completion rates at a glance." },
+      {
+        property: "og:description",
+        content:
+          "Employee daily reporting, case mix, growth, workload and completion rates at a glance.",
+      },
     ],
   }),
   component: ReportsPage,
@@ -144,7 +167,9 @@ function ReportsPage() {
   const navigate = useNavigate();
 
   // Navigation Tabs: "employees" | "clients" | "firm_analytics"
-  const [activeTab, setActiveTab] = useState<"employees" | "clients" | "firm_analytics">("employees");
+  const [activeTab, setActiveTab] = useState<"employees" | "clients" | "firm_analytics">(
+    "employees",
+  );
 
   // Selected date & employee filter for daily reporting
   const [selectedDate, setSelectedDate] = useState(() => getTodayKolkata());
@@ -169,12 +194,32 @@ function ReportsPage() {
 
   // Queries
   const { data: summary } = useReportsSummary();
-  const { data: caseGrowthData, isLoading: growthLoading, isError: growthError, refetch: refetchGrowth } = useCaseGrowth();
-  const { data: practiceData, isLoading: practiceLoading, isError: practiceError, refetch: refetchPractice } = usePracticeAreas();
-  const { data: workloadData, isLoading: workloadLoading, isError: workloadError, refetch: refetchWorkload } = useEmployeeWorkload();
+  const {
+    data: caseGrowthData,
+    isLoading: growthLoading,
+    isError: growthError,
+    refetch: refetchGrowth,
+  } = useCaseGrowth();
+  const {
+    data: practiceData,
+    isLoading: practiceLoading,
+    isError: practiceError,
+    refetch: refetchPractice,
+  } = usePracticeAreas();
+  const {
+    data: workloadData,
+    isLoading: workloadLoading,
+    isError: workloadError,
+    refetch: refetchWorkload,
+  } = useEmployeeWorkload();
   const { data: topClientsData } = useTopClients();
   const { data: statusBreakdownData } = useCaseStatusBreakdown();
-  const { data: myPerformanceData, isLoading: performanceLoading, isError: performanceError, refetch: refetchPerformance } = useMyPerformance(!isAdmin);
+  const {
+    data: myPerformanceData,
+    isLoading: performanceLoading,
+    isError: performanceError,
+    refetch: refetchPerformance,
+  } = useMyPerformance(!isAdmin);
 
   const {
     data: dailyReportData,
@@ -183,16 +228,24 @@ function ReportsPage() {
     refetch: refetchDailyReport,
   } = useDailyEmployeeReport(
     { date: selectedDate, employeeId: selectedEmployeeId || undefined },
-    isAdmin
+    isAdmin,
   );
 
-  const { data: clientReportsData, isLoading: clientReportsLoading, refetch: refetchClientReports } = useClientReports({
+  const {
+    data: clientReportsData,
+    isLoading: clientReportsLoading,
+    refetch: refetchClientReports,
+  } = useClientReports({
     search: clientSearch,
     tag: clientTagFilter !== "All" ? clientTagFilter : undefined,
   });
 
-  const { data: clientDetailData, isLoading: clientDetailLoading } = useClientDetailReport(drilldownClientId || undefined);
-  const { data: employeeDetailData, isLoading: employeeDetailLoading } = useEmployeeDetailReport(drilldownEmployeeId || undefined);
+  const { data: clientDetailData, isLoading: clientDetailLoading } = useClientDetailReport(
+    drilldownClientId || undefined,
+  );
+  const { data: employeeDetailData, isLoading: employeeDetailLoading } = useEmployeeDetailReport(
+    drilldownEmployeeId || undefined,
+  );
 
   const rawClients = clientReportsData?.clients ?? [];
   const {
@@ -218,7 +271,12 @@ function ReportsPage() {
   const distribution = practiceData?.distribution ?? [];
   const workloads = workloadData?.workloads ?? [];
   const topClients = topClientsData?.topClients ?? [];
-  const caseStatusBreakdown = statusBreakdownData?.breakdown ?? { Active: 0, "On Hold": 0, Closed: 0, Urgent: 0 };
+  const caseStatusBreakdown = statusBreakdownData?.breakdown ?? {
+    Active: 0,
+    "On Hold": 0,
+    Closed: 0,
+    Urgent: 0,
+  };
   const performance = myPerformanceData?.performance ?? [];
   const dailyReports = dailyReportData?.reports ?? [];
 
@@ -286,7 +344,7 @@ function ReportsPage() {
             "flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg transition-all",
             activeTab === "employees"
               ? "bg-primary text-primary-foreground shadow-xs"
-              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground",
           )}
         >
           <Users size={16} />
@@ -302,7 +360,7 @@ function ReportsPage() {
             "flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg transition-all",
             activeTab === "clients"
               ? "bg-primary text-primary-foreground shadow-xs"
-              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground",
           )}
         >
           <Briefcase size={16} />
@@ -315,7 +373,7 @@ function ReportsPage() {
             "flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg transition-all",
             activeTab === "firm_analytics"
               ? "bg-primary text-primary-foreground shadow-xs"
-              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground",
           )}
         >
           <BarChart3 size={16} />
@@ -337,202 +395,243 @@ function ReportsPage() {
               {/* Daily Employee Activity Report (Preserved & Enhanced with View Drill-Down) */}
               {isAdmin && (
                 <section aria-label="Daily Employee Activity Report">
-          <SectionCard
-            title="Daily Employee Activity Report"
-            description="Operational monitoring of employee daily workload, completed tasks, active pending workload, and overdue items."
-            icon={Calendar}
-            actions={
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center rounded-lg border border-border bg-card p-0.5 shadow-xs">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setSelectedDate(shiftDate(selectedDate, -1))}
-                    title="Previous Day"
-                    className="h-7 w-7 p-0"
+                  <SectionCard
+                    title="Daily Employee Activity Report"
+                    description="Operational monitoring of employee daily workload, completed tasks, active pending workload, and overdue items."
+                    icon={Calendar}
+                    actions={
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex items-center rounded-lg border border-border bg-card p-0.5 shadow-xs">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSelectedDate(shiftDate(selectedDate, -1))}
+                            title="Previous Day"
+                            className="h-7 w-7 p-0"
+                          >
+                            <ChevronLeft size={15} />
+                          </Button>
+                          <input
+                            type="date"
+                            value={selectedDate}
+                            onChange={(e) => {
+                              if (e.target.value) setSelectedDate(e.target.value);
+                            }}
+                            className="border-0 bg-transparent px-2 py-0.5 text-xs font-medium text-foreground focus:outline-none focus:ring-0 min-w-[135px]"
+                            aria-label="Select report date"
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSelectedDate(shiftDate(selectedDate, 1))}
+                            title="Next Day"
+                            className="h-7 w-7 p-0"
+                          >
+                            <ChevronRight size={15} />
+                          </Button>
+                        </div>
+
+                        <Button
+                          type="button"
+                          variant={isToday ? "secondary" : "outline"}
+                          size="sm"
+                          onClick={() => setSelectedDate(todayStr)}
+                          className="h-8 text-xs font-medium"
+                        >
+                          Today
+                        </Button>
+
+                        <select
+                          value={selectedEmployeeId}
+                          onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                          className="h-8 rounded-lg border border-border bg-card px-2.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary shadow-xs"
+                          aria-label="Filter by employee"
+                        >
+                          <option value="">All Employees</option>
+                          {workloads.map((w) => (
+                            <option key={w._id} value={w._id}>
+                              {w.name}
+                            </option>
+                          ))}
+                        </select>
+
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => refetchDailyReport()}
+                          disabled={dailyReportLoading}
+                          className="h-8 text-xs"
+                          title="Refresh Daily Report"
+                        >
+                          <RefreshCw
+                            size={13}
+                            className={cn("mr-1.5", dailyReportLoading && "animate-spin")}
+                          />
+                          Refresh
+                        </Button>
+                      </div>
+                    }
                   >
-                    <ChevronLeft size={15} />
-                  </Button>
-                  <input
-                    type="date"
-                    value={selectedDate}
-                    onChange={(e) => {
-                      if (e.target.value) setSelectedDate(e.target.value);
-                    }}
-                    className="border-0 bg-transparent px-2 py-0.5 text-xs font-medium text-foreground focus:outline-none focus:ring-0 min-w-[135px]"
-                    aria-label="Select report date"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setSelectedDate(shiftDate(selectedDate, 1))}
-                    title="Next Day"
-                    className="h-7 w-7 p-0"
-                  >
-                    <ChevronRight size={15} />
-                  </Button>
-                </div>
+                    {/* Human Readable Date Header Banner */}
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5 text-xs">
+                      <div className="flex items-center gap-2">
+                        <Calendar size={14} className="text-primary shrink-0" />
+                        <span className="text-muted-foreground">Report for:</span>
+                        <span className="font-semibold text-foreground">
+                          {formatReadableDate(selectedDate)}
+                        </span>
+                        {isToday && (
+                          <span className="rounded bg-primary/20 px-1.5 py-0.5 text-[10px] font-semibold text-primary uppercase tracking-wider">
+                            Today
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 text-caption text-muted-foreground">
+                        <span>
+                          Timezone: <strong className="text-foreground">Asia/Kolkata (IST)</strong>
+                        </span>
+                        <span>•</span>
+                        <span>
+                          Employees Tracked:{" "}
+                          <strong className="text-foreground">{dailyReports.length}</strong>
+                        </span>
+                      </div>
+                    </div>
 
-                <Button
-                  type="button"
-                  variant={isToday ? "secondary" : "outline"}
-                  size="sm"
-                  onClick={() => setSelectedDate(todayStr)}
-                  className="h-8 text-xs font-medium"
-                >
-                  Today
-                </Button>
+                    {/* 4 Firm-wide Daily Summary Cards */}
+                    <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                      {/* Card 1: Assigned on Date */}
+                      <div className="rounded-xl border border-border/80 bg-card p-4 shadow-soft">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-caption font-medium text-muted-foreground">
+                            Assigned on Date
+                          </span>
+                          <span className="grid size-7 place-items-center rounded-md bg-muted text-muted-foreground">
+                            <CheckSquare size={14} />
+                          </span>
+                        </div>
+                        <div className="mt-2 flex items-baseline justify-between gap-2">
+                          <span className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-foreground tabular-nums">
+                            {firmDailyTotals.assignedOnDate}
+                          </span>
+                          <span className="rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                            Day Activity
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          Tasks delegated or created on selected date
+                        </p>
+                      </div>
 
-                <select
-                  value={selectedEmployeeId}
-                  onChange={(e) => setSelectedEmployeeId(e.target.value)}
-                  className="h-8 rounded-lg border border-border bg-card px-2.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary shadow-xs"
-                  aria-label="Filter by employee"
-                >
-                  <option value="">All Employees</option>
-                  {workloads.map((w) => (
-                    <option key={w._id} value={w._id}>
-                      {w.name}
-                    </option>
-                  ))}
-                </select>
+                      {/* Card 2: Completed on Date */}
+                      <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 shadow-soft">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-caption font-medium text-emerald-600 dark:text-emerald-400">
+                            Completed on Date
+                          </span>
+                          <span className="grid size-7 place-items-center rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                            <CheckCircle2 size={14} />
+                          </span>
+                        </div>
+                        <div className="mt-2 flex items-baseline justify-between gap-2">
+                          <span className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400 tabular-nums">
+                            {firmDailyTotals.completedOnDate}
+                          </span>
+                          <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                            Day Activity
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          Tasks verified or marked done on date
+                        </p>
+                      </div>
 
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => refetchDailyReport()}
-                  disabled={dailyReportLoading}
-                  className="h-8 text-xs"
-                  title="Refresh Daily Report"
-                >
-                  <RefreshCw size={13} className={cn("mr-1.5", dailyReportLoading && "animate-spin")} />
-                  Refresh
-                </Button>
-              </div>
-            }
-          >
-            {/* Human Readable Date Header Banner */}
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5 text-xs">
-              <div className="flex items-center gap-2">
-                <Calendar size={14} className="text-primary shrink-0" />
-                <span className="text-muted-foreground">Report for:</span>
-                <span className="font-semibold text-foreground">{formatReadableDate(selectedDate)}</span>
-                {isToday && (
-                  <span className="rounded bg-primary/20 px-1.5 py-0.5 text-[10px] font-semibold text-primary uppercase tracking-wider">
-                    Today
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-3 text-caption text-muted-foreground">
-                <span>Timezone: <strong className="text-foreground">Asia/Kolkata (IST)</strong></span>
-                <span>•</span>
-                <span>Employees Tracked: <strong className="text-foreground">{dailyReports.length}</strong></span>
-              </div>
-            </div>
+                      {/* Card 3: Current Pending Workload */}
+                      <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 shadow-soft">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-caption font-medium text-primary">
+                            Current Pending Workload
+                          </span>
+                          <span className="grid size-7 place-items-center rounded-md bg-primary/10 text-primary">
+                            <Clock size={14} />
+                          </span>
+                        </div>
+                        <div className="mt-2 flex items-baseline justify-between gap-2">
+                          <span className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-primary tabular-nums">
+                            {firmDailyTotals.pendingWorkload}
+                          </span>
+                          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                            Outstanding
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          Active in-progress &amp; review items across firm
+                        </p>
+                      </div>
 
-            {/* 4 Firm-wide Daily Summary Cards */}
-            <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {/* Card 1: Assigned on Date */}
-              <div className="rounded-xl border border-border/80 bg-card p-4 shadow-soft">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-caption font-medium text-muted-foreground">Assigned on Date</span>
-                  <span className="grid size-7 place-items-center rounded-md bg-muted text-muted-foreground">
-                    <CheckSquare size={14} />
-                  </span>
-                </div>
-                <div className="mt-2 flex items-baseline justify-between gap-2">
-                  <span className="text-2xl font-bold tracking-tight text-foreground">{firmDailyTotals.assignedOnDate}</span>
-                  <span className="rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                    Day Activity
-                  </span>
-                </div>
-                <p className="mt-1 text-[11px] text-muted-foreground">Tasks delegated or created on selected date</p>
-              </div>
+                      {/* Card 4: Currently Overdue */}
+                      <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 p-4 shadow-soft">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-caption font-medium text-rose-600 dark:text-rose-400">
+                            Currently Overdue
+                          </span>
+                          <span className="grid size-7 place-items-center rounded-md bg-rose-500/10 text-rose-600 dark:text-rose-400">
+                            <AlertTriangle size={14} />
+                          </span>
+                        </div>
+                        <div className="mt-2 flex items-baseline justify-between gap-2">
+                          <span className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-rose-600 dark:text-rose-400 tabular-nums">
+                            {firmDailyTotals.overdueItems}
+                          </span>
+                          <span className="rounded-full bg-rose-500/10 px-2 py-0.5 text-[10px] font-medium text-rose-600 dark:text-rose-400">
+                            Needs Attention
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          Past-due tasks requiring immediate follow-up
+                        </p>
+                      </div>
+                    </div>
 
-              {/* Card 2: Completed on Date */}
-              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 shadow-soft">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-caption font-medium text-emerald-600 dark:text-emerald-400">Completed on Date</span>
-                  <span className="grid size-7 place-items-center rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                    <CheckCircle2 size={14} />
-                  </span>
-                </div>
-                <div className="mt-2 flex items-baseline justify-between gap-2">
-                  <span className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">{firmDailyTotals.completedOnDate}</span>
-                  <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-                    Day Activity
-                  </span>
-                </div>
-                <p className="mt-1 text-[11px] text-muted-foreground">Tasks verified or marked done on date</p>
-              </div>
-
-              {/* Card 3: Current Pending Workload */}
-              <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-4 shadow-soft">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-caption font-medium text-blue-600 dark:text-blue-400">Current Pending Workload</span>
-                  <span className="grid size-7 place-items-center rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400">
-                    <Clock size={14} />
-                  </span>
-                </div>
-                <div className="mt-2 flex items-baseline justify-between gap-2">
-                  <span className="text-2xl font-bold tracking-tight text-blue-600 dark:text-blue-400">{firmDailyTotals.pendingWorkload}</span>
-                  <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-400">
-                    Outstanding
-                  </span>
-                </div>
-                <p className="mt-1 text-[11px] text-muted-foreground">Active in-progress &amp; review items across firm</p>
-              </div>
-
-              {/* Card 4: Currently Overdue */}
-              <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 p-4 shadow-soft">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-caption font-medium text-rose-600 dark:text-rose-400">Currently Overdue</span>
-                  <span className="grid size-7 place-items-center rounded-md bg-rose-500/10 text-rose-600 dark:text-rose-400">
-                    <AlertTriangle size={14} />
-                  </span>
-                </div>
-                <div className="mt-2 flex items-baseline justify-between gap-2">
-                  <span className="text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400">{firmDailyTotals.overdueItems}</span>
-                  <span className="rounded-full bg-rose-500/10 px-2 py-0.5 text-[10px] font-medium text-rose-600 dark:text-rose-400">
-                    Needs Attention
-                  </span>
-                </div>
-                <p className="mt-1 text-[11px] text-muted-foreground">Past-due tasks requiring immediate follow-up</p>
-              </div>
-            </div>
-
-            {/* Employee Daily Activity List */}
-            {dailyReportLoading ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 className="animate-spin text-primary" size={28} />
-              </div>
-            ) : dailyReportError ? (
-              <ErrorState title="Couldn't load daily employee reports" onRetry={refetchDailyReport} />
-            ) : dailyReports.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border p-12 text-center bg-card/30">
-                <Calendar size={32} className="mx-auto text-muted-foreground/60 mb-2" />
-                <p className="text-sm font-medium text-foreground">No employee activity recorded for {formatReadableDate(selectedDate)}</p>
-                <p className="text-xs text-muted-foreground mt-1">Try selecting another date or viewing all employees.</p>
-              </div>
-            ) : (
-              <div className="space-y-3.5">
-                {dailyReports.map((report) => (
-                  <EmployeeDailyReportCard
-                    key={report.employee._id}
-                    report={report}
-                    selectedDate={selectedDate}
-                    onOpenTask={handleOpenTask}
-                    onDrilldown={() => setDrilldownEmployeeId(report.employee._id)}
-                  />
-                ))}
-              </div>
-            )}
-          </SectionCard>
-        </section>
-      )}
+                    {/* Employee Daily Activity List */}
+                    {dailyReportLoading ? (
+                      <div className="flex items-center justify-center py-16">
+                        <Loader2 className="animate-spin text-primary" size={28} />
+                      </div>
+                    ) : dailyReportError ? (
+                      <ErrorState
+                        title="Couldn't load daily employee reports"
+                        onRetry={refetchDailyReport}
+                      />
+                    ) : dailyReports.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-border p-12 text-center bg-card/30">
+                        <Calendar size={32} className="mx-auto text-muted-foreground/60 mb-2" />
+                        <p className="text-sm font-medium text-foreground">
+                          No employee activity recorded for {formatReadableDate(selectedDate)}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Try selecting another date or viewing all employees.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3.5">
+                        {dailyReports.map((report) => (
+                          <EmployeeDailyReportCard
+                            key={report.employee._id}
+                            report={report}
+                            selectedDate={selectedDate}
+                            onOpenTask={handleOpenTask}
+                            onDrilldown={() => setDrilldownEmployeeId(report.employee._id)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </SectionCard>
+                </section>
+              )}
             </>
           )}
         </>
@@ -556,7 +655,10 @@ function ReportsPage() {
                 actions={
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="relative">
-                      <Search size={14} className="absolute left-2.5 top-2.5 text-muted-foreground" />
+                      <Search
+                        size={14}
+                        className="absolute left-2.5 top-2.5 text-muted-foreground"
+                      />
                       <Input
                         value={clientSearch}
                         onChange={(e) => setClientSearch(e.target.value)}
@@ -594,7 +696,9 @@ function ReportsPage() {
                 ) : !clientReportsData?.clients || clientReportsData.clients.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-border p-12 text-center bg-card/30">
                     <Briefcase size={32} className="mx-auto text-muted-foreground/60 mb-2" />
-                    <p className="text-sm font-medium text-foreground">No clients found matching search criteria</p>
+                    <p className="text-sm font-medium text-foreground">
+                      No clients found matching search criteria
+                    </p>
                   </div>
                 ) : (
                   <>
@@ -695,13 +799,21 @@ function ReportsPage() {
                               </td>
                               <td className="py-2.5 px-3 text-muted-foreground min-w-0">
                                 <div className="truncate">{c.phone || "—"}</div>
-                                <div className="text-[10px] truncate text-muted-foreground/80">{c.email || ""}</div>
+                                <div className="text-[10px] truncate text-muted-foreground/80">
+                                  {c.email || ""}
+                                </div>
                               </td>
                               <td className="py-2.5 px-3 text-center font-semibold num">
                                 {c.metrics.activeCases}
                               </td>
                               <td className="py-2.5 px-3 text-center font-semibold num">
-                                <span className={c.metrics.pendingTasks > 0 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}>
+                                <span
+                                  className={
+                                    c.metrics.pendingTasks > 0
+                                      ? "text-amber-600 dark:text-amber-400"
+                                      : "text-muted-foreground"
+                                  }
+                                >
                                   {c.metrics.pendingTasks}
                                 </span>
                               </td>
@@ -736,7 +848,9 @@ function ReportsPage() {
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 flex-1">
-                              <h4 className="font-semibold text-foreground text-sm leading-tight break-words">{c.name}</h4>
+                              <h4 className="font-semibold text-foreground text-sm leading-tight break-words">
+                                {c.name}
+                              </h4>
                               <div className="flex flex-wrap items-center gap-1.5 mt-1">
                                 <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary">
                                   {c.type}
@@ -758,30 +872,54 @@ function ReportsPage() {
 
                           <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border/60">
                             <div>
-                              <span className="text-[10px] text-muted-foreground uppercase block font-medium">Contact</span>
-                              <div className="text-foreground truncate mt-0.5">{c.phone || "—"}</div>
-                              {c.email && <div className="text-[10px] text-muted-foreground truncate">{c.email}</div>}
+                              <span className="text-[10px] text-muted-foreground uppercase block font-medium">
+                                Contact
+                              </span>
+                              <div className="text-foreground truncate mt-0.5">
+                                {c.phone || "—"}
+                              </div>
+                              {c.email && (
+                                <div className="text-[10px] text-muted-foreground truncate">
+                                  {c.email}
+                                </div>
+                              )}
                             </div>
                             <div>
-                              <span className="text-[10px] text-muted-foreground uppercase block font-medium">Last Visit</span>
-                              <div className="text-foreground truncate mt-0.5">{c.lastVisitAt ? formatSafeDate(c.lastVisitAt) : "—"}</div>
+                              <span className="text-[10px] text-muted-foreground uppercase block font-medium">
+                                Last Visit
+                              </span>
+                              <div className="text-foreground truncate mt-0.5">
+                                {c.lastVisitAt ? formatSafeDate(c.lastVisitAt) : "—"}
+                              </div>
                             </div>
                           </div>
 
                           <div className="grid grid-cols-3 gap-2 text-center bg-muted/20 rounded-lg p-2 border border-border/40">
                             <div>
-                              <div className="text-sm font-bold text-foreground num">{c.metrics.activeCases}</div>
-                              <span className="text-[10px] text-muted-foreground block font-medium">Matters</span>
+                              <div className="text-sm font-bold text-foreground num">
+                                {c.metrics.activeCases}
+                              </div>
+                              <span className="text-[10px] text-muted-foreground block font-medium">
+                                Matters
+                              </span>
                             </div>
                             <div>
-                              <div className={`text-sm font-bold num ${c.metrics.pendingTasks > 0 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}>
+                              <div
+                                className={`text-sm font-bold num ${c.metrics.pendingTasks > 0 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}
+                              >
                                 {c.metrics.pendingTasks}
                               </div>
-                              <span className="text-[10px] text-muted-foreground block font-medium">Pending Tasks</span>
+                              <span className="text-[10px] text-muted-foreground block font-medium">
+                                Pending Tasks
+                              </span>
                             </div>
                             <div>
-                              <div className="text-sm font-bold text-foreground num">{c.visitCount}</div>
-                              <span className="text-[10px] text-muted-foreground block font-medium">Visits</span>
+                              <div className="text-sm font-bold text-foreground num">
+                                {c.visitCount}
+                              </div>
+                              <span className="text-[10px] text-muted-foreground block font-medium">
+                                Visits
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -830,7 +968,9 @@ function exportFirmAnalyticsCSV(analytics: FirmAnalyticsResponse) {
   const lines: string[] = [];
   lines.push(`SS ASSOCIATES LEGAL-TECH LLP — FIRM ANALYTICS REPORT`);
   lines.push(`Generated At,${analytics.generatedAt}`);
-  lines.push(`Reporting Period,${analytics.filters.period} (${analytics.filters.startDate} to ${analytics.filters.endDate})`);
+  lines.push(
+    `Reporting Period,${analytics.filters.period} (${analytics.filters.startDate} to ${analytics.filters.endDate})`,
+  );
   lines.push(`Timezone,${analytics.filters.timezone}`);
   lines.push(``);
   lines.push(`EXECUTIVE OVERVIEW (SNAPSHOT & PERIOD METRICS)`);
@@ -841,12 +981,24 @@ function exportFirmAnalyticsCSV(analytics: FirmAnalyticsResponse) {
   lines.push(`Overdue Tasks,${analytics.overview.overdueTasks},Current Snapshot,—`);
   lines.push(`Pending Approvals,${analytics.overview.pendingApprovals},Current Snapshot,—`);
   lines.push(`Upcoming Hearings,${analytics.overview.upcomingHearings},Current Snapshot,—`);
-  lines.push(`Tasks Completed,${analytics.overview.tasksCompleted},Selected Period,${analytics.overview.tasksCompletedDiffPct != null ? `${analytics.overview.tasksCompletedDiffPct}% vs prev` : "—"}`);
-  lines.push(`Documents Approved,${analytics.overview.docsApproved},Selected Period,${analytics.overview.docsApprovedDiffPct != null ? `${analytics.overview.docsApprovedDiffPct}% vs prev` : "—"}`);
-  lines.push(`New Matters Filed,${analytics.overview.newCases},Selected Period,${analytics.overview.newCasesDiffPct != null ? `${analytics.overview.newCasesDiffPct}% vs prev` : "—"}`);
-  lines.push(`Matters Closed,${analytics.overview.closedCases},Selected Period,${analytics.overview.closedCasesDiffPct != null ? `${analytics.overview.closedCasesDiffPct}% vs prev` : "—"}`);
-  lines.push(`New Clients Registered,${analytics.overview.newClients},Selected Period,${analytics.overview.newClientsDiffPct != null ? `${analytics.overview.newClientsDiffPct}% vs prev` : "—"}`);
-  lines.push(`Hearings Held,${analytics.overview.hearingsHeld},Selected Period,${analytics.overview.hearingsHeldDiffPct != null ? `${analytics.overview.hearingsHeldDiffPct}% vs prev` : "—"}`);
+  lines.push(
+    `Tasks Completed,${analytics.overview.tasksCompleted},Selected Period,${analytics.overview.tasksCompletedDiffPct != null ? `${analytics.overview.tasksCompletedDiffPct}% vs prev` : "—"}`,
+  );
+  lines.push(
+    `Documents Approved,${analytics.overview.docsApproved},Selected Period,${analytics.overview.docsApprovedDiffPct != null ? `${analytics.overview.docsApprovedDiffPct}% vs prev` : "—"}`,
+  );
+  lines.push(
+    `New Matters Filed,${analytics.overview.newCases},Selected Period,${analytics.overview.newCasesDiffPct != null ? `${analytics.overview.newCasesDiffPct}% vs prev` : "—"}`,
+  );
+  lines.push(
+    `Matters Closed,${analytics.overview.closedCases},Selected Period,${analytics.overview.closedCasesDiffPct != null ? `${analytics.overview.closedCasesDiffPct}% vs prev` : "—"}`,
+  );
+  lines.push(
+    `New Clients Registered,${analytics.overview.newClients},Selected Period,${analytics.overview.newClientsDiffPct != null ? `${analytics.overview.newClientsDiffPct}% vs prev` : "—"}`,
+  );
+  lines.push(
+    `Hearings Held,${analytics.overview.hearingsHeld},Selected Period,${analytics.overview.hearingsHeldDiffPct != null ? `${analytics.overview.hearingsHeldDiffPct}% vs prev` : "—"}`,
+  );
   lines.push(``);
   lines.push(`PRACTICE AREA DISTRIBUTION`);
   lines.push(`Practice Area,Active Matters,Percentage`);
@@ -855,9 +1007,13 @@ function exportFirmAnalyticsCSV(analytics: FirmAnalyticsResponse) {
   });
   lines.push(``);
   lines.push(`EMPLOYEE WORKLOAD & ACTIVITY`);
-  lines.push(`Employee Name,Role,Active Cases,Assigned Tasks,Open Tasks,Completed in Period,Overdue Tasks`);
+  lines.push(
+    `Employee Name,Role,Active Cases,Assigned Tasks,Open Tasks,Completed in Period,Overdue Tasks`,
+  );
   analytics.employees.workload.forEach((e) => {
-    lines.push(`"${e.name.replace(/"/g, '""')}",${e.role},${e.activeCases},${e.assignedTasks},${e.openTasks},${e.completedInPeriod},${e.overdueTasks}`);
+    lines.push(
+      `"${e.name.replace(/"/g, '""')}",${e.role},${e.activeCases},${e.assignedTasks},${e.openTasks},${e.completedInPeriod},${e.overdueTasks}`,
+    );
   });
 
   const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
@@ -962,7 +1118,10 @@ function PracticeAreaChart({
                 {item.name}
               </span>
               <span className="shrink-0 text-xs font-bold text-foreground num">
-                {item.value} <span className="text-[10px] text-muted-foreground font-normal">({item.percentage}%)</span>
+                {item.value}{" "}
+                <span className="text-[10px] text-muted-foreground font-normal">
+                  ({item.percentage}%)
+                </span>
               </span>
             </div>
             <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
@@ -992,7 +1151,13 @@ function PracticeAreaChart({
               }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-              <XAxis type="number" tickLine={false} axisLine={false} fontSize={12} allowDecimals={false} />
+              <XAxis
+                type="number"
+                tickLine={false}
+                axisLine={false}
+                fontSize={12}
+                allowDecimals={false}
+              />
               <YAxis
                 type="category"
                 dataKey="name"
@@ -1024,7 +1189,12 @@ function PracticeAreaChart({
                 name="Active Matters"
                 className="cursor-pointer hover:opacity-85 transition-opacity"
               >
-                <LabelList dataKey="value" position="right" className="fill-muted-foreground text-xs font-semibold" offset={8} />
+                <LabelList
+                  dataKey="value"
+                  position="right"
+                  className="fill-muted-foreground text-xs font-semibold"
+                  offset={8}
+                />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -1076,8 +1246,22 @@ function CaseGrowthChart({ growth }: { growth: any[] }) {
             </span>
           )}
         />
-        <Area type="monotone" dataKey="cases" stroke="var(--chart-1)" fill="url(#gNew)" strokeWidth={2.5} name="New Cases" />
-        <Area type="monotone" dataKey="closed" stroke="var(--chart-3)" fill="url(#gClosed)" strokeWidth={2} name="Closed" />
+        <Area
+          type="monotone"
+          dataKey="cases"
+          stroke="var(--chart-1)"
+          fill="url(#gNew)"
+          strokeWidth={2.5}
+          name="New Cases"
+        />
+        <Area
+          type="monotone"
+          dataKey="closed"
+          stroke="var(--chart-3)"
+          fill="url(#gClosed)"
+          strokeWidth={2}
+          name="Closed"
+        />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -1094,7 +1278,10 @@ function CaseStatusChart({
   statusDistribution: Array<{ name: string; value: number; color: string }>;
   onSelectStatus?: (status: string) => void;
 }) {
-  const total = useMemo(() => statusDistribution.reduce((acc, curr) => acc + curr.value, 0), [statusDistribution]);
+  const total = useMemo(
+    () => statusDistribution.reduce((acc, curr) => acc + curr.value, 0),
+    [statusDistribution],
+  );
 
   return (
     <div className="w-full">
@@ -1131,8 +1318,12 @@ function CaseStatusChart({
 
         {/* Center Total Summary */}
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-          <span className="text-2xl font-bold font-display text-foreground num leading-none">{total}</span>
-          <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mt-1">Total Matters</span>
+          <span className="text-2xl font-bold font-display text-foreground num leading-none">
+            {total}
+          </span>
+          <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mt-1">
+            Total Matters
+          </span>
         </div>
       </div>
 
@@ -1145,7 +1336,9 @@ function CaseStatusChart({
             onClick={() => onSelectStatus?.(s.name)}
             className="group rounded-lg border border-border/60 bg-muted/20 p-2 text-center transition-all hover:bg-muted/50 hover:border-border active:scale-95 cursor-pointer"
           >
-            <p className="text-[11px] text-muted-foreground group-hover:text-foreground transition-colors font-medium">{s.name}</p>
+            <p className="text-[11px] text-muted-foreground group-hover:text-foreground transition-colors font-medium">
+              {s.name}
+            </p>
             <p className="num text-base font-bold text-foreground mt-0.5">{s.value}</p>
           </button>
         ))}
@@ -1172,7 +1365,13 @@ function FirmAnalyticsView({
   const [customStart, setCustomStart] = useState<string>("");
   const [customEnd, setCustomEnd] = useState<string>("");
 
-  const { data: analytics, isLoading, isError, refetch, isRefetching } = useFirmAnalytics({
+  const {
+    data: analytics,
+    isLoading,
+    isError,
+    refetch,
+    isRefetching,
+  } = useFirmAnalytics({
     period,
     startDate: period === "custom" && customStart ? customStart : undefined,
     endDate: period === "custom" && customEnd ? customEnd : undefined,
@@ -1212,18 +1411,30 @@ function FirmAnalyticsView({
     <div className="space-y-6">
       {/* Printable Report Header (Print media only) */}
       <div className="hidden print:block border-b-2 border-gray-400 pb-4 mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-black">SS ASSOCIATES LEGAL-TECH LLP</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-black">
+          SS ASSOCIATES LEGAL-TECH LLP
+        </h1>
         <h2 className="text-base font-semibold text-gray-700 mt-1 uppercase tracking-wide">
           Official Executive Firm Analytics &amp; Management Dashboard Report
         </h2>
         <div className="grid grid-cols-2 text-xs mt-3 text-gray-800">
           <div>
-            <p><strong>Reporting Scope:</strong> Entire Firm · All Specializations &amp; Courts</p>
-            <p><strong>Selected Period:</strong> {analytics?.filters.period.toUpperCase()} ({analytics?.filters.startDate} to {analytics?.filters.endDate})</p>
+            <p>
+              <strong>Reporting Scope:</strong> Entire Firm · All Specializations &amp; Courts
+            </p>
+            <p>
+              <strong>Selected Period:</strong> {analytics?.filters.period.toUpperCase()} (
+              {analytics?.filters.startDate} to {analytics?.filters.endDate})
+            </p>
           </div>
           <div className="text-right">
-            <p><strong>Generated On:</strong> {new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</p>
-            <p><strong>Timezone:</strong> Asia/Kolkata (IST)</p>
+            <p>
+              <strong>Generated On:</strong>{" "}
+              {new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
+            </p>
+            <p>
+              <strong>Timezone:</strong> Asia/Kolkata (IST)
+            </p>
           </div>
         </div>
       </div>
@@ -1237,7 +1448,14 @@ function FirmAnalyticsView({
               <span>Practice Analytics &amp; Firm Intelligence</span>
             </h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Live operational monitoring backed by MongoDB records · Period: <span className="font-medium text-foreground">{analytics?.filters.startDate ?? "—"}</span> to <span className="font-medium text-foreground">{analytics?.filters.endDate ?? "—"}</span>
+              Live operational monitoring backed by MongoDB records · Period:{" "}
+              <span className="font-medium text-foreground">
+                {analytics?.filters.startDate ?? "—"}
+              </span>{" "}
+              to{" "}
+              <span className="font-medium text-foreground">
+                {analytics?.filters.endDate ?? "—"}
+              </span>
             </p>
           </div>
 
@@ -1249,7 +1467,9 @@ function FirmAnalyticsView({
               disabled={isRefetching || isLoading}
               className="h-8.5 rounded-lg text-xs gap-1.5"
             >
-              <RefreshCw className={cn("size-3.5", (isRefetching || isLoading) && "animate-spin")} />
+              <RefreshCw
+                className={cn("size-3.5", (isRefetching || isLoading) && "animate-spin")}
+              />
               <span>Refresh</span>
             </Button>
             <Button
@@ -1286,7 +1506,7 @@ function FirmAnalyticsView({
                 "rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
                 period === opt.id
                   ? "bg-primary text-primary-foreground shadow-2xs font-semibold"
-                  : "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  : "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
             >
               {opt.label}
@@ -1319,7 +1539,9 @@ function FirmAnalyticsView({
       {isLoading ? (
         <div className="flex flex-col items-center justify-center py-24 space-y-3">
           <Loader2 className="animate-spin text-primary size-8" />
-          <p className="text-sm font-medium text-muted-foreground">Aggregating live practice data across firm collections...</p>
+          <p className="text-sm font-medium text-muted-foreground">
+            Aggregating live practice data across firm collections...
+          </p>
         </div>
       ) : isError || !analytics ? (
         <ErrorState
@@ -1347,10 +1569,14 @@ function FirmAnalyticsView({
               <div className="mt-3">
                 <p className="text-xs font-medium text-muted-foreground">Active Matters</p>
                 <div className="flex items-baseline justify-between mt-1">
-                  <p className="num text-2xl font-bold text-foreground">{analytics.overview.activeCases}</p>
+                  <p className="num text-2xl font-bold text-foreground">
+                    {analytics.overview.activeCases}
+                  </p>
                   <ArrowUpRight className="size-4 text-muted-foreground group-hover:text-primary transition-colors" />
                 </div>
-                <p className="text-[11px] text-muted-foreground mt-1">Excludes closed &amp; archived matters</p>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Excludes closed &amp; archived matters
+                </p>
               </div>
             </div>
 
@@ -1360,7 +1586,7 @@ function FirmAnalyticsView({
               className="group relative rounded-xl border border-border bg-card p-4.5 shadow-soft transition-all hover:border-primary/50 hover:shadow-md cursor-pointer"
             >
               <div className="flex items-start justify-between">
-                <span className="grid size-10 place-items-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                <span className="grid size-10 place-items-center rounded-lg bg-primary/10 text-primary">
                   <Users size={20} strokeWidth={1.8} />
                 </span>
                 <span className="rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
@@ -1370,11 +1596,14 @@ function FirmAnalyticsView({
               <div className="mt-3">
                 <p className="text-xs font-medium text-muted-foreground">Active Clients</p>
                 <div className="flex items-baseline justify-between mt-1">
-                  <p className="num text-2xl font-bold text-foreground">{analytics.overview.activeClients}</p>
-                  <ArrowUpRight className="size-4 text-muted-foreground group-hover:text-blue-500 transition-colors" />
+                  <p className="num text-2xl font-bold text-foreground">
+                    {analytics.overview.activeClients}
+                  </p>
+                  <ArrowUpRight className="size-4 text-muted-foreground group-hover:text-primary transition-colors" />
                 </div>
                 <p className="text-[11px] text-muted-foreground mt-1">
-                  {analytics.clients.summary.corporateClients} Corporate · {analytics.clients.summary.individualClients} Individual
+                  {analytics.clients.summary.corporateClients} Corporate ·{" "}
+                  {analytics.clients.summary.individualClients} Individual
                 </p>
               </div>
             </div>
@@ -1385,7 +1614,7 @@ function FirmAnalyticsView({
               className="group relative rounded-xl border border-border bg-card p-4.5 shadow-soft transition-all hover:border-primary/50 hover:shadow-md cursor-pointer"
             >
               <div className="flex items-start justify-between">
-                <span className="grid size-10 place-items-center rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                <span className="grid size-10 place-items-center rounded-lg bg-primary/10 text-primary">
                   <CheckSquare size={20} strokeWidth={1.8} />
                 </span>
                 <span className="rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
@@ -1395,11 +1624,14 @@ function FirmAnalyticsView({
               <div className="mt-3">
                 <p className="text-xs font-medium text-muted-foreground">Open Tasks</p>
                 <div className="flex items-baseline justify-between mt-1">
-                  <p className="num text-2xl font-bold text-foreground">{analytics.overview.openTasks}</p>
-                  <ArrowUpRight className="size-4 text-muted-foreground group-hover:text-indigo-500 transition-colors" />
+                  <p className="num text-2xl font-bold text-foreground">
+                    {analytics.overview.openTasks}
+                  </p>
+                  <ArrowUpRight className="size-4 text-muted-foreground group-hover:text-primary transition-colors" />
                 </div>
                 <p className="text-[11px] text-muted-foreground mt-1">
-                  {analytics.tasks.summary.in_progress} In Progress · {analytics.tasks.summary.pending} Pending
+                  {analytics.tasks.summary.in_progress} In Progress ·{" "}
+                  {analytics.tasks.summary.pending} Pending
                 </p>
               </div>
             </div>
@@ -1411,40 +1643,50 @@ function FirmAnalyticsView({
                 "group relative rounded-xl border p-4.5 shadow-soft transition-all hover:shadow-md cursor-pointer",
                 analytics.overview.overdueTasks > 0
                   ? "border-rose-300 dark:border-rose-900/60 bg-rose-50/50 dark:bg-rose-950/20"
-                  : "border-border bg-card hover:border-primary/50"
+                  : "border-border bg-card hover:border-primary/50",
               )}
             >
               <div className="flex items-start justify-between">
-                <span className={cn(
-                  "grid size-10 place-items-center rounded-lg",
-                  analytics.overview.overdueTasks > 0
-                    ? "bg-rose-500/15 text-rose-600 dark:text-rose-400"
-                    : "bg-muted text-muted-foreground"
-                )}>
+                <span
+                  className={cn(
+                    "grid size-10 place-items-center rounded-lg",
+                    analytics.overview.overdueTasks > 0
+                      ? "bg-rose-500/15 text-rose-600 dark:text-rose-400"
+                      : "bg-muted text-muted-foreground",
+                  )}
+                >
                   <Clock size={20} strokeWidth={1.8} />
                 </span>
-                <span className={cn(
-                  "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-                  analytics.overview.overdueTasks > 0
-                    ? "bg-rose-500/15 text-rose-700 dark:text-rose-400"
-                    : "bg-muted/60 text-muted-foreground"
-                )}>
+                <span
+                  className={cn(
+                    "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                    analytics.overview.overdueTasks > 0
+                      ? "bg-rose-500/15 text-rose-700 dark:text-rose-400"
+                      : "bg-muted/60 text-muted-foreground",
+                  )}
+                >
                   {analytics.overview.overdueTasks > 0 ? "Action Required" : "Snapshot"}
                 </span>
               </div>
               <div className="mt-3">
                 <p className="text-xs font-medium text-muted-foreground">Overdue Tasks</p>
                 <div className="flex items-baseline justify-between mt-1">
-                  <p className={cn(
-                    "num text-2xl font-bold",
-                    analytics.overview.overdueTasks > 0 ? "text-rose-600 dark:text-rose-400" : "text-foreground"
-                  )}>
+                  <p
+                    className={cn(
+                      "num text-2xl font-bold",
+                      analytics.overview.overdueTasks > 0
+                        ? "text-rose-600 dark:text-rose-400"
+                        : "text-foreground",
+                    )}
+                  >
                     {analytics.overview.overdueTasks}
                   </p>
                   <ArrowUpRight className="size-4 text-muted-foreground group-hover:text-rose-500 transition-colors" />
                 </div>
                 <p className="text-[11px] text-muted-foreground mt-1">
-                  {analytics.overview.overdueTasks > 0 ? "Past statutory deadline" : "All deadlines on schedule"}
+                  {analytics.overview.overdueTasks > 0
+                    ? "Past statutory deadline"
+                    : "All deadlines on schedule"}
                 </p>
               </div>
             </div>
@@ -1465,13 +1707,21 @@ function FirmAnalyticsView({
               <div className="mt-3">
                 <p className="text-xs font-medium text-muted-foreground">Tasks Completed</p>
                 <div className="flex items-baseline justify-between mt-1">
-                  <p className="num text-2xl font-bold text-foreground">{analytics.overview.tasksCompleted}</p>
+                  <p className="num text-2xl font-bold text-foreground">
+                    {analytics.overview.tasksCompleted}
+                  </p>
                   {analytics.overview.tasksCompletedDiffPct != null && (
-                    <span className={cn(
-                      "text-xs font-semibold num",
-                      analytics.overview.tasksCompletedDiffPct >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"
-                    )}>
-                      {analytics.overview.tasksCompletedDiffPct >= 0 ? `+${analytics.overview.tasksCompletedDiffPct}%` : `${analytics.overview.tasksCompletedDiffPct}%`}
+                    <span
+                      className={cn(
+                        "text-xs font-semibold num",
+                        analytics.overview.tasksCompletedDiffPct >= 0
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-amber-600 dark:text-amber-400",
+                      )}
+                    >
+                      {analytics.overview.tasksCompletedDiffPct >= 0
+                        ? `+${analytics.overview.tasksCompletedDiffPct}%`
+                        : `${analytics.overview.tasksCompletedDiffPct}%`}
                     </span>
                   )}
                 </div>
@@ -1497,10 +1747,14 @@ function FirmAnalyticsView({
               <div className="mt-3">
                 <p className="text-xs font-medium text-muted-foreground">Pending Approvals</p>
                 <div className="flex items-baseline justify-between mt-1">
-                  <p className="num text-2xl font-bold text-foreground">{analytics.overview.pendingApprovals}</p>
+                  <p className="num text-2xl font-bold text-foreground">
+                    {analytics.overview.pendingApprovals}
+                  </p>
                   <ArrowUpRight className="size-4 text-muted-foreground group-hover:text-purple-500 transition-colors" />
                 </div>
-                <p className="text-[11px] text-muted-foreground mt-1">Reassignments, sign-offs &amp; deletions</p>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Reassignments, sign-offs &amp; deletions
+                </p>
               </div>
             </div>
 
@@ -1520,7 +1774,9 @@ function FirmAnalyticsView({
               <div className="mt-3">
                 <p className="text-xs font-medium text-muted-foreground">Upcoming Hearings</p>
                 <div className="flex items-baseline justify-between mt-1">
-                  <p className="num text-2xl font-bold text-foreground">{analytics.overview.upcomingHearings}</p>
+                  <p className="num text-2xl font-bold text-foreground">
+                    {analytics.overview.upcomingHearings}
+                  </p>
                   <ArrowUpRight className="size-4 text-muted-foreground group-hover:text-amber-500 transition-colors" />
                 </div>
                 <p className="text-[11px] text-muted-foreground mt-1">
@@ -1545,13 +1801,21 @@ function FirmAnalyticsView({
               <div className="mt-3">
                 <p className="text-xs font-medium text-muted-foreground">Documents Approved</p>
                 <div className="flex items-baseline justify-between mt-1">
-                  <p className="num text-2xl font-bold text-foreground">{analytics.overview.docsApproved}</p>
+                  <p className="num text-2xl font-bold text-foreground">
+                    {analytics.overview.docsApproved}
+                  </p>
                   {analytics.overview.docsApprovedDiffPct != null && (
-                    <span className={cn(
-                      "text-xs font-semibold num",
-                      analytics.overview.docsApprovedDiffPct >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"
-                    )}>
-                      {analytics.overview.docsApprovedDiffPct >= 0 ? `+${analytics.overview.docsApprovedDiffPct}%` : `${analytics.overview.docsApprovedDiffPct}%`}
+                    <span
+                      className={cn(
+                        "text-xs font-semibold num",
+                        analytics.overview.docsApprovedDiffPct >= 0
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-amber-600 dark:text-amber-400",
+                      )}
+                    >
+                      {analytics.overview.docsApprovedDiffPct >= 0
+                        ? `+${analytics.overview.docsApprovedDiffPct}%`
+                        : `${analytics.overview.docsApprovedDiffPct}%`}
                     </span>
                   )}
                 </div>
@@ -1567,7 +1831,9 @@ function FirmAnalyticsView({
             <div className="rounded-2xl border border-border/80 bg-card/70 p-4.5 shadow-soft space-y-3">
               <div className="flex items-center gap-2">
                 <Sparkles className="size-4.5 text-primary" />
-                <h4 className="text-sm font-semibold text-foreground">Operational Intelligence &amp; Observations</h4>
+                <h4 className="text-sm font-semibold text-foreground">
+                  Operational Intelligence &amp; Observations
+                </h4>
               </div>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {analytics.insights.map((ins) => (
@@ -1575,10 +1841,13 @@ function FirmAnalyticsView({
                     key={ins.id}
                     className={cn(
                       "rounded-xl border p-3.5 space-y-1.5 transition-colors",
-                      ins.type === "warning" && "border-amber-500/30 bg-amber-500/5 text-amber-900 dark:text-amber-200",
-                      ins.type === "info" && "border-blue-500/30 bg-blue-500/5 text-blue-900 dark:text-blue-200",
-                      ins.type === "success" && "border-emerald-500/30 bg-emerald-500/5 text-emerald-900 dark:text-emerald-200",
-                      ins.type === "neutral" && "border-border/60 bg-muted/20 text-foreground"
+                      ins.type === "warning" &&
+                        "border-amber-500/30 bg-amber-500/5 text-amber-900 dark:text-amber-200",
+                      ins.type === "info" &&
+                        "border-blue-500/30 bg-blue-500/5 text-blue-900 dark:text-blue-200",
+                      ins.type === "success" &&
+                        "border-emerald-500/30 bg-emerald-500/5 text-emerald-900 dark:text-emerald-200",
+                      ins.type === "neutral" && "border-border/60 bg-muted/20 text-foreground",
                     )}
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -1592,9 +1861,7 @@ function FirmAnalyticsView({
                         </span>
                       )}
                     </div>
-                    <p className="text-xs leading-relaxed text-muted-foreground">
-                      {ins.message}
-                    </p>
+                    <p className="text-xs leading-relaxed text-muted-foreground">{ins.message}</p>
                   </div>
                 ))}
               </div>
@@ -1646,20 +1913,27 @@ function FirmAnalyticsView({
             >
               <div className="space-y-4 py-2">
                 {analytics.cases.ageing.map((item) => {
-                  const pct = analytics.overview.activeCases > 0
-                    ? Math.round((item.count / analytics.overview.activeCases) * 100)
-                    : 0;
+                  const pct =
+                    analytics.overview.activeCases > 0
+                      ? Math.round((item.count / analytics.overview.activeCases) * 100)
+                      : 0;
                   return (
                     <div key={item.range} className="space-y-1.5">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="font-semibold text-foreground">{item.range} <span className="text-muted-foreground font-normal">({item.label})</span></span>
-                        <span className="font-bold num text-foreground">{item.count} matters <span className="text-muted-foreground font-normal">({pct}%)</span></span>
+                        <span className="font-semibold text-foreground">
+                          {item.range}{" "}
+                          <span className="text-muted-foreground font-normal">({item.label})</span>
+                        </span>
+                        <span className="font-bold num text-foreground">
+                          {item.count} matters{" "}
+                          <span className="text-muted-foreground font-normal">({pct}%)</span>
+                        </span>
                       </div>
                       <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                         <div
                           className={cn(
                             "h-full rounded-full transition-all duration-300",
-                            item.range.includes("180+") ? "bg-amber-500" : "bg-primary"
+                            item.range.includes("180+") ? "bg-amber-500" : "bg-primary",
                           )}
                           style={{ width: `${pct}%` }}
                         />
@@ -1687,16 +1961,24 @@ function FirmAnalyticsView({
                       onClick={() => navigate({ to: "/tasks", search: { tab: item.name } })}
                       className="rounded-lg border border-border/60 bg-muted/20 p-2.5 text-center cursor-pointer hover:bg-muted/40 transition-colors"
                     >
-                      <span className="text-[11px] font-medium text-muted-foreground block truncate">{item.name}</span>
-                      <span className="text-lg font-bold text-foreground num mt-0.5 block">{item.value}</span>
+                      <span className="text-[11px] font-medium text-muted-foreground block truncate">
+                        {item.name}
+                      </span>
+                      <span className="text-lg font-bold text-foreground num mt-0.5 block">
+                        {item.value}
+                      </span>
                     </div>
                   ))}
                 </div>
 
                 <div className="rounded-xl border border-border/60 bg-card p-3.5 flex items-center justify-between">
                   <div>
-                    <p className="text-xs font-semibold text-foreground">Task Completion Velocity</p>
-                    <p className="text-[11px] text-muted-foreground">Based on completed tasks vs total active lifecycle work</p>
+                    <p className="text-xs font-semibold text-foreground">
+                      Task Completion Velocity
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Based on completed tasks vs total active lifecycle work
+                    </p>
                   </div>
                   <div className="text-right">
                     <span className="text-xl font-bold font-display text-emerald-600 dark:text-emerald-400 num">
@@ -1738,7 +2020,9 @@ function FirmAnalyticsView({
             icon={Users}
           >
             {analytics.employees.workload.length === 0 ? (
-              <p className="py-8 text-center text-xs text-muted-foreground">No active employees found.</p>
+              <p className="py-8 text-center text-xs text-muted-foreground">
+                No active employees found.
+              </p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
@@ -1770,16 +2054,32 @@ function FirmAnalyticsView({
                             />
                             <div className="min-w-0">
                               <p className="font-semibold text-foreground truncate">{emp.name}</p>
-                              <p className="text-[10px] text-muted-foreground capitalize">{emp.role}</p>
+                              <p className="text-[10px] text-muted-foreground capitalize">
+                                {emp.role}
+                              </p>
                             </div>
                           </div>
                         </td>
-                        <td className="py-2.5 px-3 text-center num font-medium text-foreground">{emp.activeCases}</td>
-                        <td className="py-2.5 px-3 text-center num font-medium text-foreground">{emp.assignedTasks}</td>
-                        <td className="py-2.5 px-3 text-center num font-semibold text-foreground">{emp.openTasks}</td>
-                        <td className="py-2.5 px-3 text-center num font-medium text-emerald-600 dark:text-emerald-400">{emp.completedInPeriod}</td>
+                        <td className="py-2.5 px-3 text-center num font-medium text-foreground">
+                          {emp.activeCases}
+                        </td>
+                        <td className="py-2.5 px-3 text-center num font-medium text-foreground">
+                          {emp.assignedTasks}
+                        </td>
+                        <td className="py-2.5 px-3 text-center num font-semibold text-foreground">
+                          {emp.openTasks}
+                        </td>
+                        <td className="py-2.5 px-3 text-center num font-medium text-emerald-600 dark:text-emerald-400">
+                          {emp.completedInPeriod}
+                        </td>
                         <td className="py-2.5 px-3 text-center num font-semibold">
-                          <span className={emp.overdueTasks > 0 ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground"}>
+                          <span
+                            className={
+                              emp.overdueTasks > 0
+                                ? "text-rose-600 dark:text-rose-400"
+                                : "text-muted-foreground"
+                            }
+                          >
                             {emp.overdueTasks}
                           </span>
                         </td>
@@ -1814,7 +2114,9 @@ function FirmAnalyticsView({
               icon={Briefcase}
             >
               {analytics.clients.topClients.length === 0 ? (
-                <p className="py-8 text-center text-xs text-muted-foreground">No linked client matter associations found.</p>
+                <p className="py-8 text-center text-xs text-muted-foreground">
+                  No linked client matter associations found.
+                </p>
               ) : (
                 <div className="space-y-2">
                   {analytics.clients.topClients.map((c) => (
@@ -1828,15 +2130,21 @@ function FirmAnalyticsView({
                           {c.name}
                         </p>
                         <div className="flex items-center gap-1.5 mt-0.5">
-                          <span className="text-[10px] text-muted-foreground uppercase">{c.type}</span>
+                          <span className="text-[10px] text-muted-foreground uppercase">
+                            {c.type}
+                          </span>
                           <span className="text-[10px] text-muted-foreground">·</span>
                           <span className="text-[10px] text-muted-foreground">{c.tag}</span>
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
                         <div className="text-right">
-                          <p className="text-xs font-bold text-foreground num">{c.activeCases} Active</p>
-                          <p className="text-[10px] text-muted-foreground num">{c.totalCases} Total</p>
+                          <p className="text-xs font-bold text-foreground num">
+                            {c.activeCases} Active
+                          </p>
+                          <p className="text-[10px] text-muted-foreground num">
+                            {c.totalCases} Total
+                          </p>
                         </div>
                         <ArrowUpRight className="size-4 text-muted-foreground group-hover:text-primary transition-colors" />
                       </div>
@@ -1853,25 +2161,37 @@ function FirmAnalyticsView({
               icon={Calendar}
             >
               {analytics.hearings.upcoming.length === 0 ? (
-                <p className="py-8 text-center text-xs text-muted-foreground">No upcoming court hearings currently scheduled.</p>
+                <p className="py-8 text-center text-xs text-muted-foreground">
+                  No upcoming court hearings currently scheduled.
+                </p>
               ) : (
                 <div className="space-y-2.5">
                   {analytics.hearings.upcoming.map((h) => (
                     <div
                       key={h._id}
-                      onClick={() => h.caseId && navigate({ to: "/cases/$caseId", params: { caseId: h.caseId } })}
+                      onClick={() =>
+                        h.caseId && navigate({ to: "/cases/$caseId", params: { caseId: h.caseId } })
+                      }
                       className="flex items-start justify-between p-2.5 rounded-lg border border-border/60 hover:bg-muted/40 transition-colors cursor-pointer"
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="text-xs font-semibold text-foreground truncate">{h.caseTitle}</p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">{h.court} · {h.judge}</p>
+                        <p className="text-xs font-semibold text-foreground truncate">
+                          {h.caseTitle}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          {h.court} · {h.judge}
+                        </p>
                         <span className="inline-block text-[10px] font-mono text-primary bg-primary/10 px-1.5 py-0.2 rounded mt-1">
                           {h.caseNumber}
                         </span>
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="text-xs font-bold text-foreground num">{formatSafeDate(h.date)}</p>
-                        <p className="text-[10px] text-muted-foreground uppercase mt-0.5">Hearing Date</p>
+                        <p className="text-xs font-bold text-foreground num">
+                          {formatSafeDate(h.date)}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground uppercase mt-0.5">
+                          Hearing Date
+                        </p>
                       </div>
                     </div>
                   ))}
@@ -1945,7 +2265,12 @@ interface EmployeeDailyReportCardProps {
   onDrilldown?: () => void;
 }
 
-function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown }: EmployeeDailyReportCardProps) {
+function EmployeeDailyReportCard({
+  report,
+  selectedDate,
+  onOpenTask,
+  onDrilldown,
+}: EmployeeDailyReportCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [reportMode, setReportMode] = useState<"daily" | "allTime">("daily");
   const [dailySubTab, setDailySubTab] = useState<
@@ -1971,7 +2296,7 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
         "overflow-hidden rounded-xl border transition-all duration-200 bg-card shadow-soft",
         expanded
           ? "border-primary/50 ring-1 ring-primary/25 shadow-md"
-          : "border-border/80 hover:border-primary/40 hover:bg-muted/10"
+          : "border-border/80 hover:border-primary/40 hover:bg-muted/10",
       )}
     >
       {/* ── Entire Employee Box Header (Click anywhere to load/toggle the report) ── */}
@@ -2023,7 +2348,7 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
           </div>
 
           {/* Pending Active Workload */}
-          <div className="flex items-center gap-1.5 rounded-lg border border-blue-500/20 bg-blue-500/10 px-3 py-1.5 text-xs text-blue-600 dark:text-blue-400">
+          <div className="flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/10 px-3 py-1.5 text-xs text-primary">
             <Clock size={13} />
             <span>Pending:</span>
             <span className="font-semibold">{metrics.pendingCount}</span>
@@ -2089,7 +2414,7 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                   "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer",
                   reportMode === "daily"
                     ? "bg-primary text-primary-foreground shadow-xs"
-                    : "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    : "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground",
                 )}
               >
                 <Calendar size={14} />
@@ -2108,7 +2433,7 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                   "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer",
                   reportMode === "allTime"
                     ? "bg-primary text-primary-foreground shadow-xs"
-                    : "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    : "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground",
                 )}
               >
                 <BarChart3 size={14} />
@@ -2132,32 +2457,48 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
               <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
                 <div className="rounded-lg border border-border bg-card p-2.5 text-center shadow-xs">
                   <span className="text-[11px] text-muted-foreground">Assigned Today</span>
-                  <p className="num text-lg font-bold text-foreground mt-0.5">{metrics.assignedTodayCount}</p>
+                  <p className="num text-lg font-bold text-foreground mt-0.5">
+                    {metrics.assignedTodayCount}
+                  </p>
                 </div>
 
                 <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2.5 text-center shadow-xs">
-                  <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">Completed Today</span>
-                  <p className="num text-lg font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">{metrics.completedTodayCount}</p>
+                  <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                    Completed Today
+                  </span>
+                  <p className="num text-lg font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                    {metrics.completedTodayCount}
+                  </p>
                 </div>
 
-                <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/5 p-2.5 text-center shadow-xs">
-                  <span className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium">Cases Worked/Done</span>
-                  <p className="num text-lg font-bold text-indigo-600 dark:text-indigo-400 mt-0.5">{workedCases.length}</p>
+                <div className="rounded-lg border border-primary/30 bg-primary/5 p-2.5 text-center shadow-xs">
+                  <span className="text-[11px] text-primary font-medium">Cases Worked/Done</span>
+                  <p className="num text-lg font-bold text-primary mt-0.5">{workedCases.length}</p>
                 </div>
 
                 <div className="rounded-lg border border-purple-500/30 bg-purple-500/5 p-2.5 text-center shadow-xs">
-                  <span className="text-[11px] text-purple-600 dark:text-purple-400 font-medium">Audit Log Actions</span>
-                  <p className="num text-lg font-bold text-purple-600 dark:text-purple-400 mt-0.5">{todayLogs.length}</p>
+                  <span className="text-[11px] text-purple-600 dark:text-purple-400 font-medium">
+                    Audit Log Actions
+                  </span>
+                  <p className="num text-lg font-bold text-purple-600 dark:text-purple-400 mt-0.5">
+                    {todayLogs.length}
+                  </p>
                 </div>
 
-                <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-2.5 text-center shadow-xs">
-                  <span className="text-[11px] text-blue-600 dark:text-blue-400 font-medium">Active Pending</span>
-                  <p className="num text-lg font-bold text-blue-600 dark:text-blue-400 mt-0.5">{metrics.pendingCount}</p>
+                <div className="rounded-lg border border-primary/30 bg-primary/5 p-2.5 text-center shadow-xs">
+                  <span className="text-[11px] text-primary font-medium">Active Pending</span>
+                  <p className="num text-lg font-bold text-primary mt-0.5">
+                    {metrics.pendingCount}
+                  </p>
                 </div>
 
                 <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-2.5 text-center shadow-xs">
-                  <span className="text-[11px] text-rose-600 dark:text-rose-400 font-medium">Overdue Items</span>
-                  <p className="num text-lg font-bold text-rose-600 dark:text-rose-400 mt-0.5">{metrics.overdueCount}</p>
+                  <span className="text-[11px] text-rose-600 dark:text-rose-400 font-medium">
+                    Overdue Items
+                  </span>
+                  <p className="num text-lg font-bold text-rose-600 dark:text-rose-400 mt-0.5">
+                    {metrics.overdueCount}
+                  </p>
                 </div>
               </div>
 
@@ -2206,7 +2547,7 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                           "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all cursor-pointer",
                           dailySubTab === tab.id
                             ? "bg-primary text-primary-foreground font-semibold shadow-xs"
-                            : "bg-card text-muted-foreground hover:bg-muted hover:text-foreground border border-border/60"
+                            : "bg-card text-muted-foreground hover:bg-muted hover:text-foreground border border-border/60",
                         )}
                       >
                         <Icon size={13} />
@@ -2229,7 +2570,8 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                   {todayLogs.length === 0 ? (
                     <div className="py-8 text-center text-xs text-muted-foreground">
                       <Shield size={24} className="mx-auto mb-1.5 text-muted-foreground/40" />
-                      No system audit actions or status changes recorded by {employee.name} on {formatReadableDate(selectedDate)}.
+                      No system audit actions or status changes recorded by {employee.name} on{" "}
+                      {formatReadableDate(selectedDate)}.
                     </div>
                   ) : (
                     <div className="space-y-2">
@@ -2259,7 +2601,12 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                                   {log.resource === "case" && log.resourceId && (
                                     <button
                                       type="button"
-                                      onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: log.resourceId! } })}
+                                      onClick={() =>
+                                        navigate({
+                                          to: "/cases/$caseId",
+                                          params: { caseId: log.resourceId! },
+                                        })
+                                      }
                                       className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
                                     >
                                       <span>View Case</span>
@@ -2268,7 +2615,9 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                                   )}
                                 </div>
                                 {log.details && (
-                                  <p className="text-caption text-muted-foreground break-words">{log.details}</p>
+                                  <p className="text-caption text-muted-foreground break-words">
+                                    {log.details}
+                                  </p>
                                 )}
                               </div>
 
@@ -2277,14 +2626,18 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                                 <span
                                   className={cn(
                                     "rounded-md px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase border",
-                                    getActionBadgeStyle(log.action)
+                                    getActionBadgeStyle(log.action),
                                   )}
                                 >
                                   {log.action}
                                 </span>
                                 <div className="text-right">
-                                  <p className="font-mono text-xs font-medium text-foreground">{time}</p>
-                                  {relative && <p className="text-[10px] text-muted-foreground">{relative}</p>}
+                                  <p className="font-mono text-xs font-medium text-foreground">
+                                    {time}
+                                  </p>
+                                  {relative && (
+                                    <p className="text-[10px] text-muted-foreground">{relative}</p>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -2302,7 +2655,8 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                   {workedCases.length === 0 ? (
                     <div className="py-8 text-center text-xs text-muted-foreground">
                       <Briefcase size={24} className="mx-auto mb-1.5 text-muted-foreground/40" />
-                      No case actions or closures recorded by {employee.name} on {formatReadableDate(selectedDate)}.
+                      No case actions or closures recorded by {employee.name} on{" "}
+                      {formatReadableDate(selectedDate)}.
                     </div>
                   ) : (
                     <div className="divide-y divide-border/40 space-y-1.5">
@@ -2311,20 +2665,31 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                         return (
                           <div
                             key={c._id}
-                            onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: c._id } })}
+                            onClick={() =>
+                              navigate({ to: "/cases/$caseId", params: { caseId: c._id } })
+                            }
                             className="group flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 rounded-lg transition-colors hover:bg-muted/40 cursor-pointer"
                           >
                             <div className="min-w-0 space-y-1">
                               <div className="flex items-center gap-2">
-                                <span className="font-mono text-xs font-semibold text-primary">{c.number}</span>
+                                <span className="font-mono text-xs font-semibold text-primary">
+                                  {c.number}
+                                </span>
                                 <h5 className="font-medium text-xs sm:text-sm text-foreground truncate max-w-lg group-hover:text-primary transition-colors">
                                   {c.title}
                                 </h5>
-                                <ExternalLink size={12} className="shrink-0 opacity-40 group-hover:opacity-100 text-primary" />
+                                <ExternalLink
+                                  size={12}
+                                  className="shrink-0 opacity-40 group-hover:opacity-100 text-primary"
+                                />
                               </div>
 
                               <div className="flex flex-wrap items-center gap-2.5 text-[11px] text-muted-foreground">
-                                {c.court && <span>Court: <strong className="text-foreground">{c.court}</strong></span>}
+                                {c.court && (
+                                  <span>
+                                    Court: <strong className="text-foreground">{c.court}</strong>
+                                  </span>
+                                )}
                                 {c.practice && (
                                   <>
                                     <span>•</span>
@@ -2334,7 +2699,12 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                                 {c.parties?.[0]?.name && (
                                   <>
                                     <span>•</span>
-                                    <span>Client: <strong className="text-foreground">{c.parties[0].name}</strong></span>
+                                    <span>
+                                      Client:{" "}
+                                      <strong className="text-foreground">
+                                        {c.parties[0].name}
+                                      </strong>
+                                    </span>
                                   </>
                                 )}
                               </div>
@@ -2369,15 +2739,19 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                 <div className="rounded-xl border border-border/80 bg-card p-2 sm:p-3 shadow-xs">
                   {currentTasks.length === 0 ? (
                     <div className="py-8 text-center text-xs text-muted-foreground">
-                      No tasks in this category for {employee.name} on {formatReadableDate(selectedDate)}.
+                      No tasks in this category for {employee.name} on{" "}
+                      {formatReadableDate(selectedDate)}.
                     </div>
                   ) : (
                     <div className="divide-y divide-border/40 space-y-1.5">
                       {currentTasks.map((t) => {
-                        const caseId = typeof t.caseId === "object" ? (t.caseId as any)?._id : t.caseId;
+                        const caseId =
+                          typeof t.caseId === "object" ? (t.caseId as any)?._id : t.caseId;
                         const caseTitle =
                           typeof t.caseId === "object"
-                            ? (t.caseId as any)?.title || (t.caseId as any)?.number || "Matter Details"
+                            ? (t.caseId as any)?.title ||
+                              (t.caseId as any)?.number ||
+                              "Matter Details"
                             : "Matter Details";
 
                         return (
@@ -2398,7 +2772,10 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                                   title="Open Task Details"
                                 >
                                   <span className="truncate">{t.title}</span>
-                                  <ExternalLink size={12} className="shrink-0 opacity-40 group-hover:opacity-100" />
+                                  <ExternalLink
+                                    size={12}
+                                    className="shrink-0 opacity-40 group-hover:opacity-100"
+                                  />
                                 </button>
                               </div>
 
@@ -2408,7 +2785,10 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      navigate({ to: "/cases/$caseId", params: { caseId: String(caseId) } });
+                                      navigate({
+                                        to: "/cases/$caseId",
+                                        params: { caseId: String(caseId) },
+                                      });
                                     }}
                                     className="inline-flex items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 font-medium text-foreground hover:bg-primary/10 hover:text-primary transition-colors cursor-pointer"
                                     title="Navigate to Matter"
@@ -2423,14 +2803,19 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                                   <span className="inline-flex items-center gap-1">
                                     <span className="text-muted-foreground/60">Client:</span>
                                     <span className="font-medium text-foreground truncate max-w-[150px]">
-                                      {typeof t.clientId === "object" ? (t.clientId as any).name : "Client"}
+                                      {typeof t.clientId === "object"
+                                        ? (t.clientId as any).name
+                                        : "Client"}
                                     </span>
                                   </span>
                                 )}
 
                                 {t.deadline && (
                                   <span className="inline-flex items-center gap-1">
-                                    <Clock size={11} className="shrink-0 text-muted-foreground/70" />
+                                    <Clock
+                                      size={11}
+                                      className="shrink-0 text-muted-foreground/70"
+                                    />
                                     <span>Due: {formatSafeDate(t.deadline)}</span>
                                   </span>
                                 )}
@@ -2444,8 +2829,8 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                                   t.priority === "High"
                                     ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20"
                                     : t.priority === "Medium"
-                                    ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
-                                    : "bg-slate-500/10 text-slate-600 dark:text-slate-400 border border-slate-500/20"
+                                      ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                                      : "bg-slate-500/10 text-slate-600 dark:text-slate-400 border border-slate-500/20",
                                 )}
                               >
                                 {t.priority || "Normal"}
@@ -2474,13 +2859,17 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                 {/* 1. Lifetime Tasks Completed */}
                 <div className="rounded-xl border border-border bg-card p-4 shadow-soft">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-caption font-medium text-muted-foreground">Lifetime Tasks Completed</span>
+                    <span className="text-caption font-medium text-muted-foreground">
+                      Lifetime Tasks Completed
+                    </span>
                     <span className="grid size-7 place-items-center rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                       <CheckCircle2 size={14} />
                     </span>
                   </div>
                   <div className="mt-2 flex items-baseline justify-between gap-2">
-                    <span className="text-2xl font-bold tracking-tight text-foreground">{allTime?.tasksCompleted ?? 0}</span>
+                    <span className="text-2xl font-bold tracking-tight text-foreground">
+                      {allTime?.tasksCompleted ?? 0}
+                    </span>
                     <span className="text-caption text-muted-foreground">
                       of {allTime?.tasksAssigned ?? 0} assigned
                     </span>
@@ -2488,7 +2877,9 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                   <div className="mt-2.5">
                     <div className="flex justify-between text-[11px] text-muted-foreground mb-1">
                       <span>Completion Rate</span>
-                      <span className="font-semibold text-foreground">{allTime?.completionRate ?? 0}%</span>
+                      <span className="font-semibold text-foreground">
+                        {allTime?.completionRate ?? 0}%
+                      </span>
                     </div>
                     <Progress value={allTime?.completionRate ?? 0} className="h-1.5" />
                   </div>
@@ -2497,13 +2888,17 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                 {/* 2. Active Matters Currently Assigned */}
                 <div className="rounded-xl border border-border bg-card p-4 shadow-soft">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-caption font-medium text-muted-foreground">Active Matters Handled</span>
+                    <span className="text-caption font-medium text-muted-foreground">
+                      Active Matters Handled
+                    </span>
                     <span className="grid size-7 place-items-center rounded-md bg-primary/10 text-primary">
                       <Briefcase size={14} />
                     </span>
                   </div>
                   <div className="mt-2 flex items-baseline justify-between gap-2">
-                    <span className="text-2xl font-bold tracking-tight text-primary">{allTime?.activeCasesCount ?? 0}</span>
+                    <span className="text-2xl font-bold tracking-tight text-primary">
+                      {allTime?.activeCasesCount ?? 0}
+                    </span>
                     <span className="text-caption text-muted-foreground">
                       {allTime?.totalCasesCount ?? 0} total lifetime
                     </span>
@@ -2516,13 +2911,17 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                 {/* 3. Matters Successfully Closed */}
                 <div className="rounded-xl border border-border bg-card p-4 shadow-soft">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-caption font-medium text-muted-foreground">Matters Closed / Disposed</span>
+                    <span className="text-caption font-medium text-muted-foreground">
+                      Matters Closed / Disposed
+                    </span>
                     <span className="grid size-7 place-items-center rounded-md bg-muted text-muted-foreground">
                       <FolderKanban size={14} />
                     </span>
                   </div>
                   <div className="mt-2 flex items-baseline justify-between gap-2">
-                    <span className="text-2xl font-bold tracking-tight text-foreground">{allTime?.closedCasesCount ?? 0}</span>
+                    <span className="text-2xl font-bold tracking-tight text-foreground">
+                      {allTime?.closedCasesCount ?? 0}
+                    </span>
                     <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
                       Disposed
                     </span>
@@ -2535,13 +2934,17 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                 {/* 4. Total Lifetime Audit Actions */}
                 <div className="rounded-xl border border-border bg-card p-4 shadow-soft">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-caption font-medium text-muted-foreground">Total Audit Actions Logged</span>
+                    <span className="text-caption font-medium text-muted-foreground">
+                      Total Audit Actions Logged
+                    </span>
                     <span className="grid size-7 place-items-center rounded-md bg-purple-500/10 text-purple-600 dark:text-purple-400">
                       <Shield size={14} />
                     </span>
                   </div>
                   <div className="mt-2 flex items-baseline justify-between gap-2">
-                    <span className="text-2xl font-bold tracking-tight text-foreground">{allTime?.totalAuditLogsCount ?? 0}</span>
+                    <span className="text-2xl font-bold tracking-tight text-foreground">
+                      {allTime?.totalAuditLogsCount ?? 0}
+                    </span>
                     <span className="rounded-full bg-purple-500/10 px-2 py-0.5 text-[10px] font-medium text-purple-600 dark:text-purple-400">
                       Tamper-evident
                     </span>
@@ -2562,7 +2965,7 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                       "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all cursor-pointer",
                       allTimeSubTab === "activeCases"
                         ? "bg-primary text-primary-foreground font-semibold shadow-xs"
-                        : "bg-card text-muted-foreground hover:bg-muted hover:text-foreground border border-border/60"
+                        : "bg-card text-muted-foreground hover:bg-muted hover:text-foreground border border-border/60",
                     )}
                   >
                     <Briefcase size={13} />
@@ -2576,7 +2979,7 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                       "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all cursor-pointer",
                       allTimeSubTab === "allTimeAudit"
                         ? "bg-primary text-primary-foreground font-semibold shadow-xs"
-                        : "bg-card text-muted-foreground hover:bg-muted hover:text-foreground border border-border/60"
+                        : "bg-card text-muted-foreground hover:bg-muted hover:text-foreground border border-border/60",
                     )}
                   >
                     <History size={13} />
@@ -2604,20 +3007,31 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                       {activeCasesList.map((c) => (
                         <div
                           key={c._id}
-                          onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: c._id } })}
+                          onClick={() =>
+                            navigate({ to: "/cases/$caseId", params: { caseId: c._id } })
+                          }
                           className="group flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 rounded-lg transition-colors hover:bg-muted/40 cursor-pointer"
                         >
                           <div className="min-w-0 space-y-1">
                             <div className="flex items-center gap-2">
-                              <span className="font-mono text-xs font-semibold text-primary">{c.number}</span>
+                              <span className="font-mono text-xs font-semibold text-primary">
+                                {c.number}
+                              </span>
                               <h5 className="font-medium text-xs sm:text-sm text-foreground truncate max-w-lg group-hover:text-primary transition-colors">
                                 {c.title}
                               </h5>
-                              <ExternalLink size={12} className="shrink-0 opacity-40 group-hover:opacity-100 text-primary" />
+                              <ExternalLink
+                                size={12}
+                                className="shrink-0 opacity-40 group-hover:opacity-100 text-primary"
+                              />
                             </div>
 
                             <div className="flex flex-wrap items-center gap-2.5 text-[11px] text-muted-foreground">
-                              {c.court && <span>Court: <strong className="text-foreground">{c.court}</strong></span>}
+                              {c.court && (
+                                <span>
+                                  Court: <strong className="text-foreground">{c.court}</strong>
+                                </span>
+                              )}
                               {c.practice && (
                                 <>
                                   <span>•</span>
@@ -2627,7 +3041,10 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                               {c.parties?.[0]?.name && (
                                 <>
                                   <span>•</span>
-                                  <span>Client: <strong className="text-foreground">{c.parties[0].name}</strong></span>
+                                  <span>
+                                    Client:{" "}
+                                    <strong className="text-foreground">{c.parties[0].name}</strong>
+                                  </span>
                                 </>
                               )}
                               {c.nextHearing && (
@@ -2675,9 +3092,7 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                       <div className="divide-y divide-border/40">
                         {allTimeRecentLogs.map((log) => {
                           const { time, relative } = formatLogTime(log.createdAt);
-                          const logDate = log.createdAt
-                            ? formatSafeDate(log.createdAt)
-                            : "";
+                          const logDate = log.createdAt ? formatSafeDate(log.createdAt) : "";
                           return (
                             <div
                               key={log._id}
@@ -2696,7 +3111,12 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                                   {log.resource === "case" && log.resourceId && (
                                     <button
                                       type="button"
-                                      onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: log.resourceId! } })}
+                                      onClick={() =>
+                                        navigate({
+                                          to: "/cases/$caseId",
+                                          params: { caseId: log.resourceId! },
+                                        })
+                                      }
                                       className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
                                     >
                                       <span>View Case</span>
@@ -2705,7 +3125,9 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                                   )}
                                 </div>
                                 {log.details && (
-                                  <p className="text-caption text-muted-foreground break-words">{log.details}</p>
+                                  <p className="text-caption text-muted-foreground break-words">
+                                    {log.details}
+                                  </p>
                                 )}
                               </div>
 
@@ -2713,14 +3135,18 @@ function EmployeeDailyReportCard({ report, selectedDate, onOpenTask, onDrilldown
                                 <span
                                   className={cn(
                                     "rounded-md px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase border",
-                                    getActionBadgeStyle(log.action)
+                                    getActionBadgeStyle(log.action),
                                   )}
                                 >
                                   {log.action}
                                 </span>
                                 <div className="text-right">
-                                  <p className="font-mono text-xs font-medium text-foreground">{logDate} {time}</p>
-                                  {relative && <p className="text-[10px] text-muted-foreground">{relative}</p>}
+                                  <p className="font-mono text-xs font-medium text-foreground">
+                                    {logDate} {time}
+                                  </p>
+                                  {relative && (
+                                    <p className="text-[10px] text-muted-foreground">{relative}</p>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -2813,7 +3239,9 @@ function EmployeeDetailReportView({
       <div className="rounded-xl border border-border p-8 text-center bg-card">
         <AlertTriangle size={32} className="mx-auto text-destructive mb-2" />
         <p className="font-semibold text-foreground">Failed to load employee detailed report</p>
-        <p className="mt-1 text-xs text-muted-foreground">Could not reach the server to retrieve detailed analytics.</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Could not reach the server to retrieve detailed analytics.
+        </p>
         <Button variant="outline" size="sm" onClick={() => refetch()} className="mt-4">
           Retry
         </Button>
@@ -2869,7 +3297,10 @@ function EmployeeDetailReportView({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => { setStartDate(""); setEndDate(""); }}
+                onClick={() => {
+                  setStartDate("");
+                  setEndDate("");
+                }}
                 className="h-7 px-1.5 text-xs text-muted-foreground hover:text-foreground"
                 title="Clear dates"
               >
@@ -2891,15 +3322,28 @@ function EmployeeDetailReportView({
       {/* Printable Report Header */}
       <div className="hidden print:block border-b border-gray-300 pb-4 mb-4">
         <h1 className="text-xl font-bold">SS ASSOCIATES LEGAL-TECH LLP</h1>
-        <h2 className="text-sm font-semibold text-gray-700 mt-1">OFFICIAL EMPLOYEE WORKLOAD & PERFORMANCE AUDIT</h2>
+        <h2 className="text-sm font-semibold text-gray-700 mt-1">
+          OFFICIAL EMPLOYEE WORKLOAD & PERFORMANCE AUDIT
+        </h2>
         <div className="grid grid-cols-2 text-xs mt-3">
           <div>
-            <p><strong>Employee:</strong> {employee.name} ({employee.role})</p>
-            <p><strong>Email:</strong> {employee.email}</p>
+            <p>
+              <strong>Employee:</strong> {employee.name} ({employee.role})
+            </p>
+            <p>
+              <strong>Email:</strong> {employee.email}
+            </p>
           </div>
           <div className="text-right">
-            <p><strong>Report Generated:</strong> {new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</p>
-            {startDate && endDate ? <p><strong>Date Filter:</strong> {startDate} to {endDate}</p> : null}
+            <p>
+              <strong>Report Generated:</strong>{" "}
+              {new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
+            </p>
+            {startDate && endDate ? (
+              <p>
+                <strong>Date Filter:</strong> {startDate} to {endDate}
+              </p>
+            ) : null}
           </div>
         </div>
       </div>
@@ -2912,14 +3356,21 @@ function EmployeeDetailReportView({
             setEmpDrilldownType("tasks");
             setEmpCustomTasks(undefined);
             setEmpDrilldownTitle(`All Assigned Tasks · ${employee.name}`);
-            setEmpDrilldownSubtitle(`Showing all ${tasks.length} task(s) assigned to ${employee.name}`);
+            setEmpDrilldownSubtitle(
+              `Showing all ${tasks.length} task(s) assigned to ${employee.name}`,
+            );
             setEmpDrilldownOpen(true);
           }}
           className="rounded-xl border border-border bg-card p-4 text-left transition-all duration-150 hover:border-primary/40 hover:shadow-xs group cursor-pointer"
         >
           <div className="flex items-center justify-between">
-            <p className="text-[11px] text-muted-foreground group-hover:text-primary transition-colors font-medium">Assigned Tasks</p>
-            <ArrowUpRight size={14} className="text-muted-foreground opacity-40 group-hover:opacity-100 group-hover:text-primary transition-all" />
+            <p className="text-[11px] text-muted-foreground group-hover:text-primary transition-colors font-medium">
+              Assigned Tasks
+            </p>
+            <ArrowUpRight
+              size={14}
+              className="text-muted-foreground opacity-40 group-hover:opacity-100 group-hover:text-primary transition-all"
+            />
           </div>
           <p className="num text-xl font-bold text-foreground mt-1">{metrics.totalTasks}</p>
         </button>
@@ -2928,24 +3379,39 @@ function EmployeeDetailReportView({
           type="button"
           onClick={() => {
             setEmpDrilldownType("tasks");
-            const completed = tasks.filter((t: any) => t.status === "completed" || t.status === "Closed");
+            const completed = tasks.filter(
+              (t: any) => t.status === "completed" || t.status === "Closed",
+            );
             setEmpCustomTasks(completed);
             setEmpDrilldownTitle(`Completed Tasks · ${employee.name}`);
-            setEmpDrilldownSubtitle(`Showing ${completed.length} completed task(s) for ${employee.name}`);
+            setEmpDrilldownSubtitle(
+              `Showing ${completed.length} completed task(s) for ${employee.name}`,
+            );
             setEmpDrilldownOpen(true);
           }}
           className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-left transition-all duration-150 hover:border-emerald-500/40 hover:shadow-xs group cursor-pointer"
         >
           <div className="flex items-center justify-between">
-            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">Completed Tasks</p>
-            <ArrowUpRight size={14} className="text-emerald-600 dark:text-emerald-400 opacity-40 group-hover:opacity-100 transition-all" />
+            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+              Completed Tasks
+            </p>
+            <ArrowUpRight
+              size={14}
+              className="text-emerald-600 dark:text-emerald-400 opacity-40 group-hover:opacity-100 transition-all"
+            />
           </div>
-          <p className="num text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{metrics.completedTasks}</p>
+          <p className="num text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">
+            {metrics.completedTasks}
+          </p>
         </button>
 
         <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
-          <p className="text-[11px] text-blue-600 dark:text-blue-400 font-medium">Completion Rate</p>
-          <p className="num text-xl font-bold text-blue-600 dark:text-blue-400 mt-1">{metrics.completionRate}%</p>
+          <p className="text-[11px] text-blue-600 dark:text-blue-400 font-medium">
+            Completion Rate
+          </p>
+          <p className="num text-xl font-bold text-blue-600 dark:text-blue-400 mt-1">
+            {metrics.completionRate}%
+          </p>
         </div>
 
         <button
@@ -2954,14 +3420,21 @@ function EmployeeDetailReportView({
             setEmpDrilldownType("cases");
             setEmpCustomTasks(undefined);
             setEmpDrilldownTitle(`Assigned Matters & Cases · ${employee.name}`);
-            setEmpDrilldownSubtitle(`Showing all ${cases.length} assigned matter(s) for ${employee.name}`);
+            setEmpDrilldownSubtitle(
+              `Showing all ${cases.length} assigned matter(s) for ${employee.name}`,
+            );
             setEmpDrilldownOpen(true);
           }}
           className="rounded-xl border border-border bg-card p-4 text-left transition-all duration-150 hover:border-primary/40 hover:shadow-xs group cursor-pointer"
         >
           <div className="flex items-center justify-between">
-            <p className="text-[11px] text-muted-foreground group-hover:text-primary transition-colors font-medium">Active Matters</p>
-            <ArrowUpRight size={14} className="text-muted-foreground opacity-40 group-hover:opacity-100 group-hover:text-primary transition-all" />
+            <p className="text-[11px] text-muted-foreground group-hover:text-primary transition-colors font-medium">
+              Active Matters
+            </p>
+            <ArrowUpRight
+              size={14}
+              className="text-muted-foreground opacity-40 group-hover:opacity-100 group-hover:text-primary transition-all"
+            />
           </div>
           <p className="num text-xl font-bold text-foreground mt-1">{metrics.activeCases}</p>
         </button>
@@ -2976,7 +3449,9 @@ function EmployeeDetailReportView({
           </h3>
         </div>
         {tasks.length === 0 ? (
-          <div className="p-8 text-center text-xs text-muted-foreground">No tasks matching date filters</div>
+          <div className="p-8 text-center text-xs text-muted-foreground">
+            No tasks matching date filters
+          </div>
         ) : (
           <>
             {/* Desktop Table View */}
@@ -3050,13 +3525,23 @@ function EmployeeDetailReportView({
                 <tbody className="divide-y divide-border/60">
                   {sortedTasks.map((t) => (
                     <tr key={t._id} className="hover:bg-muted/15">
-                      <td className="py-2.5 px-3 font-medium text-foreground break-words">{t.title}</td>
-                      <td className="py-2.5 px-3 text-muted-foreground break-words">{t.caseId?.title || "—"}</td>
-                      <td className="py-2.5 px-3 text-muted-foreground break-words">{t.clientId?.name || "—"}</td>
+                      <td className="py-2.5 px-3 font-medium text-foreground break-words">
+                        {t.title}
+                      </td>
+                      <td className="py-2.5 px-3 text-muted-foreground break-words">
+                        {t.caseId?.title || "—"}
+                      </td>
+                      <td className="py-2.5 px-3 text-muted-foreground break-words">
+                        {t.clientId?.name || "—"}
+                      </td>
                       <td className="py-2.5 px-3">
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                          t.priority === "High" ? "bg-rose-500/10 text-rose-600" : "bg-muted text-muted-foreground"
-                        }`}>
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                            t.priority === "High"
+                              ? "bg-rose-500/10 text-rose-600"
+                              : "bg-muted text-muted-foreground"
+                          }`}
+                        >
                           {t.priority}
                         </span>
                       </td>
@@ -3089,11 +3574,17 @@ function EmployeeDetailReportView({
               {tasks.map((t) => (
                 <div key={t._id} className="p-3.5 space-y-2">
                   <div className="flex items-start justify-between gap-2">
-                    <p className="font-medium text-foreground text-xs leading-snug break-words flex-1">{t.title}</p>
+                    <p className="font-medium text-foreground text-xs leading-snug break-words flex-1">
+                      {t.title}
+                    </p>
                     <div className="flex items-center gap-1.5 shrink-0">
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                        t.priority === "High" ? "bg-rose-500/10 text-rose-600" : "bg-muted text-muted-foreground"
-                      }`}>
+                      <span
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                          t.priority === "High"
+                            ? "bg-rose-500/10 text-rose-600"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
                         {t.priority}
                       </span>
                       <Button
@@ -3108,17 +3599,22 @@ function EmployeeDetailReportView({
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
                     <div className="truncate">
-                      <span className="font-medium text-foreground/70">Matter:</span> {t.caseId?.title || "—"}
+                      <span className="font-medium text-foreground/70">Matter:</span>{" "}
+                      {t.caseId?.title || "—"}
                     </div>
                     <div className="truncate">
-                      <span className="font-medium text-foreground/70">Client:</span> {t.clientId?.name || "—"}
+                      <span className="font-medium text-foreground/70">Client:</span>{" "}
+                      {t.clientId?.name || "—"}
                     </div>
                     <div>
-                      <span className="font-medium text-foreground/70">Due:</span> {formatSafeDate(t.deadline)}
+                      <span className="font-medium text-foreground/70">Due:</span>{" "}
+                      {formatSafeDate(t.deadline)}
                     </div>
                     <div>
                       <span className="font-medium text-foreground/70">Status:</span>{" "}
-                      <span className="capitalize text-foreground font-medium">{t.status.replace(/_/g, " ")}</span>
+                      <span className="capitalize text-foreground font-medium">
+                        {t.status.replace(/_/g, " ")}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -3137,7 +3633,9 @@ function EmployeeDetailReportView({
           </h3>
         </div>
         {cases.length === 0 ? (
-          <div className="p-8 text-center text-xs text-muted-foreground">No matters currently assigned</div>
+          <div className="p-8 text-center text-xs text-muted-foreground">
+            No matters currently assigned
+          </div>
         ) : (
           <>
             {/* Desktop Table View */}
@@ -3214,10 +3712,18 @@ function EmployeeDetailReportView({
                       onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: c._id } })}
                       className="hover:bg-muted/15 cursor-pointer transition-colors"
                     >
-                      <td className="py-2.5 px-3 font-mono font-medium text-primary break-all">{c.number}</td>
-                      <td className="py-2.5 px-3 font-medium text-foreground break-words">{c.title}</td>
-                      <td className="py-2.5 px-3 text-muted-foreground">{c.practice || "General"}</td>
-                      <td className="py-2.5 px-3 text-muted-foreground break-words">{c.court || "—"}</td>
+                      <td className="py-2.5 px-3 font-mono font-medium text-primary break-all">
+                        {c.number}
+                      </td>
+                      <td className="py-2.5 px-3 font-medium text-foreground break-words">
+                        {c.title}
+                      </td>
+                      <td className="py-2.5 px-3 text-muted-foreground">
+                        {c.practice || "General"}
+                      </td>
+                      <td className="py-2.5 px-3 text-muted-foreground break-words">
+                        {c.court || "—"}
+                      </td>
                       <td className="py-2.5 px-3 text-muted-foreground">
                         {formatSafeDate(c.nextHearing)}
                       </td>
@@ -3246,16 +3752,21 @@ function EmployeeDetailReportView({
                       {c.status}
                     </span>
                   </div>
-                  <p className="font-medium text-foreground text-xs leading-snug break-words">{c.title}</p>
+                  <p className="font-medium text-foreground text-xs leading-snug break-words">
+                    {c.title}
+                  </p>
                   <div className="grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
                     <div className="truncate">
-                      <span className="font-medium text-foreground/70">Court:</span> {c.court || "—"}
+                      <span className="font-medium text-foreground/70">Court:</span>{" "}
+                      {c.court || "—"}
                     </div>
                     <div className="truncate">
-                      <span className="font-medium text-foreground/70">Practice:</span> {c.practice || "General"}
+                      <span className="font-medium text-foreground/70">Practice:</span>{" "}
+                      {c.practice || "General"}
                     </div>
                     <div className="col-span-2">
-                      <span className="font-medium text-foreground/70">Next Hearing:</span> {formatSafeDate(c.nextHearing)}
+                      <span className="font-medium text-foreground/70">Next Hearing:</span>{" "}
+                      {formatSafeDate(c.nextHearing)}
                     </div>
                   </div>
                 </div>
@@ -3274,20 +3785,29 @@ function EmployeeDetailReportView({
           </h3>
         </div>
         {auditLogs.length === 0 ? (
-          <div className="p-8 text-center text-xs text-muted-foreground">No activity logs recorded</div>
+          <div className="p-8 text-center text-xs text-muted-foreground">
+            No activity logs recorded
+          </div>
         ) : (
           <div className="divide-y divide-border/60 p-2">
             {auditLogs.map((log) => (
-              <div key={log._id} className="p-2.5 flex items-center justify-between text-xs hover:bg-muted/10 rounded">
+              <div
+                key={log._id}
+                className="p-2.5 flex items-center justify-between text-xs hover:bg-muted/10 rounded"
+              >
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-foreground uppercase text-[10px] bg-muted px-1.5 py-0.5 rounded">
                       {log.action}
                     </span>
                     <span className="font-medium text-foreground">{log.resource}</span>
-                    {log.resourceName && <span className="text-muted-foreground">({log.resourceName})</span>}
+                    {log.resourceName && (
+                      <span className="text-muted-foreground">({log.resourceName})</span>
+                    )}
                   </div>
-                  {log.details && <p className="text-[11px] text-muted-foreground mt-0.5">{log.details}</p>}
+                  {log.details && (
+                    <p className="text-[11px] text-muted-foreground mt-0.5">{log.details}</p>
+                  )}
                 </div>
                 <div className="text-right text-[11px] font-mono text-muted-foreground">
                   {new Date(log.createdAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
@@ -3358,7 +3878,8 @@ function ClientDetailReportView({
     customAccessors: {
       visitedAt: (v) => v.visitedAt,
       purpose: (v) => v.purpose,
-      handledBy: (v) => (v.handledBy ? (typeof v.handledBy === "object" ? v.handledBy.name : v.handledBy) : ""),
+      handledBy: (v) =>
+        v.handledBy ? (typeof v.handledBy === "object" ? v.handledBy.name : v.handledBy) : "",
       notes: (v) => v.notes,
     },
   });
@@ -3393,7 +3914,9 @@ function ClientDetailReportView({
       <div className="rounded-xl border border-border p-8 text-center bg-card">
         <AlertTriangle size={32} className="mx-auto text-destructive mb-2" />
         <p className="font-semibold text-foreground">Failed to load client detailed report</p>
-        <p className="mt-1 text-xs text-muted-foreground">Could not reach the server to retrieve detailed analytics.</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Could not reach the server to retrieve detailed analytics.
+        </p>
         <Button variant="outline" size="sm" onClick={() => refetch()} className="mt-4">
           Retry
         </Button>
@@ -3444,7 +3967,9 @@ function ClientDetailReportView({
                 {client.type} · {client.tag}
               </span>
             </h2>
-            <p className="text-xs text-muted-foreground">{client.phone} {client.email ? `· ${client.email}` : ""}</p>
+            <p className="text-xs text-muted-foreground">
+              {client.phone} {client.email ? `· ${client.email}` : ""}
+            </p>
           </div>
         </div>
 
@@ -3471,16 +3996,28 @@ function ClientDetailReportView({
       {/* Printable Report Header */}
       <div className="hidden print:block border-b border-gray-300 pb-4 mb-4">
         <h1 className="text-xl font-bold">SS ASSOCIATES LEGAL-TECH LLP</h1>
-        <h2 className="text-sm font-semibold text-gray-700 mt-1">CLIENT DOSSIER & COMPREHENSIVE MATTER REPORT</h2>
+        <h2 className="text-sm font-semibold text-gray-700 mt-1">
+          CLIENT DOSSIER & COMPREHENSIVE MATTER REPORT
+        </h2>
         <div className="grid grid-cols-2 text-xs mt-3">
           <div>
-            <p><strong>Client Name:</strong> {client.name}</p>
-            <p><strong>Classification:</strong> {client.type} · {client.tag}</p>
-            <p><strong>Contact:</strong> {client.phone} | {client.email || "N/A"}</p>
+            <p>
+              <strong>Client Name:</strong> {client.name}
+            </p>
+            <p>
+              <strong>Classification:</strong> {client.type} · {client.tag}
+            </p>
+            <p>
+              <strong>Contact:</strong> {client.phone} | {client.email || "N/A"}
+            </p>
           </div>
           <div className="text-right">
-            <p><strong>Report Date:</strong> {formatSafeDate(new Date())}</p>
-            <p><strong>Total Recorded Office Visits:</strong> {metrics.totalVisits}</p>
+            <p>
+              <strong>Report Date:</strong> {formatSafeDate(new Date())}
+            </p>
+            <p>
+              <strong>Total Recorded Office Visits:</strong> {metrics.totalVisits}
+            </p>
           </div>
         </div>
       </div>
@@ -3498,7 +4035,9 @@ function ClientDetailReportView({
           className="lift text-left rounded-xl border border-border bg-card p-4 transition-all hover:border-primary/50 hover:bg-muted/10 cursor-pointer group"
         >
           <div className="flex items-center justify-between">
-            <p className="text-[11px] text-muted-foreground group-hover:text-primary transition-colors font-medium">Active Matters</p>
+            <p className="text-[11px] text-muted-foreground group-hover:text-primary transition-colors font-medium">
+              Active Matters
+            </p>
             <ArrowUpRight className="size-3.5 text-muted-foreground opacity-40 group-hover:opacity-100 group-hover:text-primary transition-all" />
           </div>
           <p className="num text-xl font-bold text-foreground mt-1">{metrics.activeCases}</p>
@@ -3509,16 +4048,22 @@ function ClientDetailReportView({
           onClick={() => {
             setDrilldownType("tasks");
             setDrilldownTitle(`Pending Tasks — ${client.name}`);
-            setDrilldownSubtitle(`Operational tasks pending execution or review for ${client.name}`);
+            setDrilldownSubtitle(
+              `Operational tasks pending execution or review for ${client.name}`,
+            );
             setDrilldownOpen(true);
           }}
           className="lift text-left rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 transition-all hover:border-amber-500/50 hover:bg-amber-500/10 cursor-pointer group"
         >
           <div className="flex items-center justify-between">
-            <p className="text-[11px] text-amber-600 dark:text-amber-400 group-hover:underline transition-colors font-medium">Pending Tasks</p>
+            <p className="text-[11px] text-amber-600 dark:text-amber-400 group-hover:underline transition-colors font-medium">
+              Pending Tasks
+            </p>
             <ArrowUpRight className="size-3.5 text-amber-600 dark:text-amber-400 opacity-40 group-hover:opacity-100 transition-all" />
           </div>
-          <p className="num text-xl font-bold text-amber-600 dark:text-amber-400 mt-1">{metrics.pendingTasks}</p>
+          <p className="num text-xl font-bold text-amber-600 dark:text-amber-400 mt-1">
+            {metrics.pendingTasks}
+          </p>
         </button>
 
         <button
@@ -3526,13 +4071,17 @@ function ClientDetailReportView({
           onClick={() => {
             setDrilldownType("visits");
             setDrilldownTitle(`Law-Firm Office Visits — ${client.name}`);
-            setDrilldownSubtitle(`Log of in-person consultations and law-firm visits for ${client.name}`);
+            setDrilldownSubtitle(
+              `Log of in-person consultations and law-firm visits for ${client.name}`,
+            );
             setDrilldownOpen(true);
           }}
           className="lift text-left rounded-xl border border-border bg-card p-4 transition-all hover:border-primary/50 hover:bg-muted/10 cursor-pointer group"
         >
           <div className="flex items-center justify-between">
-            <p className="text-[11px] text-muted-foreground group-hover:text-primary transition-colors font-medium">Law-Firm Visits</p>
+            <p className="text-[11px] text-muted-foreground group-hover:text-primary transition-colors font-medium">
+              Law-Firm Visits
+            </p>
             <ArrowUpRight className="size-3.5 text-muted-foreground opacity-40 group-hover:opacity-100 group-hover:text-primary transition-all" />
           </div>
           <p className="num text-xl font-bold text-foreground mt-1">{metrics.totalVisits}</p>
@@ -3543,13 +4092,17 @@ function ClientDetailReportView({
           onClick={() => {
             setDrilldownType("documents");
             setDrilldownTitle(`Documents Filed — ${client.name}`);
-            setDrilldownSubtitle(`Legal filings, pleadings, and uploaded assets for ${client.name}`);
+            setDrilldownSubtitle(
+              `Legal filings, pleadings, and uploaded assets for ${client.name}`,
+            );
             setDrilldownOpen(true);
           }}
           className="lift text-left rounded-xl border border-border bg-card p-4 transition-all hover:border-primary/50 hover:bg-muted/10 cursor-pointer group"
         >
           <div className="flex items-center justify-between">
-            <p className="text-[11px] text-muted-foreground group-hover:text-primary transition-colors font-medium">Documents Filed</p>
+            <p className="text-[11px] text-muted-foreground group-hover:text-primary transition-colors font-medium">
+              Documents Filed
+            </p>
             <ArrowUpRight className="size-3.5 text-muted-foreground opacity-40 group-hover:opacity-100 group-hover:text-primary transition-all" />
           </div>
           <p className="num text-xl font-bold text-foreground mt-1">{metrics.totalDocuments}</p>
@@ -3573,7 +4126,9 @@ function ClientDetailReportView({
           </Button>
         </div>
         {!client.visits || client.visits.length === 0 ? (
-          <div className="p-6 text-center text-xs text-muted-foreground">No law-firm office visits recorded yet</div>
+          <div className="p-6 text-center text-xs text-muted-foreground">
+            No law-firm office visits recorded yet
+          </div>
         ) : (
           <>
             {/* Desktop Table */}
@@ -3634,11 +4189,19 @@ function ClientDetailReportView({
                       <td className="py-2.5 px-3 font-mono text-muted-foreground">
                         {formatSafeDate(v.visitedAt, "—")}
                       </td>
-                      <td className="py-2.5 px-3 font-semibold text-foreground break-words">{v.purpose}</td>
-                      <td className="py-2.5 px-3 text-muted-foreground">
-                        {v.handledBy ? (typeof v.handledBy === "object" ? v.handledBy.name : v.handledBy) : "Partner / Staff"}
+                      <td className="py-2.5 px-3 font-semibold text-foreground break-words">
+                        {v.purpose}
                       </td>
-                      <td className="py-2.5 px-3 text-muted-foreground break-words">{v.notes || "—"}</td>
+                      <td className="py-2.5 px-3 text-muted-foreground">
+                        {v.handledBy
+                          ? typeof v.handledBy === "object"
+                            ? v.handledBy.name
+                            : v.handledBy
+                          : "Partner / Staff"}
+                      </td>
+                      <td className="py-2.5 px-3 text-muted-foreground break-words">
+                        {v.notes || "—"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -3655,11 +4218,17 @@ function ClientDetailReportView({
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-semibold text-xs text-foreground">{v.purpose}</span>
-                    <span className="font-mono text-[10px] text-muted-foreground">{formatSafeDate(v.visitedAt, "—")}</span>
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      {formatSafeDate(v.visitedAt, "—")}
+                    </span>
                   </div>
                   <div className="text-[11px] text-muted-foreground">
                     <span className="font-medium text-foreground/70">Handled By:</span>{" "}
-                    {v.handledBy ? (typeof v.handledBy === "object" ? v.handledBy.name : v.handledBy) : "Partner / Staff"}
+                    {v.handledBy
+                      ? typeof v.handledBy === "object"
+                        ? v.handledBy.name
+                        : v.handledBy
+                      : "Partner / Staff"}
                   </div>
                   {v.notes && (
                     <p className="text-[11px] text-muted-foreground bg-muted/20 p-2 rounded border border-border/40 line-clamp-2">
@@ -3682,7 +4251,9 @@ function ClientDetailReportView({
           </h3>
         </div>
         {cases.length === 0 ? (
-          <div className="p-6 text-center text-xs text-muted-foreground">No cases linked to this client</div>
+          <div className="p-6 text-center text-xs text-muted-foreground">
+            No cases linked to this client
+          </div>
         ) : (
           <>
             {/* Desktop Table View */}
@@ -3759,11 +4330,21 @@ function ClientDetailReportView({
                       onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: c._id } })}
                       className="hover:bg-muted/15 cursor-pointer transition-colors"
                     >
-                      <td className="py-2.5 px-3 font-mono font-medium text-primary break-all">{c.number}</td>
-                      <td className="py-2.5 px-3 font-medium text-foreground break-words">{c.title}</td>
-                      <td className="py-2.5 px-3 text-muted-foreground">{c.practice || "General"}</td>
-                      <td className="py-2.5 px-3 text-muted-foreground break-words">{c.court || "—"}</td>
-                      <td className="py-2.5 px-3 text-muted-foreground truncate">{c.assignedTo?.name || "Unassigned"}</td>
+                      <td className="py-2.5 px-3 font-mono font-medium text-primary break-all">
+                        {c.number}
+                      </td>
+                      <td className="py-2.5 px-3 font-medium text-foreground break-words">
+                        {c.title}
+                      </td>
+                      <td className="py-2.5 px-3 text-muted-foreground">
+                        {c.practice || "General"}
+                      </td>
+                      <td className="py-2.5 px-3 text-muted-foreground break-words">
+                        {c.court || "—"}
+                      </td>
+                      <td className="py-2.5 px-3 text-muted-foreground truncate">
+                        {c.assignedTo?.name || "Unassigned"}
+                      </td>
                       <td className="py-2.5 px-3">
                         <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-foreground">
                           {c.status}
@@ -3789,16 +4370,21 @@ function ClientDetailReportView({
                       {c.status}
                     </span>
                   </div>
-                  <p className="font-medium text-foreground text-xs leading-snug break-words">{c.title}</p>
+                  <p className="font-medium text-foreground text-xs leading-snug break-words">
+                    {c.title}
+                  </p>
                   <div className="grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
                     <div className="truncate">
-                      <span className="font-medium text-foreground/70">Court:</span> {c.court || "—"}
+                      <span className="font-medium text-foreground/70">Court:</span>{" "}
+                      {c.court || "—"}
                     </div>
                     <div className="truncate">
-                      <span className="font-medium text-foreground/70">Practice:</span> {c.practice || "General"}
+                      <span className="font-medium text-foreground/70">Practice:</span>{" "}
+                      {c.practice || "General"}
                     </div>
                     <div className="col-span-2 truncate">
-                      <span className="font-medium text-foreground/70">Assigned To:</span> {c.assignedTo?.name || "Unassigned"}
+                      <span className="font-medium text-foreground/70">Assigned To:</span>{" "}
+                      {c.assignedTo?.name || "Unassigned"}
                     </div>
                   </div>
                 </div>
@@ -3816,7 +4402,9 @@ function ClientDetailReportView({
           title={drilldownTitle}
           subtitle={drilldownSubtitle}
           type={drilldownType}
-          tasks={tasks.filter((t) => ["pending", "in_progress", "pending_approval"].includes(t.status))}
+          tasks={tasks.filter((t) =>
+            ["pending", "in_progress", "pending_approval"].includes(t.status),
+          )}
           cases={cases.filter((c) => !["Closed", "Archived"].includes(c.status))}
           visits={client.visits || []}
           documents={documents || []}
@@ -3886,7 +4474,10 @@ function ClientDetailReportView({
 
       {/* Visit Detail Inspection Dialog */}
       {selectedVisit && (
-        <Dialog open={Boolean(selectedVisit)} onOpenChange={(o) => (!o ? setSelectedVisit(null) : null)}>
+        <Dialog
+          open={Boolean(selectedVisit)}
+          onOpenChange={(o) => (!o ? setSelectedVisit(null) : null)}
+        >
           <DialogContent className="max-w-md rounded-xl p-6 shadow-lift border-border bg-card">
             <DialogHeader className="border-b border-border pb-3">
               <DialogTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
@@ -3901,21 +4492,31 @@ function ClientDetailReportView({
             <div className="space-y-4 py-3 text-xs">
               <div className="grid grid-cols-2 gap-3 p-3 rounded-lg border border-border bg-muted/20">
                 <div>
-                  <span className="text-[11px] text-muted-foreground block font-medium">Visit Date &amp; Time</span>
+                  <span className="text-[11px] text-muted-foreground block font-medium">
+                    Visit Date &amp; Time
+                  </span>
                   <span className="font-semibold text-foreground">
                     {formatSafeDate(selectedVisit.visitedAt, "—")}
                   </span>
                 </div>
                 <div>
-                  <span className="text-[11px] text-muted-foreground block font-medium">Handled By</span>
+                  <span className="text-[11px] text-muted-foreground block font-medium">
+                    Handled By
+                  </span>
                   <span className="font-semibold text-foreground">
-                    {selectedVisit.handledBy ? (typeof selectedVisit.handledBy === "object" ? selectedVisit.handledBy.name : selectedVisit.handledBy) : "Partner / Staff"}
+                    {selectedVisit.handledBy
+                      ? typeof selectedVisit.handledBy === "object"
+                        ? selectedVisit.handledBy.name
+                        : selectedVisit.handledBy
+                      : "Partner / Staff"}
                   </span>
                 </div>
               </div>
 
               <div>
-                <span className="text-[11px] text-muted-foreground block font-medium mb-1">Purpose / Matter Discussed</span>
+                <span className="text-[11px] text-muted-foreground block font-medium mb-1">
+                  Purpose / Matter Discussed
+                </span>
                 <div className="p-3 rounded-lg border border-border bg-background font-medium text-foreground">
                   {selectedVisit.purpose}
                 </div>
@@ -3923,7 +4524,9 @@ function ClientDetailReportView({
 
               {selectedVisit.notes && (
                 <div>
-                  <span className="text-[11px] text-muted-foreground block font-medium mb-1">Consultation Notes &amp; Action Points</span>
+                  <span className="text-[11px] text-muted-foreground block font-medium mb-1">
+                    Consultation Notes &amp; Action Points
+                  </span>
                   <div className="p-3 rounded-lg border border-border bg-muted/10 text-muted-foreground whitespace-pre-wrap leading-relaxed">
                     {selectedVisit.notes}
                   </div>
@@ -3932,7 +4535,12 @@ function ClientDetailReportView({
             </div>
 
             <DialogFooter className="border-t border-border pt-3">
-              <Button size="sm" variant="outline" onClick={() => setSelectedVisit(null)} className="text-xs">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setSelectedVisit(null)}
+                className="text-xs"
+              >
                 Close
               </Button>
             </DialogFooter>

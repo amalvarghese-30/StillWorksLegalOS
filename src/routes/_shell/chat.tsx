@@ -772,7 +772,7 @@ function ChatPage() {
                 <div className="size-20 rounded-full bg-primary/10 grid place-items-center mb-4 text-primary shadow-xs">
                   <MessageSquare size={38} strokeWidth={1.5} />
                 </div>
-                <h3 className="text-title font-semibold text-foreground">Team Chat</h3>
+                <h3 className="font-display text-lg sm:text-xl font-bold tracking-tight text-foreground">Team Chat</h3>
                 <p className="mt-2 max-w-sm text-helper text-muted-foreground">
                   Select a conversation from the sidebar to start messaging. Private, end-to-end encrypted for the firm.
                 </p>

@@ -4,15 +4,13 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="description" content="Premium legal practice management for modern law firms." />
-    <meta name="theme-color" content="#6366F1" />
+    <meta name="theme-color" content="#F4F7FC" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="SS Associates" />
 
     <title>SS Associates · Legal-Tech LLP</title>
-
-
 
     <link rel="icon" type="image/x-icon" href="/favicon.ico?v=2" />
     <link rel="icon" type="image/png" href="/logo.png?v=2" />
@@ -22,17 +20,31 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
     />
-    <!-- Early visual-theme init: set data-visual-theme before first paint to avoid FOUC -->
+    <!-- Early visual-theme init: set data-visual-theme and theme-color before first paint to avoid FOUC -->
     <script>
       (function () {
         try {
           var vt = localStorage.getItem("stillworks.visual_theme");
-          document.documentElement.setAttribute(
-            "data-visual-theme",
-            vt === "blue" || vt === "sage" ? vt : "blue"
-          );
+          vt = vt === "sage" ? "sage" : "blue";
+          document.documentElement.setAttribute("data-visual-theme", vt);
+          var th = localStorage.getItem("stillworks.theme");
+          var isDark =
+            th === "dark" ||
+            (th !== "light" &&
+              window.matchMedia &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (isDark) {
+            document.documentElement.classList.add("dark");
+          }
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) {
+            meta.setAttribute(
+              "content",
+              vt === "sage" ? (isDark ? "#122017" : "#F6F4EC") : isDark ? "#172033" : "#F4F7FC",
+            );
+          }
         } catch (e) {
           document.documentElement.setAttribute("data-visual-theme", "blue");
         }

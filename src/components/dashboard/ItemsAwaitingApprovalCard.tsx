@@ -38,11 +38,11 @@ export function ItemsAwaitingApprovalCard({
       {/* Header */}
       <div className="flex items-center justify-between pb-3.5 border-b border-border/50">
         <div className="flex items-center gap-2.5">
-          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-purple-50 text-purple-600 dark:bg-purple-950/50 dark:text-purple-400 border border-purple-200/50 dark:border-purple-800/40">
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary border border-primary/20">
             <ShieldCheck size={18} strokeWidth={2} />
           </span>
           <div>
-            <h2 className="text-sm font-semibold text-foreground">Items awaiting approval</h2>
+            <h2 className="font-display text-card-title font-semibold text-foreground">Items awaiting approval</h2>
             <p className="text-xs text-muted-foreground">
               Cases, tasks or documents pending your review
             </p>
@@ -50,7 +50,7 @@ export function ItemsAwaitingApprovalCard({
         </div>
         <Link
           to="/admin/approvals"
-          className="inline-flex items-center gap-1 text-xs font-medium text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 transition-colors"
+          className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
         >
           View all <ArrowRight size={13} strokeWidth={2} />
         </Link>

@@ -460,7 +460,7 @@ export function EmployeeDetailWorkspace({
               <div className="text-[11px] font-medium text-muted-foreground group-hover:text-primary uppercase tracking-wider flex items-center justify-center gap-1">
                 Active Cases <ChevronRight size={11} className="opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
-              <div className="font-display text-2xl font-bold text-foreground mt-0.5">
+              <div className="font-display text-2xl font-bold text-foreground mt-0.5 tabular-nums">
                 {metrics?.activeCases ?? cases.length}
               </div>
             </button>
@@ -474,7 +474,7 @@ export function EmployeeDetailWorkspace({
               <div className="text-[11px] font-medium text-muted-foreground group-hover:text-sky-400 uppercase tracking-wider flex items-center justify-center gap-1">
                 Open Tasks <ChevronRight size={11} className="opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
-              <div className="font-display text-2xl font-bold text-sky-400 mt-0.5">
+              <div className="font-display text-2xl font-bold text-sky-400 mt-0.5 tabular-nums">
                 {metrics?.openTasks ?? tasks.filter((t) => t.status !== "completed").length}
               </div>
             </button>
@@ -489,7 +489,7 @@ export function EmployeeDetailWorkspace({
                 Overdue <ChevronRight size={11} className="opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
               <div className={cn(
-                "font-display text-2xl font-bold mt-0.5",
+                "font-display text-2xl font-bold mt-0.5 tabular-nums",
                 (metrics?.overdueTasks ?? 0) > 0 ? "text-rose-400" : "text-muted-foreground"
               )}>
                 {metrics?.overdueTasks ?? 0}
@@ -516,7 +516,7 @@ export function EmployeeDetailWorkspace({
                 type="button"
                 onClick={() => setActiveTab(tab.key as TabKey)}
                 className={cn(
-                  "flex items-center gap-2 border-b-2 px-4 py-3 text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer",
+                  "flex items-center gap-2 border-b-2 px-4 py-3 text-[13px] font-semibold whitespace-nowrap transition-colors cursor-pointer",
                   isActive
                     ? "border-primary text-primary"
                     : "border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30"

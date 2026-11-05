@@ -702,7 +702,7 @@ function DocumentsPage() {
                   </div>
                 )}
 
-                <h2 className="truncate text-title font-semibold">{previewDoc.name}</h2>
+                <h2 className="truncate font-display text-section font-semibold tracking-tight text-foreground">{previewDoc.name}</h2>
                 {previewDoc.caseName && (
                   <p className="truncate text-helper text-primary/90 font-medium flex items-center gap-1.5 mt-0.5">
                     <Briefcase size={14} className="shrink-0" />

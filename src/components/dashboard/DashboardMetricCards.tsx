@@ -121,7 +121,7 @@ export function DashboardMetricCards({
                 </span>
               </div>
               <div className="mt-2.5">
-                <div className="text-2xl font-bold tracking-tight text-primary-foreground">
+                <div className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-primary-foreground tabular-nums">
                   {loading ? "…" : c.value}
                 </div>
                 <div className="mt-0.5 text-[11px] font-medium text-primary-foreground/80">
@@ -159,7 +159,7 @@ export function DashboardMetricCards({
               </span>
             </div>
             <div className="mt-2.5">
-              <div className="text-2xl font-bold tracking-tight text-foreground">
+              <div className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-foreground tabular-nums">
                 {loading ? "…" : c.value}
               </div>
               <div className="mt-0.5 text-[11px] font-medium text-muted-foreground">{c.hint}</div>

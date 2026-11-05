@@ -125,7 +125,7 @@ export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
                   onClick={onNavigate}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "group flex min-h-11 items-center gap-3 rounded-xl px-3.5 py-2.5 text-helper font-medium transition-all duration-200",
+                    "group flex min-h-11 items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all duration-200",
                     active
                       ? isSage
                         ? "bg-sidebar-primary/90 text-sidebar-primary-foreground shadow-soft"
@@ -161,7 +161,7 @@ export function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
                   onClick={onNavigate}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "group flex min-h-11 items-center gap-3 rounded-xl px-3.5 py-2.5 text-helper font-medium transition-all duration-200",
+                    "group flex min-h-11 items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all duration-200",
                     active
                       ? isSage
                         ? "bg-sidebar-primary/90 text-sidebar-primary-foreground shadow-soft"

@@ -266,7 +266,7 @@ export function PendingCasesAndTasksSection({
             <AlertTriangle size={18} strokeWidth={2} />
           </span>
           <div>
-            <h2 className="text-sm sm:text-base font-semibold text-foreground">
+            <h2 className="font-display text-card-title sm:text-base font-semibold text-foreground">
               Pending Cases & Tasks
             </h2>
             <p className="text-xs text-muted-foreground">

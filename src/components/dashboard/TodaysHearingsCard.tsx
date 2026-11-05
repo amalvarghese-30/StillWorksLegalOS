@@ -26,18 +26,18 @@ export function TodaysHearingsCard({
       {/* Header */}
       <div className="flex items-center justify-between pb-3.5 border-b border-border/50">
         <div className="flex items-center gap-2.5">
-          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-purple-50 text-purple-600 dark:bg-purple-950/50 dark:text-purple-400 border border-purple-200/50 dark:border-purple-800/40">
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary border border-primary/20">
             <Gavel size={18} strokeWidth={2} />
           </span>
           <div>
-            <h2 className="text-sm font-semibold text-foreground">Today's hearings</h2>
+            <h2 className="font-display text-card-title font-semibold text-foreground">Today's hearings</h2>
             <p className="text-xs text-muted-foreground">Your schedule in court today</p>
           </div>
         </div>
         <Link
           to="/calendar"
           search={{ date: new Date().toISOString().split("T")[0] }}
-          className="inline-flex items-center gap-1 text-xs font-medium text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 transition-colors"
+          className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
         >
           View calendar <ArrowRight size={13} strokeWidth={2} />
         </Link>
@@ -71,7 +71,7 @@ export function TodaysHearingsCard({
           </div>
         ) : hearings.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center px-4 rounded-lg border border-dashed border-border/70 bg-muted/20">
-            <span className="grid size-12 place-items-center rounded-full bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400 border border-blue-200/50 dark:border-blue-900/40 mb-3">
+            <span className="grid size-12 place-items-center rounded-full bg-primary/10 text-primary border border-primary/20 mb-3">
               <Calendar size={22} strokeWidth={1.75} />
             </span>
             <p className="text-sm font-semibold text-foreground">

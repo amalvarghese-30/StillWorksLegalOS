@@ -358,8 +358,7 @@ export function UpcomingClientDashboard({
       {clientGroups.map((group) => {
         const isCollapsed = collapsedClients.has(group.clientId);
         const accent = getClientAccent(group.clientId);
-        const initials =
-          group.clientId === "__unlinked__" ? "UT" : getInitials(group.clientName);
+        const initials = group.clientId === "__unlinked__" ? "UT" : getInitials(group.clientName);
         const formattedPhone = formatPhoneNumber(group.clientPhone);
 
         return (
@@ -465,8 +464,8 @@ function ClientGroupTaskTable({
           Array.isArray(t.assignedUsers) && t.assignedUsers.length > 0
             ? t.assignedUsers
             : t.assignedTo
-            ? [t.assignedTo]
-            : [];
+              ? [t.assignedTo]
+              : [];
         return assignees.map((a: any) => a.name).join(", ");
       },
       deadline: (t) => t.deadline,
@@ -474,8 +473,8 @@ function ClientGroupTaskTable({
         typeof t.createdBy === "object" && t.createdBy?.name
           ? t.createdBy.name
           : typeof t.createdBy === "string"
-          ? t.createdBy
-          : "",
+            ? t.createdBy
+            : "",
     },
   });
 
@@ -549,8 +548,8 @@ function ClientGroupTaskTable({
                 typeof task.createdBy === "object" && task.createdBy?.name
                   ? task.createdBy.name
                   : typeof task.createdBy === "string"
-                  ? task.createdBy
-                  : "Unknown";
+                    ? task.createdBy
+                    : "Unknown";
               const creatorInitials = getInitials(creatorName);
 
               // Assigned users list
@@ -558,16 +557,16 @@ function ClientGroupTaskTable({
                 Array.isArray(task.assignedUsers) && task.assignedUsers.length > 0
                   ? task.assignedUsers
                   : task.assignedTo
-                  ? [task.assignedTo]
-                  : [];
+                    ? [task.assignedTo]
+                    : [];
 
               // Priority dot color
               const priorityColor =
                 task.priority === "High"
                   ? "bg-rose-500"
                   : task.priority === "Medium"
-                  ? "bg-amber-500"
-                  : "bg-emerald-500";
+                    ? "bg-amber-500"
+                    : "bg-emerald-500";
 
               return (
                 <tr
@@ -609,9 +608,7 @@ function ClientGroupTaskTable({
                   {/* 2. DESCRIPTION */}
                   <td className="py-3 px-4 align-top text-muted-foreground max-w-xs">
                     {task.description?.trim() ? (
-                      <p className="line-clamp-2 text-xs leading-relaxed">
-                        {task.description}
-                      </p>
+                      <p className="line-clamp-2 text-xs leading-relaxed">{task.description}</p>
                     ) : (
                       <p className="text-xs italic text-muted-foreground/60">
                         No description provided
@@ -680,13 +677,11 @@ function ClientGroupTaskTable({
                   {/* 5. CREATED BY */}
                   <td className="py-3 px-4 align-top whitespace-nowrap">
                     <div className="flex items-start gap-2">
-                      <div className="h-6 w-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold text-[10px] flex items-center justify-center shrink-0 mt-0.5">
+                      <div className="h-6 w-6 rounded-full bg-primary/10 text-primary font-semibold text-[10px] flex items-center justify-center shrink-0 mt-0.5">
                         {creatorInitials}
                       </div>
                       <div>
-                        <p className="font-medium text-foreground text-xs">
-                          {creatorName}
-                        </p>
+                        <p className="font-medium text-foreground text-xs">{creatorName}</p>
                         <p className="text-[11px] text-muted-foreground">
                           {formatSafeDate(task.createdAt)}
                         </p>
@@ -749,22 +744,22 @@ function ClientGroupTaskTable({
             typeof task.createdBy === "object" && task.createdBy?.name
               ? task.createdBy.name
               : typeof task.createdBy === "string"
-              ? task.createdBy
-              : "Unknown";
+                ? task.createdBy
+                : "Unknown";
 
           const assignees =
             Array.isArray(task.assignedUsers) && task.assignedUsers.length > 0
               ? task.assignedUsers
               : task.assignedTo
-              ? [task.assignedTo]
-              : [];
+                ? [task.assignedTo]
+                : [];
 
           const priorityColor =
             task.priority === "High"
               ? "bg-rose-500"
               : task.priority === "Medium"
-              ? "bg-amber-500"
-              : "bg-emerald-500";
+                ? "bg-amber-500"
+                : "bg-emerald-500";
 
           return (
             <div
@@ -853,9 +848,7 @@ function ClientGroupTaskTable({
                   />
                   <span
                     className={`text-[11px] font-semibold truncate ${
-                      deadlineInfo.isUrgent
-                        ? "text-rose-600 dark:text-rose-400"
-                        : "text-foreground"
+                      deadlineInfo.isUrgent ? "text-rose-600 dark:text-rose-400" : "text-foreground"
                     }`}
                   >
                     {formatSafeDate(task.deadline)} ({deadlineInfo.label})

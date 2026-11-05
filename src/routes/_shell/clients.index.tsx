@@ -95,7 +95,7 @@ function ClientCard({ c }: { c: ClientRecord }) {
               {c.name.slice(0, 1)}
             </span>
             <div className="min-w-0">
-              <h2 className="truncate font-semibold text-foreground group-hover:text-primary transition-colors">
+              <h2 className="truncate font-display text-[16px] sm:text-[17px] font-semibold text-foreground group-hover:text-primary transition-colors">
                 {c.name}
               </h2>
               <p className="truncate text-caption text-muted-foreground">

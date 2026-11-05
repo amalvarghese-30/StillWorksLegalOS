@@ -68,17 +68,17 @@ export function RecentDocumentsCard({
       {/* Header */}
       <div className="flex items-center justify-between pb-3.5 border-b border-border/50">
         <div className="flex items-center gap-2.5">
-          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400 border border-blue-200/50 dark:border-blue-800/40">
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary border border-primary/20">
             <FileText size={18} strokeWidth={2} />
           </span>
           <div>
-            <h2 className="text-sm font-semibold text-foreground">Recent documents</h2>
+            <h2 className="font-display text-card-title font-semibold text-foreground">Recent documents</h2>
             <p className="text-xs text-muted-foreground">Recently uploaded and updated files</p>
           </div>
         </div>
         <Link
           to="/documents"
-          className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
+          className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
         >
           View all <ArrowRight size={13} strokeWidth={2} />
         </Link>

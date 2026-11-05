@@ -44,7 +44,9 @@ import { sortData, getNextSortState, type SortDirection, type AccessorFn } from 
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_admin/admin/employees")({
-  validateSearch: (search: Record<string, unknown>): {
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): {
     employeeId?: string;
     view?: "grid" | "table";
     search?: string;
@@ -54,7 +56,8 @@ export const Route = createFileRoute("/_admin/admin/employees")({
     sort?: string;
   } => ({
     ...(typeof search["employeeId"] === "string" ? { employeeId: search["employeeId"] } : {}),
-    ...(typeof search["view"] === "string" && (search["view"] === "grid" || search["view"] === "table")
+    ...(typeof search["view"] === "string" &&
+    (search["view"] === "grid" || search["view"] === "table")
       ? { view: search["view"] as "grid" | "table" }
       : {}),
     ...(typeof search["search"] === "string" ? { search: search["search"] } : {}),
@@ -109,19 +112,13 @@ function EmployeesPage() {
   const canManage = Boolean(user?.role === "admin" || user?.permissions?.employees);
 
   // Load employees and workload metrics
-  const {
-    data,
-    isLoading,
-    isError,
-    refetch,
-    isFetching,
-  } = useEmployees();
+  const { data, isLoading, isError, refetch, isFetching } = useEmployees();
   const { data: workloadData } = useEmployeeWorkload();
 
   const employees = data?.employees ?? [];
   const workloadById = useMemo(
     () => new Map((workloadData?.workloads ?? []).map((w) => [w._id, w])),
-    [workloadData]
+    [workloadData],
   );
 
   // Direct chat mutation & floating widget integration
@@ -138,7 +135,7 @@ function EmployeesPage() {
         onError: (err: any) => {
           toast.error(err?.message || "Failed to start direct conversation");
         },
-      }
+      },
     );
   };
 
@@ -173,7 +170,7 @@ function EmployeesPage() {
   // Selection handlers
   const handleToggleSelect = (empId: string) => {
     setSelectedIds((prev) =>
-      prev.includes(empId) ? prev.filter((id) => id !== empId) : [...prev, empId]
+      prev.includes(empId) ? prev.filter((id) => id !== empId) : [...prev, empId],
     );
   };
 
@@ -195,7 +192,7 @@ function EmployeesPage() {
       workload: (e) => workloadById.get(e._id)?.workload ?? 0,
       status: (e) => (isOnline(e._id) ? "Online" : e.status || (e.isActive ? "Active" : "Offline")),
     }),
-    [workloadById, isOnline]
+    [workloadById, isOnline],
   );
 
   // Filter & sort logic
@@ -220,7 +217,11 @@ function EmployeesPage() {
       // Status filter (uses presence or stored status)
       if (statusFilter !== "all") {
         const online = isOnline(e._id);
-        const effectiveStatus = online ? "online" : (e.status === "online" ? "offline" : (e.status || "offline"));
+        const effectiveStatus = online
+          ? "online"
+          : e.status === "online"
+            ? "offline"
+            : e.status || "offline";
         if (effectiveStatus !== statusFilter) {
           return false;
         }
@@ -232,15 +233,31 @@ function EmployeesPage() {
         if (teamFilter === "litigation" && !titleLower.includes("litigation")) return false;
         if (teamFilter === "civil" && !titleLower.includes("civil")) return false;
         if (teamFilter === "documentation" && !titleLower.includes("doc")) return false;
-        if (teamFilter === "court_filing" && !titleLower.includes("filing") && !titleLower.includes("court")) return false;
+        if (
+          teamFilter === "court_filing" &&
+          !titleLower.includes("filing") &&
+          !titleLower.includes("court")
+        )
+          return false;
         if (teamFilter === "corporate" && !titleLower.includes("corporate")) return false;
-        if (teamFilter === "admin" && !titleLower.includes("admin") && roleLower !== "admin") return false;
+        if (teamFilter === "admin" && !titleLower.includes("admin") && roleLower !== "admin")
+          return false;
       }
       return true;
     });
 
     return sortData(base, sortKey, sortDirection, employeeAccessors);
-  }, [employees, searchQuery, roleFilter, statusFilter, teamFilter, sortKey, sortDirection, employeeAccessors, isOnline]);
+  }, [
+    employees,
+    searchQuery,
+    roleFilter,
+    statusFilter,
+    teamFilter,
+    sortKey,
+    sortDirection,
+    employeeAccessors,
+    isOnline,
+  ]);
 
   const handleSelectAll = (selectAll: boolean) => {
     if (selectAll) {
@@ -306,14 +323,13 @@ function EmployeesPage() {
       ].join(",");
     });
 
-    const csvContent =
-      "data:text/csv;charset=utf-8," + [headers.join(","), ...rows].join("\n");
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows].join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
     link.setAttribute(
       "download",
-      `employees_directory_${new Date().toISOString().slice(0, 10)}.csv`
+      `employees_directory_${new Date().toISOString().slice(0, 10)}.csv`,
     );
     document.body.appendChild(link);
     link.click();
@@ -332,20 +348,14 @@ function EmployeesPage() {
     ? tasksData.stats.total
     : Array.from(workloadById.values()).reduce(
         (sum, w) => sum + (w.totalTasks ?? w.pendingTasks + w.completedTasks),
-        0
+        0,
       );
   const pendingTasksSum = tasksData?.stats
     ? tasksData.stats.inProgress
-    : Array.from(workloadById.values()).reduce(
-        (sum, w) => sum + (w.pendingTasks ?? 0),
-        0
-      );
+    : Array.from(workloadById.values()).reduce((sum, w) => sum + (w.pendingTasks ?? 0), 0);
   const overdueTasksSum = tasksData?.stats
     ? tasksData.stats.overdue
-    : Array.from(workloadById.values()).reduce(
-        (sum, w) => sum + (w.overdueTasks ?? 0),
-        0
-      );
+    : Array.from(workloadById.values()).reduce((sum, w) => sum + (w.overdueTasks ?? 0), 0);
 
   // If employeeId is in route search param, render EmployeeDetailWorkspace
   if (routeSearch.employeeId) {
@@ -361,10 +371,7 @@ function EmployeesPage() {
         />
 
         {editingEmployee && (
-          <EditEmployeeDialog
-            employee={editingEmployee}
-            onClose={() => setEditingEmployee(null)}
-          />
+          <EditEmployeeDialog employee={editingEmployee} onClose={() => setEditingEmployee(null)} />
         )}
       </div>
     );
@@ -409,12 +416,16 @@ function EmployeesPage() {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {/* 1. Total Employees */}
         <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card p-3 shadow-2xs hover:shadow-xs transition-all">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 border border-blue-100 dark:bg-blue-950/60 dark:text-blue-400 dark:border-blue-900/60">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-2xs">
             <UsersRound size={18} strokeWidth={1.8} />
           </div>
           <div className="min-w-0">
-            <p className="text-[11px] font-medium text-muted-foreground truncate">Total Employees</p>
-            <p className="font-display text-xl font-bold text-foreground mt-0.5 tracking-tight">{totalEmployees}</p>
+            <p className="text-[11px] font-medium text-muted-foreground truncate">
+              Total Employees
+            </p>
+            <p className="font-display text-xl font-bold text-foreground mt-0.5 tracking-tight">
+              {totalEmployees}
+            </p>
           </div>
         </div>
 
@@ -425,7 +436,9 @@ function EmployeesPage() {
           </div>
           <div className="min-w-0">
             <p className="text-[11px] font-medium text-muted-foreground truncate">Online Now</p>
-            <p className="font-display text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-0.5 tracking-tight">{activeEmployees}</p>
+            <p className="font-display text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-0.5 tracking-tight">
+              {activeEmployees}
+            </p>
           </div>
         </div>
 
@@ -439,7 +452,9 @@ function EmployeesPage() {
           </div>
           <div className="min-w-0">
             <p className="text-[11px] font-medium text-muted-foreground truncate">Total Tasks</p>
-            <p className="font-display text-xl font-bold text-foreground mt-0.5 tracking-tight">{totalTasksSum}</p>
+            <p className="font-display text-xl font-bold text-foreground mt-0.5 tracking-tight">
+              {totalTasksSum}
+            </p>
           </div>
         </div>
 
@@ -453,7 +468,9 @@ function EmployeesPage() {
           </div>
           <div className="min-w-0">
             <p className="text-[11px] font-medium text-muted-foreground truncate">Pending Tasks</p>
-            <p className="font-display text-xl font-bold text-amber-600 dark:text-amber-400 mt-0.5 tracking-tight">{pendingTasksSum}</p>
+            <p className="font-display text-xl font-bold text-amber-600 dark:text-amber-400 mt-0.5 tracking-tight">
+              {pendingTasksSum}
+            </p>
           </div>
         </div>
 
@@ -467,7 +484,9 @@ function EmployeesPage() {
           </div>
           <div className="min-w-0">
             <p className="text-[11px] font-medium text-muted-foreground truncate">Overdue Tasks</p>
-            <p className="font-display text-xl font-bold text-rose-600 dark:text-rose-400 mt-0.5 tracking-tight">{overdueTasksSum}</p>
+            <p className="font-display text-xl font-bold text-rose-600 dark:text-rose-400 mt-0.5 tracking-tight">
+              {overdueTasksSum}
+            </p>
           </div>
         </div>
       </div>
@@ -476,7 +495,10 @@ function EmployeesPage() {
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 rounded-2xl border border-border/70 bg-card p-3 shadow-2xs">
         {/* Search Input */}
         <div className="relative flex-1 min-w-[240px] max-w-md">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Search
+            size={14}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+          />
           <Input
             placeholder="Search by name, designation, code or email…"
             value={searchQuery}
@@ -566,7 +588,7 @@ function EmployeesPage() {
               onClick={() => setViewMode("table")}
               className={cn(
                 "flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors cursor-pointer",
-                viewMode === "table" && "bg-card text-foreground shadow-xs font-semibold"
+                viewMode === "table" && "bg-card text-foreground shadow-xs font-semibold",
               )}
               title="Horizontal Table View"
             >
@@ -577,7 +599,7 @@ function EmployeesPage() {
               onClick={() => setViewMode("grid")}
               className={cn(
                 "flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors cursor-pointer",
-                viewMode === "grid" && "bg-card text-foreground shadow-xs font-semibold"
+                viewMode === "grid" && "bg-card text-foreground shadow-xs font-semibold",
               )}
               title="Card Grid View"
             >
@@ -603,7 +625,8 @@ function EmployeesPage() {
       {selectedIds.length > 0 && (
         <div className="flex items-center justify-between rounded-xl border border-primary/30 bg-primary/5 px-4 py-2 text-xs animate-in fade-in duration-150">
           <div className="flex items-center gap-2 font-medium text-foreground">
-            <span className="font-semibold text-primary">{selectedIds.length}</span> of {filteredEmployees.length} employees selected
+            <span className="font-semibold text-primary">{selectedIds.length}</span> of{" "}
+            {filteredEmployees.length} employees selected
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -630,7 +653,10 @@ function EmployeesPage() {
       {isLoading && (
         <div className="space-y-3">
           {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div key={i} className="h-16 rounded-xl border border-border/70 bg-card p-4 shadow-2xs animate-pulse flex items-center justify-between gap-4">
+            <div
+              key={i}
+              className="h-16 rounded-xl border border-border/70 bg-card p-4 shadow-2xs animate-pulse flex items-center justify-between gap-4"
+            >
               <div className="flex items-center gap-3">
                 <div className="size-9 rounded-full bg-muted" />
                 <div className="space-y-1">
@@ -670,7 +696,9 @@ function EmployeesPage() {
       {!isLoading && (!isError || Boolean(data)) && filteredEmployees.length === 0 && (
         <div className="flex flex-col items-center gap-3 rounded-2xl border border-border/80 bg-card p-12 text-center shadow-soft">
           <Users size={32} className="text-muted-foreground/60" />
-          <h3 className="font-display font-semibold text-foreground">No employees match your criteria</h3>
+          <h3 className="font-display font-semibold text-foreground">
+            No employees match your criteria
+          </h3>
           <p className="text-xs text-muted-foreground max-w-sm">
             {hasActiveFilters
               ? "Try adjusting your search terms or clearing your role, status, and team filters."

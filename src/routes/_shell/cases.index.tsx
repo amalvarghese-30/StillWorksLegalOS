@@ -97,7 +97,7 @@ function CaseCard({
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 sm:gap-4">
         <div className="min-w-0">
           <p className="num text-caption text-muted-foreground font-mono">{c.number}</p>
-          <h2 className="mt-1 truncate text-title font-semibold group-hover:text-primary transition-colors">
+          <h2 className="mt-1 truncate font-display text-[15px] sm:text-base font-semibold group-hover:text-primary transition-colors">
             {c.title}
           </h2>
           <p className="mt-1 truncate text-helper text-muted-foreground">

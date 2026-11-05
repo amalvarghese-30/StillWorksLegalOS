@@ -2,11 +2,34 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useMemo, useEffect, type ComponentType, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  LayoutDashboard, FileBadge, Home, Users, Briefcase, Plus,
-  Phone, Mail, MapPin, Loader2, Edit3, ChevronDown,
-  Building2, FileText, Trash2, Archive,
-  Download, Eye, RefreshCw, ExternalLink, CheckSquare, AlertTriangle,
-  Activity, List, LayoutGrid, Search, Filter, ArrowRight,
+  LayoutDashboard,
+  FileBadge,
+  Home,
+  Users,
+  Briefcase,
+  Plus,
+  Phone,
+  Mail,
+  MapPin,
+  Loader2,
+  Edit3,
+  ChevronDown,
+  Building2,
+  FileText,
+  Trash2,
+  Archive,
+  Download,
+  Eye,
+  RefreshCw,
+  ExternalLink,
+  CheckSquare,
+  AlertTriangle,
+  Activity,
+  List,
+  LayoutGrid,
+  Search,
+  Filter,
+  ArrowRight,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
@@ -37,10 +60,15 @@ import {
 } from "@/components/ui/dialog";
 import { MobileSectionNav } from "@/components/layout/MobileSectionNav";
 import {
-  useClient, useUpdateClient, useDeleteClient,
-  useClientCases, useClientDocuments, useClientDeletionPreview,
+  useClient,
+  useUpdateClient,
+  useDeleteClient,
+  useClientCases,
+  useClientDocuments,
+  useClientDeletionPreview,
   clientKeys,
-  type ClientRecord, type ClientDocument,
+  type ClientRecord,
+  type ClientDocument,
 } from "@/services/clients";
 import { useAuth } from "@/lib/auth";
 import { EditClientDialog } from "@/components/clients/EditClientDialog";
@@ -61,9 +89,15 @@ export const Route = createFileRoute("/_shell/clients/$clientId")({
   head: () => ({
     meta: [
       { title: "Client profile · SS Associates Legal-Tech LLP" },
-      { name: "description", content: "Client details, Identity Verification, property, and sub-client records." },
+      {
+        name: "description",
+        content: "Client details, Identity Verification, property, and sub-client records.",
+      },
       { property: "og:title", content: "Client profile · SS Associates Legal-Tech LLP" },
-      { property: "og:description", content: "Client details, Identity Verification, property, and sub-client records." },
+      {
+        property: "og:description",
+        content: "Client details, Identity Verification, property, and sub-client records.",
+      },
     ],
   }),
   validateSearch: (search: Record<string, unknown>): { tab?: string } => ({
@@ -80,7 +114,11 @@ function formatDate(iso: string | null | undefined): string {
   return formatSafeDate(iso, "—");
 }
 
-const kycTone: Record<string, string> = { Verified: "success", Pending: "warning", Rejected: "destructive" };
+const kycTone: Record<string, string> = {
+  Verified: "success",
+  Pending: "warning",
+  Rejected: "destructive",
+};
 
 // ---------------------------------------------------------------------------
 // Sub-components: Quick Property Modal
@@ -220,7 +258,11 @@ function PropertyModal({
             <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
               Cancel
             </Button>
-            <Button type="submit" disabled={saving} className="gradient-primary text-primary-foreground">
+            <Button
+              type="submit"
+              disabled={saving}
+              className="gradient-primary text-primary-foreground"
+            >
               {saving ? <Loader2 size={16} className="animate-spin" /> : "Save Property"}
             </Button>
           </DialogFooter>
@@ -299,7 +341,8 @@ function SubClientModal({
         <DialogHeader>
           <DialogTitle>Add Sub-Client / Related Party</DialogTitle>
           <DialogDescription>
-            Attach a co-party, family member, guarantor, or authorized representative to {record.name}.
+            Attach a co-party, family member, guarantor, or authorized representative to{" "}
+            {record.name}.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -383,7 +426,11 @@ function SubClientModal({
             <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
               Cancel
             </Button>
-            <Button type="submit" disabled={saving} className="gradient-primary text-primary-foreground">
+            <Button
+              type="submit"
+              disabled={saving}
+              className="gradient-primary text-primary-foreground"
+            >
               {saving ? <Loader2 size={16} className="animate-spin" /> : "Add Sub-client"}
             </Button>
           </DialogFooter>
@@ -402,14 +449,7 @@ function ClientProfile() {
   const searchParams = Route.useSearch();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
-  const {
-    data,
-    isLoading,
-    isError,
-    error,
-    refetch,
-    isFetching,
-  } = useClient(clientId);
+  const { data, isLoading, isError, error, refetch, isFetching } = useClient(clientId);
   const record = data?.client;
   const [active, setActive] = useState(() => {
     const t = searchParams.tab;
@@ -440,7 +480,10 @@ function ClientProfile() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showPermanentDeleteConfirm, setShowPermanentDeleteConfirm] = useState(false);
   const [confirmDeleteInput, setConfirmDeleteInput] = useState("");
-  const { data: deletionPreview, isLoading: isPreviewLoading } = useClientDeletionPreview(clientId, showPermanentDeleteConfirm);
+  const { data: deletionPreview, isLoading: isPreviewLoading } = useClientDeletionPreview(
+    clientId,
+    showPermanentDeleteConfirm,
+  );
   const [showAddCaseDialog, setShowAddCaseDialog] = useState(false);
   const [showAddTaskDialog, setShowAddTaskDialog] = useState(false);
   const [showUploadDocDialog, setShowUploadDocDialog] = useState(false);
@@ -468,7 +511,8 @@ function ClientProfile() {
       qc.invalidateQueries({ queryKey: docKeys.all });
     } catch (err: any) {
       console.error("[clients] Failed to delete document:", err);
-      const msg = err?.data?.message || err?.message || "Failed to delete document. Please try again.";
+      const msg =
+        err?.data?.message || err?.message || "Failed to delete document. Please try again.";
       toast.error(msg);
     } finally {
       setIsDeletingDoc(false);
@@ -556,16 +600,57 @@ function ClientProfile() {
     });
   }, [casesData, tasksData, docsData]);
 
-  const dynamicSections = useMemo(() => [
-    { id: "overview" as const, label: "Overview", icon: LayoutDashboard },
-    { id: "cases" as const, label: "Cases", icon: Briefcase, badge: casesData?.cases?.length ?? 0 },
-    { id: "tasks" as const, label: "Tasks", icon: CheckSquare, badge: tasksData?.tasks?.length ?? 0 },
-    { id: "documents" as const, label: "Documents", icon: FileText, badge: docsData?.documents?.length ?? 0 },
-    { id: "kyc" as const, label: "Identity Verification", icon: FileBadge, badge: record?.kyc === "Verified" ? "Verified" : record?.kyc },
-    { id: "property" as const, label: "Property", icon: Home, badge: record?.propertyDetails?.address ? 1 : null },
-    { id: "subclients" as const, label: "Contacts & Sub-clients", icon: Users, badge: record?.subClients?.length ? record.subClients.length : null },
-    { id: "activity" as const, label: "Activity", icon: Activity, badge: activityItems.length },
-  ], [casesData?.cases?.length, tasksData?.tasks?.length, docsData?.documents?.length, record?.kyc, record?.propertyDetails?.address, record?.subClients?.length, activityItems.length]);
+  const dynamicSections = useMemo(
+    () => [
+      { id: "overview" as const, label: "Overview", icon: LayoutDashboard },
+      {
+        id: "cases" as const,
+        label: "Cases",
+        icon: Briefcase,
+        badge: casesData?.cases?.length ?? 0,
+      },
+      {
+        id: "tasks" as const,
+        label: "Tasks",
+        icon: CheckSquare,
+        badge: tasksData?.tasks?.length ?? 0,
+      },
+      {
+        id: "documents" as const,
+        label: "Documents",
+        icon: FileText,
+        badge: docsData?.documents?.length ?? 0,
+      },
+      {
+        id: "kyc" as const,
+        label: "Identity Verification",
+        icon: FileBadge,
+        badge: record?.kyc === "Verified" ? "Verified" : record?.kyc,
+      },
+      {
+        id: "property" as const,
+        label: "Property",
+        icon: Home,
+        badge: record?.propertyDetails?.address ? 1 : null,
+      },
+      {
+        id: "subclients" as const,
+        label: "Contacts & Sub-clients",
+        icon: Users,
+        badge: record?.subClients?.length ? record.subClients.length : null,
+      },
+      { id: "activity" as const, label: "Activity", icon: Activity, badge: activityItems.length },
+    ],
+    [
+      casesData?.cases?.length,
+      tasksData?.tasks?.length,
+      docsData?.documents?.length,
+      record?.kyc,
+      record?.propertyDetails?.address,
+      record?.subClients?.length,
+      activityItems.length,
+    ],
+  );
 
   const filteredClientCases = useMemo(() => {
     let list = casesData?.cases || [];
@@ -581,7 +666,7 @@ function ClientProfile() {
           c.courtCaseId?.toLowerCase().includes(q) ||
           c.court?.toLowerCase().includes(q) ||
           c.practice?.toLowerCase().includes(q) ||
-          c.assignedTo?.name?.toLowerCase().includes(q)
+          c.assignedTo?.name?.toLowerCase().includes(q),
       );
     }
     return list;
@@ -647,7 +732,11 @@ function ClientProfile() {
       <div className="flex min-h-[60vh] items-center justify-center p-4">
         <ErrorState
           title="Couldn't load client profile"
-          description={error instanceof Error ? error.message : "We couldn't reach the server. Please check your connection."}
+          description={
+            error instanceof Error
+              ? error.message
+              : "We couldn't reach the server. Please check your connection."
+          }
           onRetry={() => refetch()}
           isRetrying={isFetching}
           secondaryAction={{
@@ -705,7 +794,11 @@ function ClientProfile() {
               <FileText size={15} strokeWidth={1.75} />
               Upload Document
             </Button>
-            <Button variant="outline" className="rounded-md" onClick={() => setShowEditDialog(true)}>
+            <Button
+              variant="outline"
+              className="rounded-md"
+              onClick={() => setShowEditDialog(true)}
+            >
               <Edit3 size={15} strokeWidth={1.75} />
               Edit Client
             </Button>
@@ -751,13 +844,19 @@ function ClientProfile() {
         </div>
         <div className="mt-3.5 sm:mt-4 flex flex-wrap gap-2.5 sm:gap-3 text-caption opacity-85">
           {record.phone && (
-            <span className="flex items-center gap-1"><Phone size={13} /> {record.phone}</span>
+            <span className="flex items-center gap-1">
+              <Phone size={13} /> {record.phone}
+            </span>
           )}
           {record.email && (
-            <span className="flex items-center gap-1"><Mail size={13} /> {record.email}</span>
+            <span className="flex items-center gap-1">
+              <Mail size={13} /> {record.email}
+            </span>
           )}
           {record.address && (
-            <span className="flex items-center gap-1"><MapPin size={13} /> {record.address}</span>
+            <span className="flex items-center gap-1">
+              <MapPin size={13} /> {record.address}
+            </span>
           )}
         </div>
       </div>
@@ -776,153 +875,188 @@ function ClientProfile() {
           {/* ── Overview ── */}
           {active === "overview" && (
             <>
-            <SectionCard title="Client details" description="Basic information and contact details." icon={LayoutDashboard}>
-              <div className="grid gap-5 sm:grid-cols-2">
-                {[
-                  { label: "Full name", value: record.name },
-                  { label: "Type", value: record.type },
-                  { label: "Tag", value: record.tag },
-                  { label: "Phone", value: record.phone || "—" },
-                  { label: "Email", value: record.email || "—" },
-                  { label: "Address", value: record.address || "—" },
-                  { label: "Verification Status", value: record.kyc, pill: kycTone[record.kyc] ?? "muted" },
-                  { label: "PAN", value: record.pan || "—" },
-                  { label: "Aadhaar", value: record.aadhar || "—" },
-                  {
-                    label: "Assigned To",
-                    value:
-                      record.assignedTo && record.assignedTo.length > 0
-                        ? record.assignedTo
-                            .map((a: any) => (typeof a === "object" && a !== null ? a.name : a))
-                            .join(", ")
-                        : "Unassigned",
-                  },
-                  {
-                    label: "Promised Completion Date",
-                    value: formatSafeDateTime(record.promisedCompletionDate, "Not set"),
-                  },
-                  { label: "Sub-clients", value: `${record.subClients?.length ?? 0}` },
-                  { label: "Onboarding Notes", value: record.notes || "No intake notes entered." },
-                  { label: "Created", value: formatDate(record.createdAt) },
-                  { label: "Updated", value: formatDate(record.updatedAt) },
-                ].map(({ label, value, pill }) => (
-                  <div key={label} className={`space-y-1 ${label === "Onboarding Notes" ? "sm:col-span-2 rounded-md bg-muted/30 p-3" : ""}`}>
-                    <p className="text-caption text-muted-foreground">{label}</p>
-                    {pill ? (
-                      <StatusPill tone={pill as "success" | "warning" | "destructive"}>{value}</StatusPill>
-                    ) : (
-                      <p className="text-helper font-medium">{value}</p>
-                    )}
+              <SectionCard
+                title="Client details"
+                description="Basic information and contact details."
+                icon={LayoutDashboard}
+              >
+                <div className="grid gap-5 sm:grid-cols-2">
+                  {[
+                    { label: "Full name", value: record.name },
+                    { label: "Type", value: record.type },
+                    { label: "Tag", value: record.tag },
+                    { label: "Phone", value: record.phone || "—" },
+                    { label: "Email", value: record.email || "—" },
+                    { label: "Address", value: record.address || "—" },
+                    {
+                      label: "Verification Status",
+                      value: record.kyc,
+                      pill: kycTone[record.kyc] ?? "muted",
+                    },
+                    { label: "PAN", value: record.pan || "—" },
+                    { label: "Aadhaar", value: record.aadhar || "—" },
+                    {
+                      label: "Assigned To",
+                      value:
+                        record.assignedTo && record.assignedTo.length > 0
+                          ? record.assignedTo
+                              .map((a: any) => (typeof a === "object" && a !== null ? a.name : a))
+                              .join(", ")
+                          : "Unassigned",
+                    },
+                    {
+                      label: "Promised Completion Date",
+                      value: formatSafeDateTime(record.promisedCompletionDate, "Not set"),
+                    },
+                    { label: "Sub-clients", value: `${record.subClients?.length ?? 0}` },
+                    {
+                      label: "Onboarding Notes",
+                      value: record.notes || "No intake notes entered.",
+                    },
+                    { label: "Created", value: formatDate(record.createdAt) },
+                    { label: "Updated", value: formatDate(record.updatedAt) },
+                  ].map(({ label, value, pill }) => (
+                    <div
+                      key={label}
+                      className={`space-y-1 ${label === "Onboarding Notes" ? "sm:col-span-2 rounded-md bg-muted/30 p-3" : ""}`}
+                    >
+                      <p className="text-caption text-muted-foreground">{label}</p>
+                      {pill ? (
+                        <StatusPill tone={pill as "success" | "warning" | "destructive"}>
+                          {value}
+                        </StatusPill>
+                      ) : (
+                        <p className="text-helper font-medium">{value}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </SectionCard>
+
+              {/* Active Matters on Overview */}
+              <SectionCard
+                title="Active Matters"
+                description="Ongoing legal proceedings and matters associated with this client."
+                icon={Briefcase}
+                action={
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 gap-1.5 rounded-md text-caption"
+                      onClick={() => setActive("cases")}
+                    >
+                      <span>All Matters ({casesData?.cases?.length ?? 0})</span>
+                      <ArrowRight size={13} />
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="h-8 gap-1 rounded-md gradient-primary text-primary-foreground text-caption"
+                      onClick={() => setShowAddCaseDialog(true)}
+                    >
+                      <Plus size={13} /> Add Case
+                    </Button>
                   </div>
-                ))}
-              </div>
-            </SectionCard>
-
-            {/* Active Matters on Overview */}
-            <SectionCard
-              title="Active Matters"
-              description="Ongoing legal proceedings and matters associated with this client."
-              icon={Briefcase}
-              action={
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 gap-1.5 rounded-md text-caption"
-                    onClick={() => setActive("cases")}
-                  >
-                    <span>All Matters ({casesData?.cases?.length ?? 0})</span>
-                    <ArrowRight size={13} />
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="h-8 gap-1 rounded-md gradient-primary text-primary-foreground text-caption"
-                    onClick={() => setShowAddCaseDialog(true)}
-                  >
-                    <Plus size={13} /> Add Case
-                  </Button>
-                </div>
-              }
-            >
-              {isCasesLoading ? (
-                <div className="flex justify-center py-8">
-                  <Loader2 size={24} className="animate-spin text-muted-foreground" />
-                </div>
-              ) : isCasesError ? (
-                <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-center">
-                  <p className="text-helper text-destructive font-medium">Failed to load matters.</p>
-                  <Button variant="outline" size="sm" className="mt-2 text-xs" onClick={() => refetchCases()}>
-                    <RefreshCw size={12} className="mr-1" /> Retry
-                  </Button>
-                </div>
-              ) : (casesData?.cases || []).filter((c) => c.status === "Active" || c.status === "Urgent").length === 0 ? (
-                <div className="rounded-lg border border-dashed p-8 text-center">
-                  <Briefcase size={28} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
-                  <p className="mt-3 font-medium text-sm">No active matters</p>
-                  <p className="mt-1 text-helper text-muted-foreground">
-                    This client currently has no active or urgent cases on file.
-                  </p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="mt-3 gap-1.5 rounded-md text-xs"
-                    onClick={() => setShowAddCaseDialog(true)}
-                  >
-                    <Plus size={13} /> Add first case
-                  </Button>
-                </div>
-              ) : (
-                <div className="divide-y divide-border/60">
-                  {(casesData?.cases || [])
-                    .filter((c) => c.status === "Active" || c.status === "Urgent")
-                    .slice(0, 5)
-                    .map((c) => (
-                      <div
-                        key={c._id}
-                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3 hover:bg-muted/30 px-2 -mx-2 rounded-md transition-colors"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-mono text-xs font-semibold text-primary">{c.number}</span>
-                            <StatusPill tone={toneForStatus(c.status)}>{c.status}</StatusPill>
-                            <StatusPill tone={toneForStatus(c.priority)}>{c.priority} priority</StatusPill>
-                          </div>
-                          <Link
-                            to="/cases/$caseId"
-                            params={{ caseId: c._id }}
-                            className="mt-1 block font-semibold text-foreground hover:text-primary transition-colors text-sm truncate"
-                          >
-                            {c.title}
-                          </Link>
-                          <div className="mt-1 flex flex-wrap items-center gap-3 text-caption text-muted-foreground">
-                            <span>Category: {c.practice || (c as any).category || "General"}</span>
-                            <span>•</span>
-                            <span>Assigned: {c.assignedTo?.name || "Unassigned"}</span>
-                            <span>•</span>
-                            <span>Hearing: {formatDate(c.nextHearing)}</span>
-                            <span>•</span>
-                            <span>Updated: {formatDate(c.updatedAt)}</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2.5 text-caption gap-1 text-primary hover:text-primary"
-                            asChild
-                          >
-                            <Link to="/cases/$caseId" params={{ caseId: c._id }}>
-                              <Eye size={13} /> View
+                }
+              >
+                {isCasesLoading ? (
+                  <div className="flex justify-center py-8">
+                    <Loader2 size={24} className="animate-spin text-muted-foreground" />
+                  </div>
+                ) : isCasesError ? (
+                  <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-center">
+                    <p className="text-helper text-destructive font-medium">
+                      Failed to load matters.
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-2 text-xs"
+                      onClick={() => refetchCases()}
+                    >
+                      <RefreshCw size={12} className="mr-1" /> Retry
+                    </Button>
+                  </div>
+                ) : (casesData?.cases || []).filter(
+                    (c) => c.status === "Active" || c.status === "Urgent",
+                  ).length === 0 ? (
+                  <div className="rounded-lg border border-dashed p-8 text-center">
+                    <Briefcase
+                      size={28}
+                      className="mx-auto text-muted-foreground"
+                      strokeWidth={1.5}
+                    />
+                    <p className="mt-3 font-medium text-sm">No active matters</p>
+                    <p className="mt-1 text-helper text-muted-foreground">
+                      This client currently has no active or urgent cases on file.
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-3 gap-1.5 rounded-md text-xs"
+                      onClick={() => setShowAddCaseDialog(true)}
+                    >
+                      <Plus size={13} /> Add first case
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border/60">
+                    {(casesData?.cases || [])
+                      .filter((c) => c.status === "Active" || c.status === "Urgent")
+                      .slice(0, 5)
+                      .map((c) => (
+                        <div
+                          key={c._id}
+                          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3 hover:bg-muted/30 px-2 -mx-2 rounded-md transition-colors"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono text-xs font-semibold text-primary">
+                                {c.number}
+                              </span>
+                              <StatusPill tone={toneForStatus(c.status)}>{c.status}</StatusPill>
+                              <StatusPill tone={toneForStatus(c.priority)}>
+                                {c.priority} priority
+                              </StatusPill>
+                            </div>
+                            <Link
+                              to="/cases/$caseId"
+                              params={{ caseId: c._id }}
+                              className="mt-1 block font-semibold text-foreground hover:text-primary transition-colors text-sm truncate"
+                            >
+                              {c.title}
                             </Link>
-                          </Button>
+                            <div className="mt-1 flex flex-wrap items-center gap-3 text-caption text-muted-foreground">
+                              <span>
+                                Category: {c.practice || (c as any).category || "General"}
+                              </span>
+                              <span>•</span>
+                              <span>Assigned: {c.assignedTo?.name || "Unassigned"}</span>
+                              <span>•</span>
+                              <span>Hearing: {formatDate(c.nextHearing)}</span>
+                              <span>•</span>
+                              <span>Updated: {formatDate(c.updatedAt)}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2.5 text-caption gap-1 text-primary hover:text-primary"
+                              asChild
+                            >
+                              <Link to="/cases/$caseId" params={{ caseId: c._id }}>
+                                <Eye size={13} /> View
+                              </Link>
+                            </Button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                </div>
-              )}
-            </SectionCard>
-          </>
+                      ))}
+                  </div>
+                )}
+              </SectionCard>
+            </>
           )}
 
           {/* ── Cases ── */}
@@ -945,22 +1079,31 @@ function ClientProfile() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
                 <div className="rounded-lg border border-border bg-card p-3 shadow-2xs">
                   <p className="text-caption text-muted-foreground font-medium">Total Matters</p>
-                  <p className="num text-xl font-bold text-foreground mt-0.5">{casesData?.cases?.length ?? 0}</p>
+                  <p className="num text-xl font-bold text-foreground mt-0.5">
+                    {casesData?.cases?.length ?? 0}
+                  </p>
                 </div>
                 <div className="rounded-lg border border-border bg-card p-3 shadow-2xs">
-                  <p className="text-caption text-emerald-600 dark:text-emerald-400 font-medium">Active Matters</p>
+                  <p className="text-caption text-emerald-600 dark:text-emerald-400 font-medium">
+                    Active Matters
+                  </p>
                   <p className="num text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
                     {casesData?.cases?.filter((c) => c.status === "Active").length ?? 0}
                   </p>
                 </div>
                 <div className="rounded-lg border border-border bg-card p-3 shadow-2xs">
-                  <p className="text-caption text-rose-600 dark:text-rose-400 font-medium">Urgent Matters</p>
+                  <p className="text-caption text-rose-600 dark:text-rose-400 font-medium">
+                    Urgent Matters
+                  </p>
                   <p className="num text-xl font-bold text-rose-600 dark:text-rose-400 mt-0.5">
-                    {casesData?.cases?.filter((c) => c.status === "Urgent" || c.priority === "High").length ?? 0}
+                    {casesData?.cases?.filter((c) => c.status === "Urgent" || c.priority === "High")
+                      .length ?? 0}
                   </p>
                 </div>
                 <div className="rounded-lg border border-border bg-card p-3 shadow-2xs">
-                  <p className="text-caption text-muted-foreground font-medium">Closed / Resolved</p>
+                  <p className="text-caption text-muted-foreground font-medium">
+                    Closed / Resolved
+                  </p>
                   <p className="num text-xl font-bold text-muted-foreground mt-0.5">
                     {casesData?.cases?.filter((c) => c.status === "Closed").length ?? 0}
                   </p>
@@ -970,7 +1113,10 @@ function ClientProfile() {
               {/* Toolbar: Search, Status Filter, View Toggle */}
               <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                 <div className="relative flex-1 min-w-[200px] max-w-sm">
-                  <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                  <Search
+                    size={15}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"
+                  />
                   <Input
                     placeholder="Search cases by number, title, court, counsel..."
                     value={caseSearch}
@@ -990,7 +1136,7 @@ function ClientProfile() {
                           "rounded px-2.5 py-1 text-caption font-medium transition-colors",
                           caseStatusFilter === st
                             ? "bg-card text-foreground shadow-2xs font-semibold"
-                            : "text-muted-foreground hover:text-foreground"
+                            : "text-muted-foreground hover:text-foreground",
                         )}
                       >
                         {st}
@@ -1004,7 +1150,9 @@ function ClientProfile() {
                       onClick={() => setCaseViewMode("table")}
                       className={cn(
                         "rounded p-1 transition-colors",
-                        caseViewMode === "table" ? "bg-card text-foreground shadow-2xs" : "text-muted-foreground hover:text-foreground"
+                        caseViewMode === "table"
+                          ? "bg-card text-foreground shadow-2xs"
+                          : "text-muted-foreground hover:text-foreground",
                       )}
                       title="Table View"
                     >
@@ -1015,7 +1163,9 @@ function ClientProfile() {
                       onClick={() => setCaseViewMode("cards")}
                       className={cn(
                         "rounded p-1 transition-colors",
-                        caseViewMode === "cards" ? "bg-card text-foreground shadow-2xs" : "text-muted-foreground hover:text-foreground"
+                        caseViewMode === "cards"
+                          ? "bg-card text-foreground shadow-2xs"
+                          : "text-muted-foreground hover:text-foreground",
                       )}
                       title="Cards View"
                     >
@@ -1031,7 +1181,9 @@ function ClientProfile() {
                 </div>
               ) : isCasesError ? (
                 <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-6 text-center">
-                  <p className="text-helper font-medium text-destructive">Failed to load client cases.</p>
+                  <p className="text-helper font-medium text-destructive">
+                    Failed to load client cases.
+                  </p>
                   <Button
                     variant="outline"
                     size="sm"
@@ -1043,7 +1195,11 @@ function ClientProfile() {
                 </div>
               ) : filteredClientCases.length === 0 ? (
                 <div className="rounded-lg border border-dashed p-12 text-center">
-                  <Briefcase size={32} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
+                  <Briefcase
+                    size={32}
+                    className="mx-auto text-muted-foreground"
+                    strokeWidth={1.5}
+                  />
                   <p className="mt-4 font-medium">No cases found</p>
                   <p className="mt-1 text-helper text-muted-foreground">
                     {caseSearch || caseStatusFilter !== "All"
@@ -1079,14 +1235,18 @@ function ClientProfile() {
                       <tbody className="divide-y divide-border/60">
                         {filteredClientCases.map((c) => {
                           const clientParty = c.parties?.find(
-                            (p) => p.clientId === clientId || p.name?.toLowerCase() === record.name.toLowerCase()
+                            (p) =>
+                              p.clientId === clientId ||
+                              p.name?.toLowerCase() === record.name.toLowerCase(),
                           );
                           return (
                             <tr key={c._id} className="transition-colors hover:bg-muted/30">
                               <td className="px-3.5 py-3 font-mono text-xs font-semibold text-foreground">
                                 <div className="break-all">{c.number}</div>
                                 {c.courtCaseId && (
-                                  <div className="text-[11px] font-normal text-muted-foreground truncate">{c.courtCaseId}</div>
+                                  <div className="text-[11px] font-normal text-muted-foreground truncate">
+                                    {c.courtCaseId}
+                                  </div>
                                 )}
                               </td>
                               <td className="px-3.5 py-3 min-w-0">
@@ -1097,7 +1257,11 @@ function ClientProfile() {
                                 >
                                   {c.title}
                                 </Link>
-                                {c.court && <span className="text-caption text-muted-foreground block break-words mt-0.5">{c.court}</span>}
+                                {c.court && (
+                                  <span className="text-caption text-muted-foreground block break-words mt-0.5">
+                                    {c.court}
+                                  </span>
+                                )}
                               </td>
                               <td className="px-3.5 py-3 text-muted-foreground break-words">
                                 {c.practice || (c as any).category || "General Practice"}
@@ -1164,7 +1328,9 @@ function ClientProfile() {
                   <div className="lg:hidden space-y-3">
                     {filteredClientCases.map((c) => {
                       const clientParty = c.parties?.find(
-                        (p) => p.clientId === clientId || p.name?.toLowerCase() === record.name.toLowerCase()
+                        (p) =>
+                          p.clientId === clientId ||
+                          p.name?.toLowerCase() === record.name.toLowerCase(),
                       );
                       return (
                         <div
@@ -1173,7 +1339,9 @@ function ClientProfile() {
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 flex-1">
-                              <span className="font-mono text-xs font-semibold text-primary">{c.number}</span>
+                              <span className="font-mono text-xs font-semibold text-primary">
+                                {c.number}
+                              </span>
                               <Link
                                 to="/cases/$caseId"
                                 params={{ caseId: c._id }}
@@ -1181,27 +1349,47 @@ function ClientProfile() {
                               >
                                 {c.title}
                               </Link>
-                              {c.court && <p className="text-caption text-muted-foreground mt-0.5">{c.court}</p>}
+                              {c.court && (
+                                <p className="text-caption text-muted-foreground mt-0.5">
+                                  {c.court}
+                                </p>
+                              )}
                             </div>
                             <StatusPill tone={toneForStatus(c.status)}>{c.status}</StatusPill>
                           </div>
 
                           <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border/60">
                             <div>
-                              <span className="text-[10px] text-muted-foreground uppercase block font-medium">Practice</span>
-                              <span className="text-foreground truncate block">{c.practice || "General Practice"}</span>
+                              <span className="text-[10px] text-muted-foreground uppercase block font-medium">
+                                Practice
+                              </span>
+                              <span className="text-foreground truncate block">
+                                {c.practice || "General Practice"}
+                              </span>
                             </div>
                             <div>
-                              <span className="text-[10px] text-muted-foreground uppercase block font-medium">Client Role</span>
-                              <span className="text-foreground truncate block">{clientParty?.role || "—"}</span>
+                              <span className="text-[10px] text-muted-foreground uppercase block font-medium">
+                                Client Role
+                              </span>
+                              <span className="text-foreground truncate block">
+                                {clientParty?.role || "—"}
+                              </span>
                             </div>
                             <div>
-                              <span className="text-[10px] text-muted-foreground uppercase block font-medium">Assigned To</span>
-                              <span className="text-foreground truncate block">{c.assignedTo?.name || "Unassigned"}</span>
+                              <span className="text-[10px] text-muted-foreground uppercase block font-medium">
+                                Assigned To
+                              </span>
+                              <span className="text-foreground truncate block">
+                                {c.assignedTo?.name || "Unassigned"}
+                              </span>
                             </div>
                             <div>
-                              <span className="text-[10px] text-muted-foreground uppercase block font-medium">Next Hearing</span>
-                              <span className="text-foreground truncate block">{formatDate(c.nextHearing)}</span>
+                              <span className="text-[10px] text-muted-foreground uppercase block font-medium">
+                                Next Hearing
+                              </span>
+                              <span className="text-foreground truncate block">
+                                {formatDate(c.nextHearing)}
+                              </span>
                             </div>
                           </div>
 
@@ -1245,7 +1433,9 @@ function ClientProfile() {
                 <div className="grid gap-4 sm:grid-cols-2">
                   {filteredClientCases.map((c) => {
                     const clientParty = c.parties?.find(
-                      (p) => p.clientId === clientId || p.name?.toLowerCase() === record.name.toLowerCase()
+                      (p) =>
+                        p.clientId === clientId ||
+                        p.name?.toLowerCase() === record.name.toLowerCase(),
                     );
                     return (
                       <div
@@ -1345,16 +1535,26 @@ function ClientProfile() {
               ) : isTasksError ? (
                 <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-6 text-center">
                   <p className="text-helper font-medium text-destructive">Failed to load tasks.</p>
-                  <Button variant="outline" size="sm" className="mt-3 gap-1.5 rounded-md" onClick={() => refetchTasks()}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3 gap-1.5 rounded-md"
+                    onClick={() => refetchTasks()}
+                  >
                     <RefreshCw size={14} /> Retry
                   </Button>
                 </div>
               ) : !tasksData?.tasks || tasksData.tasks.length === 0 ? (
                 <div className="rounded-lg border border-dashed p-12 text-center">
-                  <CheckSquare size={32} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
+                  <CheckSquare
+                    size={32}
+                    className="mx-auto text-muted-foreground"
+                    strokeWidth={1.5}
+                  />
                   <p className="mt-4 font-medium">No tasks linked to this client</p>
                   <p className="mt-1 text-helper text-muted-foreground">
-                    Tasks assigned directly to this client or to their linked matters will appear here.
+                    Tasks assigned directly to this client or to their linked matters will appear
+                    here.
                   </p>
                   <Button
                     size="sm"
@@ -1377,20 +1577,24 @@ function ClientProfile() {
                       task.priority === "High" || (task.priority as string) === "Urgent"
                         ? "text-destructive"
                         : task.priority === "Medium"
-                        ? "text-amber-600 dark:text-amber-400"
-                        : "text-muted-foreground";
+                          ? "text-amber-600 dark:text-amber-400"
+                          : "text-muted-foreground";
                     return (
                       <li
                         key={task._id}
                         role="button"
                         tabIndex={0}
                         onClick={() => setSelectedTask(task)}
-                        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setSelectedTask(task)}
+                        onKeyDown={(e) =>
+                          (e.key === "Enter" || e.key === " ") && setSelectedTask(task)
+                        }
                         className="flex flex-wrap items-start justify-between gap-3 py-3.5 cursor-pointer rounded-md px-2 -mx-2 hover:bg-muted/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
                       >
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <p className="text-helper font-medium text-foreground truncate">{task.title}</p>
+                            <p className="text-helper font-medium text-foreground truncate">
+                              {task.title}
+                            </p>
                             {isOverdue && (
                               <span className="inline-flex items-center gap-1 text-[10px] font-bold text-destructive bg-destructive/10 rounded px-1.5 py-0.5">
                                 <AlertTriangle size={10} /> Overdue
@@ -1398,9 +1602,13 @@ function ClientProfile() {
                             )}
                           </div>
                           <div className="mt-1 flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
-                            <StatusPill tone={toneForStatus(task.status)}>{task.status.replace(/_/g, " ")}</StatusPill>
+                            <StatusPill tone={toneForStatus(task.status)}>
+                              {task.status.replace(/_/g, " ")}
+                            </StatusPill>
                             {task.priority && (
-                              <span className={`font-medium ${priorityColor}`}>{task.priority}</span>
+                              <span className={`font-medium ${priorityColor}`}>
+                                {task.priority}
+                              </span>
                             )}
                             {task.deadline && (
                               <span>Due: {formatSafeDate(task.deadline, "—")}</span>
@@ -1415,7 +1623,10 @@ function ClientProfile() {
                             )}
                           </div>
                         </div>
-                        <ExternalLink size={14} className="mt-1 shrink-0 text-muted-foreground/50 group-hover:text-primary" />
+                        <ExternalLink
+                          size={14}
+                          className="mt-1 shrink-0 text-muted-foreground/50 group-hover:text-primary"
+                        />
                       </li>
                     );
                   })}
@@ -1446,7 +1657,9 @@ function ClientProfile() {
                 </div>
               ) : isDocsError ? (
                 <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-6 text-center">
-                  <p className="text-helper font-medium text-destructive">Failed to load client documents.</p>
+                  <p className="text-helper font-medium text-destructive">
+                    Failed to load client documents.
+                  </p>
                   <Button
                     variant="outline"
                     size="sm"
@@ -1475,10 +1688,17 @@ function ClientProfile() {
               ) : (
                 <ul className="divide-y divide-border/60">
                   {docsData.documents.map((d) => {
-                    const caseInfo = typeof d.caseId === "object" && d.caseId !== null ? d.caseId : null;
-                    const taskInfo = typeof (d as any).taskId === "object" && (d as any).taskId !== null ? (d as any).taskId : null;
+                    const caseInfo =
+                      typeof d.caseId === "object" && d.caseId !== null ? d.caseId : null;
+                    const taskInfo =
+                      typeof (d as any).taskId === "object" && (d as any).taskId !== null
+                        ? (d as any).taskId
+                        : null;
                     return (
-                      <li key={d._id} className="flex flex-wrap items-center justify-between gap-4 py-3.5">
+                      <li
+                        key={d._id}
+                        className="flex flex-wrap items-center justify-between gap-4 py-3.5"
+                      >
                         <div className="flex items-center gap-3.5 min-w-0 flex-1">
                           <div
                             className="size-12 shrink-0 rounded-md border border-border/80 overflow-hidden bg-muted/40 cursor-pointer flex items-center justify-center hover:opacity-90"
@@ -1522,7 +1742,7 @@ function ClientProfile() {
                               {taskInfo && (
                                 <>
                                   <span>•</span>
-                                  <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
+                                  <span className="flex items-center gap-1 text-primary">
                                     <CheckSquare size={12} />
                                     <span>{taskInfo.title || "Task Document"}</span>
                                   </span>
@@ -1574,7 +1794,11 @@ function ClientProfile() {
 
           {/* ── Identity Verification ── */}
           {active === "kyc" && (
-            <SectionCard title="Identity Verification" description="Aadhaar, PAN and client identity credentials." icon={FileBadge}>
+            <SectionCard
+              title="Identity Verification"
+              description="Aadhaar, PAN and client identity credentials."
+              icon={FileBadge}
+            >
               <div className="space-y-5">
                 {/* Verification Status */}
                 <div className="flex items-center gap-4 rounded-lg border border-border bg-muted/30 p-4">
@@ -1583,17 +1807,27 @@ function ClientProfile() {
                   </span>
                   <div>
                     <p className="font-medium">Verification Status</p>
-                    <StatusPill tone={(kycTone[record.kyc] ?? "muted") as "success" | "warning" | "destructive"}>
+                    <StatusPill
+                      tone={
+                        (kycTone[record.kyc] ?? "muted") as "success" | "warning" | "destructive"
+                      }
+                    >
                       {record.kyc}
                     </StatusPill>
                     {record.kyc === "Verified" && (
-                      <p className="mt-1 text-caption text-success">Both Aadhaar and PAN verified.</p>
+                      <p className="mt-1 text-caption text-success">
+                        Both Aadhaar and PAN verified.
+                      </p>
                     )}
                     {record.kyc === "Pending" && (
-                      <p className="mt-1 text-caption text-warning">Awaiting Aadhaar and/or PAN submission.</p>
+                      <p className="mt-1 text-caption text-warning">
+                        Awaiting Aadhaar and/or PAN submission.
+                      </p>
                     )}
                     {record.kyc === "Rejected" && (
-                      <p className="mt-1 text-caption text-destructive">Identity verification was rejected. Please review.</p>
+                      <p className="mt-1 text-caption text-destructive">
+                        Identity verification was rejected. Please review.
+                      </p>
                     )}
                   </div>
                 </div>
@@ -1718,13 +1952,17 @@ function ClientProfile() {
                           </span>
                         )}
                         {sc.aadhar && (
-                          <span className="text-caption text-muted-foreground">Aadhar: {sc.aadhar}</span>
+                          <span className="text-caption text-muted-foreground">
+                            Aadhar: {sc.aadhar}
+                          </span>
                         )}
                         {sc.pan && (
                           <span className="text-caption text-muted-foreground">PAN: {sc.pan}</span>
                         )}
                         {sc.notes && (
-                          <span className="sm:col-span-2 text-helper text-muted-foreground">{sc.notes}</span>
+                          <span className="sm:col-span-2 text-helper text-muted-foreground">
+                            {sc.notes}
+                          </span>
                         )}
                       </div>
                     </li>
@@ -1750,7 +1988,8 @@ function ClientProfile() {
                   <Activity size={32} className="mx-auto text-muted-foreground" strokeWidth={1.5} />
                   <p className="mt-4 font-medium">No activity recorded yet</p>
                   <p className="mt-1 text-helper text-muted-foreground">
-                    Activity will appear here as cases, tasks, and documents are added to this client.
+                    Activity will appear here as cases, tasks, and documents are added to this
+                    client.
                   </p>
                 </div>
               ) : (
@@ -1772,7 +2011,9 @@ function ClientProfile() {
                               {item.label}
                             </Link>
                           ) : (
-                            <p className="text-helper font-semibold text-foreground">{item.label}</p>
+                            <p className="text-helper font-semibold text-foreground">
+                              {item.label}
+                            </p>
                           )}
                           <p className="text-caption text-muted-foreground">{item.sub}</p>
                           {item.date && (
@@ -1824,18 +2065,20 @@ function ClientProfile() {
             setEditingCase(null);
             refetchCases();
           }}
-          record={{
-            ...editingCase,
-            description: (editingCase as any).description || "",
-            notes: (editingCase as any).notes || [],
-            timeline: (editingCase as any).timeline || [],
-            tags: (editingCase as any).tags || [],
-            progress: (editingCase as any).progress ?? 0,
-            priority: (editingCase as any).priority || "Medium",
-            court: (editingCase as any).court || "",
-            practice: (editingCase as any).practice || "General",
-            parties: (editingCase as any).parties || [],
-          } as unknown as CaseRecord}
+          record={
+            {
+              ...editingCase,
+              description: (editingCase as any).description || "",
+              notes: (editingCase as any).notes || [],
+              timeline: (editingCase as any).timeline || [],
+              tags: (editingCase as any).tags || [],
+              progress: (editingCase as any).progress ?? 0,
+              priority: (editingCase as any).priority || "Medium",
+              court: (editingCase as any).court || "",
+              practice: (editingCase as any).practice || "General",
+              parties: (editingCase as any).parties || [],
+            } as unknown as CaseRecord
+          }
           caseId={editingCase._id}
         />
       )}
@@ -1866,12 +2109,16 @@ function ClientProfile() {
               Archive Client Profile
             </AlertDialogTitle>
             <AlertDialogDescription className="text-helper text-muted-foreground mt-2">
-              Are you sure you want to archive client <span className="font-semibold text-foreground">"{record.name}"</span>?
-              Historical cases, court proceedings, and verified documents will remain permanently preserved in firm archives.
+              Are you sure you want to archive client{" "}
+              <span className="font-semibold text-foreground">"{record.name}"</span>? Historical
+              cases, court proceedings, and verified documents will remain permanently preserved in
+              firm archives.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="mt-5 flex justify-end gap-2">
-            <AlertDialogCancel className="rounded-md" disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel className="rounded-md" disabled={isDeleting}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               className="rounded-md bg-amber-600 text-white hover:bg-amber-700"
               onClick={handleDeleteClient}
@@ -1893,8 +2140,12 @@ function ClientProfile() {
             </AlertDialogTitle>
             <AlertDialogDescription className="text-helper text-muted-foreground mt-2 space-y-3">
               <p>
-                You are about to permanently delete <strong className="text-foreground">{record.name}</strong> and all associated legal records.
-                <span className="text-destructive font-medium block mt-1">This action is irreversible and cannot be undone.</span>
+                You are about to permanently delete{" "}
+                <strong className="text-foreground">{record.name}</strong> and all associated legal
+                records.
+                <span className="text-destructive font-medium block mt-1">
+                  This action is irreversible and cannot be undone.
+                </span>
               </p>
 
               {isPreviewLoading ? (
@@ -1904,18 +2155,30 @@ function ClientProfile() {
                 </div>
               ) : deletionPreview ? (
                 <div className="rounded-lg border border-border bg-muted/40 p-3 text-xs space-y-1.5">
-                  <p className="font-semibold text-foreground">Records that will be permanently destroyed:</p>
+                  <p className="font-semibold text-foreground">
+                    Records that will be permanently destroyed:
+                  </p>
                   <ul className="list-disc list-inside text-muted-foreground space-y-0.5">
-                    <li><strong className="text-foreground">{deletionPreview.caseCount}</strong> Linked Cases & Legal Matters</li>
-                    <li><strong className="text-foreground">{deletionPreview.taskCount}</strong> Tasks & Task Reminders</li>
-                    <li><strong className="text-foreground">{deletionPreview.documentCount}</strong> Uploaded Documents & Storage Files</li>
+                    <li>
+                      <strong className="text-foreground">{deletionPreview.caseCount}</strong>{" "}
+                      Linked Cases & Legal Matters
+                    </li>
+                    <li>
+                      <strong className="text-foreground">{deletionPreview.taskCount}</strong> Tasks
+                      & Task Reminders
+                    </li>
+                    <li>
+                      <strong className="text-foreground">{deletionPreview.documentCount}</strong>{" "}
+                      Uploaded Documents & Storage Files
+                    </li>
                   </ul>
                 </div>
               ) : null}
 
               <div className="pt-2">
                 <Label className="text-xs font-semibold text-foreground block mb-1">
-                  Type <span className="text-destructive font-mono uppercase">{record.name}</span> to confirm permanent deletion:
+                  Type <span className="text-destructive font-mono uppercase">{record.name}</span>{" "}
+                  to confirm permanent deletion:
                 </Label>
                 <Input
                   value={confirmDeleteInput}
@@ -1927,11 +2190,16 @@ function ClientProfile() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="mt-5 flex justify-end gap-2">
-            <AlertDialogCancel className="rounded-md" disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel className="rounded-md" disabled={isDeleting}>
+              Cancel
+            </AlertDialogCancel>
             <Button
               variant="destructive"
               className="rounded-md"
-              disabled={isDeleting || confirmDeleteInput.trim().toLowerCase() !== record.name.trim().toLowerCase()}
+              disabled={
+                isDeleting ||
+                confirmDeleteInput.trim().toLowerCase() !== record.name.trim().toLowerCase()
+              }
               onClick={async () => {
                 setIsDeleting(true);
                 try {
@@ -1951,14 +2219,20 @@ function ClientProfile() {
       </AlertDialog>
 
       {/* ── Document Deletion Confirmation Dialog ── */}
-      <AlertDialog open={!!documentToDelete} onOpenChange={(open) => !open && setDocumentToDelete(null)}>
+      <AlertDialog
+        open={!!documentToDelete}
+        onOpenChange={(open) => !open && setDocumentToDelete(null)}
+      >
         <AlertDialogContent className="w-[calc(100vw-1.5rem)] sm:w-full max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-destructive flex items-center gap-2">
               <Trash2 size={18} /> Delete Document?
             </AlertDialogTitle>
             <AlertDialogDescription className="text-helper text-muted-foreground space-y-2">
-              <span>You are about to permanently delete this document from LegalOS. This action cannot be undone.</span>
+              <span>
+                You are about to permanently delete this document from LegalOS. This action cannot
+                be undone.
+              </span>
               {documentToDelete && (
                 <span className="block font-medium text-foreground bg-muted/60 p-2.5 rounded border border-border text-xs break-all mt-2">
                   {documentToDelete.name}

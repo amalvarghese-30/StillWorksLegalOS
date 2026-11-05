@@ -141,7 +141,7 @@ export function EmployeeCard({
               <Briefcase size={12} className="text-indigo-400" />
               <span>Cases</span>
             </div>
-            <span className="mt-1 font-display text-base font-semibold text-foreground">
+            <span className="mt-1 font-display text-base font-semibold text-foreground tabular-nums">
               {activeCases}
             </span>
           </div>
@@ -160,7 +160,7 @@ export function EmployeeCard({
             </div>
             <span
               className={cn(
-                "mt-1 font-display text-base font-semibold",
+                "mt-1 font-display text-base font-semibold tabular-nums",
                 hasHighWorkload ? "text-amber-400" : "text-foreground"
               )}
             >
@@ -177,7 +177,7 @@ export function EmployeeCard({
               <CheckCircle2 size={12} className="text-emerald-400" />
               <span>Done</span>
             </div>
-            <span className="mt-1 font-display text-base font-semibold text-foreground">
+            <span className="mt-1 font-display text-base font-semibold text-foreground tabular-nums">
               {completedTasks}
             </span>
           </div>

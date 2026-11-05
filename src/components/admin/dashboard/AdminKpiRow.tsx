@@ -37,8 +37,7 @@ export function AdminKpiRow({
       count: pendingApprovalsCount,
       to: "/admin/approvals",
       icon: ShieldCheck,
-      iconContainer:
-        "bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/50",
+      iconContainer: "bg-primary/10 text-primary border border-primary/20",
     },
     {
       id: "team",
@@ -55,8 +54,7 @@ export function AdminKpiRow({
       count: activeCasesCount,
       to: "/cases",
       icon: Briefcase,
-      iconContainer:
-        "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200/60 dark:border-blue-800/50",
+      iconContainer: "bg-primary/10 text-primary border border-primary/20",
     },
     {
       id: "clients",
@@ -104,7 +102,7 @@ export function AdminKpiRow({
                 <span
                   className={cn(
                     "grid size-9 shrink-0 place-items-center rounded-xl shadow-2xs transition-transform group-hover:scale-105",
-                    c.iconContainer
+                    c.iconContainer,
                   )}
                 >
                   <Icon size={18} strokeWidth={2.2} />

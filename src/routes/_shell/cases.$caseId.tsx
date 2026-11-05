@@ -413,14 +413,7 @@ function AddPartyForm({ caseId }: { caseId: string }) {
 
 function CaseWorkspace() {
   const { caseId } = Route.useParams();
-  const {
-    data,
-    isLoading,
-    isError,
-    error,
-    refetch,
-    isFetching,
-  } = useCase(caseId);
+  const { data, isLoading, isError, error, refetch, isFetching } = useCase(caseId);
   const [active, setActive] = useState("overview");
 
   // Linked data — queried only when tab is active
@@ -681,7 +674,11 @@ function CaseWorkspace() {
       <div className="flex min-h-[60vh] items-center justify-center p-4">
         <ErrorState
           title="Couldn't load case workspace"
-          description={error instanceof Error ? error.message : "We couldn't reach the server. Please check your connection."}
+          description={
+            error instanceof Error
+              ? error.message
+              : "We couldn't reach the server. Please check your connection."
+          }
           onRetry={() => refetch()}
           isRetrying={isFetching}
           secondaryAction={{
@@ -1108,7 +1105,7 @@ function CaseWorkspace() {
                                   ? "bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300"
                                   : diffDays === 0
                                     ? "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300"
-                                    : "bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300",
+                                    : "bg-primary/10 text-primary border border-primary/20",
                               )}
                             >
                               {label}
@@ -1169,7 +1166,8 @@ function CaseWorkspace() {
                             {typeof h.toUser === "object" ? h.toUser?.name : "—"}
                           </p>
                           <p className="text-muted-foreground mt-0.5">
-                            Assigned By: {typeof h.assignedBy === "object" ? h.assignedBy?.name : "Admin"} •{" "}
+                            Assigned By:{" "}
+                            {typeof h.assignedBy === "object" ? h.assignedBy?.name : "Admin"} •{" "}
                             {formatDate(h.timestamp)}
                           </p>
                           {h.note && (
@@ -1272,7 +1270,7 @@ function CaseWorkspace() {
                             ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30"
                             : h.status === "cancelled"
                               ? "bg-rose-500/15 text-rose-700 dark:text-rose-400 border-rose-500/30"
-                              : "bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/30";
+                              : "bg-primary/10 text-primary border border-primary/20";
 
                       return (
                         <li key={h._id} className="relative">

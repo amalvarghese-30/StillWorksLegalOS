@@ -364,9 +364,9 @@ function CalendarPage() {
             </div>
           ) : (
             <div className="rounded-lg border border-border bg-card p-2 sm:p-6 shadow-soft">
-              <div className="grid grid-cols-7 gap-1 sm:gap-2 pb-2 sm:pb-3 text-caption font-medium text-muted-foreground text-center">
+              <div className="grid grid-cols-7 gap-1 sm:gap-2 pb-2 sm:pb-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-center">
                 {WEEKDAYS.map((d) => (
-                  <div key={d} className="px-0.5 sm:px-2 text-[11px] sm:text-caption">
+                  <div key={d} className="px-0.5 sm:px-2 text-[11px] sm:text-xs">
                     <span className="hidden sm:inline">{d}</span>
                     <span className="sm:hidden">{d.slice(0, 1)}</span>
                   </div>
@@ -392,7 +392,7 @@ function CalendarPage() {
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <span className={`num inline-flex size-5 sm:size-6 items-center justify-center rounded-full text-[11px] sm:text-caption ${
+                        <span className={`num inline-flex size-5 sm:size-6 items-center justify-center rounded-full text-xs sm:text-[13px] ${
                           isToday ? "gradient-primary font-semibold text-primary-foreground" : inMonth ? "text-foreground font-medium" : "text-muted-foreground/40"
                         }`}>
                           {d.day}
@@ -407,7 +407,7 @@ function CalendarPage() {
                       {/* Desktop event pills */}
                       <div className="hidden sm:block mt-1.5 space-y-1">
                         {dayEvents.slice(0, 3).map((e) => (
-                          <p key={e._id} className={`truncate rounded-sm px-1.5 py-0.5 text-[11px] font-medium ${getEventCls(e.type)}`}>
+                          <p key={e._id} className={`truncate rounded-sm px-1.5 py-0.5 text-[12px] font-medium leading-tight ${getEventCls(e.type)}`}>
                             {e.allDay ? e.title : `${new Date(e.start).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }).slice(0, 5)} ${e.title}`}
                           </p>
                         ))}

@@ -15,14 +15,22 @@ function getSystemTheme(): ResolvedTheme {
 
 function readStoredTheme(): Theme {
   if (typeof window === "undefined") return "system";
-  const stored = window.localStorage.getItem(STORAGE_KEY);
-  return stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    return stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
+  } catch {
+    return "system";
+  }
 }
 
 function readStoredVisualTheme(): VisualTheme {
   if (typeof window === "undefined") return "blue";
-  const stored = window.localStorage.getItem(VISUAL_THEME_KEY);
-  return stored === "blue" || stored === "sage" ? stored : "blue";
+  try {
+    const stored = window.localStorage.getItem(VISUAL_THEME_KEY);
+    return stored === "blue" || stored === "sage" ? stored : "blue";
+  } catch {
+    return "blue";
+  }
 }
 
 function applyTheme(resolved: ResolvedTheme): void {
@@ -33,6 +41,32 @@ function applyTheme(resolved: ResolvedTheme): void {
 
 function applyVisualTheme(vt: VisualTheme): void {
   document.documentElement.setAttribute("data-visual-theme", vt);
+}
+
+export function applyBrowserThemeColor(
+  visualTheme: VisualTheme,
+  resolvedTheme: ResolvedTheme,
+): void {
+  if (typeof document === "undefined") return;
+  try {
+    let meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.name = "theme-color";
+      document.head.appendChild(meta);
+    }
+    const color =
+      visualTheme === "sage"
+        ? resolvedTheme === "dark"
+          ? "#122017"
+          : "#F6F4EC"
+        : resolvedTheme === "dark"
+          ? "#172033"
+          : "#F4F7FC";
+    meta.setAttribute("content", color);
+  } catch {
+    /* ignore in non-DOM environments */
+  }
 }
 
 interface ThemeValue {
@@ -60,6 +94,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     applyVisualTheme(visualTheme);
   }, [visualTheme]);
+
+  // Synchronize browser theme-color meta tag
+  useEffect(() => {
+    applyBrowserThemeColor(visualTheme, resolvedTheme);
+  }, [visualTheme, resolvedTheme]);
 
   // In "system" mode, follow OS changes live.
   useEffect(() => {
@@ -94,18 +133,30 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       resolvedTheme,
       setTheme: (next) => {
         setThemeState(next);
-        window.localStorage.setItem(STORAGE_KEY, next);
+        try {
+          window.localStorage.setItem(STORAGE_KEY, next);
+        } catch {
+          /* ignore */
+        }
       },
       visualTheme,
       setVisualTheme: (vt) => {
         setVisualThemeState(vt);
-        window.localStorage.setItem(VISUAL_THEME_KEY, vt);
+        try {
+          window.localStorage.setItem(VISUAL_THEME_KEY, vt);
+        } catch {
+          /* ignore */
+        }
         applyVisualTheme(vt);
         // Broadcast to other tabs
-        if ("BroadcastChannel" in window) {
-          const channel = new BroadcastChannel(VISUAL_THEME_CHANNEL);
-          channel.postMessage({ visualTheme: vt });
-          channel.close();
+        try {
+          if ("BroadcastChannel" in window) {
+            const channel = new BroadcastChannel(VISUAL_THEME_CHANNEL);
+            channel.postMessage({ visualTheme: vt });
+            channel.close();
+          }
+        } catch {
+          /* ignore */
         }
       },
     }),

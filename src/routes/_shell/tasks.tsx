@@ -1,6 +1,30 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useMemo, useEffect } from "react";
-import { Plus, PhoneCall, ListTodo, CalendarDays, CheckCircle2, Circle, Clock, Loader2, ChevronLeft, ChevronRight, Search, Briefcase, Filter, X, SlidersHorizontal, UserCheck, AlertCircle, Check, Edit2, PhoneForwarded, PhoneMissed, Users, ChevronDown } from "lucide-react";
+import {
+  Plus,
+  PhoneCall,
+  ListTodo,
+  CalendarDays,
+  CheckCircle2,
+  Circle,
+  Clock,
+  Loader2,
+  ChevronLeft,
+  ChevronRight,
+  Search,
+  Briefcase,
+  Filter,
+  X,
+  SlidersHorizontal,
+  UserCheck,
+  AlertCircle,
+  Check,
+  Edit2,
+  PhoneForwarded,
+  PhoneMissed,
+  Users,
+  ChevronDown,
+} from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionCard } from "@/components/common/Surface";
 import { StatusPill, toneForStatus } from "@/components/common/StatusPill";
@@ -8,7 +32,14 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSocketEvent } from "@/lib/socket";
-import { useTasks, useTask, useUpdateTask, useToggleChecklistItem, taskKeys, type TaskRecord } from "@/services/tasks";
+import {
+  useTasks,
+  useTask,
+  useUpdateTask,
+  useToggleChecklistItem,
+  taskKeys,
+  type TaskRecord,
+} from "@/services/tasks";
 import { useEmployees } from "@/services/admin";
 import { useClients } from "@/services/clients";
 import { extractCategoryName } from "@/services/categories";
@@ -40,7 +71,8 @@ export const Route = createFileRoute("/_shell/tasks")({
       { title: "Upcoming Tasks · SS Associates Legal-Tech LLP" },
       {
         name: "description",
-        content: "A calm reminders-style task list: overdue, due today, upcoming and call reminders.",
+        content:
+          "A calm reminders-style task list: overdue, due today, upcoming and call reminders.",
       },
       { property: "og:title", content: "Upcoming Tasks · SS Associates Legal-Tech LLP" },
       {
@@ -49,7 +81,9 @@ export const Route = createFileRoute("/_shell/tasks")({
       },
     ],
   }),
-  validateSearch: (search: Record<string, unknown>): {
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): {
     taskId?: string;
     search?: string;
     tab?: string;
@@ -132,17 +166,19 @@ function TaskCard({ task, onSelect }: { task: TaskRecord; onSelect?: (task: Task
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <p className="truncate font-medium">{task.title}</p>
+            <p className="truncate text-[13.5px] sm:text-sm font-semibold text-foreground">{task.title}</p>
             {task.status === "pending_approval" && (
               <span className="shrink-0 rounded-pill bg-amber-500/15 text-amber-600 dark:text-amber-400 px-2 py-0.5 text-[10px] font-bold">
                 IN REVIEW
               </span>
             )}
-            {task.status !== "completed" && task.status !== "pending_approval" && Boolean(task.rejectedAt || (task as any).rejectionReason) && (
-              <span className="shrink-0 rounded-pill bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30 px-2 py-0.5 text-[10px] font-bold">
-                CHANGES REQUESTED
-              </span>
-            )}
+            {task.status !== "completed" &&
+              task.status !== "pending_approval" &&
+              Boolean(task.rejectedAt || (task as any).rejectionReason) && (
+                <span className="shrink-0 rounded-pill bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30 px-2 py-0.5 text-[10px] font-bold">
+                  CHANGES REQUESTED
+                </span>
+              )}
             {task.status === "completed" && (
               <span className="shrink-0 rounded-pill bg-success/15 text-success px-2 py-0.5 text-[10px] font-bold">
                 COMPLETED
@@ -159,9 +195,12 @@ function TaskCard({ task, onSelect }: { task: TaskRecord; onSelect?: (task: Task
               <span className="truncate">{task.description || "No case linked"}</span>
             )}
           </div>
-          {Boolean(task.status !== "completed" && ((task as any).rejectionReason || task.rejectedAt)) && (
+          {Boolean(
+            task.status !== "completed" && ((task as any).rejectionReason || task.rejectedAt),
+          ) && (
             <div className="mt-1.5 rounded-md bg-rose-500/10 dark:bg-rose-500/20 border border-rose-500/25 px-2 py-0.5 text-[11px] text-rose-700 dark:text-rose-300 font-medium truncate">
-              ⚠️ <span className="font-bold">Feedback:</span> "{(task as any).rejectionReason || "Revisions requested"}"
+              ⚠️ <span className="font-bold">Feedback:</span> "
+              {(task as any).rejectionReason || "Revisions requested"}"
             </div>
           )}
         </div>
@@ -193,7 +232,9 @@ function TaskCard({ task, onSelect }: { task: TaskRecord; onSelect?: (task: Task
                 ) : (
                   <Circle size={15} className="shrink-0 text-muted-foreground" />
                 )}
-                <span className={`truncate ${item.done ? "text-muted-foreground line-through" : ""}`}>
+                <span
+                  className={`truncate ${item.done ? "text-muted-foreground line-through" : ""}`}
+                >
                   {item.text}
                 </span>
               </button>
@@ -221,7 +262,14 @@ function TaskCard({ task, onSelect }: { task: TaskRecord; onSelect?: (task: Task
       </div>
 
       <div className="mt-3 flex items-center justify-between">
-        <p className="num text-caption text-muted-foreground truncate max-w-[200px]" title={task.assignedUsers && task.assignedUsers.length > 0 ? task.assignedUsers.map((u) => u.name).join(", ") : (task.assignedTo?.name ?? "Unassigned")}>
+        <p
+          className="num text-caption text-muted-foreground truncate max-w-[200px]"
+          title={
+            task.assignedUsers && task.assignedUsers.length > 0
+              ? task.assignedUsers.map((u) => u.name).join(", ")
+              : (task.assignedTo?.name ?? "Unassigned")
+          }
+        >
           {task.assignedUsers && task.assignedUsers.length > 0
             ? task.assignedUsers.map((u) => u.name).join(", ")
             : (task.assignedTo?.name ?? "Unassigned")}{" "}
@@ -244,7 +292,7 @@ function TasksPage() {
   const routeSearch = Route.useSearch();
   const { data: deepTaskData } = useTask(routeSearch.taskId);
   const [view, setView] = useState<string>(
-    routeSearch.tab || (routeSearch.status ? "list" : "upcoming")
+    routeSearch.tab || (routeSearch.status ? "list" : "upcoming"),
   );
   const [dateRange, setDateRange] = useState<string>("this_month");
   const [search, setSearch] = useState(routeSearch.search ?? "");
@@ -261,7 +309,11 @@ function TasksPage() {
     if (routeSearch.status && routeSearch.status !== statusFilter) {
       setStatusFilter(routeSearch.status);
       setView("list");
-    } else if (routeSearch.status === undefined && statusFilter !== "All" && routeSearch.tab === "upcoming") {
+    } else if (
+      routeSearch.status === undefined &&
+      statusFilter !== "All" &&
+      routeSearch.tab === "upcoming"
+    ) {
       setStatusFilter("All");
     }
   }, [routeSearch.status, routeSearch.tab]);
@@ -328,7 +380,8 @@ function TasksPage() {
     if (statusFilter !== "All") {
       if (statusFilter === "overdue") f["overdue"] = "true";
       else if (statusFilter === "due_today") f["dueToday"] = "true";
-      else if (statusFilter === "in_progress" || statusFilter === "pending") f["status"] = "in_progress,pending";
+      else if (statusFilter === "in_progress" || statusFilter === "pending")
+        f["status"] = "in_progress,pending";
       else if (statusFilter === "in_review") f["status"] = "pending_approval";
       else if (statusFilter === "completed") f["status"] = "completed";
       else if (statusFilter === "calls") f["isCall"] = "true";
@@ -340,16 +393,21 @@ function TasksPage() {
     if (dueFrom) f["dueFrom"] = dueFrom;
     if (dueTo) f["dueTo"] = dueTo;
     return f;
-  }, [page, limit, view, search, statusFilter, priorityFilter, categoryFilter, selectedStaff, dueFrom, dueTo, isAdmin]);
+  }, [
+    page,
+    limit,
+    view,
+    search,
+    statusFilter,
+    priorityFilter,
+    categoryFilter,
+    selectedStaff,
+    dueFrom,
+    dueTo,
+    isAdmin,
+  ]);
 
-  const {
-    data,
-    isLoading,
-    isError,
-    error,
-    refetch,
-    isFetching,
-  } = useTasks(apiFilters);
+  const { data, isLoading, isError, error, refetch, isFetching } = useTasks(apiFilters);
   const { data: empData } = useEmployees();
   const employees = empData?.employees ?? [];
   const { data: clientsData } = useClients({ limit: 1000 });
@@ -372,11 +430,14 @@ function TasksPage() {
   const allTasks = useMemo(() => {
     if (isAdmin) return rawTasks;
     return rawTasks.filter((t) => {
-      const assignedId = typeof t.assignedTo === "object" && t.assignedTo ? (t.assignedTo as any)._id : t.assignedTo;
+      const assignedId =
+        typeof t.assignedTo === "object" && t.assignedTo ? (t.assignedTo as any)._id : t.assignedTo;
       const isAssigned =
-        (t.assignedUsers && t.assignedUsers.some((u: any) => String(u?._id || u) === String(user?._id))) ||
+        (t.assignedUsers &&
+          t.assignedUsers.some((u: any) => String(u?._id || u) === String(user?._id))) ||
         (assignedId && String(assignedId) === String(user?._id));
-      const createdById = typeof t.createdBy === "object" && t.createdBy ? (t.createdBy as any)._id : t.createdBy;
+      const createdById =
+        typeof t.createdBy === "object" && t.createdBy ? (t.createdBy as any)._id : t.createdBy;
       const isCreatedByMe = createdById && String(createdById) === String(user?._id);
 
       if (isCreatedByMe) return true;
@@ -392,7 +453,9 @@ function TasksPage() {
     if (routeSearch.taskId) {
       // 1. Try finding in current allTasks (instant)
       const matched = allTasks.find(
-        (t) => String(t._id) === String(routeSearch.taskId) || String((t as any).id) === String(routeSearch.taskId)
+        (t) =>
+          String(t._id) === String(routeSearch.taskId) ||
+          String((t as any).id) === String(routeSearch.taskId),
       );
       if (matched) {
         setSelectedTask(matched);
@@ -409,7 +472,11 @@ function TasksPage() {
       const updated = allTasks.find((t) => String(t._id) === String(selectedTask._id));
       if (updated && updated !== selectedTask) {
         setSelectedTask(updated);
-      } else if (deepTaskData?.task && String(deepTaskData.task._id) === String(selectedTask._id) && deepTaskData.task !== selectedTask) {
+      } else if (
+        deepTaskData?.task &&
+        String(deepTaskData.task._id) === String(selectedTask._id) &&
+        deepTaskData.task !== selectedTask
+      ) {
         setSelectedTask(deepTaskData.task);
       }
     }
@@ -417,7 +484,14 @@ function TasksPage() {
 
   // Unique categories
   const categories = useMemo(() => {
-    const set = new Set<string>(["Court Case", "Agreement", "CIDCO", "Property / RERA", "Due Diligence", "Other Work"]);
+    const set = new Set<string>([
+      "Court Case",
+      "Agreement",
+      "CIDCO",
+      "Property / RERA",
+      "Due Diligence",
+      "Other Work",
+    ]);
     for (const t of allTasks) {
       if (t.category) {
         const catStr = extractCategoryName(t.category);
@@ -431,9 +505,15 @@ function TasksPage() {
   const stats = useMemo(() => {
     if (data?.stats) return data.stats;
     const total = allTasks.length;
-    const overdue = allTasks.filter((t) => getBucket(t) === "Overdue" && t.status !== "completed").length;
-    const dueToday = allTasks.filter((t) => getBucket(t) === "Due Today" && t.status !== "completed").length;
-    const inProgress = allTasks.filter((t) => t.status === "in_progress" || t.status === "pending").length;
+    const overdue = allTasks.filter(
+      (t) => getBucket(t) === "Overdue" && t.status !== "completed",
+    ).length;
+    const dueToday = allTasks.filter(
+      (t) => getBucket(t) === "Due Today" && t.status !== "completed",
+    ).length;
+    const inProgress = allTasks.filter(
+      (t) => t.status === "in_progress" || t.status === "pending",
+    ).length;
     const inReview = allTasks.filter((t) => t.status === "pending_approval").length;
     const completed = allTasks.filter((t) => t.status === "completed").length;
     const calls = allTasks.filter((t) => t.isCall || Boolean(t.callReminder)).length;
@@ -454,7 +534,8 @@ function TasksPage() {
         const caseMatch =
           t.caseName?.toLowerCase().includes(q) ||
           (typeof t.caseId === "object" &&
-            (t.caseId?.title?.toLowerCase().includes(q) || t.caseId?.number?.toLowerCase().includes(q)));
+            (t.caseId?.title?.toLowerCase().includes(q) ||
+              t.caseId?.number?.toLowerCase().includes(q)));
         const staffMatch =
           (typeof t.assignedTo === "object" && t.assignedTo?.name?.toLowerCase().includes(q)) ||
           (t.assignedUsers && t.assignedUsers.some((u) => u.name.toLowerCase().includes(q)));
@@ -475,11 +556,19 @@ function TasksPage() {
       }
 
       if (isAdmin && selectedStaff.length > 0) {
-        const assignedId = typeof t.assignedTo === "object" && t.assignedTo ? (t.assignedTo as any)._id : t.assignedTo;
+        const assignedId =
+          typeof t.assignedTo === "object" && t.assignedTo
+            ? (t.assignedTo as any)._id
+            : t.assignedTo;
         const matchesStaff =
           selectedStaff.includes(String(assignedId)) ||
-          selectedStaff.includes(typeof t.assignedTo === "object" ? t.assignedTo?.name || "" : "") ||
-          (t.assignedUsers && t.assignedUsers.some((u) => selectedStaff.includes(String(u._id)) || selectedStaff.includes(u.name)));
+          selectedStaff.includes(
+            typeof t.assignedTo === "object" ? t.assignedTo?.name || "" : "",
+          ) ||
+          (t.assignedUsers &&
+            t.assignedUsers.some(
+              (u) => selectedStaff.includes(String(u._id)) || selectedStaff.includes(u.name),
+            ));
         if (!matchesStaff) return false;
       }
 
@@ -531,8 +620,8 @@ function TasksPage() {
           Array.isArray(t.assignedUsers) && t.assignedUsers.length > 0
             ? t.assignedUsers
             : t.assignedTo
-            ? [t.assignedTo]
-            : [];
+              ? [t.assignedTo]
+              : [];
         return assignees.map((a: any) => a.name).join(", ");
       },
       deadline: (t) => t.deadline,
@@ -543,7 +632,7 @@ function TasksPage() {
 
   const toggleStaff = (idOrName: string) => {
     setSelectedStaff((prev) =>
-      prev.includes(idOrName) ? prev.filter((s) => s !== idOrName) : [...prev, idOrName]
+      prev.includes(idOrName) ? prev.filter((s) => s !== idOrName) : [...prev, idOrName],
     );
   };
 
@@ -613,8 +702,8 @@ function TasksPage() {
           view === "upcoming"
             ? "Tasks grouped by client with upcoming deadlines"
             : isAdmin
-            ? `${tasks.length} deliverables visible across practice · ${stats.overdue} overdue · ${stats.calls} call reminders.`
-            : `Your assigned deliverables · ${tasks.length} visible · ${stats.overdue} overdue · ${stats.calls} call reminders.`
+              ? `${tasks.length} deliverables visible across practice · ${stats.overdue} overdue · ${stats.calls} call reminders.`
+              : `Your assigned deliverables · ${tasks.length} visible · ${stats.overdue} overdue · ${stats.calls} call reminders.`
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -668,24 +757,39 @@ function TasksPage() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-44 text-xs">
                   <DropdownMenuItem onClick={() => setDateRange("this_month")}>
-                    <Check size={14} className={`mr-2 ${dateRange === "this_month" ? "opacity-100" : "opacity-0"}`} />
+                    <Check
+                      size={14}
+                      className={`mr-2 ${dateRange === "this_month" ? "opacity-100" : "opacity-0"}`}
+                    />
                     This Month
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setDateRange("this_week")}>
-                    <Check size={14} className={`mr-2 ${dateRange === "this_week" ? "opacity-100" : "opacity-0"}`} />
+                    <Check
+                      size={14}
+                      className={`mr-2 ${dateRange === "this_week" ? "opacity-100" : "opacity-0"}`}
+                    />
                     This Week
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setDateRange("next_7_days")}>
-                    <Check size={14} className={`mr-2 ${dateRange === "next_7_days" ? "opacity-100" : "opacity-0"}`} />
+                    <Check
+                      size={14}
+                      className={`mr-2 ${dateRange === "next_7_days" ? "opacity-100" : "opacity-0"}`}
+                    />
                     Next 7 Days
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setDateRange("next_30_days")}>
-                    <Check size={14} className={`mr-2 ${dateRange === "next_30_days" ? "opacity-100" : "opacity-0"}`} />
+                    <Check
+                      size={14}
+                      className={`mr-2 ${dateRange === "next_30_days" ? "opacity-100" : "opacity-0"}`}
+                    />
                     Next 30 Days
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => setDateRange("all")}>
-                    <Check size={14} className={`mr-2 ${dateRange === "all" ? "opacity-100" : "opacity-0"}`} />
+                    <Check
+                      size={14}
+                      className={`mr-2 ${dateRange === "all" ? "opacity-100" : "opacity-0"}`}
+                    />
                     All Upcoming
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -719,168 +823,207 @@ function TasksPage() {
       {/* ── Interactive Stat Cards (Clickable quick filters, shown in All Tasks list view) ── */}
       {view !== "upcoming" && (
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <button
-          type="button"
-          onClick={() => {
-            setStatusFilter("All");
-            navigate({ search: (prev) => ({ ...prev, tab: "list", status: undefined }) });
-          }}
-          className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 cursor-pointer ${
-            statusFilter === "All"
-              ? "border-primary bg-primary/10 shadow-sm"
-              : "border-border bg-card hover:border-primary/40"
-          }`}
-        >
-          <span className="text-caption font-medium text-muted-foreground">All Tasks</span>
-          <span className="num mt-1 text-section font-bold">{stats.total}</span>
-          <span className="mt-1 text-[11px] text-muted-foreground">All workspace items</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => {
+              setStatusFilter("All");
+              navigate({ search: (prev) => ({ ...prev, tab: "list", status: undefined }) });
+            }}
+            className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 cursor-pointer ${
+              statusFilter === "All"
+                ? "border-primary bg-primary/10 shadow-sm"
+                : "border-border bg-card hover:border-primary/40"
+            }`}
+          >
+            <span className="text-caption font-medium text-muted-foreground">All Tasks</span>
+            <span className="num mt-1 text-section font-bold">{stats.total}</span>
+            <span className="mt-1 text-[11px] text-muted-foreground">All workspace items</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => {
-            const next = statusFilter === "overdue" ? "All" : "overdue";
-            setStatusFilter(next);
-            navigate({ search: (prev) => ({ ...prev, tab: "list", status: next === "All" ? undefined : next }) });
-          }}
-          className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 cursor-pointer ${
-            statusFilter === "overdue"
-              ? "border-destructive bg-destructive/10 shadow-sm"
-              : "border-border bg-card hover:border-destructive/40"
-          }`}
-        >
-          <span className="text-caption font-medium text-destructive">Overdue</span>
-          <span className="num mt-1 text-section font-bold text-destructive">{stats.overdue}</span>
-          <span className="mt-1 text-[11px] text-muted-foreground">Passed deadline</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => {
+              const next = statusFilter === "overdue" ? "All" : "overdue";
+              setStatusFilter(next);
+              navigate({
+                search: (prev) => ({
+                  ...prev,
+                  tab: "list",
+                  status: next === "All" ? undefined : next,
+                }),
+              });
+            }}
+            className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 cursor-pointer ${
+              statusFilter === "overdue"
+                ? "border-destructive bg-destructive/10 shadow-sm"
+                : "border-border bg-card hover:border-destructive/40"
+            }`}
+          >
+            <span className="text-caption font-medium text-destructive">Overdue</span>
+            <span className="num mt-1 text-section font-bold text-destructive">
+              {stats.overdue}
+            </span>
+            <span className="mt-1 text-[11px] text-muted-foreground">Passed deadline</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => {
-            const next = statusFilter === "due_today" ? "All" : "due_today";
-            setStatusFilter(next);
-            navigate({ search: (prev) => ({ ...prev, tab: "list", status: next === "All" ? undefined : next }) });
-          }}
-          className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 cursor-pointer ${
-            statusFilter === "due_today"
-              ? "border-amber-500 bg-amber-500/10 shadow-sm"
-              : "border-border bg-card hover:border-amber-500/40"
-          }`}
-        >
-          <span className="text-caption font-medium text-amber-600 dark:text-amber-400">Due Today</span>
-          <span className="num mt-1 text-section font-bold text-amber-600 dark:text-amber-400">{stats.dueToday}</span>
-          <span className="mt-1 text-[11px] text-muted-foreground">Needs attention</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => {
+              const next = statusFilter === "due_today" ? "All" : "due_today";
+              setStatusFilter(next);
+              navigate({
+                search: (prev) => ({
+                  ...prev,
+                  tab: "list",
+                  status: next === "All" ? undefined : next,
+                }),
+              });
+            }}
+            className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 cursor-pointer ${
+              statusFilter === "due_today"
+                ? "border-amber-500 bg-amber-500/10 shadow-sm"
+                : "border-border bg-card hover:border-amber-500/40"
+            }`}
+          >
+            <span className="text-caption font-medium text-amber-600 dark:text-amber-400">
+              Due Today
+            </span>
+            <span className="num mt-1 text-section font-bold text-amber-600 dark:text-amber-400">
+              {stats.dueToday}
+            </span>
+            <span className="mt-1 text-[11px] text-muted-foreground">Needs attention</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => {
-            const next = statusFilter === "in_progress" || statusFilter === "pending" ? "All" : "in_progress";
-            setStatusFilter(next);
-            navigate({ search: (prev) => ({ ...prev, tab: "list", status: next === "All" ? undefined : next }) });
-          }}
-          className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 cursor-pointer ${
-            statusFilter === "in_progress" || statusFilter === "pending"
-              ? "border-indigo-500 bg-indigo-500/10 shadow-sm"
-              : "border-border bg-card hover:border-indigo-500/40"
-          }`}
-        >
-          <span className="text-caption font-medium text-indigo">Pending / In Progress</span>
-          <span className="num mt-1 text-section font-bold text-indigo">{stats.inProgress}</span>
-          <span className="mt-1 text-[11px] text-muted-foreground">Awaiting completion</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => {
+              const next =
+                statusFilter === "in_progress" || statusFilter === "pending"
+                  ? "All"
+                  : "in_progress";
+              setStatusFilter(next);
+              navigate({
+                search: (prev) => ({
+                  ...prev,
+                  tab: "list",
+                  status: next === "All" ? undefined : next,
+                }),
+              });
+            }}
+            className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 cursor-pointer ${
+              statusFilter === "in_progress" || statusFilter === "pending"
+                ? "border-primary bg-primary/10 shadow-sm"
+                : "border-border bg-card hover:border-primary/40"
+            }`}
+          >
+            <span className="text-caption font-medium text-primary">Pending / In Progress</span>
+            <span className="num mt-1 text-section font-bold text-primary">{stats.inProgress}</span>
+            <span className="mt-1 text-[11px] text-muted-foreground">Awaiting completion</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => {
-            const next = statusFilter === "completed" ? "All" : "completed";
-            setStatusFilter(next);
-            navigate({ search: (prev) => ({ ...prev, tab: "list", status: next === "All" ? undefined : next }) });
-          }}
-          className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 cursor-pointer ${
-            statusFilter === "completed"
-              ? "border-success bg-success/10 shadow-sm"
-              : "border-border bg-card hover:border-success/40"
-          }`}
-        >
-          <span className="text-caption font-medium text-success">Completed</span>
-          <span className="num mt-1 text-section font-bold text-success">{stats.completed}</span>
-          <span className="mt-1 text-[11px] text-muted-foreground">Marked done</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => {
+              const next = statusFilter === "completed" ? "All" : "completed";
+              setStatusFilter(next);
+              navigate({
+                search: (prev) => ({
+                  ...prev,
+                  tab: "list",
+                  status: next === "All" ? undefined : next,
+                }),
+              });
+            }}
+            className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 cursor-pointer ${
+              statusFilter === "completed"
+                ? "border-success bg-success/10 shadow-sm"
+                : "border-border bg-card hover:border-success/40"
+            }`}
+          >
+            <span className="text-caption font-medium text-success">Completed</span>
+            <span className="num mt-1 text-section font-bold text-success">{stats.completed}</span>
+            <span className="mt-1 text-[11px] text-muted-foreground">Marked done</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => {
-            const next = statusFilter === "calls" ? "All" : "calls";
-            setStatusFilter(next);
-            navigate({ search: (prev) => ({ ...prev, tab: "list", status: next === "All" ? undefined : next }) });
-          }}
-          className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 cursor-pointer ${
-            statusFilter === "calls"
-              ? "border-violet bg-violet/10 shadow-sm"
-              : "border-border bg-card hover:border-violet/40"
-          }`}
-        >
-          <span className="text-caption font-medium text-violet">Call Reminders</span>
-          <span className="num mt-1 text-section font-bold text-violet">{stats.calls}</span>
-          <span className="mt-1 text-[11px] text-muted-foreground">Client calls</span>
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={() => {
+              const next = statusFilter === "calls" ? "All" : "calls";
+              setStatusFilter(next);
+              navigate({
+                search: (prev) => ({
+                  ...prev,
+                  tab: "list",
+                  status: next === "All" ? undefined : next,
+                }),
+              });
+            }}
+            className={`lift flex flex-col items-start rounded-xl border p-3.5 text-left transition-all duration-150 cursor-pointer ${
+              statusFilter === "calls"
+                ? "border-violet bg-violet/10 shadow-sm"
+                : "border-border bg-card hover:border-violet/40"
+            }`}
+          >
+            <span className="text-caption font-medium text-violet">Call Reminders</span>
+            <span className="num mt-1 text-section font-bold text-violet">{stats.calls}</span>
+            <span className="mt-1 text-[11px] text-muted-foreground">Client calls</span>
+          </button>
+        </div>
       )}
 
       {/* ── Search & Filter Controls (Shown in All Tasks list view) ── */}
       {view !== "upcoming" && (
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant={showFilterPanel || activeFilterCount > 0 ? "default" : "outline"}
-            size="sm"
-            onClick={() => setShowFilterPanel(!showFilterPanel)}
-            className="h-10 gap-2 rounded-pill px-4 text-xs font-medium"
-          >
-            <SlidersHorizontal size={14} />
-            Filters {activeFilterCount > 0 && `(${activeFilterCount})`}
-          </Button>
-
-          {activeFilterCount > 0 && (
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
-              variant="ghost"
+              variant={showFilterPanel || activeFilterCount > 0 ? "default" : "outline"}
               size="sm"
-              onClick={clearAllFilters}
-              className="h-10 text-xs text-muted-foreground hover:text-destructive"
+              onClick={() => setShowFilterPanel(!showFilterPanel)}
+              className="h-10 gap-2 rounded-pill px-4 text-xs font-medium"
             >
-              <X size={14} className="mr-1" /> Clear all
+              <SlidersHorizontal size={14} />
+              Filters {activeFilterCount > 0 && `(${activeFilterCount})`}
             </Button>
-          )}
-        </div>
 
-        {/* Universal search input for tasks */}
-        <label className="flex min-w-0 flex-1 items-center gap-2.5 rounded-pill border border-border bg-card px-4 py-2 shadow-soft sm:max-w-sm">
-          <Search size={16} strokeWidth={1.75} className="shrink-0 text-muted-foreground" />
-          <input
-            type="search"
-            aria-label="Search tasks"
-            placeholder="Search title, client, category, staff…"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            className="min-w-0 flex-1 bg-transparent text-helper outline-none"
-          />
-          {search && (
-            <button
-              onClick={() => {
-                setSearch("");
+            {activeFilterCount > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearAllFilters}
+                className="h-10 text-xs text-muted-foreground hover:text-destructive"
+              >
+                <X size={14} className="mr-1" /> Clear all
+              </Button>
+            )}
+          </div>
+
+          {/* Universal search input for tasks */}
+          <label className="flex min-w-0 flex-1 items-center gap-2.5 rounded-pill border border-border bg-card px-4 py-2 shadow-soft sm:max-w-sm">
+            <Search size={16} strokeWidth={1.75} className="shrink-0 text-muted-foreground" />
+            <input
+              type="search"
+              aria-label="Search tasks"
+              placeholder="Search title, client, category, staff…"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
                 setPage(1);
               }}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <X size={14} />
-            </button>
-          )}
-        </label>
-      </div>
+              className="min-w-0 flex-1 bg-transparent text-helper outline-none"
+            />
+            {search && (
+              <button
+                onClick={() => {
+                  setSearch("");
+                  setPage(1);
+                }}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </label>
+        </div>
       )}
 
       {/* ── Expandable Filter Panel ── */}
@@ -889,7 +1032,9 @@ function TasksPage() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             {/* Status Filter */}
             <div>
-              <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Status</label>
+              <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">
+                Status
+              </label>
               <select
                 value={statusFilter}
                 onChange={(e) => {
@@ -910,7 +1055,9 @@ function TasksPage() {
 
             {/* Priority Filter */}
             <div>
-              <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Priority</label>
+              <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">
+                Priority
+              </label>
               <select
                 value={priorityFilter}
                 onChange={(e) => {
@@ -928,7 +1075,9 @@ function TasksPage() {
 
             {/* Category Filter */}
             <div>
-              <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Category</label>
+              <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">
+                Category
+              </label>
               <select
                 value={categoryFilter}
                 onChange={(e) => {
@@ -939,14 +1088,18 @@ function TasksPage() {
               >
                 <option value="All">All Categories</option>
                 {categories.map((c) => (
-                  <option key={c} value={c}>{c}</option>
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
                 ))}
               </select>
             </div>
 
             {/* Due Date Range */}
             <div>
-              <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Due From</label>
+              <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">
+                Due From
+              </label>
               <input
                 type="date"
                 value={dueFrom}
@@ -959,7 +1112,9 @@ function TasksPage() {
             </div>
 
             <div>
-              <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">Due To</label>
+              <label className="mb-1.5 block text-caption font-semibold text-muted-foreground">
+                Due To
+              </label>
               <input
                 type="date"
                 value={dueTo}
@@ -982,9 +1137,13 @@ function TasksPage() {
                     <span className="text-muted-foreground italic">No staff members found</span>
                   ) : (
                     employees.map((emp) => {
-                      const checked = selectedStaff.includes(emp._id) || selectedStaff.includes(emp.name);
+                      const checked =
+                        selectedStaff.includes(emp._id) || selectedStaff.includes(emp.name);
                       return (
-                        <label key={emp._id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded">
+                        <label
+                          key={emp._id}
+                          className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 rounded"
+                        >
                           <input
                             type="checkbox"
                             checked={checked}
@@ -1098,7 +1257,12 @@ function TasksPage() {
               <div className="grid grid-cols-7">
                 {calendarDays.map((day, i) => {
                   if (!day) {
-                    return <div key={"empty-" + i} className="min-h-[58px] sm:min-h-[100px] border-r border-b border-border/50 bg-muted/15 p-1 sm:p-2" />;
+                    return (
+                      <div
+                        key={"empty-" + i}
+                        className="min-h-[58px] sm:min-h-[100px] border-r border-b border-border/50 bg-muted/15 p-1 sm:p-2"
+                      />
+                    );
                   }
                   const dayTasks = getTasksForDay(day);
                   const isToday = day.toDateString() === new Date().toDateString();
@@ -1249,155 +1413,162 @@ function TasksPage() {
               })}
             </div>
 
-          {/* Call reminders sidebar */}
-          <SectionCard
-            title="Call reminders"
-            description="Scheduled client calls."
-            icon={PhoneCall}
-            action={
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs rounded-pill"
-                onClick={() => setShowQuickCall(true)}
-              >
-                <Plus size={12} className="mr-1" /> Add Call
-              </Button>
-            }
-          >
-            {tasks.filter((t) => t.callReminder || t.isCall).length > 0 ? (
-              <ul className="space-y-2.5">
-                {tasks
-                  .filter((t) => t.callReminder || t.isCall)
-                  .map((t) => {
-                    const cr = t.callReminder;
-                    const isDone = Boolean(cr?.completed || t.status === "completed");
-                    const clientName = cr?.clientName || t.title.replace(/^📞\s*CALL:\s*/i, "");
-                    const phone = cr?.phone || "";
-                    const schedTime = cr?.scheduledAt || t.deadline;
+            {/* Call reminders sidebar */}
+            <SectionCard
+              title="Call reminders"
+              description="Scheduled client calls."
+              icon={PhoneCall}
+              action={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs rounded-pill"
+                  onClick={() => setShowQuickCall(true)}
+                >
+                  <Plus size={12} className="mr-1" /> Add Call
+                </Button>
+              }
+            >
+              {tasks.filter((t) => t.callReminder || t.isCall).length > 0 ? (
+                <ul className="space-y-2.5">
+                  {tasks
+                    .filter((t) => t.callReminder || t.isCall)
+                    .map((t) => {
+                      const cr = t.callReminder;
+                      const isDone = Boolean(cr?.completed || t.status === "completed");
+                      const clientName = cr?.clientName || t.title.replace(/^📞\s*CALL:\s*/i, "");
+                      const phone = cr?.phone || "";
+                      const schedTime = cr?.scheduledAt || t.deadline;
 
-                    return (
-                      <li
-                        key={t._id}
-                        onClick={() => setEditingCallTask(t)}
-                        className={`group relative flex flex-col gap-2 rounded-lg border p-3.5 transition-all cursor-pointer ${
-                          isDone
-                            ? "border-border/60 bg-muted/20 opacity-75 hover:opacity-100 hover:border-border"
-                            : "border-border bg-card shadow-soft hover:border-amber-500/40 hover:shadow-md"
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-start gap-2.5 min-w-0">
-                            <button
-                              type="button"
-                              onClick={(e) => handleToggleCallDone(e, t)}
-                              className="mt-0.5 shrink-0 rounded-full p-0.5 text-muted-foreground hover:text-foreground transition-colors"
-                              title={isDone ? "Mark as pending" : "Mark as completed"}
-                            >
-                              {isDone ? (
-                                <CheckCircle2 size={17} className="text-emerald-500 fill-emerald-500/20" />
-                              ) : (
-                                <Circle size={17} className="hover:text-amber-500" />
-                              )}
-                            </button>
-                            <div className="min-w-0">
-                              <p
-                                className={`truncate font-medium text-sm ${
-                                  isDone ? "line-through text-muted-foreground" : "text-foreground"
-                                }`}
+                      return (
+                        <li
+                          key={t._id}
+                          onClick={() => setEditingCallTask(t)}
+                          className={`group relative flex flex-col gap-2 rounded-lg border p-3.5 transition-all cursor-pointer ${
+                            isDone
+                              ? "border-border/60 bg-muted/20 opacity-75 hover:opacity-100 hover:border-border"
+                              : "border-border bg-card shadow-soft hover:border-amber-500/40 hover:shadow-md"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-start gap-2.5 min-w-0">
+                              <button
+                                type="button"
+                                onClick={(e) => handleToggleCallDone(e, t)}
+                                className="mt-0.5 shrink-0 rounded-full p-0.5 text-muted-foreground hover:text-foreground transition-colors"
+                                title={isDone ? "Mark as pending" : "Mark as completed"}
                               >
-                                {clientName}
-                              </p>
-                              {phone && (
-                                <p className="font-mono text-xs text-muted-foreground">
-                                  {phone}
+                                {isDone ? (
+                                  <CheckCircle2
+                                    size={17}
+                                    className="text-emerald-500 fill-emerald-500/20"
+                                  />
+                                ) : (
+                                  <Circle size={17} className="hover:text-amber-500" />
+                                )}
+                              </button>
+                              <div className="min-w-0">
+                                <p
+                                  className={`truncate font-medium text-sm ${
+                                    isDone
+                                      ? "line-through text-muted-foreground"
+                                      : "text-foreground"
+                                  }`}
+                                >
+                                  {clientName}
                                 </p>
+                                {phone && (
+                                  <p className="font-mono text-xs text-muted-foreground">{phone}</p>
+                                )}
+                              </div>
+                            </div>
+
+                            <div
+                              className="flex items-center gap-1 shrink-0"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <StatusPill tone={isDone ? "success" : "warning"}>
+                                {isDone ? "Done" : "Pending"}
+                              </StatusPill>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="size-7 p-0 rounded-full text-amber-600 hover:text-amber-700 hover:bg-amber-500/15"
+                                onClick={() => setEditingCallTask(t)}
+                                title="Didn't Pick Up / Reschedule"
+                              >
+                                <PhoneMissed size={12} />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="size-7 p-0 rounded-full text-muted-foreground hover:text-foreground"
+                                onClick={() => setEditingCallTask(t)}
+                                title="Edit call reminder"
+                              >
+                                <Edit2 size={12} />
+                              </Button>
+                              {phone && (
+                                <a
+                                  href={`tel:${phone}`}
+                                  className="grid size-7 place-items-center rounded-full bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
+                                  title="Call now"
+                                >
+                                  <PhoneCall size={11} />
+                                </a>
                               )}
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                            <StatusPill tone={isDone ? "success" : "warning"}>
-                              {isDone ? "Done" : "Pending"}
-                            </StatusPill>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="size-7 p-0 rounded-full text-amber-600 hover:text-amber-700 hover:bg-amber-500/15"
-                              onClick={() => setEditingCallTask(t)}
-                              title="Didn't Pick Up / Reschedule"
-                            >
-                              <PhoneMissed size={12} />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="size-7 p-0 rounded-full text-muted-foreground hover:text-foreground"
-                              onClick={() => setEditingCallTask(t)}
-                              title="Edit call reminder"
-                            >
-                              <Edit2 size={12} />
-                            </Button>
-                            {phone && (
-                              <a
-                                href={`tel:${phone}`}
-                                className="grid size-7 place-items-center rounded-full bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
-                                title="Call now"
-                              >
-                                <PhoneCall size={11} />
-                              </a>
-                            )}
-                          </div>
-                        </div>
-
-                        {schedTime && (
-                          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground border-t border-border/40 pt-1.5 mt-0.5">
-                            <Clock size={11} />
-                            <span>
-                              {new Date(schedTime).toLocaleDateString("en-IN", {
-                                weekday: "short",
-                                day: "numeric",
-                                month: "short",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </span>
-                            {cr?.notes && (
-                              <span className="truncate italic ml-1">
-                                · {cr.notes}
+                          {schedTime && (
+                            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground border-t border-border/40 pt-1.5 mt-0.5">
+                              <Clock size={11} />
+                              <span>
+                                {new Date(schedTime).toLocaleDateString("en-IN", {
+                                  weekday: "short",
+                                  day: "numeric",
+                                  month: "short",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
                               </span>
-                            )}
-                          </div>
-                        )}
-                      </li>
-                    );
-                  })}
-              </ul>
-            ) : (
-              <div className="py-8 text-center text-helper text-muted-foreground">
-                <PhoneCall size={28} strokeWidth={1.5} className="mx-auto mb-2 opacity-40" />
-                <p>No call reminders</p>
-                <p className="mt-1 text-caption">Add a call reminder using Quick Call or when creating a task.</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-3 text-xs rounded-pill"
-                  onClick={() => setShowQuickCall(true)}
-                >
-                  <Plus size={12} className="mr-1" /> Add Call Reminder
-                </Button>
-              </div>
-            )}
-          </SectionCard>
+                              {cr?.notes && (
+                                <span className="truncate italic ml-1">· {cr.notes}</span>
+                              )}
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
+                </ul>
+              ) : (
+                <div className="py-8 text-center text-helper text-muted-foreground">
+                  <PhoneCall size={28} strokeWidth={1.5} className="mx-auto mb-2 opacity-40" />
+                  <p>No call reminders</p>
+                  <p className="mt-1 text-caption">
+                    Add a call reminder using Quick Call or when creating a task.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3 text-xs rounded-pill"
+                    onClick={() => setShowQuickCall(true)}
+                  >
+                    <Plus size={12} className="mr-1" /> Add Call Reminder
+                  </Button>
+                </div>
+              )}
+            </SectionCard>
+          </div>
         </div>
-      </div>
       ) : null}
 
       {totalItems > 0 && (
         <div className="mt-6 flex flex-col items-center justify-between gap-4 border-t border-border pt-4 sm:flex-row">
           <p className="flex items-center gap-2 text-helper text-muted-foreground">
             <ListTodo size={16} strokeWidth={1.75} />
-            Showing {Math.min((page - 1) * limit + 1, totalItems)}–{Math.min(page * limit, totalItems)} of {totalItems} tasks
+            Showing {Math.min((page - 1) * limit + 1, totalItems)}–
+            {Math.min(page * limit, totalItems)} of {totalItems} tasks
           </p>
 
           <div className="flex items-center gap-3">

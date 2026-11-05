@@ -55,12 +55,12 @@ export function ApprovalMetricsSummary({
       value: metrics?.submittedToday ?? 0,
       icon: Calendar,
       colorClasses: {
-        activeBorder: "border-blue-500/70 shadow-blue-500/10",
-        activeBg: "bg-blue-50/50 dark:bg-blue-950/20",
-        iconBg: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-        iconColor: "text-blue-600 dark:text-blue-400",
-        badgeBg: "bg-blue-500/15",
-        badgeText: "text-blue-700 dark:text-blue-300",
+        activeBorder: "border-primary/70 shadow-primary/10",
+        activeBg: "bg-primary/5",
+        iconBg: "bg-primary/10 text-primary",
+        iconColor: "text-primary",
+        badgeBg: "bg-primary/15",
+        badgeText: "text-primary",
       },
     },
     {
@@ -111,8 +111,12 @@ export function ApprovalMetricsSummary({
               "group relative flex flex-col justify-between p-4 rounded-xl border text-left transition-all duration-200",
               "bg-card hover:bg-accent/40 shadow-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
               isActive
-                ? cn("border-2 ring-1 ring-primary/20 shadow-md", card.colorClasses.activeBorder, card.colorClasses.activeBg)
-                : "border-border/80 hover:border-border"
+                ? cn(
+                    "border-2 ring-1 ring-primary/20 shadow-md",
+                    card.colorClasses.activeBorder,
+                    card.colorClasses.activeBg,
+                  )
+                : "border-border/80 hover:border-border",
             )}
           >
             <div className="flex items-start justify-between gap-3 w-full">
@@ -120,7 +124,7 @@ export function ApprovalMetricsSummary({
                 <span
                   className={cn(
                     "grid size-9 shrink-0 place-items-center rounded-lg transition-transform duration-200 group-hover:scale-105",
-                    card.colorClasses.iconBg
+                    card.colorClasses.iconBg,
                   )}
                 >
                   <Icon size={18} />
@@ -139,7 +143,7 @@ export function ApprovalMetricsSummary({
                 className={cn(
                   "text-muted-foreground/40 transition-transform duration-200 shrink-0 mt-1",
                   "group-hover:translate-x-0.5 group-hover:text-foreground",
-                  isActive && "text-foreground translate-x-0.5"
+                  isActive && "text-foreground translate-x-0.5",
                 )}
               />
             </div>
@@ -157,7 +161,7 @@ export function ApprovalMetricsSummary({
                   className={cn(
                     "text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider",
                     card.colorClasses.badgeBg,
-                    card.colorClasses.badgeText
+                    card.colorClasses.badgeText,
                   )}
                 >
                   Filtered

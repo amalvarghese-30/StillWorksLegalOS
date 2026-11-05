@@ -28,8 +28,8 @@ export function AuditMetricsSummary({
       value: metrics?.totalEvents ?? 0,
       icon: ScrollText,
       active: isTotalActive,
-      color: "from-blue-500/10 to-indigo-500/5 text-blue-600 dark:text-blue-400 border-blue-500/20",
-      activeRing: "ring-2 ring-blue-500/50 border-blue-500 bg-blue-50/50 dark:bg-blue-950/20",
+      color: "from-primary/10 to-primary/5 text-primary border-primary/20",
+      activeRing: "ring-2 ring-primary/50 border-primary bg-primary/5",
       onClick: () => {
         onFilterChange({ todayOnly: undefined, action: undefined, page: 1 });
       },
@@ -41,8 +41,10 @@ export function AuditMetricsSummary({
       value: metrics?.eventsToday ?? 0,
       icon: Calendar,
       active: isTodayActive,
-      color: "from-emerald-500/10 to-teal-500/5 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-      activeRing: "ring-2 ring-emerald-500/50 border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20",
+      color:
+        "from-emerald-500/10 to-teal-500/5 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+      activeRing:
+        "ring-2 ring-emerald-500/50 border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20",
       onClick: () => {
         onFilterChange({
           todayOnly: isTodayActive ? undefined : true,
@@ -58,7 +60,8 @@ export function AuditMetricsSummary({
       value: metrics?.activeUsers ?? 0,
       icon: Users,
       active: false,
-      color: "from-purple-500/10 to-pink-500/5 text-purple-600 dark:text-purple-400 border-purple-500/20",
+      color:
+        "from-purple-500/10 to-pink-500/5 text-purple-600 dark:text-purple-400 border-purple-500/20",
       activeRing: "",
       onClick: undefined,
     },
@@ -69,7 +72,8 @@ export function AuditMetricsSummary({
       value: metrics?.securityEvents ?? 0,
       icon: ShieldAlert,
       active: isSecurityActive,
-      color: "from-amber-500/10 to-orange-500/5 text-amber-600 dark:text-amber-400 border-amber-500/20",
+      color:
+        "from-amber-500/10 to-orange-500/5 text-amber-600 dark:text-amber-400 border-amber-500/20",
       activeRing: "ring-2 ring-amber-500/50 border-amber-500 bg-amber-50/50 dark:bg-amber-950/20",
       onClick: () => {
         onFilterChange({
@@ -95,18 +99,16 @@ export function AuditMetricsSummary({
             onClick={c.onClick}
             className={cn(
               "group relative flex flex-col justify-between overflow-hidden rounded-2xl border bg-card p-4 text-left shadow-soft transition-all duration-200",
-              c.active
-                ? c.activeRing
-                : "border-border/80 hover:border-border hover:shadow-md",
+              c.active ? c.activeRing : "border-border/80 hover:border-border hover:shadow-md",
               isInteractive && "cursor-pointer active:scale-[0.99]",
-              !isInteractive && "cursor-default"
+              !isInteractive && "cursor-default",
             )}
           >
             {/* Background subtle gradient */}
             <div
               className={cn(
                 "absolute -right-6 -top-6 size-24 rounded-full bg-gradient-to-br opacity-40 blur-xl transition-all duration-300 group-hover:scale-125",
-                c.color
+                c.color,
               )}
             />
 
@@ -117,7 +119,7 @@ export function AuditMetricsSummary({
               <div
                 className={cn(
                   "grid size-8 place-items-center rounded-xl border transition-colors",
-                  c.color
+                  c.color,
                 )}
               >
                 <Icon size={16} strokeWidth={2} />

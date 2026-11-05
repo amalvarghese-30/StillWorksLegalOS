@@ -1,8 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import {
-  Dialog,
-  DialogContent,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSocketEvent } from "@/lib/socket";
 import {
@@ -96,14 +93,14 @@ function extractAssigneeIds(users?: any[], single?: any): string[] {
   if (Array.isArray(users) && users.length > 0) {
     for (const u of users) {
       if (!u) continue;
-      const raw = typeof u === "object" ? (u._id || u.id) : u;
+      const raw = typeof u === "object" ? u._id || u.id : u;
       const s = String(raw || "").trim();
       if (s && s !== "undefined" && s !== "null" && s !== "[object Object]") {
         ids.push(s);
       }
     }
   } else if (single) {
-    const raw = typeof single === "object" ? (single._id || single.id) : single;
+    const raw = typeof single === "object" ? single._id || single.id : single;
     const s = String(raw || "").trim();
     if (s && s !== "undefined" && s !== "null" && s !== "[object Object]") {
       ids.push(s);
@@ -174,11 +171,11 @@ function TaskDetailDialogInner({
   const [mainCategory, setMainCategory] = useState(activeTask.mainCategory || "");
   const [subCategory, setSubCategory] = useState(activeTask.subCategory || "");
   const [nestedSubCategory, setNestedSubCategory] = useState(
-    (activeTask.categoryPath && activeTask.categoryPath.length > 2) ? activeTask.categoryPath[2] : ""
+    activeTask.categoryPath && activeTask.categoryPath.length > 2 ? activeTask.categoryPath[2] : "",
   );
   const [customCategory, setCustomCategory] = useState(activeTask.customCategory || "");
   const [priority, setPriority] = useState<"High" | "Medium" | "Low">(
-    (activeTask.priority as "High" | "Medium" | "Low") || "Medium"
+    (activeTask.priority as "High" | "Medium" | "Low") || "Medium",
   );
 
   // Deadline split into date and time
@@ -221,7 +218,7 @@ function TaskDetailDialogInner({
 
   // Call reminder state
   const [callCompleted, setCallCompleted] = useState(
-    Boolean(activeTask.callReminder?.completed || activeTask.status === "completed")
+    Boolean(activeTask.callReminder?.completed || activeTask.status === "completed"),
   );
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
   const [rescheduleDateTime, setRescheduleDateTime] = useState("");
@@ -272,10 +269,7 @@ function TaskDetailDialogInner({
     setDescription(before + replacement + after);
     setTimeout(() => {
       textarea.focus();
-      textarea.setSelectionRange(
-        start + wrapperStart.length,
-        end + wrapperStart.length
-      );
+      textarea.setSelectionRange(start + wrapperStart.length, end + wrapperStart.length);
     }, 0);
   };
 
@@ -288,13 +282,12 @@ function TaskDetailDialogInner({
       setMainCategory(activeTask.mainCategory || "");
       setSubCategory(activeTask.subCategory || "");
       setCustomCategory(activeTask.customCategory || "");
-      const nested = (activeTask.categoryPath && activeTask.categoryPath.length > 2)
-        ? activeTask.categoryPath[2]
-        : "";
+      const nested =
+        activeTask.categoryPath && activeTask.categoryPath.length > 2
+          ? activeTask.categoryPath[2]
+          : "";
       setNestedSubCategory(nested);
-      setPriority(
-        (activeTask.priority as "High" | "Medium" | "Low") || "Medium"
-      );
+      setPriority((activeTask.priority as "High" | "Medium" | "Low") || "Medium");
 
       const freshAssigned = extractAssigneeIds(activeTask.assignedUsers, activeTask.assignedTo);
       setAssignedTo(freshAssigned);
@@ -305,9 +298,7 @@ function TaskDetailDialogInner({
           if (!isNaN(d.getTime())) {
             setDeadlineDate(d.toISOString().slice(0, 10));
             setDeadlineTime(
-              `${String(d.getHours()).padStart(2, "0")}:${String(
-                d.getMinutes()
-              ).padStart(2, "0")}`
+              `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`,
             );
           }
         } catch {
@@ -333,7 +324,7 @@ function TaskDetailDialogInner({
 
       setLiveChecklist(activeTask.checklist ?? []);
       setCallCompleted(
-        Boolean(activeTask.callReminder?.completed || activeTask.status === "completed")
+        Boolean(activeTask.callReminder?.completed || activeTask.status === "completed"),
       );
     }
   }, [activeTask]);
@@ -351,7 +342,10 @@ function TaskDetailDialogInner({
       assignedTo.length !== origAssigned.length ||
       assignedTo.some((id) => !origAssigned.includes(id));
 
-    const origNested = (activeTask.categoryPath && activeTask.categoryPath.length > 2) ? activeTask.categoryPath[2] : "";
+    const origNested =
+      activeTask.categoryPath && activeTask.categoryPath.length > 2
+        ? activeTask.categoryPath[2]
+        : "";
     return (
       title !== (activeTask.title || "") ||
       description !== (activeTask.description || "") ||
@@ -408,10 +402,11 @@ function TaskDetailDialogInner({
         "OTHER WORKS";
 
       const validAssigned = assignedTo.filter(
-        (id) => Boolean(id) && id !== "undefined" && id !== "null" && id !== "[object Object]"
+        (id) => Boolean(id) && id !== "undefined" && id !== "null" && id !== "[object Object]",
       );
       const origAssigned = extractAssigneeIds(activeTask.assignedUsers, activeTask.assignedTo);
-      const finalAssigned = validAssigned.length > 0 ? validAssigned : (origAssigned.length === 0 ? [] : origAssigned);
+      const finalAssigned =
+        validAssigned.length > 0 ? validAssigned : origAssigned.length === 0 ? [] : origAssigned;
 
       const payload: Partial<CreateTaskPayload> = {
         title: title.trim(),
@@ -460,7 +455,7 @@ function TaskDetailDialogInner({
               ? c.subItems.map((s) => ({ ...s, done: true }))
               : c.subItems,
         };
-      })
+      }),
     );
 
     try {
@@ -541,9 +536,7 @@ function TaskDetailDialogInner({
     const itemId = item?._id || item?.id || String(idx);
     const newText = editingText.trim();
 
-    setLiveChecklist((prev) =>
-      prev.map((c, i) => (i === idx ? { ...c, text: newText } : c))
-    );
+    setLiveChecklist((prev) => prev.map((c, i) => (i === idx ? { ...c, text: newText } : c)));
     setEditingIndex(null);
     setEditingText("");
 
@@ -565,7 +558,7 @@ function TaskDetailDialogInner({
     item: ChecklistItem,
     sub: ChecklistSubItem,
     itemIdx: number,
-    subIdx: number
+    subIdx: number,
   ) => {
     const trimmed = editingSubText.trim();
     if (!trimmed) {
@@ -576,7 +569,8 @@ function TaskDetailDialogInner({
 
     const parentId = item._id || item.id || String(itemIdx);
     const rawSubId = sub._id || sub.id || String(subIdx);
-    const subIdentifier = rawSubId !== "undefined" && rawSubId !== "null" && rawSubId ? rawSubId : String(subIdx);
+    const subIdentifier =
+      rawSubId !== "undefined" && rawSubId !== "null" && rawSubId ? rawSubId : String(subIdx);
     const oldText = sub.text;
 
     setLiveChecklist((prev) =>
@@ -585,11 +579,11 @@ function TaskDetailDialogInner({
           ? {
               ...ci,
               subItems: (ci.subItems || []).map((s, sI) =>
-                sI === subIdx ? { ...s, text: trimmed } : s
+                sI === subIdx ? { ...s, text: trimmed } : s,
               ),
             }
-          : ci
-      )
+          : ci,
+      ),
     );
     setEditingSubKey(null);
     setEditingSubText("");
@@ -615,7 +609,7 @@ function TaskDetailDialogInner({
     sub: ChecklistSubItem,
     itemIdx: number,
     subIdx: number,
-    e?: React.MouseEvent
+    e?: React.MouseEvent,
   ) => {
     if (e) {
       e.stopPropagation();
@@ -623,7 +617,8 @@ function TaskDetailDialogInner({
     }
     const parentId = item._id || item.id || String(itemIdx);
     const rawSubId = sub._id || sub.id || String(subIdx);
-    const subIdentifier = rawSubId !== "undefined" && rawSubId !== "null" && rawSubId ? rawSubId : String(subIdx);
+    const subIdentifier =
+      rawSubId !== "undefined" && rawSubId !== "null" && rawSubId ? rawSubId : String(subIdx);
 
     setLiveChecklist((prev) =>
       prev.map((ci, cI) =>
@@ -632,8 +627,8 @@ function TaskDetailDialogInner({
               ...ci,
               subItems: (ci.subItems || []).filter((_, i) => i !== subIdx),
             }
-          : ci
-      )
+          : ci,
+      ),
     );
 
     try {
@@ -655,7 +650,7 @@ function TaskDetailDialogInner({
     item: ChecklistItem,
     sub: ChecklistSubItem,
     itemIdx: number,
-    subIdx: number
+    subIdx: number,
   ) => {
     const parentId = item._id || item.id || String(itemIdx);
     const subId = sub._id || sub.id || String(subIdx);
@@ -677,7 +672,7 @@ function TaskDetailDialogInner({
           done: allSubsDone ? true : ci.done,
           subItems: newSubs,
         };
-      })
+      }),
     );
 
     try {
@@ -711,7 +706,7 @@ function TaskDetailDialogInner({
           ...ci,
           subItems: [...(ci.subItems || []), tempSub],
         };
-      })
+      }),
     );
     setNewSubItemText((prev) => ({ ...prev, [itemId]: "" }));
 
@@ -744,7 +739,9 @@ function TaskDetailDialogInner({
   };
 
   // Status Change directly from overview badge
-  const handleStatusChange = async (newStatus: "pending" | "in_progress" | "pending_approval" | "completed") => {
+  const handleStatusChange = async (
+    newStatus: "pending" | "in_progress" | "pending_approval" | "completed",
+  ) => {
     try {
       await updateTask.mutateAsync({
         id: activeTask._id,
@@ -760,25 +757,34 @@ function TaskDetailDialogInner({
   const getStatusBadge = (status?: string) => {
     switch (status) {
       case "completed":
-        return <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200">Completed</Badge>;
+        return (
+          <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200">Completed</Badge>
+        );
       case "pending_approval":
-        return <Badge className="bg-amber-50 text-amber-700 border-amber-200">Pending Approval</Badge>;
+        return (
+          <Badge className="bg-amber-50 text-amber-700 border-amber-200">Pending Approval</Badge>
+        );
       case "in_progress":
         return <Badge className="bg-blue-50 text-blue-700 border-blue-200">In Progress</Badge>;
       default:
-        return <Badge variant="outline" className="text-muted-foreground">Pending</Badge>;
+        return (
+          <Badge variant="outline" className="text-muted-foreground">
+            Pending
+          </Badge>
+        );
     }
   };
 
   const isAssigned =
     (activeTask.assignedUsers &&
       activeTask.assignedUsers.some(
-        (u) => (typeof u === "object" ? u._id : u)?.toString() === user?._id?.toString()
+        (u) => (typeof u === "object" ? u._id : u)?.toString() === user?._id?.toString(),
       )) ||
     (activeTask.assignedTo &&
       (typeof activeTask.assignedTo === "object"
         ? (activeTask.assignedTo as { _id?: string })._id
-        : activeTask.assignedTo)?.toString() === user?._id?.toString());
+        : activeTask.assignedTo
+      )?.toString() === user?._id?.toString());
 
   const canDeleteTask =
     isAdmin ||
@@ -786,7 +792,8 @@ function TaskDetailDialogInner({
     (activeTask.createdBy &&
       (typeof activeTask.createdBy === "object"
         ? (activeTask.createdBy as { _id?: string })._id
-        : activeTask.createdBy)?.toString() === user?._id?.toString()) ||
+        : activeTask.createdBy
+      )?.toString() === user?._id?.toString()) ||
     isAssigned;
 
   const handleAttemptClose = () => {
@@ -819,14 +826,12 @@ function TaskDetailDialogInner({
           {/* Header */}
           <div className="flex items-start justify-between border-b border-border pb-4 gap-4">
             <div className="flex items-center gap-3.5">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 border border-blue-100 dark:bg-blue-950/40 dark:text-blue-400 dark:border-blue-900/50 shadow-xs">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-xs">
                 <CheckSquare className="h-6 w-6 stroke-[2.2]" />
               </div>
               <div>
                 <div className="flex items-center gap-2.5 flex-wrap">
-                  <h2 className="text-xl font-bold tracking-tight text-foreground">
-                    Edit Task
-                  </h2>
+                  <h2 className="text-xl font-bold tracking-tight text-foreground">Edit Task</h2>
                   {getStatusBadge(activeTask.status)}
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
@@ -861,7 +866,10 @@ function TaskDetailDialogInner({
 
                 {/* Task Title */}
                 <div className="space-y-1.5">
-                  <Label htmlFor="task-title-input" className="text-xs font-semibold text-foreground">
+                  <Label
+                    htmlFor="task-title-input"
+                    className="text-xs font-semibold text-foreground"
+                  >
                     Task Title <span className="text-destructive">*</span>
                   </Label>
                   <Input
@@ -888,8 +896,8 @@ function TaskDetailDialogInner({
                               ? p === "High"
                                 ? "bg-destructive/15 text-destructive font-bold"
                                 : p === "Medium"
-                                ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 font-bold"
-                                : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 font-bold"
+                                  ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 font-bold"
+                                  : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 font-bold"
                               : "text-muted-foreground hover:bg-muted hover:text-foreground"
                           }`}
                         >
@@ -898,8 +906,8 @@ function TaskDetailDialogInner({
                               p === "High"
                                 ? "bg-destructive"
                                 : p === "Medium"
-                                ? "bg-amber-500"
-                                : "bg-emerald-500"
+                                  ? "bg-amber-500"
+                                  : "bg-emerald-500"
                             }`}
                           />
                           {p}
@@ -933,16 +941,17 @@ function TaskDetailDialogInner({
 
                 {/* Assigned Staff & Counsel */}
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-foreground">
-                    Assigned To
-                  </Label>
+                  <Label className="text-xs font-semibold text-foreground">Assigned To</Label>
                   <AssigneeMultiSelect value={assignedTo} onChange={setAssignedTo} />
                 </div>
 
                 {/* Description with Formatting Toolbar */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <Label htmlFor="task-description-input" className="text-xs font-semibold text-foreground">
+                    <Label
+                      htmlFor="task-description-input"
+                      className="text-xs font-semibold text-foreground"
+                    >
                       Task Description & Instructions
                     </Label>
                     {/* Rich text formatting bar */}
@@ -1010,7 +1019,10 @@ function TaskDetailDialogInner({
 
                 {/* Additional Internal Notes */}
                 <div className="space-y-1.5">
-                  <Label htmlFor="task-notes-input" className="text-xs font-semibold text-foreground">
+                  <Label
+                    htmlFor="task-notes-input"
+                    className="text-xs font-semibold text-foreground"
+                  >
                     Additional Internal Notes
                   </Label>
                   <Textarea
@@ -1026,7 +1038,10 @@ function TaskDetailDialogInner({
                 {/* Related Client & Case */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 border-t border-border/50">
                   <div className="space-y-1.5">
-                    <Label htmlFor="task-client-select" className="text-xs font-semibold text-foreground">
+                    <Label
+                      htmlFor="task-client-select"
+                      className="text-xs font-semibold text-foreground"
+                    >
                       Related Client
                     </Label>
                     <select
@@ -1045,7 +1060,10 @@ function TaskDetailDialogInner({
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="task-case-select" className="text-xs font-semibold text-foreground">
+                    <Label
+                      htmlFor="task-case-select"
+                      className="text-xs font-semibold text-foreground"
+                    >
                       Related Case
                     </Label>
                     <select
@@ -1079,7 +1097,8 @@ function TaskDetailDialogInner({
                           callReminder: {
                             clientName: activeTask.callReminder?.clientName || activeTask.title,
                             phone: activeTask.callReminder?.phone || "",
-                            scheduledAt: activeTask.callReminder?.scheduledAt || new Date().toISOString(),
+                            scheduledAt:
+                              activeTask.callReminder?.scheduledAt || new Date().toISOString(),
                             notes: activeTask.callReminder?.notes || "",
                             completed: next,
                           },
@@ -1108,7 +1127,12 @@ function TaskDetailDialogInner({
                     <span className="text-muted-foreground block text-[11px]">Status</span>
                     <select
                       value={activeTask.status || "pending"}
-                      onChange={(e) => handleStatusChange(e.target.value as "pending" | "in_progress" | "pending_approval" | "completed")}
+                      onChange={(e) =>
+                        handleStatusChange(
+                          e.target.value as
+                            "pending" | "in_progress" | "pending_approval" | "completed",
+                        )
+                      }
                       className="h-8 rounded-md border border-border bg-background px-2 font-medium text-foreground text-xs"
                     >
                       <option value="pending">Pending</option>
@@ -1121,7 +1145,8 @@ function TaskDetailDialogInner({
                   <div className="space-y-1">
                     <span className="text-muted-foreground block text-[11px]">Created</span>
                     <span className="font-medium text-foreground block truncate">
-                      {formatReadableDate(activeTask.createdAt || activeTask.createdDate) || "Recent"}
+                      {formatReadableDate(activeTask.createdAt || activeTask.createdDate) ||
+                        "Recent"}
                     </span>
                   </div>
 
@@ -1156,9 +1181,11 @@ function TaskDetailDialogInner({
 
                   {/* Circular/Pill Progress Indicator */}
                   <div className="flex items-center gap-2">
-                    <div className="h-6 px-2.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300 font-semibold text-[11px] flex items-center gap-1 border border-blue-200 dark:border-blue-800">
+                    <div className="h-6 px-2.5 rounded-full bg-primary/10 text-primary font-semibold text-[11px] flex items-center gap-1 border border-primary/20">
                       <span>{pct}%</span>
-                      <span className="text-blue-500 font-normal">({doneCount}/{total})</span>
+                      <span className="text-primary/70 font-normal">
+                        ({doneCount}/{total})
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -1229,7 +1256,9 @@ function TaskDetailDialogInner({
                                     setEditingText(item.text);
                                   }}
                                   className={`text-xs font-medium cursor-pointer flex-1 truncate hover:text-primary transition-colors ${
-                                    item.done ? "line-through text-muted-foreground" : "text-foreground"
+                                    item.done
+                                      ? "line-through text-muted-foreground"
+                                      : "text-foreground"
                                   }`}
                                   title="Click to edit step"
                                 >
@@ -1247,8 +1276,14 @@ function TaskDetailDialogInner({
                                   }
                                   className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-0.5 px-1 py-0.5 rounded bg-muted/40 mr-0.5"
                                 >
-                                  <span>{subsDone}/{item.subItems!.length}</span>
-                                  {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                                  <span>
+                                    {subsDone}/{item.subItems!.length}
+                                  </span>
+                                  {isExpanded ? (
+                                    <ChevronDown className="h-3 w-3" />
+                                  ) : (
+                                    <ChevronRight className="h-3 w-3" />
+                                  )}
                                 </button>
                               )}
 
@@ -1333,7 +1368,9 @@ function TaskDetailDialogInner({
                                             <Button
                                               size="sm"
                                               variant="ghost"
-                                              onClick={() => handleSaveInlineSubItemText(item, sub, idx, sIdx)}
+                                              onClick={() =>
+                                                handleSaveInlineSubItemText(item, sub, idx, sIdx)
+                                              }
                                               className="h-6 px-1.5 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950"
                                               title="Save subtask"
                                             >
@@ -1359,7 +1396,9 @@ function TaskDetailDialogInner({
                                               setEditingSubText(sub.text);
                                             }}
                                             className={`truncate text-xs cursor-pointer select-none hover:text-primary transition-colors flex-1 ${
-                                              sub.done ? "line-through text-muted-foreground" : "text-foreground/90"
+                                              sub.done
+                                                ? "line-through text-muted-foreground"
+                                                : "text-foreground/90"
                                             }`}
                                             title="Click to edit subtask"
                                           >
@@ -1394,7 +1433,9 @@ function TaskDetailDialogInner({
                                         </button>
                                         <button
                                           type="button"
-                                          onClick={(e) => handleDeleteSubItem(item, sub, idx, sIdx, e)}
+                                          onClick={(e) =>
+                                            handleDeleteSubItem(item, sub, idx, sIdx, e)
+                                          }
                                           className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 p-1 rounded transition-colors"
                                           title="Delete subtask"
                                         >
@@ -1410,7 +1451,10 @@ function TaskDetailDialogInner({
                                 <Input
                                   value={newSubItemText[itemId] || ""}
                                   onChange={(e) =>
-                                    setNewSubItemText((prev) => ({ ...prev, [itemId]: e.target.value }))
+                                    setNewSubItemText((prev) => ({
+                                      ...prev,
+                                      [itemId]: e.target.value,
+                                    }))
                                   }
                                   placeholder="+ Add subtask..."
                                   className="h-7 text-[11px] rounded bg-background/80"
@@ -1480,7 +1524,9 @@ function TaskDetailDialogInner({
                       type="button"
                       onClick={() => setAuditTab("assignment")}
                       className={`px-2 py-0.5 font-medium ${
-                        auditTab === "assignment" ? "bg-muted text-foreground" : "text-muted-foreground"
+                        auditTab === "assignment"
+                          ? "bg-muted text-foreground"
+                          : "text-muted-foreground"
                       }`}
                     >
                       Remarks
@@ -1539,7 +1585,7 @@ function TaskDetailDialogInner({
                 type="button"
                 variant="outline"
                 onClick={() => setShowCompletionDialog(true)}
-                className="h-10 text-xs font-semibold rounded-lg border-blue-200 bg-blue-50/50 text-blue-700 hover:bg-blue-100 hover:text-blue-800 dark:bg-blue-950/30 dark:border-blue-900 dark:text-blue-300"
+                className="h-10 text-xs font-semibold rounded-lg border-primary/20 bg-primary/10 text-primary hover:bg-primary/20"
               >
                 <CheckCircle2 className="h-4 w-4 mr-1.5" />
                 {isAdmin ? "Mark as Complete" : "Submit for Approval"}
@@ -1580,7 +1626,8 @@ function TaskDetailDialogInner({
           <DialogContent className="max-w-md p-6 rounded-xl">
             <h3 className="text-base font-bold text-foreground">Confirm Task Deletion</h3>
             <p className="text-xs text-muted-foreground mt-2">
-              Are you sure you want to delete this task? This action cannot be undone and will remove all checklist steps and associated notes.
+              Are you sure you want to delete this task? This action cannot be undone and will
+              remove all checklist steps and associated notes.
             </p>
             <div className="flex justify-end gap-2.5 mt-5">
               <Button
