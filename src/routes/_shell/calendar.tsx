@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Plus, CalendarDays, ChevronLeft, ChevronRight, Gavel, PhoneCall, CheckSquare, Users, Building2, User, Loader2, AlertTriangle, Search, Pencil } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
