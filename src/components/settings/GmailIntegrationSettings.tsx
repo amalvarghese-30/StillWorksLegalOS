@@ -11,7 +11,7 @@ import {
   useAssociateEmail,
   type GmailMessage,
 } from "@/services/gmail";
-import { getApiBase, getAccessToken } from "@/services/api";
+import { apiFetch } from "@/services/api";
 import { toast } from "sonner";
 import { formatSafeDateTime } from "@/lib/dates";
 
@@ -31,13 +31,7 @@ export function GmailIntegrationSettings() {
 
   const handleConnectGmail = async () => {
     try {
-      const token = getAccessToken();
-      const res = await fetch(`${getApiBase()}/gmail/auth-url`, {
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-      const data = await res.json();
+      const data = await apiFetch<{ data?: { url?: string } }>("/gmail/auth-url");
       if (data?.data?.url) {
         window.open(data.data.url, "_blank", "width=600,height=700");
       } else {

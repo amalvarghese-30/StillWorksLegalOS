@@ -10,6 +10,7 @@ import {
   clientTypeHeaders,
   ApiError,
   isElectron,
+  REMEMBER_ME_KEY,
 } from "@/services/api";
 
 export type Role = "admin" | "employee";
@@ -124,45 +125,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // fresh load we first refresh from the httpOnly cookie (web) or safeStorage
   // vault (Electron), then validate by fetching /me.
   useEffect(() => {
+    let isMounted = true;
     const init = async () => {
       try {
         let token = getAccessToken();
         if (!token) {
-          const hasSessionHint =
-            isElectron() ||
-            !!window.localStorage.getItem(STORAGE_KEY) ||
-            !!window.sessionStorage.getItem(STORAGE_KEY);
-          if (hasSessionHint) {
-            token = await refreshAccessToken();
-          }
+          // Web browsers: attempt /auth/refresh via HttpOnly cookie even if localStorage session hint is missing,
+          // because the authoritative credential is the HttpOnly cookie.
+          // Electron: checks safeStorage/sessionRefreshToken.
+          token = await refreshAccessToken();
         }
+
         if (!token) {
-          // Refresh did not return an access token (either unauthenticated or 401).
-          // Ensure invalid hints and stale user state are wiped so the login page can be reached cleanly.
+          // Refresh did not return an access token (either unauthenticated or refresh cookie expired/revoked)
+          if (!isMounted) return;
+          setUser(null);
+          setReady(true);
+          return;
+        }
+
+        const res = await apiFetch<{ user: RawUser }>("/auth/me");
+        if (!isMounted) return;
+        const sessionUser = toSessionUser(res.user);
+        setUser(sessionUser);
+
+        // Update session hint for UI optimization and cross-tab state
+        const isRemembered = window.localStorage.getItem(REMEMBER_ME_KEY) === "true";
+        if (isRemembered) {
+          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionUser));
+          window.sessionStorage.removeItem(STORAGE_KEY);
+        } else {
+          window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(sessionUser));
+          window.localStorage.removeItem(STORAGE_KEY);
+        }
+      } catch (err) {
+        if (!isMounted) return;
+        if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+          // Explicit authentication failure: clear tokens and session hints
           setUser(null);
           await clearTokens();
           window.localStorage.removeItem(STORAGE_KEY);
           window.sessionStorage.removeItem(STORAGE_KEY);
-          setReady(true);
-          return;
-        }
-        const res = await apiFetch<{ user: RawUser }>("/auth/me");
-        const sessionUser = toSessionUser(res.user);
-        setUser(sessionUser);
-        if (window.localStorage.getItem(STORAGE_KEY)) {
-          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionUser));
         } else {
-          window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(sessionUser));
+          // Transient network failure or 5xx: preserve persistent session hints
+          setUser(null);
         }
-      } catch {
-        // Token is invalid or expired — clear everything
-        await clearTokens();
-        window.localStorage.removeItem(STORAGE_KEY);
-        window.sessionStorage.removeItem(STORAGE_KEY);
+      } finally {
+        if (isMounted) {
+          setReady(true);
+        }
       }
-      setReady(true);
     };
     init();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // 30-minute idle inactivity timeout when securitySessionTimeout is enabled (default on)

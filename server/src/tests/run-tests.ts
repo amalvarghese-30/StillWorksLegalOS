@@ -8194,6 +8194,113 @@ const { NotificationService } = await import("../services/notifications.js");
     assert(auditLogs.length > 0, "S51-35: Audit log entries created for approval workflow operations");
   }
 
+  // =========================================================================
+  // Suite 52: Browser Session Restoration, HttpOnly Cookie Refresh & Post-Auth Requests
+  // =========================================================================
+  {
+    console.log("\n--- Suite 52: Browser Session Restoration, HttpOnly Cookie Refresh & Post-Auth Requests ---");
+
+    // 1. Create a dedicated test advocate for browser restoration
+    const s52User = await createUser({
+      name: "Restoration Test Advocate",
+      email: "browser.restore@stillworks.in",
+      passwordHash: await bcrypt.hash("Password123!", 10),
+      permissions: {
+        calendar: true,
+        clients: true,
+        cases: true,
+        tasks: true,
+        chat: true,
+      },
+    });
+
+    // 2. Perform web login (no x-client-type)
+    const loginRes = await request(app)
+      .post("/api/auth/login")
+      .send({ email: s52User.email, password: "SecurePass1!" });
+    assert(loginRes.status === 200, "S52-01: Web login returns 200");
+    assert(Boolean(loginRes.body.accessToken), "S52-02: Web login returns accessToken");
+    assert(!loginRes.body.refreshToken, "S52-03: Web login does not leak refreshToken in body");
+
+    const rawCookies = loginRes.headers["set-cookie"];
+    const cookieHeader = Array.isArray(rawCookies) ? rawCookies.join("; ") : String(rawCookies || "");
+    assert(cookieHeader.includes("stillworks_refresh="), "S52-04: Web login sets stillworks_refresh cookie");
+    assert(cookieHeader.toLowerCase().includes("httponly"), "S52-05: stillworks_refresh is HttpOnly");
+
+    // Extract raw cookie string to simulate browser sending cookie
+    const refreshCookieMatch = cookieHeader.match(/stillworks_refresh=([^;]+)/);
+    assert(Boolean(refreshCookieMatch), "S52-06: Extracted stillworks_refresh value");
+    const cookieString = `stillworks_refresh=${refreshCookieMatch![1]}`;
+
+    // 3. Simulate browser restoration: call /auth/refresh with purely the cookie and NO request body
+    const restoreRes = await request(app)
+      .post("/api/auth/refresh")
+      .set("Cookie", cookieString)
+      .send({});
+    assert(restoreRes.status === 200, "S52-07: Browser restoration via cookie returns 200");
+    assert(Boolean(restoreRes.body.accessToken), "S52-08: Restored session returns valid accessToken");
+    assert(!restoreRes.body.refreshToken, "S52-09: Restored session does not return refreshToken in JSON body");
+
+    const restoredToken = restoreRes.body.accessToken;
+
+    // 4. Verify /auth/me returns the authenticated user with restored token
+    const meRes = await request(app)
+      .get("/api/auth/me")
+      .set("Authorization", `Bearer ${restoredToken}`);
+    assert(meRes.status === 200, "S52-10: GET /api/auth/me returns 200 with restored token");
+    assert(meRes.body.user?.email === s52User.email, "S52-11: User email matches authenticated account");
+
+    // 5. Verify Calendar requests succeed with restored token
+    const calRes = await request(app)
+      .get("/api/calendar/events")
+      .set("Authorization", `Bearer ${restoredToken}`);
+    assert(calRes.status === 200, "S52-12: GET /api/calendar/events returns 200 with restored token");
+
+    // 6. Verify Clients request succeeds with restored token
+    const clientsRes = await request(app)
+      .get("/api/clients")
+      .set("Authorization", `Bearer ${restoredToken}`);
+    assert(clientsRes.status === 200, "S52-13: GET /api/clients returns 200 with restored token");
+
+    // 7. Verify Chat groups request succeeds with restored token
+    const chatRes = await request(app)
+      .get("/api/chat/groups")
+      .set("Authorization", `Bearer ${restoredToken}`);
+    assert(chatRes.status === 200, "S52-14: GET /api/chat/groups returns 200 with restored token");
+
+    // 8. Missing cookie / missing token returns 401
+    const noCookieRes = await request(app)
+      .post("/api/auth/refresh")
+      .send({});
+    assert(noCookieRes.status === 401, "S52-15: Refresh without cookie returns 401");
+
+    // 9. Invalid/tampered cookie returns 401 and instructs cookie clear
+    const invalidCookieRes = await request(app)
+      .post("/api/auth/refresh")
+      .set("Cookie", "stillworks_refresh=tampered.invalid.token")
+      .send({});
+    assert(invalidCookieRes.status === 401, "S52-16: Tampered cookie returns 401");
+
+    // 10. Logout revokes session and clears cookie
+    const logoutRes = await request(app)
+      .post("/api/auth/logout")
+      .set("Authorization", `Bearer ${restoredToken}`)
+      .set("Cookie", cookieString);
+    assert(logoutRes.status === 200, "S52-17: POST /api/auth/logout returns 200");
+    const logoutCookies = logoutRes.headers["set-cookie"];
+    const logoutCookieHeader = Array.isArray(logoutCookies) ? logoutCookies.join("; ") : String(logoutCookies || "");
+    assert(
+      logoutCookieHeader.toLowerCase().includes("max-age=0") || logoutCookieHeader.toLowerCase().includes("expires="),
+      "S52-18: Logout clears stillworks_refresh cookie"
+    );
+
+    // 11. After logout, subsequent protected requests are rejected
+    const postLogoutMe = await request(app)
+      .get("/api/auth/me")
+      .set("Authorization", `Bearer ${restoredToken}`);
+    assert(postLogoutMe.status === 401, "S52-19: Token is rejected after server logout");
+  }
+
 
   try {
     if (mongoose.connection.readyState === 1) {

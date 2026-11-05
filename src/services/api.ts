@@ -72,7 +72,7 @@ export function setAccessToken(token: string | null): void {
   accessToken = token;
 }
 
-const REMEMBER_ME_KEY = "stillworks.remember_me";
+export const REMEMBER_ME_KEY = "stillworks.remember_me";
 
 // Persist tokens after login/refresh.
 // - access token: in-memory only.
@@ -224,7 +224,6 @@ export async function performServerLogout(tokenToRevoke?: string | null): Promis
   }
 }
 
-let isRefreshing = false;
 let refreshPromise: Promise<string | null> | null = null;
 
 // ---------------------------------------------------------------------------
@@ -232,24 +231,11 @@ let refreshPromise: Promise<string | null> | null = null;
 // ---------------------------------------------------------------------------
 
 export async function refreshAccessToken(): Promise<string | null> {
-  // If in web browser and no session hint exists, don't attempt network refresh
-  const hasSessionHint =
-    isElectron() ||
-    (typeof window !== "undefined" &&
-      (Boolean(window.localStorage.getItem("stillworks.session")) ||
-       Boolean(window.sessionStorage.getItem("stillworks.session")) ||
-       Boolean(window.localStorage.getItem(REMEMBER_ME_KEY))));
-
-  if (!hasSessionHint) {
-    return null;
-  }
-
-  // Prevent multiple simultaneous refresh attempts
-  if (isRefreshing && refreshPromise) {
+  // Prevent multiple simultaneous refresh attempts by sharing the in-flight promise
+  if (refreshPromise) {
     return refreshPromise;
   }
 
-  isRefreshing = true;
   refreshPromise = (async () => {
     try {
       if (isElectron()) {
@@ -283,7 +269,9 @@ export async function refreshAccessToken(): Promise<string | null> {
         return data.accessToken;
       }
 
-      // Web: authenticate strictly via HttpOnly cookie; no refresh credentials sent in body
+      // Web browser: authenticate strictly via HttpOnly cookie; no refresh credentials sent in body.
+      // Attempt refresh with credentials: "include" even if localStorage session hint is missing,
+      // because the authoritative credential is the HttpOnly cookie.
       const res = await fetch(`${API_BASE}/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -309,7 +297,6 @@ export async function refreshAccessToken(): Promise<string | null> {
       accessToken = null;
       return null;
     } finally {
-      isRefreshing = false;
       refreshPromise = null;
     }
   })();
@@ -473,7 +460,14 @@ export async function apiFetch<T = unknown>(
   options: RequestInit = {},
   retryCount = 0
 ): Promise<T> {
-  const token = getAccessToken();
+  let token = getAccessToken();
+
+  // If a refresh is currently in-flight and this is a protected request without a token,
+  // coordinate with the in-flight refresh to avoid an unnecessary 401 roundtrip.
+  if (!token && refreshPromise && !path.startsWith("/auth/")) {
+    token = await refreshPromise;
+  }
+
   const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
   const headers: Record<string, string> = {
     ...(isFormData ? {} : { "Content-Type": "application/json" }),

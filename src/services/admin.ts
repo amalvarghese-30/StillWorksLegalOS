@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, getApiBase, getAccessToken } from "./api";
+import { api, apiFetch, downloadBlob } from "./api";
 import type { TaskOptions } from "./tasks";
 
 // ---------------------------------------------------------------------------
@@ -461,19 +461,10 @@ export function useUploadEmployeeAvatar() {
     mutationFn: async ({ id, file }) => {
       const formData = new FormData();
       formData.append("avatar", file);
-      const token = getAccessToken();
-      const res = await fetch(`${getApiBase()}/admin/employees/${id}/avatar`, {
+      return apiFetch<{ avatarUrl: string; user: EmployeeRecord }>(`/admin/employees/${id}/avatar`, {
         method: "POST",
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
         body: formData,
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || "Failed to upload avatar");
-      }
-      return res.json();
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: adminKeys.all });
@@ -486,18 +477,9 @@ export function useRemoveEmployeeAvatar() {
   const qc = useQueryClient();
   return useMutation<{ user: EmployeeRecord }, Error, { id: string }>({
     mutationFn: async ({ id }) => {
-      const token = getAccessToken();
-      const res = await fetch(`${getApiBase()}/admin/employees/${id}/avatar`, {
+      return apiFetch<{ user: EmployeeRecord }>(`/admin/employees/${id}/avatar`, {
         method: "DELETE",
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || "Failed to remove avatar");
-      }
-      return res.json();
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: adminKeys.all });
@@ -733,28 +715,11 @@ export async function downloadAuditLogsCsv(params?: AuditLogQueryParams | Record
     }
   }
   const queryString = new URLSearchParams(queryRecord).toString();
-  const token = localStorage.getItem("legalos_token") || localStorage.getItem("auth_token") || localStorage.getItem("token") || "";
-  const url = `/api/admin/audit-logs/export${queryString ? `?${queryString}` : ""}`;
-  
-  const res = await fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  
-  if (!res.ok) {
-    throw new Error("Failed to export audit logs");
-  }
-  
-  const blob = await res.blob();
+  const { blob, fileName } = await downloadBlob(`/admin/audit-logs/export${queryString ? `?${queryString}` : ""}`);
   const downloadUrl = window.URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = downloadUrl;
-  const contentDisposition = res.headers.get("content-disposition");
-  let filename = `audit-logs-${new Date().toISOString().slice(0, 10)}.csv`;
-  if (contentDisposition) {
-    const match = contentDisposition.match(/filename="?([^"]+)"?/);
-    if (match && match[1]) filename = match[1];
-  }
-  a.download = filename;
+  a.download = fileName || `audit-logs-${new Date().toISOString().slice(0, 10)}.csv`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
