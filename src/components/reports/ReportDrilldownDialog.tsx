@@ -20,17 +20,20 @@ import { formatSafeDate } from "@/lib/dates";
 import { useTableSorting } from "@/hooks/useTableSorting";
 import { SortHeaderButton } from "@/components/common/table/SortableTableHeader";
 
-interface ReportDrilldownDialogProps {
+export type DrilldownType = "tasks" | "cases" | "visits" | "documents";
+
+export interface ReportDrilldownDialogProps {
   open: boolean;
   onClose: () => void;
   title: string;
-  type: "tasks" | "cases" | "visits" | "documents";
+  subtitle?: string;
+  type: DrilldownType;
   tasks?: any[];
   cases?: any[];
   visits?: any[];
   documents?: any[];
   onOpenTask?: (task: any) => void;
-  onOpenCase?: (caseId: string) => void;
+  onOpenCase?: (caseId: any) => void;
   onRecordVisit?: () => void;
 }
 

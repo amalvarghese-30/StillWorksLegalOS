@@ -4155,9 +4155,20 @@ router.get("/reports/client-detail/:id", requireAdminOrPermission("reports"), as
 // GET /api/admin/reports/employee-detail/:id — full employee report drill-down
 // ---------------------------------------------------------------------------
 
-router.get("/reports/employee-detail/:id", requireAdminOrPermission("reports"), async (req: Request, res: Response) => {
+router.get("/reports/employee-detail/:id", async (req: Request, res: Response) => {
   try {
+    if (!req.user) {
+      res.status(401).json({ message: "Authentication required" });
+      return;
+    }
+
     const id = req.params["id"];
+    const isSelf = req.userId === id;
+    const hasReportsPermission = req.user.role === "admin" || req.user.permissions?.reports === true;
+    if (!hasReportsPermission && !isSelf) {
+      res.status(403).json({ message: "Admin access or reports permission required" });
+      return;
+    }
     if (!id || typeof id !== "string" || !Types.ObjectId.isValid(id)) {
       res.status(400).json({ message: "Invalid employee ID format" });
       return;

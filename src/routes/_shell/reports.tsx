@@ -57,6 +57,14 @@ import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import {
   ReportDrilldownDialog,
@@ -3249,7 +3257,21 @@ function EmployeeDetailReportView({
     );
   }
 
-  const { employee, metrics, auditLogs } = data;
+  const employee = data.employee;
+  const metrics = data.metrics || {
+    totalTasks: 0,
+    completedTasks: 0,
+    pendingTasks: 0,
+    overdueTasks: 0,
+    completionRate: 0,
+    totalCases: 0,
+    activeCases: 0,
+    closedCases: 0,
+    totalAuditLogs: 0,
+  };
+  const auditLogs = data.auditLogs || [];
+  const tasks = rawTasks;
+  const cases = rawCases;
 
   return (
     <div className="space-y-6 printable-report">
@@ -3571,7 +3593,7 @@ function EmployeeDetailReportView({
 
             {/* Mobile / Tablet Stacked Cards */}
             <div className="md:hidden divide-y divide-border/60">
-              {tasks.map((t) => (
+              {sortedTasks.map((t) => (
                 <div key={t._id} className="p-3.5 space-y-2">
                   <div className="flex items-start justify-between gap-2">
                     <p className="font-medium text-foreground text-xs leading-snug break-words flex-1">
@@ -3740,7 +3762,7 @@ function EmployeeDetailReportView({
 
             {/* Mobile / Tablet Stacked Cards */}
             <div className="md:hidden divide-y divide-border/60">
-              {cases.map((c) => (
+              {sortedCases.map((c) => (
                 <div
                   key={c._id}
                   onClick={() => navigate({ to: "/cases/$caseId", params: { caseId: c._id } })}
@@ -3924,7 +3946,7 @@ function ClientDetailReportView({
     );
   }
 
-  const { client, metrics, cases, tasks, documents, auditLogs } = data;
+  const { client, metrics, cases = [], tasks = [], documents = [], auditLogs = [] } = data;
 
   const handleRecordVisit = async (e: React.FormEvent) => {
     e.preventDefault();
