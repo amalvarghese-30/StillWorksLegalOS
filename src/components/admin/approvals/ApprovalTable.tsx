@@ -13,6 +13,7 @@ import {
   FolderLock,
   ArrowRight,
   ShieldAlert,
+  User,
 } from "lucide-react";
 import type { ApprovalItem } from "@/services/admin";
 import { resolveAvatarUrl } from "@/lib/avatarUrl";
@@ -142,10 +143,10 @@ export function ApprovalTable({
 }: ApprovalTableProps) {
   return (
     <div className="w-full">
-      {/* Desktop Table View (>= lg) */}
+      {/* Desktop Table View (>= lg) — Zero horizontal scroll, consolidated row layout */}
       <div className="hidden lg:block rounded-xl border border-border/80 bg-card overflow-hidden shadow-soft">
-        <div className="w-full overflow-x-auto">
-          <table className="w-full min-w-[1100px] text-left text-sm border-collapse table-auto">
+        <div className="w-full">
+          <table className="w-full text-left text-sm border-collapse table-auto">
             <thead>
               <tr className="border-b border-border bg-muted/40 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {onToggleSelectAll && (
@@ -159,97 +160,47 @@ export function ApprovalTable({
                     />
                   </th>
                 )}
-                <th scope="col" className="px-3 py-3 min-w-[200px]">
+                <th scope="col" className="px-4 py-3 min-w-0">
                   <SortHeaderButton
                     sortKey="title"
-                    currentSortKey={sortKey}
-                    currentDirection={sortDirection}
+                    currentSortKey={sortKey ?? null}
+                    currentDirection={sortDirection ?? "asc"}
                     onSort={onSort}
                   >
-                    Request
+                    Request & Details
                   </SortHeaderButton>
                 </th>
-                <th scope="col" className="px-2 py-3 min-w-[110px]">
+                <th scope="col" className="px-3 py-3 w-32">
                   <SortHeaderButton
                     sortKey="kind"
-                    currentSortKey={sortKey}
-                    currentDirection={sortDirection}
+                    currentSortKey={sortKey ?? null}
+                    currentDirection={sortDirection ?? "asc"}
                     onSort={onSort}
                   >
                     Type
                   </SortHeaderButton>
                 </th>
-                <th scope="col" className="px-2 py-3 min-w-[140px]">
+                <th scope="col" className="px-3 py-3 w-48">
                   <SortHeaderButton
                     sortKey="userName"
-                    currentSortKey={sortKey}
-                    currentDirection={sortDirection}
+                    currentSortKey={sortKey ?? null}
+                    currentDirection={sortDirection ?? "asc"}
                     onSort={onSort}
                   >
                     Submitted By
                   </SortHeaderButton>
                 </th>
-                <th scope="col" className="px-2 py-3 min-w-[140px]">
-                  <SortHeaderButton
-                    sortKey="assignedTo"
-                    currentSortKey={sortKey}
-                    currentDirection={sortDirection}
-                    onSort={onSort}
-                  >
-                    Assigned To
-                  </SortHeaderButton>
-                </th>
-                <th scope="col" className="px-2 py-3 min-w-[130px]">
-                  <SortHeaderButton
-                    sortKey="assignedBy"
-                    currentSortKey={sortKey}
-                    currentDirection={sortDirection}
-                    onSort={onSort}
-                  >
-                    Assigned By
-                  </SortHeaderButton>
-                </th>
-                <th scope="col" className="px-2 py-3 min-w-[105px]">
-                  <SortHeaderButton
-                    sortKey="assignedAt"
-                    currentSortKey={sortKey}
-                    currentDirection={sortDirection}
-                    onSort={onSort}
-                  >
-                    Assigned On
-                  </SortHeaderButton>
-                </th>
-                <th scope="col" className="px-2 py-3 min-w-[120px]">
-                  <SortHeaderButton
-                    sortKey="when"
-                    currentSortKey={sortKey}
-                    currentDirection={sortDirection}
-                    onSort={onSort}
-                  >
-                    Submitted On
-                  </SortHeaderButton>
-                </th>
-                <th scope="col" className="px-2 py-3 min-w-[85px]">
-                  <SortHeaderButton
-                    sortKey="priority"
-                    currentSortKey={sortKey}
-                    currentDirection={sortDirection}
-                    onSort={onSort}
-                  >
-                    Priority
-                  </SortHeaderButton>
-                </th>
-                <th scope="col" className="px-2 py-3 min-w-[95px]">
+                <th scope="col" className="px-3 py-3 w-36">
                   <SortHeaderButton
                     sortKey="status"
-                    currentSortKey={sortKey}
-                    currentDirection={sortDirection}
+                    currentSortKey={sortKey ?? null}
+                    currentDirection={sortDirection ?? "asc"}
                     onSort={onSort}
                   >
                     Status
                   </SortHeaderButton>
                 </th>
-                <th scope="col" className="px-3 py-3 text-right min-w-[105px]">
+                <th scope="col" className="px-4 py-3 text-right w-36">
                   Actions
                 </th>
               </tr>
@@ -264,12 +215,32 @@ export function ApprovalTable({
                 const agingInfo = agingBadge(a.agingLabel, a.status);
 
                 const submittedDate = formatSafeDateTime(a.submittedAt || a.when);
-                const assignedDate = formatSafeDateTime(a.assignedAt);
                 const displayStatus = a.status || "pending";
 
                 const submitterName = a.submittedBy?.name || "Staff Submitter";
                 const assigneeName = a.assignedTo?.name || (a.kind === "Task Completion" ? "Unassigned" : "—");
                 const assignerName = a.assignedBy?.name || (a.kind === "Task Completion" ? "Historical info unavailable" : "—");
+
+                const caseObj =
+                  a.taskDetails?.case ||
+                  (a.taskDetails as any)?.caseId ||
+                  a.caseDetails ||
+                  (a.documentDetails as any)?.case ||
+                  (a.requestDetails as any)?.case;
+                const caseNumber = caseObj?.number || "";
+                const caseTitle = caseObj?.title || "";
+
+                const clientObj =
+                  a.taskDetails?.client ||
+                  (a.taskDetails as any)?.clientId ||
+                  (a.caseDetails as any)?.client ||
+                  (a.documentDetails as any)?.client ||
+                  (a.requestDetails as any)?.client;
+                const clientName = clientObj?.name || "";
+
+                const reasonText = a.requestDetails?.reason || a.rejectionReason || "";
+                const isDelete = a.kind?.toLowerCase().includes("delete") || a.type?.toLowerCase().includes("delete");
+                const isReassign = a.kind?.toLowerCase().includes("reassign") || a.type?.toLowerCase().includes("reassign");
 
                 return (
                   <tr
@@ -284,7 +255,7 @@ export function ApprovalTable({
                   >
                     {onToggleSelect && (
                       <td
-                        className="px-4 py-3 text-center"
+                        className="px-4 py-3 text-center align-top pt-4"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <input
@@ -296,60 +267,134 @@ export function ApprovalTable({
                         />
                       </td>
                     )}
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3.5">
                       <div className="flex items-start gap-3">
                         <span
                           className={cn(
-                            "grid size-8 shrink-0 place-items-center rounded-lg mt-0.5",
-                            a.kind === "Task Completion"
-                              ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                            "grid size-9 shrink-0 place-items-center rounded-lg mt-0.5 shadow-2xs",
+                            isDelete
+                              ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/20"
+                              : a.kind === "Task Completion"
+                              ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
                               : a.kind === "Document Upload"
-                              ? "bg-purple-500/10 text-purple-600 dark:text-purple-400"
-                              : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                              ? "bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20"
+                              : isReassign
+                              ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                              : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
                           )}
                         >
-                          <Icon size={16} />
+                          <Icon size={17} />
                         </span>
-                        <div className="min-w-0 max-w-[280px]">
-                          <p className="font-medium text-foreground truncate group-hover:text-primary transition-colors" title={a.title}>
-                            {a.title}
-                          </p>
-                          <p className="text-xs text-muted-foreground truncate mt-0.5" title={a.context}>
-                            {a.context}
-                          </p>
+                        <div className="min-w-0 flex-1 space-y-1">
+                          {/* Title & Badges */}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p
+                              className="font-semibold text-foreground text-sm leading-snug group-hover:text-primary transition-colors cursor-pointer"
+                              title={a.title}
+                            >
+                              {a.title}
+                            </p>
+                            <span
+                              className={cn(
+                                "text-[10px] font-semibold px-1.5 py-0.2 rounded border shrink-0",
+                                priorityInfo.className
+                              )}
+                            >
+                              {priorityInfo.label}
+                            </span>
+                            {agingInfo.label && (
+                              <span
+                                className={cn(
+                                  "text-[10px] px-1.5 py-0.2 rounded border font-medium shrink-0",
+                                  agingInfo.className
+                                )}
+                              >
+                                {agingInfo.label}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Downward Row Metadata: Case, Client & Dates */}
+                          <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground pt-0.5">
+                            {(caseNumber || caseTitle) && (
+                              <span className="inline-flex items-center gap-1 font-medium text-foreground bg-muted/60 px-2 py-0.5 rounded border border-border/60">
+                                <Briefcase size={12} className="text-primary shrink-0" />
+                                <span className="truncate max-w-[260px]">
+                                  {caseNumber ? `[${caseNumber}] ` : ""}{caseTitle || "Linked Case"}
+                                </span>
+                              </span>
+                            )}
+                            {clientName && (
+                              <span className="inline-flex items-center gap-1 font-medium text-foreground bg-muted/60 px-2 py-0.5 rounded border border-border/60">
+                                <User size={12} className="text-muted-foreground shrink-0" />
+                                <span className="truncate max-w-[160px]">{clientName}</span>
+                              </span>
+                            )}
+                            <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                              <Clock size={11} className="shrink-0" />
+                              {submittedDate}
+                            </span>
+                            {assigneeName && assigneeName !== "—" && (
+                              <span className="text-[11px] text-muted-foreground">
+                                · Assigned to: <strong className="font-medium text-foreground">{assigneeName}</strong>
+                                {assignerName && assignerName !== "—" && assignerName !== "Historical info unavailable" ? ` by ${assignerName}` : ""}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Downward Row Reason Box (if provided) */}
+                          {reasonText && (
+                            <div className={cn(
+                              "flex items-start gap-1.5 text-xs p-2 rounded-md mt-1 border",
+                              isDelete
+                                ? "bg-rose-500/10 border-rose-500/20 text-rose-900 dark:text-rose-200"
+                                : "bg-muted/40 border-border/60 text-muted-foreground"
+                            )}>
+                              <span className="font-semibold shrink-0">
+                                {isDelete ? "Deletion Reason:" : "Reason:"}
+                              </span>
+                              <span className="italic break-words line-clamp-2">
+                                "{reasonText}"
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </td>
-                    <td className="px-2 py-3">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-muted text-foreground border border-border/80 whitespace-nowrap">
+                    <td className="px-3 py-3.5 align-top">
+                      <span className={cn(
+                        "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border whitespace-nowrap",
+                        isDelete
+                          ? "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30"
+                          : a.kind === "Task Completion"
+                          ? "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30"
+                          : a.kind === "Document Upload"
+                          ? "bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30"
+                          : "bg-muted text-foreground border-border/80"
+                      )}>
                         {a.kind}
                       </span>
                     </td>
-                    <td className="px-2 py-3">
-                      <div className="flex items-center gap-2 max-w-[160px]">
+                    <td className="px-3 py-3.5 align-top">
+                      <div className="flex items-center gap-2 max-w-[180px]">
                         {resolveAvatarUrl(a.submittedBy?.avatarUrl) ? (
                           <img
                             src={resolveAvatarUrl(a.submittedBy?.avatarUrl)}
                             alt={submitterName}
-                            className="size-6 rounded-full object-cover shrink-0"
+                            className="size-7 rounded-full object-cover shrink-0"
                             onError={(e) => {
                               (e.currentTarget as HTMLElement).style.display = "none";
                             }}
                           />
                         ) : (
-                          <div className="size-6 rounded-full bg-primary/10 text-primary grid place-items-center text-[10px] font-bold shrink-0">
+                          <div className="size-7 rounded-full bg-primary/10 text-primary grid place-items-center text-[10px] font-bold shrink-0">
                             {submitterName
-                              ? submitterName
-                                  .split(" ")
-                                  .map((w) => w[0])
-                                  .join("")
-                                  .slice(0, 2)
-                                  .toUpperCase()
+                              ? submitterName.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()
                               : "U"}
                           </div>
                         )}
                         <div className="min-w-0 flex-1">
-                          <p className="text-xs font-medium text-foreground truncate" title={submitterName}>
+                          <p className="text-xs font-semibold text-foreground truncate" title={submitterName}>
                             {submitterName}
                           </p>
                           <p className="text-[10px] text-muted-foreground truncate capitalize">
@@ -357,87 +402,44 @@ export function ApprovalTable({
                           </p>
                         </div>
                       </div>
-                    </td>
-                    <td className="px-2 py-3">
-                      <div className="min-w-0 max-w-[150px]">
-                        <p className="text-xs font-medium text-foreground truncate" title={assigneeName}>
-                          {assigneeName}
-                        </p>
-                        {a.assignedTo?.role && a.assignedTo.role !== "Unassigned" && (
-                          <p className="text-[10px] text-muted-foreground truncate capitalize">
-                            {a.assignedTo.role.replace(/_/g, " ")}
-                          </p>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-2 py-3">
-                      <div className="min-w-0 max-w-[140px]">
-                        <p className="text-xs font-medium text-foreground truncate" title={assignerName}>
-                          {assignerName}
-                        </p>
-                        {a.assignedBy?.role && (
-                          <p className="text-[10px] text-muted-foreground truncate capitalize">
-                            {a.assignedBy.role.replace(/_/g, " ")}
-                          </p>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-2 py-3">
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">
-                        {assignedDate}
-                      </span>
-                    </td>
-                    <td className="px-2 py-3">
-                      <div className="flex flex-col gap-0.5 items-start">
-                        <span className="text-xs text-muted-foreground whitespace-nowrap">
-                          {submittedDate}
-                        </span>
-                        <span
-                          className={cn(
-                            "text-[10px] px-1.5 py-0.2 rounded border whitespace-nowrap font-medium",
-                            agingInfo.className
-                          )}
-                        >
-                          {agingInfo.label}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-2 py-3">
-                      <span
-                        className={cn(
-                          "inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border",
-                          priorityInfo.className
-                        )}
-                      >
-                        {priorityInfo.label}
-                      </span>
-                    </td>
-                    <td className="px-2 py-3">
-                      {displayStatus === "pending" ? (
-                        <StatusPill tone="amber">Pending</StatusPill>
-                      ) : displayStatus === "approved" ? (
-                        <StatusPill tone="emerald">Approved</StatusPill>
-                      ) : (
-                        <StatusPill tone="rose">Rejected</StatusPill>
+                      {isReassign && a.assignedTo?.name && (
+                        <div className="flex items-center gap-1 text-[11px] text-muted-foreground mt-1.5 pl-9">
+                          <ArrowRight size={11} className="text-primary shrink-0" />
+                          <span className="truncate">To: <strong className="text-foreground">{a.assignedTo.name}</strong></span>
+                        </div>
                       )}
                     </td>
+                    <td className="px-3 py-3.5 align-top">
+                      <div className="space-y-1">
+                        {displayStatus === "pending" ? (
+                          <StatusPill tone="warning">Pending</StatusPill>
+                        ) : displayStatus === "approved" ? (
+                          <StatusPill tone="success">Approved</StatusPill>
+                        ) : (
+                          <StatusPill tone="destructive">Rejected</StatusPill>
+                        )}
+                        <span className="block text-[11px] text-muted-foreground">
+                          {submittedDate}
+                        </span>
+                      </div>
+                    </td>
                     <td
-                      className="px-3 py-3 text-right"
+                      className="px-4 py-3.5 text-right align-top"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div className="flex items-center justify-end gap-1.5">
                         <Button
-                          variant="ghost"
+                          variant="outline"
                           size="sm"
-                          className="size-8 p-0 rounded-lg text-muted-foreground hover:text-foreground"
+                          className="h-8 px-2.5 rounded-lg text-xs font-semibold text-muted-foreground hover:text-foreground gap-1"
                           title="View Full Details"
                           onClick={(e) => {
                             e.stopPropagation();
                             onSelectItem(a);
                           }}
                         >
-                          <Eye size={15} />
-                          <span className="sr-only">View</span>
+                          <Eye size={14} />
+                          <span>View</span>
                         </Button>
                         {displayStatus === "pending" && (
                           <>
@@ -491,12 +493,32 @@ export function ApprovalTable({
           const submittedDate = formatSafeDateTime(a.submittedAt || a.when);
           const assignedDate = formatSafeDateTime(a.assignedAt);
 
+          const caseObj =
+            a.taskDetails?.case ||
+            (a.taskDetails as any)?.caseId ||
+            a.caseDetails ||
+            (a.documentDetails as any)?.case ||
+            (a.requestDetails as any)?.case;
+          const caseNumber = caseObj?.number || "";
+          const caseTitle = caseObj?.title || "";
+
+          const clientObj =
+            a.taskDetails?.client ||
+            (a.taskDetails as any)?.clientId ||
+            (a.caseDetails as any)?.client ||
+            (a.documentDetails as any)?.client ||
+            (a.requestDetails as any)?.client;
+          const clientName = clientObj?.name || "";
+
+          const reasonText = a.requestDetails?.reason || a.rejectionReason || "";
+          const isDelete = a.kind?.toLowerCase().includes("delete") || a.type?.toLowerCase().includes("delete");
+
           return (
             <div
               key={a._id}
               onClick={() => onSelectItem(a)}
               className={cn(
-                "p-4 rounded-xl border bg-card shadow-soft transition-all cursor-pointer",
+                "p-4 rounded-xl border bg-card shadow-soft transition-all cursor-pointer space-y-2.5",
                 isSelected
                   ? "border-primary ring-1 ring-primary/20 bg-primary/5"
                   : "border-border/80 hover:border-border"
@@ -504,28 +526,73 @@ export function ApprovalTable({
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-start gap-2.5 min-w-0">
-                  <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary mt-0.5">
+                  <span className={cn(
+                    "grid size-9 shrink-0 place-items-center rounded-lg mt-0.5",
+                    isDelete
+                      ? "bg-rose-500/15 text-rose-600 dark:text-rose-400"
+                      : "bg-primary/10 text-primary"
+                  )}>
                     <Icon size={18} />
                   </span>
                   <div className="min-w-0">
-                    <p className="font-semibold text-foreground text-sm truncate">
+                    <p className="font-semibold text-foreground text-sm leading-snug">
                       {a.title}
                     </p>
-                    <p className="text-xs text-muted-foreground truncate mt-0.5">
-                      {a.context}
-                    </p>
+                    <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                      <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded border bg-muted text-foreground">
+                        {a.kind}
+                      </span>
+                      <span className={cn("text-[10px] font-semibold px-1.5 py-0.2 rounded border", priorityInfo.className)}>
+                        {priorityInfo.label}
+                      </span>
+                    </div>
                   </div>
                 </div>
                 <div className="shrink-0">
                   {displayStatus === "pending" ? (
-                    <StatusPill tone="amber">Pending</StatusPill>
+                    <StatusPill tone="warning">Pending</StatusPill>
                   ) : displayStatus === "approved" ? (
-                    <StatusPill tone="emerald">Approved</StatusPill>
+                    <StatusPill tone="success">Approved</StatusPill>
                   ) : (
-                    <StatusPill tone="rose">Rejected</StatusPill>
+                    <StatusPill tone="destructive">Rejected</StatusPill>
                   )}
                 </div>
               </div>
+
+              {/* Case & Client tags */}
+              {((caseNumber || caseTitle) || clientName) && (
+                <div className="flex items-center gap-2 flex-wrap text-xs pt-1">
+                  {(caseNumber || caseTitle) && (
+                    <span className="inline-flex items-center gap-1 font-medium text-foreground bg-muted/60 px-2 py-0.5 rounded border border-border/60 text-[11px]">
+                      <Briefcase size={11} className="text-primary shrink-0" />
+                      <span className="truncate max-w-[200px]">
+                        {caseNumber ? `[${caseNumber}] ` : ""}{caseTitle || "Linked Case"}
+                      </span>
+                    </span>
+                  )}
+                  {clientName && (
+                    <span className="inline-flex items-center gap-1 font-medium text-foreground bg-muted/60 px-2 py-0.5 rounded border border-border/60 text-[11px]">
+                      <User size={11} className="text-muted-foreground shrink-0" />
+                      <span className="truncate max-w-[140px]">{clientName}</span>
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Reason callout */}
+              {reasonText && (
+                <div className={cn(
+                  "p-2 rounded-md text-xs border",
+                  isDelete
+                    ? "bg-rose-500/10 border-rose-500/20 text-rose-900 dark:text-rose-200"
+                    : "bg-muted/40 border-border/60 text-muted-foreground"
+                )}>
+                  <span className="font-semibold mr-1">
+                    {isDelete ? "Deletion Reason:" : "Reason:"}
+                  </span>
+                  <span className="italic">"{reasonText}"</span>
+                </div>
+              )}
 
               <div className="mt-3 grid grid-cols-2 gap-2 pt-2 border-t border-border/50 text-xs">
                 <div>

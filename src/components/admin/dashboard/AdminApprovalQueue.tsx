@@ -7,52 +7,41 @@ import {
   KeyRound,
   Briefcase,
   ArrowRight,
-  Loader2,
   Check,
   X,
   AlertTriangle,
-  Inbox,
   Eye,
+  User,
+  ShieldAlert,
+  Clock,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import {
   useApprovals,
   useApproveRequest,
   useRejectRequest,
-  adminKeys,
   type ApprovalItem,
 } from "@/services/admin";
 import { useUpdateDocument, useReviewAccessRequest } from "@/services/documents";
 import { useReviewCaseAccessRequest } from "@/services/cases";
-import { useUpdateTask, taskKeys, type TaskRecord } from "@/services/tasks";
+import { useApproveTask, useRejectTask, useUpdateTask, taskKeys } from "@/services/tasks";
 import { reportKeys } from "@/services/reports";
-import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
+import { ApprovalDetailDrawer } from "@/components/admin/approvals/ApprovalDetailDrawer";
+import { ApprovalRejectModal } from "@/components/admin/approvals/ApprovalRejectModal";
 import { cn } from "@/lib/utils";
 
 type FilterTab = "All" | "Task Completions" | "Documents" | "Access & Other";
 
 function iconFor(kind: string) {
-  switch (kind) {
-    case "Task Completion":
-      return CheckSquare;
-    case "Document Upload":
-      return FileText;
-    case "Access Request":
-      return KeyRound;
-    default:
-      return ShieldCheck;
-  }
+  const k = kind?.toLowerCase() || "";
+  if (k.includes("delete")) return ShieldAlert;
+  if (k.includes("task") || k.includes("completion")) return CheckSquare;
+  if (k.includes("doc") || k.includes("purge")) return FileText;
+  if (k.includes("access")) return KeyRound;
+  if (k.includes("reassign") || k.includes("forward")) return ArrowRight;
+  return ShieldCheck;
 }
 
 function parseTarget(a: ApprovalItem): { docId?: string; caseId?: string; requestId?: string; taskId?: string } {
@@ -85,21 +74,32 @@ export function AdminApprovalQueue() {
   const [activeTab, setActiveTab] = useState<FilterTab>("All");
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
 
-  // Decision Modal State
-  const [decisionModalItem, setDecisionModalItem] = useState<ApprovalItem | null>(null);
-  const [decisionAction, setDecisionAction] = useState<"approved" | "rejected" | null>(null);
-  const [decisionRemark, setDecisionRemark] = useState("");
+  // Detail Drawer State
+  const [selectedDrawerItem, setSelectedDrawerItem] = useState<ApprovalItem | null>(null);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
-  // Inspect Task Modal State
-  const [inspectTask, setInspectTask] = useState<TaskRecord | null>(null);
+  // Rejection Modal State
+  const [rejectModalItem, setRejectModalItem] = useState<ApprovalItem | null>(null);
+  const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
 
   // Mutations
-  const updateDocument = useUpdateDocument();
-  const reviewAccessRequest = useReviewAccessRequest();
-  const reviewCaseAccessRequest = useReviewCaseAccessRequest();
+  const approveTask = useApproveTask();
+  const rejectTask = useRejectTask();
   const updateTask = useUpdateTask();
   const approveRequest = useApproveRequest();
   const rejectRequest = useRejectRequest();
+  const updateDocument = useUpdateDocument();
+  const reviewAccessRequest = useReviewAccessRequest();
+  const reviewCaseAccessRequest = useReviewCaseAccessRequest();
+
+  const invalidateAll = () => {
+    qc.invalidateQueries({ queryKey: ["admin", "approvals"] });
+    qc.invalidateQueries({ queryKey: taskKeys.all });
+    qc.invalidateQueries({ queryKey: reportKeys.all });
+    qc.invalidateQueries({ queryKey: ["cases"] });
+    qc.invalidateQueries({ queryKey: ["documents"] });
+    qc.invalidateQueries({ queryKey: ["notifications"] });
+  };
 
   // Filter logic
   const filteredApprovals = approvals.filter((item) => {
@@ -110,124 +110,128 @@ export function AdminApprovalQueue() {
   });
 
   const handleOpenItem = (item: ApprovalItem) => {
-    if (item.taskDetails) {
-      // Open canonical TaskDetailDialog
-      const rawTask: TaskRecord = {
-        _id: item.taskDetails._id,
-        title: item.taskDetails.title,
-        description: item.taskDetails.description || "",
-        category: item.taskDetails.category || "General",
-        priority: (item.taskDetails.priority as any) || "Medium",
-        status: (item.taskDetails.status as any) || "pending_approval",
-        deadline: item.taskDetails.deadline || null,
-        assignedTo: item.taskDetails.assignedTo as any,
-        completedAt: item.taskDetails.completedAt || null,
-        submittedForApprovalAt: item.taskDetails.submittedForApprovalAt || null,
-        checklist: (item.taskDetails.checklist as any) || [],
-        remarks: (item.taskDetails.remarks as any) || [],
-        assignmentHistory: (item.taskDetails.assignmentHistory as any) || [],
-        caseId: item.taskDetails.case ? { _id: item.taskDetails.case._id, title: item.taskDetails.case.title, number: item.taskDetails.case.number } : null,
-        caseName: item.taskDetails.case?.title,
-        clientId: item.taskDetails.client ? { _id: item.taskDetails.client._id, name: item.taskDetails.client.name, phone: item.taskDetails.client.phone } : null,
-        clientName: item.taskDetails.client?.name,
-        isCall: false,
-        isDeleted: false,
-        pendingDeletion: false,
-        pendingReassignment: false,
-        createdBy: "system",
-        createdAt: item.when || new Date().toISOString(),
-      };
-      setInspectTask(rawTask);
-    } else {
-      // Default to review modal for raw approval requests or document uploads
-      setDecisionModalItem(item);
-      setDecisionAction("approved");
-      setDecisionRemark("");
+    setSelectedDrawerItem(item);
+    setIsDrawerOpen(true);
+  };
+
+  const handleApprove = async (item: ApprovalItem) => {
+    const itemId = item._id;
+    setProcessingIds((prev) => new Set(prev).add(itemId));
+    const toastId = `approve-${itemId}`;
+    toast.loading("Approving request…", { id: toastId });
+
+    try {
+      const rawId = item.rawApprovalId || (itemId.startsWith("approval_req_") ? itemId.replace(/^approval_req_/, "") : null);
+
+      if (rawId) {
+        await approveRequest.mutateAsync({ id: rawId, decisionRemark: "Approved by administrator" });
+      } else {
+        const target = parseTarget(item);
+
+        if (target.taskId) {
+          try {
+            await approveTask.mutateAsync({ taskId: target.taskId });
+          } catch {
+            await updateTask.mutateAsync({
+              id: target.taskId,
+              data: { status: "completed" },
+            });
+          }
+        } else if (target.caseId && target.requestId) {
+          await reviewCaseAccessRequest.mutateAsync({
+            caseId: target.caseId,
+            requestId: target.requestId,
+            status: "approved",
+          });
+        } else if (target.requestId) {
+          await reviewAccessRequest.mutateAsync({
+            docId: target.docId!,
+            requestId: target.requestId,
+            status: "approved",
+          });
+        } else {
+          await updateDocument.mutateAsync({
+            id: target.docId!,
+            data: { state: "Approved" },
+          });
+        }
+      }
+
+      toast.success("Request successfully approved!", { id: toastId });
+      invalidateAll();
+      setIsDrawerOpen(false);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || "Could not approve this request.";
+      toast.error(msg, { id: toastId });
+    } finally {
+      setProcessingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(itemId);
+        return next;
+      });
     }
   };
 
-  const handleConfirmDecision = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!decisionModalItem || !decisionAction) return;
+  const handleConfirmReject = async (item: ApprovalItem, reason: string) => {
+    const itemId = item._id;
+    setProcessingIds((prev) => new Set(prev).add(itemId));
+    const toastId = `reject-${itemId}`;
+    toast.loading("Recording rejection…", { id: toastId });
 
-    const item = decisionModalItem;
-    const action = decisionAction;
-    const remark = decisionRemark.trim();
+    try {
+      const rawId = item.rawApprovalId || (itemId.startsWith("approval_req_") ? itemId.replace(/^approval_req_/, "") : null);
 
-    setProcessingIds((prev) => new Set(prev).add(item._id));
-    const toastId = `approval-dash-${item._id}`;
-    toast.loading(action === "approved" ? "Approving request…" : "Rejecting request…", { id: toastId });
+      if (rawId) {
+        await rejectRequest.mutateAsync({ id: rawId, decisionRemark: reason });
+      } else {
+        const target = parseTarget(item);
 
-    const onSettled = () => {
-      qc.invalidateQueries({ queryKey: adminKeys.approvals });
-      qc.invalidateQueries({ queryKey: taskKeys.all });
-      qc.invalidateQueries({ queryKey: reportKeys.all });
+        if (target.taskId) {
+          try {
+            await rejectTask.mutateAsync({ taskId: target.taskId, reason });
+          } catch {
+            await updateTask.mutateAsync({
+              id: target.taskId,
+              data: {
+                status: "in_progress",
+                rejectionReason: reason,
+                reason,
+              },
+            });
+          }
+        } else if (target.caseId && target.requestId) {
+          await reviewCaseAccessRequest.mutateAsync({
+            caseId: target.caseId,
+            requestId: target.requestId,
+            status: "rejected",
+          });
+        } else if (target.requestId) {
+          await reviewAccessRequest.mutateAsync({
+            docId: target.docId!,
+            requestId: target.requestId,
+            status: "rejected",
+          });
+        } else {
+          await updateDocument.mutateAsync({
+            id: target.docId!,
+            data: { state: "Rejected" },
+          });
+        }
+      }
+
+      toast.success("Request rejected.", { id: toastId });
+      invalidateAll();
+      setIsRejectModalOpen(false);
+      setIsDrawerOpen(false);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || "Could not reject this request.";
+      toast.error(msg, { id: toastId });
+    } finally {
       setProcessingIds((prev) => {
         const next = new Set(prev);
-        next.delete(item._id);
+        next.delete(itemId);
         return next;
       });
-      setDecisionModalItem(null);
-      setDecisionAction(null);
-      setDecisionRemark("");
-    };
-
-    const onSuccess = () => {
-      toast.success(action === "approved" ? "Request approved successfully!" : "Request rejected.", { id: toastId });
-      onSettled();
-    };
-
-    const onError = (err?: any) => {
-      const msg = err?.response?.data?.message || err?.message || `Could not ${action === "approved" ? "approve" : "reject"} this request.`;
-      toast.error(msg, { id: toastId });
-      onSettled();
-    };
-
-    const rawId = item.rawApprovalId || (item._id.startsWith("approval_req_") ? item._id.replace(/^approval_req_/, "") : null);
-
-    if (rawId) {
-      try {
-        if (action === "approved") {
-          await approveRequest.mutateAsync({ id: rawId, decisionRemark: remark });
-        } else {
-          await rejectRequest.mutateAsync({ id: rawId, decisionRemark: remark });
-        }
-        onSuccess();
-      } catch (err) {
-        onError(err);
-      }
-      return;
-    }
-
-    const target = parseTarget(item);
-
-    if (target.taskId) {
-      updateTask.mutate(
-        {
-          id: target.taskId,
-          data: {
-            status: action === "approved" ? "completed" : "in_progress",
-            rejectionReason: action === "rejected" ? remark : undefined,
-            reason: action === "rejected" ? remark : undefined,
-          },
-        },
-        { onSuccess, onError, onSettled },
-      );
-    } else if (target.caseId && target.requestId) {
-      reviewCaseAccessRequest.mutate(
-        { caseId: target.caseId, requestId: target.requestId, status: action },
-        { onSuccess, onError, onSettled },
-      );
-    } else if (target.requestId) {
-      reviewAccessRequest.mutate(
-        { docId: target.docId!, requestId: target.requestId, status: action },
-        { onSuccess, onError, onSettled },
-      );
-    } else {
-      updateDocument.mutate(
-        { id: target.docId!, data: { state: action === "approved" ? "Approved" : "Rejected" } },
-        { onSuccess, onError, onSettled },
-      );
     }
   };
 
@@ -251,7 +255,7 @@ export function AdminApprovalQueue() {
               )}
             </div>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Requests waiting for your review and action.
+              Requests waiting for your review and action. Click any item for full details.
             </p>
           </div>
         </div>
@@ -349,83 +353,163 @@ export function AdminApprovalQueue() {
           </div>
         ) : (
           <ul className="divide-y divide-border/50">
-            {filteredApprovals.slice(0, 5).map((item) => {
+            {filteredApprovals.slice(0, 6).map((item) => {
               const Icon = iconFor(item.kind);
               const busy = processingIds.has(item._id);
+
+              const isDelete =
+                item.type?.includes("delete") ||
+                item.kind?.toLowerCase().includes("delete") ||
+                item.title?.toLowerCase().startsWith("delete");
+
+              // Extract case, client, submitter, reason
+              const caseNumber =
+                item.caseDetails?.caseNumber ||
+                item.taskDetails?.case?.number ||
+                (item.context?.match(/Case:\s*([^\s·]+)/)?.[1]);
+              const caseTitle =
+                item.caseDetails?.title ||
+                item.taskDetails?.case?.title ||
+                item.taskDetails?.caseName;
+              const caseDisplay = caseNumber
+                ? `${caseNumber}${caseTitle ? ` · ${caseTitle}` : ""}`
+                : caseTitle || null;
+
+              const clientName =
+                item.caseDetails?.client?.name ||
+                item.taskDetails?.client?.name ||
+                item.taskDetails?.clientName ||
+                (item.context?.match(/Client:\s*([^·]+)/)?.[1]?.trim());
+
+              const submitterName =
+                item.submittedBy?.name ||
+                item.requestDetails?.requestedByName ||
+                (item.context?.match(/by\s+([^·$]+)/)?.[1]?.trim());
+
+              const reason =
+                item.requestDetails?.reason ||
+                item.taskDetails?.rejectionReason ||
+                (item.context?.match(/Reason:\s*"([^"]+)"/)?.[1]);
 
               return (
                 <li
                   key={item._id}
                   onClick={() => handleOpenItem(item)}
-                  className="group flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3 px-2 -mx-2 rounded-xl transition-all hover:bg-muted/40 cursor-pointer"
+                  className={cn(
+                    "group flex flex-col gap-2 py-3 px-3 -mx-1 rounded-xl transition-all hover:bg-muted/50 cursor-pointer border",
+                    isDelete
+                      ? "border-rose-200/50 dark:border-rose-950/40 bg-rose-50/20 dark:bg-rose-950/10"
+                      : "border-transparent hover:border-border/60"
+                  )}
                 >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="grid size-9 shrink-0 place-items-center rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 group-hover:scale-105 transition-transform">
-                      <Icon size={17} strokeWidth={1.75} />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="truncate text-xs sm:text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
-                          {item.title}
-                        </p>
-                        {item.taskDetails?.priority && (
-                          <span
-                            className={cn(
-                              "text-[10px] font-semibold px-1.5 py-0.2 rounded shrink-0",
-                              item.taskDetails.priority === "High"
-                                ? "bg-red-500/10 text-red-600 dark:text-red-400"
-                                : item.taskDetails.priority === "Medium"
-                                ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                                : "bg-slate-500/10 text-slate-600 dark:text-slate-400"
-                            )}
-                          >
-                            {item.taskDetails.priority}
-                          </span>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <span
+                        className={cn(
+                          "grid size-9 shrink-0 place-items-center rounded-xl transition-transform group-hover:scale-105 shadow-2xs mt-0.5",
+                          isDelete
+                            ? "bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60"
+                            : "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200/50 dark:border-blue-900/50"
+                        )}
+                      >
+                        <Icon size={17} strokeWidth={1.8} />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-xs sm:text-sm font-semibold text-foreground group-hover:text-primary transition-colors leading-tight">
+                            {item.title}
+                          </p>
+                          {isDelete && (
+                            <span className="inline-flex items-center gap-1 rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 px-1.5 py-0.5 text-[10px] font-bold shrink-0 border border-rose-200 dark:border-rose-900/50">
+                              <ShieldAlert size={10} />
+                              DELETION
+                            </span>
+                          )}
+                          {item.taskDetails?.priority && (
+                            <span
+                              className={cn(
+                                "text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0",
+                                item.taskDetails.priority === "High"
+                                  ? "bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                                  : item.taskDetails.priority === "Medium"
+                                  ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                                  : "bg-slate-500/10 text-slate-600 dark:text-slate-400"
+                              )}
+                            >
+                              {item.taskDetails.priority}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Downward Row Metadata: Case, Client, Submitter */}
+                        <div className="flex items-center gap-2.5 flex-wrap mt-1 text-[11px] text-muted-foreground">
+                          {caseDisplay && (
+                            <span className="inline-flex items-center gap-1 font-medium text-foreground/80 bg-muted/60 dark:bg-muted/40 px-2 py-0.5 rounded border border-border/40 max-w-[240px] truncate" title={caseDisplay}>
+                              <Briefcase size={11} className="text-primary shrink-0" />
+                              <span className="truncate">{caseDisplay}</span>
+                            </span>
+                          )}
+                          {clientName && (
+                            <span className="inline-flex items-center gap-1 font-medium text-foreground/80 bg-muted/60 dark:bg-muted/40 px-2 py-0.5 rounded border border-border/40 max-w-[200px] truncate" title={clientName}>
+                              <User size={11} className="text-muted-foreground shrink-0" />
+                              <span className="truncate">{clientName}</span>
+                            </span>
+                          )}
+                          {submitterName && (
+                            <span className="inline-flex items-center gap-1 text-muted-foreground">
+                              <Clock size={11} className="shrink-0" />
+                              <span>by {submitterName}</span>
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Reason / Note Callout */}
+                        {reason && (
+                          <div className="mt-1.5 text-[11px] text-amber-800 dark:text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-md px-2.5 py-1 flex items-start gap-1.5">
+                            <span className="font-semibold shrink-0">Reason:</span>
+                            <span className="italic line-clamp-2">{reason}</span>
+                          </div>
                         )}
                       </div>
-                      <p className="truncate text-xs text-muted-foreground mt-0.5">
-                        {item.context}
-                      </p>
                     </div>
-                  </div>
 
-                  <div
-                    className="flex items-center gap-2 shrink-0 self-end sm:self-center"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <span className="inline-flex items-center rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200/60 dark:border-blue-800/40 px-2.5 py-0.5 text-xs font-semibold text-blue-600 dark:text-blue-400">
-                      {item.kind}
-                    </span>
-
-                    {/* Quick review action */}
-                    <div className="flex items-center gap-1 opacity-90 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                    {/* Actions */}
+                    <div
+                      className="flex items-center gap-1 shrink-0 ml-2"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <Button
                         variant="ghost"
-                        size="icon"
-                        className="size-7 rounded-md text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/50"
-                        title="Approve request"
-                        disabled={busy}
-                        onClick={() => {
-                          setDecisionModalItem(item);
-                          setDecisionAction("approved");
-                          setDecisionRemark("");
-                        }}
+                        size="sm"
+                        className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg gap-1"
+                        title="View Full Details"
+                        onClick={() => handleOpenItem(item)}
                       >
-                        <Check size={14} strokeWidth={2.5} />
+                        <Eye size={13} />
+                        <span className="hidden sm:inline">Details</span>
                       </Button>
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="size-7 rounded-md text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        className="size-8 rounded-lg text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/50"
+                        title="Approve request"
+                        disabled={busy}
+                        onClick={() => handleApprove(item)}
+                      >
+                        <Check size={15} strokeWidth={2.5} />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 rounded-lg text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950/50"
                         title="Reject request"
                         disabled={busy}
                         onClick={() => {
-                          setDecisionModalItem(item);
-                          setDecisionAction("rejected");
-                          setDecisionRemark("");
+                          setRejectModalItem(item);
+                          setIsRejectModalOpen(true);
                         }}
                       >
-                        <X size={14} strokeWidth={2.5} />
+                        <X size={15} strokeWidth={2.5} />
                       </Button>
                     </div>
                   </div>
@@ -436,87 +520,33 @@ export function AdminApprovalQueue() {
         )}
       </div>
 
-      {/* Decision Confirmation Modal */}
-      <Dialog
-        open={!!decisionModalItem}
-        onOpenChange={(open) => {
-          if (!open) {
-            setDecisionModalItem(null);
-            setDecisionAction(null);
-            setDecisionRemark("");
-          }
+      {/* Comprehensive Full Approval Detail Drawer */}
+      <ApprovalDetailDrawer
+        item={selectedDrawerItem}
+        isOpen={isDrawerOpen}
+        onClose={() => {
+          setIsDrawerOpen(false);
+          setSelectedDrawerItem(null);
         }}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {decisionAction === "approved" ? "Approve Request" : "Reject Request"}
-            </DialogTitle>
-            <DialogDescription>
-              {decisionAction === "approved"
-                ? `Confirm approval for "${decisionModalItem?.title}".`
-                : `Specify your reason for rejecting "${decisionModalItem?.title}".`}
-            </DialogDescription>
-          </DialogHeader>
+        onApprove={(item) => handleApprove(item)}
+        onReject={(item) => {
+          setRejectModalItem(item);
+          setIsRejectModalOpen(true);
+        }}
+        isProcessing={processingIds.has(selectedDrawerItem?._id || "")}
+      />
 
-          <form onSubmit={handleConfirmDecision} className="space-y-4 pt-2">
-            <div>
-              <Label htmlFor="decision-remark" className="text-xs font-medium">
-                {decisionAction === "rejected" ? "Rejection Reason (Required)" : "Remark (Optional)"}
-              </Label>
-              <textarea
-                id="decision-remark"
-                value={decisionRemark}
-                onChange={(e) => setDecisionRemark(e.target.value)}
-                placeholder={
-                  decisionAction === "rejected"
-                    ? "Provide actionable feedback for the assigned member…"
-                    : "Add any approval notes…"
-                }
-                required={decisionAction === "rejected"}
-                rows={3}
-                className="mt-1.5 w-full rounded-md border border-border bg-background p-2.5 text-xs text-foreground outline-none focus:border-primary"
-              />
-            </div>
-
-            <DialogFooter className="flex items-center justify-end gap-2 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setDecisionModalItem(null)}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                size="sm"
-                className={cn(
-                  "font-semibold",
-                  decisionAction === "approved"
-                    ? "gradient-primary text-primary-foreground"
-                    : "bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                )}
-                disabled={
-                  processingIds.has(decisionModalItem?._id || "") ||
-                  (decisionAction === "rejected" && !decisionRemark.trim())
-                }
-              >
-                {decisionAction === "approved" ? "Confirm Approval" : "Confirm Rejection"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Task Inspection Dialog */}
-      {inspectTask && (
-        <TaskDetailDialog
-          open={!!inspectTask}
-          onClose={() => setInspectTask(null)}
-          task={inspectTask}
-        />
-      )}
+      {/* Rejection Modal with Mandatory Reason */}
+      <ApprovalRejectModal
+        item={rejectModalItem}
+        isOpen={isRejectModalOpen}
+        onClose={() => {
+          setIsRejectModalOpen(false);
+          setRejectModalItem(null);
+        }}
+        onConfirm={handleConfirmReject}
+        isSubmitting={processingIds.has(rejectModalItem?._id || "")}
+      />
     </section>
   );
 }

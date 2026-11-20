@@ -129,7 +129,14 @@ async function getAggregatedApprovals(query: Record<string, any>) {
       .populate("targetUserId", "name email role avatarUrl")
       .populate("originalAssigneeId", "name email role avatarUrl")
       .populate("reviewedBy", "name email role")
-      .populate("entityId")
+      .populate({
+        path: "entityId",
+        populate: [
+          { path: "caseId", select: "title number courtCaseId countCaseNumber" },
+          { path: "clientId", select: "name phone email" },
+          { path: "assignedTo", select: "name email role avatarUrl" },
+        ],
+      })
       .lean(),
     DocumentModel.find(docQuery)
       .populate("uploadedBy", "name email role")

@@ -23,6 +23,8 @@ import {
   executeApproveAction,
   executeRejectAction,
   validateRemark,
+  formatRequestApprovalItem,
+  formatTaskApprovalItem,
 } from "../utils/approvalHelpers.js";
 
 const router = Router();
@@ -1622,188 +1624,6 @@ function resolveTaskSubmittedAt(t: any) {
   return t.submittedForApprovalAt || t.completedAt || t.updatedAt || t.createdAt;
 }
 
-function formatTaskApprovalItem(t: any, computeAging: (d: any, p: boolean) => any, taskDocsMap: Record<string, any[]>) {
-  const subUser = resolveTaskSubmitter(t);
-  const assignUser = resolveTaskAssignee(t);
-  const byUser = resolveTaskAssigner(t);
-  const assignAt = resolveTaskAssignedAt(t);
-  const submitAt = resolveTaskSubmittedAt(t);
-
-  const totalItems = t.checklist?.length ?? 0;
-  const doneItems = t.checklist?.filter((c: any) => c.done).length ?? 0;
-  const checklistSummary = totalItems > 0 ? ` · ${doneItems}/${totalItems} subtasks completed` : "";
-  const attachedDocs = taskDocsMap[t._id.toString()] || [];
-  const docCountSummary = attachedDocs.length > 0 ? ` · ${attachedDocs.length} attached document${attachedDocs.length > 1 ? "s" : ""}` : "";
-  const isPending = t.status === "pending_approval";
-  const itemStatus = isPending ? "pending" : t.status === "completed" ? "approved" : "rejected";
-  const when = submitAt;
-  const aging = computeAging(when, isPending);
-
-  return {
-    _id: `task_${t._id.toString()}`,
-    id: `task_${t._id.toString()}`,
-    rawTaskId: t._id.toString(),
-    kind: "Task Completion",
-    type: "Task Completion",
-    category: "tasks",
-    title: t.title,
-    context: `Submitted by ${subUser.name}${checklistSummary}${docCountSummary}`,
-    when,
-    submittedAt: submitAt,
-    assignedAt: assignAt,
-    status: itemStatus,
-    priority: t.priority || "medium",
-    agingDays: aging.agingDays,
-    agingLabel: aging.agingLabel,
-    submittedBy: subUser,
-    assignedTo: assignUser,
-    assignedBy: byUser,
-    rejectionReason: t.rejectionReason,
-    reviewedAt: t.approvedAt || t.rejectedAt || (itemStatus === "approved" ? t.completedAt : undefined),
-    reviewedBy: t.rejectedBy ? { _id: t.rejectedBy._id?.toString() || t.rejectedBy.toString(), name: t.rejectedByName || t.rejectedBy.name } : undefined,
-    documents: attachedDocs,
-    documentDetails: attachedDocs.length === 1 ? attachedDocs[0] : undefined,
-    task: {
-      id: t._id.toString(),
-      title: t.title,
-      description: t.description,
-      status: t.status,
-    },
-    taskDetails: {
-      _id: t._id.toString(),
-      title: t.title,
-      description: t.description,
-      priority: t.priority,
-      status: t.status,
-      category: t.category,
-      mainCategory: t.mainCategory,
-      subCategory: t.subCategory,
-      deadline: t.deadline,
-      completedAt: t.completedAt || t.updatedAt,
-      submittedForApprovalAt: t.submittedForApprovalAt,
-      approvedAt: t.approvedAt,
-      rejectedAt: t.rejectedAt,
-      rejectionReason: t.rejectionReason,
-      rejectedByName: t.rejectedByName,
-      assignedTo: assignUser,
-      assignedUsers: t.assignedUsers,
-      assignedBy: byUser,
-      assignedAt: assignAt,
-      submittedBy: subUser,
-      case: t.caseId ? {
-        _id: t.caseId._id,
-        title: t.caseId.title,
-        number: t.caseId.number,
-        courtCaseId: t.caseId.courtCaseId,
-        countCaseNumber: t.caseId.countCaseNumber,
-      } : null,
-      client: t.clientId ? {
-        _id: t.clientId._id,
-        name: t.clientId.name,
-        phone: t.clientId.phone,
-        email: t.clientId.email,
-      } : null,
-      checklist: t.checklist || [],
-      remarks: t.remarks || [],
-      assignmentHistory: (t.assignmentHistory || []).map((h: any) => ({
-        action: h.action,
-        note: h.note,
-        timestamp: h.timestamp,
-        toUser: h.toUser?.name ? { _id: h.toUser._id?.toString(), name: h.toUser.name, role: h.toUser.role } : h.toUser,
-        fromUser: h.fromUser?.name ? { _id: h.fromUser._id?.toString(), name: h.fromUser.name, role: h.fromUser.role } : h.fromUser,
-        assignedBy: h.assignedBy?.name ? { _id: h.assignedBy._id?.toString(), name: h.assignedBy.name, role: h.assignedBy.role } : h.assignedBy,
-      })),
-      documents: attachedDocs,
-    },
-  };
-}
-
-function formatRequestApprovalItem(r: any, computeAging: (d: any, p: boolean) => any) {
-  let kind = "General Approval";
-  let category = "tasks";
-  if (r.type === "task_reassign") { kind = "Task Reassignment"; category = "tasks"; }
-  else if (r.type === "task_forward") { kind = "Task Forward"; category = "tasks"; }
-  else if (r.type === "task_delete") { kind = "Task Deletion"; category = "tasks"; }
-  else if (r.type === "task_completion") { kind = "Task Completion"; category = "tasks"; }
-  else if (r.type === "case_delete") { kind = "Case Deletion"; category = "cases"; }
-  else if (r.type === "case_reassign") { kind = "Case Reassignment"; category = "cases"; }
-  else if (r.type === "case_completion") { kind = "Case Completion"; category = "cases"; }
-  else if (r.type === "attachment_retention_purge") { kind = "Attachment Purge"; category = "documents"; }
-  else if (r.type === "attachment_delete") { kind = "Attachment Deletion"; category = "documents"; }
-
-  const requesterName = r.requesterId?.name || "Employee";
-  const targetName = r.targetUserId?.name ? ` to ${r.targetUserId.name}` : "";
-  const isPending = r.status === "pending";
-  const when = r.createdAt;
-  const aging = computeAging(when, isPending);
-
-  let title = `${kind}${targetName}`;
-  if (r.type === "task_completion") {
-    title = r.metadata?.taskTitle || (r.entityId && typeof r.entityId === "object" && (r.entityId as any).title) || "Task Completion";
-  }
-
-  const subUser = r.requesterId ? {
-    _id: r.requesterId._id?.toString(),
-    name: r.requesterId.name,
-    email: r.requesterId.email,
-    role: r.requesterId.role,
-    avatarUrl: r.requesterId.avatarUrl,
-  } : { name: requesterName, role: "Staff" };
-
-  const targetUser = r.targetUserId ? {
-    _id: r.targetUserId._id?.toString(),
-    name: r.targetUserId.name,
-    email: r.targetUserId.email,
-    role: r.targetUserId.role,
-    avatarUrl: r.targetUserId.avatarUrl,
-  } : r.originalAssigneeId ? {
-    _id: r.originalAssigneeId._id?.toString(),
-    name: r.originalAssigneeId.name,
-    email: r.originalAssigneeId.email,
-    role: r.originalAssigneeId.role,
-    avatarUrl: r.originalAssigneeId.avatarUrl,
-  } : null;
-
-  return {
-    _id: `approval_req_${r._id.toString()}`,
-    id: `approval_req_${r._id.toString()}`,
-    rawApprovalId: r._id.toString(),
-    kind,
-    type: kind,
-    category,
-    title,
-    context: `Requested by ${requesterName}: "${r.reason || "No remark"}"`,
-    when,
-    submittedAt: r.createdAt,
-    assignedAt: r.createdAt,
-    status: r.status,
-    priority: (r.metadata?.priority as string) || (r.type.includes("delete") ? "high" : "medium"),
-    agingDays: aging.agingDays,
-    agingLabel: aging.agingLabel,
-    submittedBy: subUser,
-    assignedTo: targetUser,
-    assignedBy: subUser,
-    rejectionReason: r.status === "rejected" ? r.decisionRemark : undefined,
-    decisionRemark: r.decisionRemark,
-    reviewedAt: r.reviewedAt,
-    reviewedBy: r.reviewedBy ? { _id: r.reviewedBy._id?.toString(), name: r.reviewedBy.name } : undefined,
-    requestDetails: {
-      _id: r._id.toString(),
-      type: r.type,
-      entityType: r.entityType,
-      entityId: r.entityId?.toString(),
-      requester: r.requesterId,
-      targetUser: r.targetUserId,
-      originalAssignee: r.originalAssigneeId,
-      reason: r.reason,
-      decisionRemark: r.decisionRemark,
-      createdAt: r.createdAt,
-      reviewedAt: r.reviewedAt,
-      metadata: r.metadata,
-    },
-  };
-}
-
 // ---------------------------------------------------------------------------
 // GET /api/admin/approvals — items needing or having approval decision
 // ---------------------------------------------------------------------------
@@ -1953,7 +1773,14 @@ router.get("/approvals", requireAdminOrPermission("approvals"), async (req: Requ
         .populate("targetUserId", "name email role")
         .populate("originalAssigneeId", "name email role")
         .populate("reviewedBy", "name email role")
-        .populate("entityId")
+        .populate({
+          path: "entityId",
+          populate: [
+            { path: "caseId", select: "title number courtCaseId countCaseNumber" },
+            { path: "clientId", select: "name phone email" },
+            { path: "assignedTo", select: "name email role avatarUrl" },
+          ],
+        })
         .sort({ createdAt: -1 })
         .lean(),
     ]);
@@ -2290,7 +2117,14 @@ router.get("/approvals/:id", requireAdminOrPermission("approvals"), async (req: 
         .populate("targetUserId", "name email role avatarUrl")
         .populate("originalAssigneeId", "name email role avatarUrl")
         .populate("reviewedBy", "name email role")
-        .populate("entityId")
+        .populate({
+          path: "entityId",
+          populate: [
+            { path: "caseId", select: "title number courtCaseId countCaseNumber" },
+            { path: "clientId", select: "name phone email" },
+            { path: "assignedTo", select: "name email role avatarUrl" },
+          ],
+        })
         .lean();
 
       if (!r) {

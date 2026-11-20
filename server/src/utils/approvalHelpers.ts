@@ -211,6 +211,9 @@ export function formatTaskApprovalItem(
   const when = submitAt;
   const aging = computeAging(when, isPending);
 
+  const caseSummary = t.caseId?.number ? ` · Case ${t.caseId.number}${t.caseId.title ? ` (${t.caseId.title})` : ""}` : "";
+  const clientSummary = t.clientId?.name ? ` · Client: ${t.clientId.name}` : "";
+
   return {
     _id: `task_${t._id.toString()}`,
     id: `task_${t._id.toString()}`,
@@ -219,7 +222,7 @@ export function formatTaskApprovalItem(
     type: "Task Completion",
     category: "tasks",
     title: t.title,
-    context: `Submitted by ${subUser.name}${checklistSummary}${docCountSummary}`,
+    context: `Submitted by ${subUser.name}${checklistSummary}${docCountSummary}${caseSummary}${clientSummary}`,
     when,
     submittedAt: submitAt,
     assignedAt: assignAt,
@@ -331,10 +334,47 @@ export function formatRequestApprovalItem(r: any, computeAging: (d: any, p: bool
     avatarUrl: r.originalAssigneeId.avatarUrl,
   } : null;
 
+  const entity = r.entityId && typeof r.entityId === "object" ? r.entityId : null;
+  const entityTitle = entity?.title || entity?.name || r.metadata?.taskTitle || r.metadata?.caseTitle || "";
+  const caseNumber = entity?.number || r.metadata?.caseNumber || entity?.caseId?.number || "";
+  const caseTitle = (entity?.caseId?.title) || (r.entityType === "Case" ? entity?.title : "") || r.metadata?.caseTitle || "";
+  const clientName = (entity?.clientId?.name) || (entity?.client?.name) || r.metadata?.clientName || "";
+
   let title = `${kind}${targetName}`;
-  if (r.type === "task_completion") {
-    title = r.metadata?.taskTitle || (r.entityId && typeof r.entityId === "object" && (r.entityId as any).title) || "Task Completion";
+  if (r.type === "task_delete") {
+    title = entityTitle ? `Delete Task: "${entityTitle}"` : "Task Deletion Request";
+  } else if (r.type === "task_completion") {
+    title = entityTitle ? `Complete Task: "${entityTitle}"` : (r.metadata?.taskTitle || "Task Completion");
+  } else if (r.type === "task_reassign") {
+    title = entityTitle ? `Reassign Task: "${entityTitle}"${targetName}` : `Task Reassignment${targetName}`;
+  } else if (r.type === "task_forward") {
+    title = entityTitle ? `Forward Task: "${entityTitle}"${targetName}` : `Task Forward${targetName}`;
+  } else if (r.type === "case_delete") {
+    const caseRef = caseNumber ? `[${caseNumber}] ` : "";
+    title = entityTitle ? `Delete Case: ${caseRef}"${entityTitle}"` : "Case Deletion Request";
+  } else if (r.type === "case_completion") {
+    const caseRef = caseNumber ? `[${caseNumber}] ` : "";
+    title = entityTitle ? `Complete Case: ${caseRef}"${entityTitle}"` : "Case Completion Request";
+  } else if (r.type === "case_reassign") {
+    const caseRef = caseNumber ? `[${caseNumber}] ` : "";
+    title = entityTitle ? `Reassign Case: ${caseRef}"${entityTitle}"${targetName}` : `Case Reassignment${targetName}`;
+  } else if (r.type === "attachment_delete") {
+    title = entityTitle ? `Delete Document: "${entityTitle}"` : "Document Deletion Request";
   }
+
+  // Construct informative context
+  const contextParts: string[] = [];
+  if (caseNumber || caseTitle) {
+    contextParts.push(`Case: ${caseNumber ? `${caseNumber} ` : ""}${caseTitle ? `(${caseTitle})` : ""}`.trim());
+  }
+  if (clientName) {
+    contextParts.push(`Client: ${clientName}`);
+  }
+  if (r.reason) {
+    contextParts.push(`Reason: "${r.reason}"`);
+  }
+  contextParts.push(`by ${requesterName}`);
+  const context = contextParts.join(" · ");
 
   const result: any = {
     _id: `approval_req_${r._id.toString()}`,
@@ -344,12 +384,12 @@ export function formatRequestApprovalItem(r: any, computeAging: (d: any, p: bool
     type: kind,
     category,
     title,
-    context: `Requested by ${requesterName}: "${r.reason || "No remark"}"`,
+    context,
     when,
     submittedAt: r.createdAt,
     assignedAt: r.createdAt,
     status: r.status,
-    priority: (r.metadata?.priority as string) || (r.type.includes("delete") ? "high" : "medium"),
+    priority: (r.metadata?.priority as string) || (r.type.includes("delete") ? "urgent" : "medium"),
     agingDays: aging.agingDays,
     agingLabel: aging.agingLabel,
     submittedBy: subUser,
@@ -372,36 +412,77 @@ export function formatRequestApprovalItem(r: any, computeAging: (d: any, p: bool
       createdAt: r.createdAt,
       reviewedAt: r.reviewedAt,
       metadata: r.metadata,
+      case: (caseNumber || caseTitle) ? {
+        number: caseNumber,
+        title: caseTitle,
+        _id: entity?.caseId?._id || (r.entityType === "Case" ? entity?._id : undefined),
+      } : undefined,
+      client: clientName ? {
+        name: clientName,
+        _id: entity?.clientId?._id || (r.entityType === "Case" ? entity?.clientId : undefined),
+      } : undefined,
     },
   };
 
-  if (r.entityId && typeof r.entityId === "object") {
-    const e = r.entityId as any;
+  if (entity) {
     if (r.entityType === "Task" || r.type.startsWith("task_")) {
       result.task = {
-        id: e._id?.toString(),
-        title: e.title,
-        description: e.description,
-        status: e.status,
+        id: entity._id?.toString(),
+        title: entity.title,
+        description: entity.description,
+        status: entity.status,
       };
       result.taskDetails = {
-        _id: e._id?.toString(),
-        title: e.title,
-        description: e.description,
-        priority: e.priority,
-        status: e.status,
-        deadline: e.deadline,
-        checklist: e.checklist || [],
-        remarks: e.remarks || [],
-        case: e.caseId,
-        client: e.clientId,
+        _id: entity._id?.toString(),
+        title: entity.title,
+        description: entity.description,
+        priority: entity.priority,
+        status: entity.status,
+        category: entity.category,
+        deadline: entity.deadline,
+        checklist: entity.checklist || [],
+        remarks: entity.remarks || [],
+        assignmentHistory: entity.assignmentHistory || [],
+        case: entity.caseId ? {
+          _id: entity.caseId._id?.toString() || entity.caseId.toString(),
+          title: entity.caseId.title,
+          number: entity.caseId.number,
+          courtCaseId: entity.caseId.courtCaseId,
+        } : null,
+        client: entity.clientId ? {
+          _id: entity.clientId._id?.toString() || entity.clientId.toString(),
+          name: entity.clientId.name,
+          phone: entity.clientId.phone,
+          email: entity.clientId.email,
+        } : null,
+        assignedTo: entity.assignedTo,
+        submittedForApprovalAt: entity.submittedForApprovalAt || r.createdAt,
       };
     } else if (r.entityType === "Case" || r.type.startsWith("case_")) {
       result.caseDetails = {
-        _id: e._id?.toString(),
-        title: e.title,
-        number: e.number,
-        courtCaseId: e.courtCaseId,
+        _id: entity._id?.toString(),
+        title: entity.title,
+        number: entity.number,
+        courtCaseId: entity.courtCaseId,
+        status: entity.status,
+        caseType: entity.caseType,
+        court: entity.court,
+        client: entity.clientId ? {
+          _id: entity.clientId._id?.toString() || entity.clientId.toString(),
+          name: entity.clientId.name,
+          phone: entity.clientId.phone,
+        } : null,
+      };
+    } else if (r.entityType === "Document" || r.type.startsWith("attachment_")) {
+      result.documentDetails = {
+        _id: entity._id?.toString(),
+        name: entity.name,
+        sizeFormatted: entity.sizeFormatted,
+        mimeType: entity.mimeType,
+        state: entity.state,
+        case: entity.caseId,
+        task: entity.taskId,
+        client: entity.clientId,
       };
     }
   }
@@ -475,7 +556,14 @@ export async function fetchApprovalDetail(rawId: string) {
       .populate("targetUserId", "name email role avatarUrl")
       .populate("originalAssigneeId", "name email role avatarUrl")
       .populate("reviewedBy", "name email role")
-      .populate("entityId")
+      .populate({
+        path: "entityId",
+        populate: [
+          { path: "caseId", select: "title number courtCaseId countCaseNumber" },
+          { path: "clientId", select: "name phone email" },
+          { path: "assignedTo", select: "name email role avatarUrl" },
+        ],
+      })
       .lean();
 
     if (r) {

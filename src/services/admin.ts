@@ -75,6 +75,7 @@ export interface EmployeesResponse {
 export interface ApprovalItem {
   _id: string;
   rawApprovalId?: string;
+  type?: string;
   kind: string;
   category?: "tasks" | "documents" | "access" | "cases" | "clients" | string;
   title: string;

@@ -183,15 +183,24 @@ export function ApprovalDetailDrawer({
   const task = item.taskDetails;
   const doc = item.documentDetails;
   const req = item.requestDetails;
+  const isDelete = item.kind?.toLowerCase().includes("delete") || (req?.type && req.type.includes("delete"));
+  const isReassign = item.kind?.toLowerCase().includes("reassign") || (req?.type && req.type.includes("reassign"));
+  const isCompletion = item.kind?.toLowerCase().includes("completion") || (req?.type && req.type.includes("completion"));
+
   const caseData =
     task?.case ||
+    (task as any)?.caseId ||
     doc?.case ||
+    (doc as any)?.caseId ||
     item.caseDetails ||
-    (
-      req as
-        { case?: { _id: string; title: string; number: string; courtCaseId?: string } } | undefined
-    )?.case;
-  const clientData = task?.client || doc?.client;
+    (req as any)?.case;
+  const clientData =
+    task?.client ||
+    (task as any)?.clientId ||
+    doc?.client ||
+    (doc as any)?.clientId ||
+    (item.caseDetails as any)?.client ||
+    (req as any)?.client;
 
   interface AttachedDoc {
     _id: string;
@@ -215,7 +224,7 @@ export function ApprovalDetailDrawer({
 
   // Subtask statistics
   const totalSubtasks = task?.checklist?.length ?? 0;
-  const doneSubtasks = task?.checklist?.filter((c) => c.done).length ?? 0;
+  const doneSubtasks = task?.checklist?.filter((c: any) => c.done).length ?? 0;
   const subtaskProgress = totalSubtasks > 0 ? Math.round((doneSubtasks / totalSubtasks) * 100) : 0;
 
   const formattedDate = safeFormatDateTime(item.submittedAt || item.when);
@@ -331,6 +340,48 @@ export function ApprovalDetailDrawer({
           <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
             {/* OVERVIEW TAB */}
             <TabsContent value="overview" className="mt-0 space-y-5">
+              {/* Deletion Request Highlight Box */}
+              {isDelete && (
+                <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 space-y-2">
+                  <div className="flex items-center gap-2 font-bold text-rose-700 dark:text-rose-300 text-sm">
+                    <AlertTriangle size={18} className="text-rose-600" />
+                    <span>Deletion Authorization Required</span>
+                  </div>
+                  <p className="text-xs text-rose-900 dark:text-rose-100 leading-relaxed">
+                    An employee has submitted this {item.category === "cases" ? "case" : "task"} for permanent deletion / archiving.
+                  </p>
+                  {(req?.reason || item.rejectionReason) && (
+                    <div className="bg-background/80 p-3 rounded-lg border border-rose-500/20 text-xs text-foreground">
+                      <span className="font-semibold text-rose-600 dark:text-rose-400 block mb-1">
+                        Reason Stated by Requester:
+                      </span>
+                      <p className="italic">"{req?.reason || item.rejectionReason}"</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Reassignment Highlight Box */}
+              {isReassign && (
+                <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 space-y-2">
+                  <div className="flex items-center gap-2 font-bold text-amber-700 dark:text-amber-300 text-sm">
+                    <ArrowRight size={18} className="text-amber-600" />
+                    <span>Work Reassignment Request</span>
+                  </div>
+                  <p className="text-xs text-amber-900 dark:text-amber-100 leading-relaxed">
+                    Request to transfer ownership of this work to <strong>{item.assignedTo?.name || "new assignee"}</strong>.
+                  </p>
+                  {req?.reason && (
+                    <div className="bg-background/80 p-3 rounded-lg border border-amber-500/20 text-xs text-foreground">
+                      <span className="font-semibold text-amber-600 dark:text-amber-400 block mb-1">
+                        Reason Provided:
+                      </span>
+                      <p className="italic">"{req.reason}"</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Prior Rejection / Changes Requested Notice */}
               {item.rejectionReason && (
                 <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-xs space-y-1.5">
@@ -391,7 +442,7 @@ export function ApprovalDetailDrawer({
                         {item.submittedBy?.name
                           ? item.submittedBy.name
                               .split(" ")
-                              .map((w) => w[0])
+                              .map((w: string) => w[0])
                               .join("")
                               .slice(0, 2)
                               .toUpperCase()
@@ -424,7 +475,7 @@ export function ApprovalDetailDrawer({
                       {item.assignedTo?.name || task?.assignedTo?.name
                         ? (item.assignedTo?.name || task?.assignedTo?.name || "A")
                             .split(" ")
-                            .map((w) => w[0])
+                            .map((w: string) => w[0])
                             .join("")
                             .slice(0, 2)
                             .toUpperCase()
@@ -458,7 +509,7 @@ export function ApprovalDetailDrawer({
                       {item.assignedBy?.name || task?.assignedBy?.name
                         ? (item.assignedBy?.name || task?.assignedBy?.name || "B")
                             .split(" ")
-                            .map((w) => w[0])
+                            .map((w: string) => w[0])
                             .join("")
                             .slice(0, 2)
                             .toUpperCase()
@@ -516,58 +567,117 @@ export function ApprovalDetailDrawer({
                 </h4>
 
                 <div className="space-y-2">
-                  {caseData && caseData._id ? (
-                    <Link
-                      to="/cases/$caseId"
-                      params={{ caseId: caseData._id }}
-                      className="group flex items-center justify-between p-3 rounded-xl border border-border/80 bg-card hover:border-primary/40 hover:bg-muted/30 transition-all text-xs"
-                    >
+                  {/* Task Card (if task details available) */}
+                  {task && (
+                    <div className="flex items-center justify-between p-3 rounded-xl border border-border/80 bg-card text-xs">
                       <div className="flex items-center gap-2.5 min-w-0">
                         <span className="grid size-7 place-items-center rounded-lg bg-blue-500/10 text-blue-600 shrink-0">
-                          <Briefcase size={14} />
+                          <CheckSquare size={14} />
                         </span>
                         <div className="min-w-0">
-                          <span className="font-semibold text-foreground group-hover:text-primary transition-colors truncate block">
-                            {caseData.number} — {caseData.title}
+                          <span className="font-semibold text-foreground truncate block">
+                            {task.title}
                           </span>
                           <span className="text-[11px] text-muted-foreground">
-                            Click to open case dossier
+                            Task Priority: {task.priority || "Medium"} · Status: {task.status || "Pending"}
                           </span>
                         </div>
                       </div>
-                      <ExternalLink
-                        size={14}
-                        className="text-muted-foreground group-hover:text-primary shrink-0"
-                      />
-                    </Link>
+                    </div>
+                  )}
+
+                  {/* Case Card */}
+                  {caseData && (caseData.number || caseData.title) ? (
+                    caseData._id && String(caseData._id).length >= 12 ? (
+                      <Link
+                        to="/cases/$caseId"
+                        params={{ caseId: String(caseData._id) }}
+                        className="group flex items-center justify-between p-3 rounded-xl border border-border/80 bg-card hover:border-primary/40 hover:bg-muted/30 transition-all text-xs"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="grid size-7 place-items-center rounded-lg bg-blue-500/10 text-blue-600 shrink-0">
+                            <Briefcase size={14} />
+                          </span>
+                          <div className="min-w-0">
+                            <span className="font-semibold text-foreground group-hover:text-primary transition-colors truncate block">
+                              {caseData.number ? `${caseData.number} — ` : ""}{caseData.title}
+                            </span>
+                            <span className="text-[11px] text-muted-foreground">
+                              Click to open case dossier
+                            </span>
+                          </div>
+                        </div>
+                        <ExternalLink
+                          size={14}
+                          className="text-muted-foreground group-hover:text-primary shrink-0"
+                        />
+                      </Link>
+                    ) : (
+                      <div className="flex items-center justify-between p-3 rounded-xl border border-border/80 bg-card text-xs">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="grid size-7 place-items-center rounded-lg bg-blue-500/10 text-blue-600 shrink-0">
+                            <Briefcase size={14} />
+                          </span>
+                          <div className="min-w-0">
+                            <span className="font-semibold text-foreground truncate block">
+                              {caseData.number ? `${caseData.number} — ` : ""}{caseData.title}
+                            </span>
+                            <span className="text-[11px] text-muted-foreground">
+                              Associated Case Record
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )
                   ) : null}
 
-                  {clientData && clientData._id ? (
-                    <Link
-                      to="/clients/$clientId"
-                      params={{ clientId: clientData._id }}
-                      className="group flex items-center justify-between p-3 rounded-xl border border-border/80 bg-card hover:border-primary/40 hover:bg-muted/30 transition-all text-xs"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="grid size-7 place-items-center rounded-lg bg-emerald-500/10 text-emerald-600 shrink-0">
-                          <User size={14} />
-                        </span>
-                        <div className="min-w-0">
-                          <span className="font-semibold text-foreground group-hover:text-primary transition-colors truncate block">
-                            {clientData.name}
+                  {/* Client Card */}
+                  {clientData && clientData.name ? (
+                    clientData._id && String(clientData._id).length >= 12 ? (
+                      <Link
+                        to="/clients/$clientId"
+                        params={{ clientId: String(clientData._id) }}
+                        className="group flex items-center justify-between p-3 rounded-xl border border-border/80 bg-card hover:border-primary/40 hover:bg-muted/30 transition-all text-xs"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="grid size-7 place-items-center rounded-lg bg-emerald-500/10 text-emerald-600 shrink-0">
+                            <User size={14} />
                           </span>
-                          {"phone" in clientData && clientData.phone ? (
-                            <span className="text-[11px] text-muted-foreground">
-                              {clientData.phone}
+                          <div className="min-w-0">
+                            <span className="font-semibold text-foreground group-hover:text-primary transition-colors truncate block">
+                              {clientData.name}
                             </span>
-                          ) : null}
+                            {"phone" in clientData && clientData.phone ? (
+                              <span className="text-[11px] text-muted-foreground">
+                                {clientData.phone}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                        <ExternalLink
+                          size={14}
+                          className="text-muted-foreground group-hover:text-primary shrink-0"
+                        />
+                      </Link>
+                    ) : (
+                      <div className="flex items-center justify-between p-3 rounded-xl border border-border/80 bg-card text-xs">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="grid size-7 place-items-center rounded-lg bg-emerald-500/10 text-emerald-600 shrink-0">
+                            <User size={14} />
+                          </span>
+                          <div className="min-w-0">
+                            <span className="font-semibold text-foreground truncate block">
+                              {clientData.name}
+                            </span>
+                            {"phone" in clientData && clientData.phone ? (
+                              <span className="text-[11px] text-muted-foreground">
+                                {clientData.phone}
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
                       </div>
-                      <ExternalLink
-                        size={14}
-                        className="text-muted-foreground group-hover:text-primary shrink-0"
-                      />
-                    </Link>
+                    )
                   ) : null}
 
                   {doc?.task && (
@@ -641,7 +751,7 @@ export function ApprovalDetailDrawer({
                     Checklist Items
                   </h4>
                   <div className="space-y-2">
-                    {task?.checklist?.map((item, idx) => (
+                    {task?.checklist?.map((item: any, idx: number) => (
                       <div
                         key={item._id || item.id || idx}
                         className={cn(
@@ -795,7 +905,7 @@ export function ApprovalDetailDrawer({
                 </div>
 
                 {task?.assignmentHistory && task.assignmentHistory.length > 0 ? (
-                  task.assignmentHistory.map((hist, idx: number) => {
+                  task.assignmentHistory.map((hist: any, idx: number) => {
                     const fromName = hist.fromUser?.name;
                     const toName = hist.toUser?.name;
                     const assignerName = hist.assignedBy?.name;
@@ -849,7 +959,7 @@ export function ApprovalDetailDrawer({
                   </div>
                 )}
 
-                {task?.remarks?.map((rem, idx) => (
+                {task?.remarks?.map((rem: any, idx: number) => (
                   <div
                     key={rem._id || idx}
                     className="flex items-start gap-3 p-3 rounded-xl border border-border/60 bg-muted/20 text-xs"
