@@ -850,9 +850,11 @@ export function useUpdateTaskOptions() {
 // ---------------------------------------------------------------------------
 
 export interface ActiveSession {
-  _id: string;
+  _id?: string;
+  id?: string;
   ip: string;
-  userAgent: string;
+  userAgent?: string;
+  device?: string;
   rememberMe: boolean;
   createdAt: string;
   lastActiveAt: string;

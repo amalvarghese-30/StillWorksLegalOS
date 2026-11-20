@@ -475,48 +475,56 @@ function SettingsPage() {
                           </Button>
                         </div>
                       ) : activeSessionsQuery.data?.sessions?.length ? (
-                        activeSessionsQuery.data.sessions.map((s) => (
-                          <div key={s._id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 min-w-0 w-full">
-                            <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
-                              <span className="grid size-9 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground mt-0.5 sm:mt-0">
-                                <Laptop size={18} />
-                              </span>
-                              <div className="space-y-1 min-w-0 flex-1">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="text-xs font-semibold text-foreground break-all">
-                                    {s.userAgent.slice(0, 48)}...
-                                  </span>
-                                  {s.isCurrent && (
-                                    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 shrink-0">
-                                      Current session
+                        activeSessionsQuery.data.sessions.map((s) => {
+                          const sessionId = s._id || s.id || "";
+                          const deviceName = (s.userAgent || s.device || "Current Device").trim();
+                          const activeTime = s.lastActiveAt
+                            ? new Date(s.lastActiveAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" })
+                            : "Recently";
+
+                          return (
+                            <div key={sessionId || Math.random().toString()} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 min-w-0 w-full">
+                              <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
+                                <span className="grid size-9 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground mt-0.5 sm:mt-0">
+                                  <Laptop size={18} />
+                                </span>
+                                <div className="space-y-1 min-w-0 flex-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-xs font-semibold text-foreground break-all">
+                                      {deviceName.length > 48 ? `${deviceName.slice(0, 48)}...` : deviceName}
                                     </span>
-                                  )}
-                                  {s.rememberMe && (
-                                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary shrink-0">
-                                      Remember Me
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-2 text-[11px] text-muted-foreground font-mono flex-wrap">
-                                  <span>IP: {s.ip || "127.0.0.1"}</span>
-                                  <span>•</span>
-                                  <span>Active: {new Date(s.lastActiveAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}</span>
+                                    {s.isCurrent && (
+                                      <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 shrink-0">
+                                        Current session
+                                      </span>
+                                    )}
+                                    {s.rememberMe && (
+                                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary shrink-0">
+                                        Remember Me
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2 text-[11px] text-muted-foreground font-mono flex-wrap">
+                                    <span>IP: {s.ip || "127.0.0.1"}</span>
+                                    <span>•</span>
+                                    <span>Active: {activeTime}</span>
+                                  </div>
                                 </div>
                               </div>
+                              {!s.isCurrent && sessionId && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={revokeSessionMutation.isPending}
+                                  onClick={() => revokeSessionMutation.mutate(sessionId)}
+                                  className="h-8 min-h-[36px] text-xs text-muted-foreground hover:text-destructive self-end sm:self-center touch-manipulation"
+                                >
+                                  Revoke
+                                </Button>
+                              )}
                             </div>
-                            {!s.isCurrent && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                disabled={revokeSessionMutation.isPending}
-                                onClick={() => revokeSessionMutation.mutate(s._id)}
-                                className="h-8 min-h-[36px] text-xs text-muted-foreground hover:text-destructive self-end sm:self-center touch-manipulation"
-                              >
-                                Revoke
-                              </Button>
-                            )}
-                          </div>
-                        ))
+                          );
+                        })
                       ) : (
                         <div className="p-4 text-center text-xs text-muted-foreground">
                           No active sessions found.

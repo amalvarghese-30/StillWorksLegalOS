@@ -315,7 +315,9 @@ router.get("/sessions", requireAuth, async (req: Request, res: Response) => {
     res.json({
       sessions: sessions.map((s) => ({
         id: s._id.toString(),
+        _id: s._id.toString(),
         device: s.device || "Unknown Device",
+        userAgent: s.device || "Unknown Device",
         ip: s.ip || "Local",
         lastActiveAt: s.lastActiveAt,
         createdAt: s.createdAt,
