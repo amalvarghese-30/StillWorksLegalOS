@@ -346,6 +346,31 @@ function TaskDetailDialogInner({
       activeTask.categoryPath && activeTask.categoryPath.length > 2
         ? activeTask.categoryPath[2]
         : "";
+
+    const origCaseId =
+      activeTask.caseId && typeof activeTask.caseId === "object"
+        ? (activeTask.caseId as { _id?: string })._id || ""
+        : activeTask.caseId || "";
+
+    const origClientId =
+      activeTask.clientId && typeof activeTask.clientId === "object"
+        ? (activeTask.clientId as { _id?: string })._id || ""
+        : activeTask.clientId || "";
+
+    let origDeadDate = "";
+    let origDeadTime = "";
+    if (activeTask.deadline) {
+      try {
+        const d = new Date(activeTask.deadline);
+        if (!isNaN(d.getTime())) {
+          origDeadDate = d.toISOString().slice(0, 10);
+          origDeadTime = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+        }
+      } catch {
+        // ignore date parsing error
+      }
+    }
+
     return (
       title !== (activeTask.title || "") ||
       description !== (activeTask.description || "") ||
@@ -355,6 +380,10 @@ function TaskDetailDialogInner({
       nestedSubCategory !== origNested ||
       customCategory !== (activeTask.customCategory || "") ||
       priority !== (activeTask.priority || "Medium") ||
+      caseId !== origCaseId ||
+      clientId !== origClientId ||
+      deadlineDate !== origDeadDate ||
+      deadlineTime !== origDeadTime ||
       assignedChanged
     );
   }, [
@@ -366,6 +395,10 @@ function TaskDetailDialogInner({
     nestedSubCategory,
     customCategory,
     priority,
+    caseId,
+    clientId,
+    deadlineDate,
+    deadlineTime,
     assignedTo,
     activeTask,
   ]);
@@ -813,6 +846,7 @@ function TaskDetailDialogInner({
         }}
       >
         <DialogContent
+          hideCloseButton={true}
           onInteractOutside={(e) => {
             e.preventDefault();
             handleAttemptClose();
@@ -842,12 +876,15 @@ function TaskDetailDialogInner({
 
             <div className="flex items-center gap-2">
               <Button
+                type="button"
                 variant="ghost"
                 size="icon"
                 onClick={handleAttemptClose}
-                className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+                className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
+                title="Close"
               >
                 <X className="h-4 w-4" />
+                <span className="sr-only">Close</span>
               </Button>
             </div>
           </div>
@@ -1069,7 +1106,18 @@ function TaskDetailDialogInner({
                     <select
                       id="task-case-select"
                       value={caseId}
-                      onChange={(e) => setCaseId(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setCaseId(val);
+                        if (val && !clientId) {
+                          const matchedCase = cases.find((c) => c._id === val);
+                          const primaryParty = matchedCase?.parties?.find((p: any) => p.clientId);
+                          if (primaryParty?.clientId) {
+                            const cid = typeof primaryParty.clientId === "object" ? primaryParty.clientId._id : primaryParty.clientId;
+                            if (cid) setClientId(cid);
+                          }
+                        }
+                      }}
                       className="h-10 w-full rounded-lg border border-border bg-background px-3 text-xs text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                     >
                       <option value="">No case selected</option>
@@ -1667,6 +1715,10 @@ function TaskDetailDialogInner({
         <DiscardConfirmationDialog
           open={showDiscardConfirm}
           onOpenChange={setShowDiscardConfirm}
+          onConfirmDiscard={() => {
+            setShowDiscardConfirm(false);
+            onClose();
+          }}
           onDiscard={() => {
             setShowDiscardConfirm(false);
             onClose();

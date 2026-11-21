@@ -13,7 +13,7 @@ import { NotificationService } from "../services/notifications.js";
 import { Types } from "mongoose";
 import { ApprovalRequest } from "../models/ApprovalRequest.js";
 import { requireAuth } from "../middleware/auth.js";
-import { canAccessCase, canAccessClient, canAccessTask, canAccessDocument, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
+import { canAccessTask, canAccessDocument, requireResourceAccess, getAccessibleCaseIds } from "../middleware/authorization.js";
 import { resolveTaskClientName, resolveTaskAssigneeName } from "../utils/taskHelpers.js";
 import { validateSnoozePayload, validatePostponePayload } from "../utils/snoozeValidation.js";
 import { dispatchRejectionNotifications } from "../services/rejectionNotifications.js";
@@ -999,24 +999,6 @@ router.post("/", async (req: Request, res: Response) => {
       }
     }
 
-    // Validate case access if caseId provided
-    if (cleanCaseId && req.user!.role !== "admin") {
-      const hasAccess = await canAccessCase(req.userId!, req.user!.role, cleanCaseId, req.user?.permissions);
-      if (!hasAccess) {
-        res.status(403).json({ message: "Cannot create task for a case you don't have access to" });
-        return;
-      }
-    }
-
-    // Validate client access if clientId provided
-    if (cleanClientId && req.user!.role !== "admin") {
-      const hasClientAccess = await canAccessClient(req.userId!, req.user!.role, cleanClientId, req.user?.permissions);
-      if (!hasClientAccess) {
-        res.status(403).json({ message: "Cannot create task for a client you don't have access to" });
-        return;
-      }
-    }
-
     // Validate deadline format if provided
     let parsedDeadline: Date | null = null;
     if (deadline) {
@@ -1581,24 +1563,6 @@ async function handleUpdateTask(req: Request, res: Response) {
     }
 
     updates["updatedBy"] = req.userId;
-
-    // Validate case access if caseId changed
-    if (updates["caseId"] && req.user!.role !== "admin") {
-      const hasAccess = await canAccessCase(req.userId!, req.user!.role, updates["caseId"] as string, req.user?.permissions);
-      if (!hasAccess) {
-        res.status(403).json({ message: "Cannot move task to a case you don't have access to" });
-        return;
-      }
-    }
-
-    // Validate client access if clientId changed
-    if (updates["clientId"] && req.user!.role !== "admin") {
-      const hasClientAccess = await canAccessClient(req.userId!, req.user!.role, updates["clientId"] as string, req.user?.permissions);
-      if (!hasClientAccess) {
-        res.status(403).json({ message: "Cannot link task to a client you don't have access to" });
-        return;
-      }
-    }
 
     // Build human-readable audit diffs of modified fields
     const diffs: string[] = [];
