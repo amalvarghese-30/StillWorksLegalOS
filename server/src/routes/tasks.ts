@@ -407,10 +407,9 @@ router.get("/", async (req: Request, res: Response) => {
       if (priority.includes(",")) {
         filter["priority"] = { $in: priority.split(",").map((p) => p.trim()) };
       } else {
-        filter["priority"] = priority;
+        filter["priority"] = new RegExp(`^${escapeRegex(priority.trim())}$`, "i");
       }
     }
-    if (category && category !== "all") filter["category"] = category;
     if (caseId) filter["caseId"] = caseId;
     if (agent && agent !== "all") {
       filter["agent"] = agent;
@@ -421,6 +420,18 @@ router.get("/", async (req: Request, res: Response) => {
     }
 
     const andConditions: Record<string, unknown>[] = [];
+
+    if (category && category !== "all") {
+      const catRegex = new RegExp(escapeRegex(category.trim()), "i");
+      andConditions.push({
+        $or: [
+          { category: catRegex },
+          { mainCategory: catRegex },
+          { subCategory: catRegex },
+          { categoryPath: catRegex },
+        ],
+      });
+    }
 
     if (clientId) {
       if (Types.ObjectId.isValid(clientId)) {

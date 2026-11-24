@@ -119,10 +119,10 @@ function getBucket(task: TaskRecord): string {
   if (!task.deadline) return "Upcoming";
   const dl = new Date(task.deadline);
   const now = new Date();
-  if (dl < now) return "Overdue";
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const dlDay = new Date(dl.getFullYear(), dl.getMonth(), dl.getDate());
   if (dlDay.getTime() === today.getTime()) return "Due Today";
+  if (dlDay < today) return "Overdue";
   return "Upcoming";
 }
 
@@ -309,14 +309,8 @@ function TasksPage() {
     if (routeSearch.status && routeSearch.status !== statusFilter) {
       setStatusFilter(routeSearch.status);
       setView("list");
-    } else if (
-      routeSearch.status === undefined &&
-      statusFilter !== "All" &&
-      routeSearch.tab === "upcoming"
-    ) {
-      setStatusFilter("All");
     }
-  }, [routeSearch.status, routeSearch.tab]);
+  }, [routeSearch.status]);
 
   useEffect(() => {
     if (routeSearch.tab && routeSearch.tab !== view) {
@@ -374,7 +368,7 @@ function TasksPage() {
   const apiFilters = useMemo(() => {
     const f: Record<string, string> = {
       page: String(page),
-      limit: view === "upcoming" ? "200" : String(limit),
+      limit: "200",
     };
     if (search.trim()) f["search"] = search.trim();
     if (statusFilter !== "All") {
@@ -536,13 +530,18 @@ function TasksPage() {
     return { total, overdue, dueToday, inProgress, inReview, completed, calls };
   }, [data?.stats, allTasks]);
 
-  const upcomingTasks = useMemo(() => {
-    return allTasks.filter((t) => {
-      if (getBucket(t) !== "Upcoming") return false;
+  const filteredTasks = useMemo(() => {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const endOfWeek = new Date(startOfToday.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const endOf30Days = new Date(startOfToday.getTime() + 30 * 24 * 60 * 60 * 1000);
 
+    return allTasks.filter((t) => {
+      // 1. Search text filter
       if (search.trim()) {
         const q = search.toLowerCase().trim();
-        const titleMatch = t.title.toLowerCase().includes(q);
+        const titleMatch = t.title?.toLowerCase().includes(q);
         const descMatch = t.description?.toLowerCase().includes(q);
         const clientMatch =
           t.clientName?.toLowerCase().includes(q) ||
@@ -554,33 +553,81 @@ function TasksPage() {
               t.caseId?.number?.toLowerCase().includes(q)));
         const staffMatch =
           (typeof t.assignedTo === "object" && t.assignedTo?.name?.toLowerCase().includes(q)) ||
-          (t.assignedUsers && t.assignedUsers.some((u) => u.name.toLowerCase().includes(q)));
-        if (!titleMatch && !descMatch && !clientMatch && !caseMatch && !staffMatch) {
+          (t.assignedUsers && t.assignedUsers.some((u) => u.name?.toLowerCase().includes(q)));
+        const catMatch =
+          t.category?.toLowerCase().includes(q) ||
+          (t as any).mainCategory?.toLowerCase().includes(q) ||
+          (t as any).subCategory?.toLowerCase().includes(q);
+        if (!titleMatch && !descMatch && !clientMatch && !caseMatch && !staffMatch && !catMatch) {
           return false;
         }
       }
 
-      if (priorityFilter !== "All" && t.priority !== priorityFilter) {
-        return false;
+      // 2. Status filter
+      if (statusFilter !== "All") {
+        if (statusFilter === "overdue") {
+          const isOverdue =
+            t.status === "overdue" ||
+            (t.deadline &&
+              new Date(t.deadline) < startOfToday &&
+              t.status !== "completed" &&
+              t.status !== "pending_approval");
+          if (!isOverdue) return false;
+        } else if (statusFilter === "due_today") {
+          if (!t.deadline) return false;
+          const dl = new Date(t.deadline);
+          if (dl < startOfToday || dl > endOfToday) return false;
+        } else if (statusFilter === "in_progress" || statusFilter === "pending") {
+          if (t.status !== "in_progress" && t.status !== "pending") return false;
+        } else if (statusFilter === "in_review") {
+          if (t.status !== "pending_approval") return false;
+        } else if (statusFilter === "completed") {
+          if (t.status !== "completed") return false;
+        } else if (statusFilter === "calls") {
+          if (!t.isCall && !t.callReminder) return false;
+        } else if (t.status !== statusFilter) {
+          return false;
+        }
+      } else if (view === "upcoming") {
+        // In default Upcoming view when status is "All", show active tasks (exclude completed)
+        if (t.status === "completed") return false;
       }
 
+      // 3. Priority filter
+      if (priorityFilter !== "All") {
+        if (t.priority?.toLowerCase() !== priorityFilter.toLowerCase()) {
+          return false;
+        }
+      }
+
+      // 4. Category filter
       if (categoryFilter !== "All") {
         const catStr = extractCategoryName(t.category);
-        if (catStr !== categoryFilter && t.category !== categoryFilter) {
-          return false;
-        }
+        const taskMain = (t as any).mainCategory || "";
+        const taskSub = (t as any).subCategory || "";
+        const taskPath = Array.isArray((t as any).categoryPath) ? (t as any).categoryPath : [];
+
+        const targetCat = categoryFilter.toLowerCase();
+        const matchesCategory =
+          catStr?.toLowerCase() === targetCat ||
+          t.category?.toLowerCase() === targetCat ||
+          taskMain.toLowerCase() === targetCat ||
+          taskSub.toLowerCase() === targetCat ||
+          taskPath.some((p: string) => p.toLowerCase() === targetCat);
+
+        if (!matchesCategory) return false;
       }
 
+      // 5. Staff multi-select filter (Admin Only)
       if (isAdmin && selectedStaff.length > 0) {
         const assignedId =
           typeof t.assignedTo === "object" && t.assignedTo
             ? (t.assignedTo as any)._id
             : t.assignedTo;
+        const assignedName = typeof t.assignedTo === "object" ? t.assignedTo?.name || "" : "";
         const matchesStaff =
           selectedStaff.includes(String(assignedId)) ||
-          selectedStaff.includes(
-            typeof t.assignedTo === "object" ? t.assignedTo?.name || "" : "",
-          ) ||
+          selectedStaff.includes(assignedName) ||
           (t.assignedUsers &&
             t.assignedUsers.some(
               (u) => selectedStaff.includes(String(u._id)) || selectedStaff.includes(u.name),
@@ -588,38 +635,58 @@ function TasksPage() {
         if (!matchesStaff) return false;
       }
 
-      if (dateRange === "this_month") {
+      // 6. Due Date Range inputs (Due From / Due To)
+      if (dueFrom) {
+        if (!t.deadline) return false;
+        const dl = new Date(t.deadline);
+        const fromDate = new Date(dueFrom);
+        fromDate.setHours(0, 0, 0, 0);
+        if (dl < fromDate) return false;
+      }
+      if (dueTo) {
+        if (!t.deadline) return false;
+        const dl = new Date(t.deadline);
+        const toDate = new Date(dueTo);
+        toDate.setHours(23, 59, 59, 999);
+        if (dl > toDate) return false;
+      }
+
+      // 7. Date Range dropdown (Upcoming view)
+      if (view === "upcoming" && dateRange !== "all") {
         if (!t.deadline) return true;
         const dl = new Date(t.deadline);
-        const now = new Date();
-        return dl.getMonth() === now.getMonth() && dl.getFullYear() === now.getFullYear();
+        if (dateRange === "this_month") {
+          return dl.getMonth() === now.getMonth() && dl.getFullYear() === now.getFullYear();
+        }
+        if (dateRange === "this_week") {
+          return dl >= startOfToday && dl <= endOfWeek;
+        }
+        if (dateRange === "next_7_days") {
+          return dl >= startOfToday && dl <= endOfWeek;
+        }
+        if (dateRange === "next_30_days") {
+          return dl >= startOfToday && dl <= endOf30Days;
+        }
       }
-      if (dateRange === "this_week") {
-        if (!t.deadline) return true;
-        const dl = new Date(t.deadline);
-        const now = new Date();
-        const endOfWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-        return dl >= now && dl <= endOfWeek;
-      }
-      if (dateRange === "next_7_days") {
-        if (!t.deadline) return true;
-        const dl = new Date(t.deadline);
-        const now = new Date();
-        const next7 = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-        return dl >= now && dl <= next7;
-      }
-      if (dateRange === "next_30_days") {
-        if (!t.deadline) return true;
-        const dl = new Date(t.deadline);
-        const now = new Date();
-        const next30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-        return dl >= now && dl <= next30;
-      }
+
       return true;
     });
-  }, [allTasks, search, priorityFilter, categoryFilter, selectedStaff, isAdmin, dateRange]);
+  }, [
+    allTasks,
+    search,
+    statusFilter,
+    priorityFilter,
+    categoryFilter,
+    selectedStaff,
+    isAdmin,
+    dueFrom,
+    dueTo,
+    dateRange,
+    view,
+  ]);
 
-  const tasks = allTasks;
+  const tasks = filteredTasks;
+  const upcomingTasks = filteredTasks;
 
   const {
     sortedData: sortedTasks,
@@ -663,6 +730,7 @@ function TasksPage() {
     setSelectedStaff([]);
     setDueFrom("");
     setDueTo("");
+    setDateRange("this_month");
     setPage(1);
     resetTaskSort();
   };
