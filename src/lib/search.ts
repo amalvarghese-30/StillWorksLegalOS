@@ -7,6 +7,8 @@ export interface SearchCase {
   _id: string;
   title: string;
   number?: string;
+  status?: string;
+  category?: string;
 }
 
 export interface SearchClient {
@@ -25,6 +27,8 @@ export interface SearchTask {
   _id: string;
   title: string;
   status?: string;
+  priority?: string;
+  category?: string;
 }
 
 export interface SearchUser {

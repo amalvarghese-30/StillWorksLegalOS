@@ -92,9 +92,10 @@ export function AdminTopbar() {
                     variant="ghost"
                     size="sm"
                     className="w-full text-left px-3 py-2 border-b border-border/50 hover:bg-muted"
-                    onClick={() =>
-                      navigate({ to: "/cases/$caseId", params: { caseId: caseItem._id } })
-                    }
+                    onClick={() => {
+                      setSearchTerm("");
+                      navigate({ to: "/cases/$caseId", params: { caseId: caseItem._id } });
+                    }}
                   >
                     <div className="flex items-center gap-3">
                       <div className="shrink-0">
@@ -116,9 +117,10 @@ export function AdminTopbar() {
                     variant="ghost"
                     size="sm"
                     className="w-full text-left px-3 py-2 border-b border-border/50 hover:bg-muted"
-                    onClick={() =>
-                      navigate({ to: "/clients/$clientId", params: { clientId: clientItem._id } })
-                    }
+                    onClick={() => {
+                      setSearchTerm("");
+                      navigate({ to: "/clients/$clientId", params: { clientId: clientItem._id } });
+                    }}
                   >
                     <div className="flex items-center gap-3">
                       <div className="shrink-0">
@@ -140,7 +142,10 @@ export function AdminTopbar() {
                     variant="ghost"
                     size="sm"
                     className="w-full text-left px-3 py-2 border-b border-border/50 hover:bg-muted"
-                    onClick={() => navigate({ to: "/documents" })}
+                    onClick={() => {
+                      setSearchTerm("");
+                      navigate({ to: "/documents" });
+                    }}
                   >
                     <div className="flex items-center gap-3">
                       <div className="shrink-0">
@@ -162,7 +167,11 @@ export function AdminTopbar() {
                     variant="ghost"
                     size="sm"
                     className="w-full text-left px-3 py-2 border-b border-border/50 hover:bg-muted"
-                    onClick={() => navigate({ to: "/tasks" })}
+                    onClick={() => {
+                      setSearchTerm("");
+                      navigate({ to: "/tasks", search: { taskId: taskItem._id } });
+                      window.dispatchEvent(new CustomEvent("open-task", { detail: taskItem._id }));
+                    }}
                   >
                     <div className="flex items-center gap-3">
                       <div className="shrink-0">
@@ -184,7 +193,10 @@ export function AdminTopbar() {
                     variant="ghost"
                     size="sm"
                     className="w-full text-left px-3 py-2 border-b border-border/50 hover:bg-muted"
-                    onClick={() => navigate({ to: "/admin/employees" })}
+                    onClick={() => {
+                      setSearchTerm("");
+                      navigate({ to: "/admin/employees" });
+                    }}
                   >
                     <div className="flex items-center gap-3">
                       <div className="shrink-0">

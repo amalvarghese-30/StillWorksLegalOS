@@ -193,7 +193,8 @@ export function Topbar() {
                     className="w-full text-left px-3 py-2 border-b border-border/50 hover:bg-muted"
                     onClick={() => {
                       setSearchTerm("");
-                      navigate({ to: "/tasks" });
+                      navigate({ to: "/tasks", search: { taskId: taskItem._id } });
+                      window.dispatchEvent(new CustomEvent("open-task", { detail: taskItem._id }));
                     }}
                   >
                     <div className="flex items-center gap-3">

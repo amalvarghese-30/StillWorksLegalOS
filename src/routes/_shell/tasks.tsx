@@ -466,6 +466,22 @@ function TasksPage() {
     }
   }, [routeSearch.taskId, allTasks, deepTaskData?.task]);
 
+  // Support direct open-task custom event for instantaneous selection
+  useEffect(() => {
+    const handleOpenTask = (e: any) => {
+      const id = e?.detail;
+      if (!id) return;
+      const matched = allTasks.find(
+        (t) => String(t._id) === String(id) || String((t as any).id) === String(id),
+      );
+      if (matched) {
+        setSelectedTask(matched);
+      }
+    };
+    window.addEventListener("open-task", handleOpenTask);
+    return () => window.removeEventListener("open-task", handleOpenTask);
+  }, [allTasks]);
+
   // Keep selectedTask in sync with latest queryClient/allTasks or deepTaskData
   useEffect(() => {
     if (selectedTask?._id) {

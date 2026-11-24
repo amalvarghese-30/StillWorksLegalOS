@@ -43,7 +43,10 @@ router.get("/", async (req: Request, res: Response) => {
         let caseFilter: any = {
           $or: [
             { title: queryRegex },
-            { number: queryRegex }, // Case number might be numeric, but we'll try regex anyway
+            { number: queryRegex },
+            { courtCaseId: queryRegex },
+            { category: queryRegex },
+            { mainCategory: queryRegex },
           ],
         };
 
@@ -63,7 +66,7 @@ router.get("/", async (req: Request, res: Response) => {
 
         return await Case.find(caseFilter)
           .limit(limitNum)
-          .select("title number _id")
+          .select("title number _id status category")
           .lean();
       })(),
 
@@ -130,18 +133,21 @@ router.get("/", async (req: Request, res: Response) => {
 
       // Search tasks
       (async () => {
-        let taskFilter: any = {
+        const taskSearchCondition = {
           $or: [
             { title: queryRegex },
+            { category: queryRegex },
+            { description: queryRegex },
           ],
         };
 
         // Non-admins only see non-deleted tasks assigned to them, co-assigned to them, or created by them
+        let taskFilter: any;
         if (req.user!.role !== "admin") {
           const userObjId = Types.ObjectId.isValid(req.userId!) ? new Types.ObjectId(req.userId!) : null;
           taskFilter = {
             $and: [
-              { title: queryRegex },
+              taskSearchCondition,
               { isDeleted: { $ne: true } },
               {
                 $or: [
@@ -158,7 +164,7 @@ router.get("/", async (req: Request, res: Response) => {
         } else {
           taskFilter = {
             $and: [
-              { title: queryRegex },
+              taskSearchCondition,
               { isDeleted: { $ne: true } },
             ],
           };
@@ -166,7 +172,7 @@ router.get("/", async (req: Request, res: Response) => {
 
         return await Task.find(taskFilter)
           .limit(limitNum)
-          .select("title _id")
+          .select("title _id status priority category")
           .lean();
       })(),
 
